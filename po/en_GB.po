@@ -1,0 +1,6085 @@
+# British English for Penguin Mail, written by scripts/en-gb.py from the
+# template. Do not edit it by hand: change the rules in the script.
+# This file is distributed under the same licence as Penguin Mail.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: penguin-mail 0.2.0\n"
+"Report-Msgid-Bugs-To: https://github.com/c9dev/penguin-mail/issues\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Last-Translator: scripts/en-gb.py\n"
+"Language-Team: English (United Kingdom)\n"
+"Language: en_GB\n"
+"X-Language-Name: English (United Kingdom)\n"
+
+#: app/data/io.github.c9dev.PenguinMail.desktop:5
+msgid "Read and write Gmail from all your accounts"
+msgstr "Read and write Gmail from all your accounts"
+
+#: app/data/io.github.c9dev.PenguinMail.desktop:10
+msgid "mail;email;gmail;inbox;"
+msgstr "mail;email;gmail;inbox;"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:15
+msgid "Penguin Mail keeps several Gmail accounts in sync from the system tray, shows them in one inbox or one at a time, and keeps your mail on your own computer. It talks to Google directly, so no other server sees your mail."
+msgstr "Penguin Mail keeps several Gmail accounts in sync from the system tray, shows them in one inbox or one at a time, and keeps your mail on your own computer. It talks to Google directly, so no other server sees your mail."
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:22
+msgid "One inbox for every account, with Gmail's categories, labels and search"
+msgstr "One inbox for every account, with Gmail's categories, labels and search"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:23
+msgid "A composer that shows formatting as you write, with Undo Send and Send Later"
+msgstr "A composer that shows formatting as you write, with Undo Send and Send Later"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:24
+msgid "Flags in seven colors, VIPs, smart mailboxes and reminders"
+msgstr "Flags in seven colours, VIPs, smart mailboxes and reminders"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:25
+msgid "Gmail's rules, automatic replies and plus addresses, changed from the app"
+msgstr "Gmail's rules, automatic replies and plus addresses, changed from the app"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:26
+msgid "OpenPGP and S/MIME signing and encryption through your own GnuPG"
+msgstr "OpenPGP and S/MIME signing and encryption through your own GnuPG"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:27
+msgid "Remote images blocked until you ask for them"
+msgstr "Remote images blocked until you ask for them"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:28
+msgid "An assistant that runs on a local model or on Claude, off until you pick one"
+msgstr "An assistant that runs on a local model or on Claude, off until you pick one"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:30
+msgid "Adding a Gmail account takes one sign-in with Google in your browser."
+msgstr "Adding a Gmail account takes one sign-in with Google in your browser."
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:46
+msgid "gmail"
+msgstr "gmail"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:47
+msgid "email"
+msgstr "email"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:48
+msgid "mail"
+msgstr "mail"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:49
+msgid "inbox"
+msgstr "inbox"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:78
+msgid "The inbox, with a conversation open"
+msgstr "The inbox, with a conversation open"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:82
+msgid "An HTML message in dark mode"
+msgstr "An HTML message in dark mode"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:86
+msgid "Replying in the composer"
+msgstr "Replying in the composer"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:90
+msgid "Three conversations selected, with the actions for all of them"
+msgstr "Three conversations selected, with the actions for all of them"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:94
+msgid "The assistant listing mail that waits on a reply"
+msgstr "The assistant listing mail that waits on a reply"
+
+#: app/data/io.github.c9dev.PenguinMail.metainfo.xml:98
+msgid "The layout on a narrow screen"
+msgstr "The layout on a narrow screen"
+
+#: app/src/app.rs:300
+msgid "Your preferences could not be read, so Penguin Mail started from the defaults. The old file is kept as {file}."
+msgstr "Your preferences could not be read, so Penguin Mail started from the defaults. The old file is kept as {file}."
+
+#: app/src/app/sending.rs:29
+msgid "That account is not connected. Check its status in the sidebar."
+msgstr "That account is not connected. Check its status in the sidebar."
+
+#: app/src/app/sending.rs:106
+msgid "Could not build the message: {reason}"
+msgstr "Could not build the message: {reason}"
+
+#: app/src/app/sending.rs:121 app/src/app/sending.rs:173
+msgid "Not encrypted, so not sent: {reason}"
+msgstr "Not encrypted, so not sent: {reason}"
+
+#: app/src/app/sending.rs:174
+msgid "Not signed, so not sent: {reason}"
+msgstr "Not signed, so not sent: {reason}"
+
+#: app/src/app/sending.rs:210
+msgid "Waiting in the Outbox. It goes out as soon as it can."
+msgstr "Waiting in the Outbox. It goes out as soon as it can."
+
+#: app/src/app/sending.rs:215 app/src/app/sending.rs:220
+msgid "Not sent: {reason}"
+msgstr "Not sent: {reason}"
+
+#: app/src/app/sending.rs:250 app/src/app/sending.rs:263
+msgid "Not scheduled: {reason}"
+msgstr "Not scheduled: {reason}"
+
+#: app/src/app/sending.rs:256
+msgid "Will send {when}"
+msgstr "Will send {when}"
+
+#: app/src/app/sending.rs:312
+msgid "Sent {message}"
+msgstr "Sent {message}"
+
+#: app/src/app/sending.rs:318
+msgid "Still in the Outbox: {message}"
+msgstr "Still in the Outbox: {message}"
+
+#: app/src/app/sending.rs:427
+msgid "your message"
+msgstr "your message"
+
+#: app/src/app/sending.rs:429
+msgid "“{subject}”"
+msgstr "“{subject}”"
+
+#: app/src/app/updates.rs:125
+msgid "Penguin Mail {version} is up to date"
+msgstr "Penguin Mail {version} is up to date"
+
+#: app/src/app/updates.rs:135
+msgid "Could not reach GitHub to check for updates"
+msgstr "Could not reach GitHub to check for updates"
+
+#: app/src/assistant/mod.rs:119
+msgid "The assistant is off. Choose a model in Preferences."
+msgstr "The assistant is off. Choose a model in Preferences."
+
+#: app/src/assistant/mod.rs:121
+msgid "Translation has no model. Choose one in Preferences, on the AI page."
+msgstr "Translation has no model. Choose one in Preferences, on the AI page."
+
+#: app/src/assistant/mod.rs:124
+msgid "Unsubscribing has no model. Choose one in Preferences, on the AI page."
+msgstr "Unsubscribing has no model. Choose one in Preferences, on the AI page."
+
+#: app/src/assistant/mod.rs:130
+msgid "Choose a model for the local server in Preferences."
+msgstr "Choose a model for the local server in Preferences."
+
+#: app/src/assistant/mod.rs:142
+msgid "Add an Anthropic API key in Preferences."
+msgstr "Add an Anthropic API key in Preferences."
+
+#: app/src/assistant/mod.rs:149
+msgid "Claude Code is not installed. Install it and sign in, then try again."
+msgstr "Claude Code is not installed. Install it and sign in, then try again."
+
+#: app/src/assistant/run.rs:904
+msgid "Move {count} conversation to the Trash?"
+msgid_plural "Move {count} conversations to the Trash?"
+msgstr[0] "Move {count} conversation to the Trash?"
+msgstr[1] "Move {count} conversations to the Trash?"
+
+#: app/src/assistant/run.rs:995
+msgid "Don't Allow labels only the mail in accounts that have the label already."
+msgstr "Don't Allow labels only the mail in accounts that have the label already."
+
+#: app/src/assistant/run.rs:1027
+msgid "Block {address}? Their future mail goes straight to the Trash."
+msgstr "Block {address}? Their future mail goes straight to the Trash."
+
+#: app/src/assistant/run.rs:1103 app/src/assistant/run/calendar.rs:178
+#: app/src/assistant/run/calendar.rs:525
+msgid "%a %-d %b"
+msgstr "%a %-d %b"
+
+#: app/src/assistant/run.rs:1109
+msgid " from {first} to {last}"
+msgstr " from {first} to {last}"
+
+#: app/src/assistant/run.rs:1112
+msgid " until {last}"
+msgstr " until {last}"
+
+#: app/src/assistant/run.rs:1113
+msgid " from {first}"
+msgstr " from {first}"
+
+#: app/src/assistant/run.rs:1119
+msgid ""
+"Turn on the automatic reply for {account}{dates}?\n"
+"\n"
+"“{subject}”\n"
+"{body}"
+msgstr ""
+"Turn on the automatic reply for {account}{dates}?\n"
+"\n"
+"“{subject}”\n"
+"{body}"
+
+#: app/src/assistant/run.rs:1130
+msgid "Turn off the automatic reply for {account}?"
+msgstr "Turn off the automatic reply for {account}?"
+
+#: app/src/assistant/run.rs:1212
+msgid "Create a Gmail rule for {account}: {when} → {then}?"
+msgstr "Create a Gmail rule for {account}: {when} → {then}?"
+
+#: app/src/assistant/run.rs:1252
+msgid "Delete a Gmail rule from {account}?"
+msgstr "Delete a Gmail rule from {account}?"
+
+#: app/src/assistant/run.rs:1374
+msgid "Move mail from {sender} to {category} in {account}, and add a Gmail rule for their future mail?"
+msgstr "Move mail from {sender} to {category} in {account}, and add a Gmail rule for their future mail?"
+
+#: app/src/assistant/run/calendar.rs:184 app/src/assistant/run/calendar.rs:529
+msgid "%a %-d %b %H:%M"
+msgstr "%a %-d %b %H:%M"
+
+#: app/src/assistant/run/calendar.rs:197 app/src/assistant/run/calendar.rs:201
+#: app/src/assistant/run/calendar.rs:205
+msgid "{first} to {last}"
+msgstr "{first} to {last}"
+
+#: app/src/assistant/run/calendar.rs:318
+msgid "Add “{title}” to the calendar for {account}, {when}?"
+msgstr "Add “{title}” to the calendar for {account}, {when}?"
+
+#: app/src/assistant/run/calendar.rs:328
+msgid "Google sends an invitation to {guests}."
+msgstr "Google sends an invitation to {guests}."
+
+#: app/src/assistant/run/calendar.rs:375
+msgid "Title: {value}"
+msgstr "Title: {value}"
+
+#: app/src/assistant/run/calendar.rs:378
+msgid "Starts: {value}"
+msgstr "Starts: {value}"
+
+#: app/src/assistant/run/calendar.rs:381
+msgid "Ends: {value}"
+msgstr "Ends: {value}"
+
+#: app/src/assistant/run/calendar.rs:384
+msgid "Where: {value}"
+msgstr "Where: {value}"
+
+#: app/src/assistant/run/calendar.rs:387
+msgid "Guests: {value}"
+msgstr "Guests: {value}"
+
+#: app/src/assistant/run/calendar.rs:391
+msgid "Description: {value}"
+msgstr "Description: {value}"
+
+#: app/src/assistant/run/calendar.rs:396
+msgid "Change “{title}” on the calendar for {account}? Its guests are told."
+msgstr "Change “{title}” on the calendar for {account}? Its guests are told."
+
+#: app/src/assistant/run/calendar.rs:400
+msgid "Change an event on the calendar for {account}? Its guests are told."
+msgstr "Change an event on the calendar for {account}? Its guests are told."
+
+#: app/src/assistant/run/calendar.rs:422
+msgid "Delete “{title}” from the calendar for {account}? Its guests are told."
+msgstr "Delete “{title}” from the calendar for {account}? Its guests are told."
+
+#: app/src/assistant/run/calendar.rs:426
+msgid "Delete an event from the calendar for {account}? Its guests are told."
+msgstr "Delete an event from the calendar for {account}? Its guests are told."
+
+#: app/src/assistant/run/calendar.rs:462
+msgid "Answer {answer} to “{title}”?"
+msgstr "Answer {answer} to “{title}”?"
+
+#: app/src/assistant/run/catalog.rs:244
+msgid "Looking at the screen"
+msgstr "Looking at the screen"
+
+#: app/src/assistant/run/catalog.rs:252
+msgid "Reading a mailbox"
+msgstr "Reading a mailbox"
+
+#: app/src/assistant/run/catalog.rs:270
+msgid "Searching mail"
+msgstr "Searching mail"
+
+#: app/src/assistant/run/catalog.rs:284
+msgid "Reading a conversation"
+msgstr "Reading a conversation"
+
+#: app/src/assistant/run/catalog.rs:297
+msgid "Organizing mail"
+msgstr "Organising mail"
+
+#: app/src/assistant/run/catalog.rs:311
+msgid "Changing labels"
+msgstr "Changing labels"
+
+#: app/src/assistant/run/catalog.rs:325
+msgid "Setting reminders"
+msgstr "Setting reminders"
+
+#: app/src/assistant/run/catalog.rs:338
+msgid "Writing a draft"
+msgstr "Writing a draft"
+
+#: app/src/assistant/run/catalog.rs:346
+msgid "Sending mail"
+msgstr "Sending mail"
+
+#: app/src/assistant/run/catalog.rs:354
+msgid "Reading drafts"
+msgstr "Reading drafts"
+
+#: app/src/assistant/run/catalog.rs:362
+msgid "Changing a draft"
+msgstr "Changing a draft"
+
+#: app/src/assistant/run/catalog.rs:384
+msgid "Deleting a draft"
+msgstr "Deleting a draft"
+
+#: app/src/assistant/run/catalog.rs:397
+msgid "Blocking a sender"
+msgstr "Blocking a sender"
+
+#: app/src/assistant/run/catalog.rs:410
+msgid "Checking the automatic reply"
+msgstr "Checking the automatic reply"
+
+#: app/src/assistant/run/catalog.rs:418
+msgid "Setting the automatic reply"
+msgstr "Setting the automatic reply"
+
+#: app/src/assistant/run/catalog.rs:436
+msgid "Reading rules"
+msgstr "Reading rules"
+
+#: app/src/assistant/run/catalog.rs:444
+msgid "Creating a rule"
+msgstr "Creating a rule"
+
+#: app/src/assistant/run/catalog.rs:468
+msgid "Deleting a rule"
+msgstr "Deleting a rule"
+
+#: app/src/assistant/run/catalog.rs:476
+msgid "Creating a label"
+msgstr "Creating a label"
+
+#: app/src/assistant/run/catalog.rs:484
+msgid "Renaming a label"
+msgstr "Renaming a label"
+
+#: app/src/assistant/run/catalog.rs:498
+msgid "Coloring a label"
+msgstr "Colouring a label"
+
+#: app/src/assistant/run/catalog.rs:512
+msgid "Deleting a label"
+msgstr "Deleting a label"
+
+#: app/src/assistant/run/catalog.rs:520
+msgid "Reading smart mailboxes"
+msgstr "Reading smart mailboxes"
+
+#: app/src/assistant/run/catalog.rs:528
+msgid "Changing a smart mailbox"
+msgstr "Changing a smart mailbox"
+
+#: app/src/assistant/run/catalog.rs:556
+msgid "Deleting a smart mailbox"
+msgstr "Deleting a smart mailbox"
+
+#: app/src/assistant/run/catalog.rs:564
+msgid "Saving a template"
+msgstr "Saving a template"
+
+#: app/src/assistant/run/catalog.rs:578
+msgid "Deleting a template"
+msgstr "Deleting a template"
+
+#: app/src/assistant/run/catalog.rs:586
+msgid "Adding a contact"
+msgstr "Adding a contact"
+
+#: app/src/assistant/run/catalog.rs:602
+msgid "Changing a contact"
+msgstr "Changing a contact"
+
+#: app/src/assistant/run/catalog.rs:619
+msgid "Reading who may load images"
+msgstr "Reading who may load images"
+
+#: app/src/assistant/run/catalog.rs:627
+msgid "Allowing remote images"
+msgstr "Allowing remote images"
+
+#: app/src/assistant/run/catalog.rs:640
+msgid "Blocking remote images"
+msgstr "Blocking remote images"
+
+#: app/src/assistant/run/catalog.rs:648
+msgid "Exporting mail"
+msgstr "Exporting mail"
+
+#: app/src/assistant/run/catalog.rs:662
+msgid "Reading settings"
+msgstr "Reading settings"
+
+#: app/src/assistant/run/catalog.rs:670
+msgid "Changing a setting"
+msgstr "Changing a setting"
+
+#: app/src/assistant/run/catalog.rs:683
+msgid "Setting a signature"
+msgstr "Setting a signature"
+
+#: app/src/assistant/run/catalog.rs:691
+msgid "Updating VIPs"
+msgstr "Updating VIPs"
+
+#: app/src/assistant/run/catalog.rs:705
+msgid "Creating a smart mailbox"
+msgstr "Creating a smart mailbox"
+
+#: app/src/assistant/run/catalog.rs:731
+msgid "Sorting a sender"
+msgstr "Sorting a sender"
+
+#: app/src/assistant/run/catalog.rs:746
+msgid "Dismissing a follow-up"
+msgstr "Dismissing a follow-up"
+
+#: app/src/assistant/run/catalog.rs:754
+msgid "Reading hidden addresses"
+msgstr "Reading hidden addresses"
+
+#: app/src/assistant/run/catalog.rs:762
+msgid "Making a hidden address"
+msgstr "Making a hidden address"
+
+#: app/src/assistant/run/catalog.rs:775
+msgid "Changing a hidden address"
+msgstr "Changing a hidden address"
+
+#: app/src/assistant/run/catalog.rs:783
+msgid "Opening a conversation"
+msgstr "Opening a conversation"
+
+#: app/src/assistant/run/catalog.rs:791
+msgid "Muting conversations"
+msgstr "Muting conversations"
+
+#: app/src/assistant/run/catalog.rs:804
+msgid "Deleting mail forever"
+msgstr "Deleting mail forever"
+
+#: app/src/assistant/run/catalog.rs:812
+msgid "Scheduling a message"
+msgstr "Scheduling a message"
+
+#: app/src/assistant/run/catalog.rs:834
+msgid "Sending a waiting message"
+msgstr "Sending a waiting message"
+
+#: app/src/assistant/run/catalog.rs:842
+msgid "Canceling a scheduled message"
+msgstr "Cancelling a scheduled message"
+
+#: app/src/assistant/run/catalog.rs:850
+msgid "Deleting from the Outbox"
+msgstr "Deleting from the Outbox"
+
+#: app/src/assistant/run/catalog.rs:858
+msgid "Changing when a message goes"
+msgstr "Changing when a message goes"
+
+#: app/src/assistant/run/catalog.rs:871
+msgid "Reading reminders"
+msgstr "Reading reminders"
+
+#: app/src/assistant/run/catalog.rs:879
+msgid "Canceling a reminder"
+msgstr "Cancelling a reminder"
+
+#: app/src/assistant/run/catalog.rs:887
+msgid "Changing a reminder"
+msgstr "Changing a reminder"
+
+#: app/src/assistant/run/catalog.rs:900
+msgid "Unmuting conversations"
+msgstr "Unmuting conversations"
+
+#: app/src/assistant/run/catalog.rs:908
+msgid "Undoing the last change"
+msgstr "Undoing the last change"
+
+#: app/src/assistant/run/catalog.rs:916
+msgid "Reading templates"
+msgstr "Reading templates"
+
+#: app/src/assistant/run/catalog.rs:924
+msgid "Writing from a template"
+msgstr "Writing from a template"
+
+#: app/src/assistant/run/catalog.rs:939
+msgid "Finding your newsletters"
+msgstr "Finding your newsletters"
+
+#: app/src/assistant/run/catalog.rs:952
+msgid "Unsubscribing"
+msgstr "Unsubscribing"
+
+#: app/src/assistant/run/catalog.rs:983
+msgid "Reading an attachment"
+msgstr "Reading an attachment"
+
+#: app/src/assistant/run/catalog.rs:997
+msgid "Looking up a contact"
+msgstr "Looking up a contact"
+
+#: app/src/assistant/run/catalog.rs:1005
+msgid "Reading the calendar"
+msgstr "Reading the calendar"
+
+#: app/src/assistant/run/catalog.rs:1019
+msgid "Finding free time"
+msgstr "Finding free time"
+
+#: app/src/assistant/run/catalog.rs:1037
+msgid "Adding an event"
+msgstr "Adding an event"
+
+#: app/src/assistant/run/catalog.rs:1055
+msgid "Changing an event"
+msgstr "Changing an event"
+
+#: app/src/assistant/run/catalog.rs:1075
+msgid "Deleting an event"
+msgstr "Deleting an event"
+
+#: app/src/assistant/run/catalog.rs:1089
+msgid "Answering an invitation"
+msgstr "Answering an invitation"
+
+#: app/src/assistant/run/catalog.rs:1135 app/src/assistant/turn.rs:287
+msgid "Working"
+msgstr "Working"
+
+#: app/src/assistant/run/mail.rs:176
+msgid "Delete {count} conversation forever? Gmail cannot bring it back."
+msgid_plural "Delete {count} conversations forever? Gmail cannot bring them back."
+msgstr[0] "Delete {count} conversation forever? Gmail cannot bring it back."
+msgstr[1] "Delete {count} conversations forever? Gmail cannot bring them back."
+
+#: app/src/assistant/run/mail.rs:220
+msgid "Send “{subject}” to {recipients} {when}?"
+msgstr "Send “{subject}” to {recipients} {when}?"
+
+#: app/src/assistant/run/manage.rs:126
+msgid "Name: {name}"
+msgstr "Name: {name}"
+
+#: app/src/assistant/run/manage.rs:130
+msgid "Addresses: {addresses}"
+msgstr "Addresses: {addresses}"
+
+#: app/src/assistant/run/manage.rs:136
+msgid "Phones: {phones}"
+msgstr "Phones: {phones}"
+
+#: app/src/assistant/run/manage.rs:142
+msgid "Organization: {organisation}"
+msgstr "Organisation: {organisation}"
+
+#: app/src/assistant/run/manage.rs:231
+msgid "Rename the label “{label}” in {account} to “{name}”? Labels nested under it move along."
+msgstr "Rename the label “{label}” in {account} to “{name}”? Labels nested under it move along."
+
+#: app/src/assistant/run/manage.rs:260
+msgid "Color the label “{label}” in {account} {color}?"
+msgstr "Colour the label “{label}” in {account} {color}?"
+
+#: app/src/assistant/run/manage.rs:294
+msgid "Delete the label “{label}” from {account}? {count} conversation carries it. The mail stays in Gmail, without the label."
+msgid_plural "Delete the label “{label}” from {account}? {count} conversations carry it. The mail stays in Gmail, without the label."
+msgstr[0] "Delete the label “{label}” from {account}? {count} conversation carries it. The mail stays in Gmail, without the label."
+msgstr[1] "Delete the label “{label}” from {account}? {count} conversations carry it. The mail stays in Gmail, without the label."
+
+#: app/src/assistant/run/manage.rs:346
+msgid "Delete the smart mailbox “{name}”? The mail it lists stays where it is."
+msgstr "Delete the smart mailbox “{name}”? The mail it lists stays where it is."
+
+#: app/src/assistant/run/manage.rs:407
+msgid "Replace the template “{name}” with this one? The saved one is lost."
+msgstr "Replace the template “{name}” with this one? The saved one is lost."
+
+#: app/src/assistant/run/manage.rs:411
+msgid "Save a template called “{name}”?"
+msgstr "Save a template called “{name}”?"
+
+#: app/src/assistant/run/manage.rs:449
+msgid "Delete the template “{name}”?"
+msgstr "Delete the template “{name}”?"
+
+#: app/src/assistant/run/manage.rs:477
+msgid "Add {contact} to the Google contacts of {account}?"
+msgstr "Add {contact} to the Google contacts of {account}?"
+
+#: app/src/assistant/run/manage.rs:528
+msgid "Change {contact} in the Google contacts of {account}?"
+msgstr "Change {contact} in the Google contacts of {account}?"
+
+#: app/src/assistant/run/manage.rs:575
+msgid "Always load images from anyone at {domain}?"
+msgstr "Always load images from anyone at {domain}?"
+
+#: app/src/assistant/run/manage.rs:579
+msgid "Always load images from {sender}?"
+msgstr "Always load images from {sender}?"
+
+#: app/src/assistant/run/manage.rs:585
+msgid "Loading a remote image tells the sender when you opened their mail."
+msgstr "Loading a remote image tells the sender when you opened their mail."
+
+#: app/src/assistant/run/manage.rs:610
+msgid "Stop loading images from {sender}?"
+msgstr "Stop loading images from {sender}?"
+
+#: app/src/assistant/run/manage.rs:645
+msgid "Export {what} to {file}?"
+msgstr "Export {what} to {file}?"
+
+#: app/src/assistant/run/manage.rs:651
+msgid "A file with that name is there already, and exporting replaces it."
+msgstr "A file with that name is there already, and exporting replaces it."
+
+#: app/src/assistant/run/manage.rs:698
+msgid "{count} conversation"
+msgid_plural "{count} conversations"
+msgstr[0] "{count} conversation"
+msgstr[1] "{count} conversations"
+
+#: app/src/assistant/run/manage.rs:730
+msgid "the message “{subject}”"
+msgstr "the message “{subject}”"
+
+#: app/src/assistant/run/queue.rs:17 app/src/assistant/run/writing.rs:224
+msgid "(no subject)"
+msgstr "(no subject)"
+
+#: app/src/assistant/run/queue.rs:91
+msgid "Send “{subject}” now?"
+msgstr "Send “{subject}” now?"
+
+#: app/src/assistant/run/queue.rs:94
+msgid "Send {count} waiting message now?"
+msgid_plural "Send {count} waiting messages now?"
+msgstr[0] "Send {count} waiting message now?"
+msgstr[1] "Send {count} waiting messages now?"
+
+#: app/src/assistant/run/queue.rs:146
+msgid "Cancel sending “{subject}”? It goes back to Drafts."
+msgstr "Cancel sending “{subject}”? It goes back to Drafts."
+
+#: app/src/assistant/run/queue.rs:152
+msgid "Cancel {count} scheduled message? It goes back to Drafts."
+msgid_plural "Cancel {count} scheduled messages? They go back to Drafts."
+msgstr[0] "Cancel {count} scheduled message? It goes back to Drafts."
+msgstr[1] "Cancel {count} scheduled messages? They go back to Drafts."
+
+#: app/src/assistant/run/queue.rs:223
+msgid "Delete “{subject}” from the Outbox? It will not be sent."
+msgstr "Delete “{subject}” from the Outbox? It will not be sent."
+
+#: app/src/assistant/run/queue.rs:229
+msgid "Delete {count} message from the Outbox? It will not be sent."
+msgid_plural "Delete {count} messages from the Outbox? They will not be sent."
+msgstr[0] "Delete {count} message from the Outbox? It will not be sent."
+msgstr[1] "Delete {count} messages from the Outbox? They will not be sent."
+
+#: app/src/assistant/run/queue.rs:261
+msgid "Send “{subject}” {when} instead?"
+msgstr "Send “{subject}” {when} instead?"
+
+#: app/src/assistant/run/queue.rs:267
+msgid "Send {count} scheduled message {when} instead?"
+msgid_plural "Send {count} scheduled messages {when} instead?"
+msgstr[0] "Send {count} scheduled message {when} instead?"
+msgstr[1] "Send {count} scheduled messages {when} instead?"
+
+#: app/src/assistant/run/queue.rs:345
+msgid "Cancel the reminder on “{subject}” and put it back in the Inbox?"
+msgstr "Cancel the reminder on “{subject}” and put it back in the Inbox?"
+
+#: app/src/assistant/run/queue.rs:351
+msgid "Cancel {count} reminder and put its conversation back in the Inbox?"
+msgid_plural "Cancel {count} reminders and put their conversations back in the Inbox?"
+msgstr[0] "Cancel {count} reminder and put its conversation back in the Inbox?"
+msgstr[1] "Cancel {count} reminders and put their conversations back in the Inbox?"
+
+#: app/src/assistant/run/queue.rs:385
+msgid "Bring “{subject}” back {when} instead?"
+msgstr "Bring “{subject}” back {when} instead?"
+
+#: app/src/assistant/run/queue.rs:391
+msgid "Bring {count} conversation back {when} instead?"
+msgid_plural "Bring {count} conversations back {when} instead?"
+msgstr[0] "Bring {count} conversation back {when} instead?"
+msgstr[1] "Bring {count} conversations back {when} instead?"
+
+#: app/src/assistant/run/queue.rs:422
+msgid "Undo “{action}”?"
+msgstr "Undo “{action}”?"
+
+#: app/src/assistant/run/unsubscribe.rs:334
+msgid "this list"
+msgstr "this list"
+
+#: app/src/assistant/run/writing.rs:237
+msgid "Signed with {standard}"
+msgstr "Signed with {standard}"
+
+#: app/src/assistant/run/writing.rs:238
+msgid "Encrypted with {standard}"
+msgstr "Encrypted with {standard}"
+
+#: app/src/assistant/run/writing.rs:239
+msgid "Signed and encrypted with {standard}"
+msgstr "Signed and encrypted with {standard}"
+
+#: app/src/assistant/run/writing.rs:251
+msgid "Blind copy to {recipients}"
+msgstr "Blind copy to {recipients}"
+
+#: app/src/assistant/run/writing.rs:257
+msgid "Forwards “{subject}” from {sender}"
+msgstr "Forwards “{subject}” from {sender}"
+
+#: app/src/assistant/run/writing.rs:267 app/src/assistant/run/writing.rs:918
+msgid "Attached: {files}"
+msgstr "Attached: {files}"
+
+#: app/src/assistant/run/writing.rs:283
+msgid "From this computer: {files}"
+msgstr "From this computer: {files}"
+
+#: app/src/assistant/run/writing.rs:315
+msgid "Put a file from this computer in a draft?"
+msgid_plural "Put {count} files from this computer in a draft?"
+msgstr[0] "Put a file from this computer in a draft?"
+msgstr[1] "Put {count} files from this computer in a draft?"
+
+#: app/src/assistant/run/writing.rs:347
+msgid "Send “{subject}” to {recipients}?"
+msgstr "Send “{subject}” to {recipients}?"
+
+#: app/src/assistant/run/writing.rs:736
+msgid "Change the draft “{subject}”?"
+msgstr "Change the draft “{subject}”?"
+
+#: app/src/assistant/run/writing.rs:864
+msgid "Delete the draft “{subject}”? Gmail cannot bring it back."
+msgstr "Delete the draft “{subject}”? Gmail cannot bring it back."
+
+#: app/src/assistant/run/writing.rs:886
+msgid "nobody"
+msgstr "nobody"
+
+#: app/src/assistant/run/writing.rs:892
+msgid "To: {recipients}"
+msgstr "To: {recipients}"
+
+#: app/src/assistant/run/writing.rs:895
+msgid "Cc: {recipients}"
+msgstr "Cc: {recipients}"
+
+#: app/src/assistant/run/writing.rs:898
+msgid "Bcc: {recipients}"
+msgstr "Bcc: {recipients}"
+
+#: app/src/assistant/run/writing.rs:902
+msgid "Subject: {subject}"
+msgstr "Subject: {subject}"
+
+#: app/src/assistant/run/writing.rs:907
+msgid "New text in place of the old"
+msgstr "New text in place of the old"
+
+#: app/src/assistant/run/writing.rs:911
+msgid "Takes out: {files}"
+msgstr "Takes out: {files}"
+
+#: app/src/assistant/run/writing.rs:926
+msgid "Goes out encrypted"
+msgstr "Goes out encrypted"
+
+#: app/src/assistant/run/writing.rs:927
+msgid "Goes out unencrypted"
+msgstr "Goes out unencrypted"
+
+#: app/src/assistant/run/writing.rs:931
+msgid "Goes out signed"
+msgstr "Goes out signed"
+
+#: app/src/assistant/run/writing.rs:932
+msgid "Goes out unsigned"
+msgstr "Goes out unsigned"
+
+#: app/src/assistant/sources/mcp/mod.rs:193
+msgid "Run {tool} on the MCP server {server}?"
+msgstr "Run {tool} on the MCP server {server}?"
+
+#: app/src/assistant/sources/skills/mod.rs:59
+msgid "Penguin Mail"
+msgstr "Penguin Mail"
+
+#: app/src/assistant/sources/skills/mod.rs:60
+msgid "Claude Code"
+msgstr "Claude Code"
+
+#: app/src/assistant/sources/skills/sandbox.rs:230
+msgid "Skill scripts need bubblewrap, which is not installed. Install the bubblewrap package to run them."
+msgstr "Skill scripts need bubblewrap, which is not installed. Install the bubblewrap package to run them."
+
+#: app/src/assistant/sources/skills/sandbox.rs:249
+#: app/src/assistant/sources/skills/sandbox.rs:255
+msgid "Skill scripts cannot run: bubblewrap failed to start a sandbox ({reason})."
+msgstr "Skill scripts cannot run: bubblewrap failed to start a sandbox ({reason})."
+
+#: app/src/assistant/sources/skills/shell.rs:179
+msgid "It can reach the internet."
+msgstr "It can reach the internet."
+
+#: app/src/assistant/sources/skills/shell.rs:181
+msgid "It cannot reach the internet."
+msgstr "It cannot reach the internet."
+
+#: app/src/assistant/sources/skills/shell.rs:185
+msgid ""
+"Run this command for the skill {skill}?\n"
+"\n"
+"{command}\n"
+"\n"
+"It runs in a sandbox with no access to your mail or home folder. {network} Always Allow covers this exact command only."
+msgstr ""
+"Run this command for the skill {skill}?\n"
+"\n"
+"{command}\n"
+"\n"
+"It runs in a sandbox with no access to your mail or home folder. {network} Always Allow covers this exact command only."
+
+#: app/src/assistant/sources/web.rs:60
+msgid "Add a Brave Search API key."
+msgstr "Add a Brave Search API key."
+
+#: app/src/assistant/sources/web.rs:62
+msgid "Enter the address of a SearXNG server."
+msgstr "Enter the address of a SearXNG server."
+
+#: app/src/assistant/sources/web.rs:66
+msgid "Choose Brave Search or SearXNG for a local model to search with."
+msgstr "Choose Brave Search or SearXNG for a local model to search with."
+
+#: app/src/assistant/turn.rs:57
+msgid "Waiting for the model…"
+msgstr "Waiting for the model…"
+
+#: app/src/assistant/turn.rs:58 app/src/assistant/turn.rs:259
+msgid "Thinking…"
+msgstr "Thinking…"
+
+#: app/src/assistant/turn.rs:59
+msgid "{activity}…"
+msgstr "{activity}…"
+
+#: app/src/assistant/turn.rs:60
+msgid "Waiting for your answer…"
+msgstr "Waiting for your answer…"
+
+#: app/src/assistant/turn.rs:61
+msgid "Writing…"
+msgstr "Writing…"
+
+#: app/src/assistant/turn.rs:264
+msgid "Thought for {count} second"
+msgid_plural "Thought for {count} seconds"
+msgstr[0] "Thought for {count} second"
+msgstr[1] "Thought for {count} seconds"
+
+#. The app's own web tools, Anthropic's, and Claude Code's.
+#: app/src/assistant/turn.rs:282
+msgid "Searching the web"
+msgstr "Searching the web"
+
+#: app/src/assistant/turn.rs:283
+msgid "Reading a web page"
+msgstr "Reading a web page"
+
+#: app/src/assistant/turn.rs:284
+msgid "Reading a skill"
+msgstr "Reading a skill"
+
+#: app/src/assistant/turn.rs:285
+msgid "Reading a skill's file"
+msgstr "Reading a skill's file"
+
+#: app/src/assistant/turn.rs:286
+msgid "Running a command in the sandbox"
+msgstr "Running a command in the sandbox"
+
+#: app/src/autostart.rs:50
+msgid "Penguin Mail keeps syncing with no window open"
+msgstr "Penguin Mail keeps syncing with no window open"
+
+#: app/src/compose.rs:523 app/src/compose.rs:2282
+msgid "Add at least one recipient."
+msgstr "Add at least one recipient."
+
+#: app/src/compose.rs:532
+msgid "“{address}” is not an email address."
+msgstr "“{address}” is not an email address."
+
+#: app/src/compose.rs:641 app/src/compose.rs:2288
+msgid "Choose a time in the future"
+msgstr "Choose a time in the future"
+
+#: app/src/compose.rs:844
+msgid "On {date}, {sender} wrote:"
+msgstr "On {date}, {sender} wrote:"
+
+#: app/src/core.rs:165
+msgid "Another copy of Penguin Mail, or penguin-mail-cli sync, is syncing your mail. Stop it, then open Penguin Mail again."
+msgstr "Another copy of Penguin Mail, or penguin-mail-cli sync, is syncing your mail. Stop it, then open Penguin Mail again."
+
+#: app/src/core.rs:180
+msgid "Penguin Mail could not update its mail store, and kept the old one."
+msgstr "Penguin Mail could not update its mail store, and kept the old one."
+
+#: app/src/core.rs:592
+msgid "Demo mode cannot add real accounts."
+msgstr "Demo mode cannot add real accounts."
+
+#: app/src/core.rs:596
+msgid "This copy of Penguin Mail was built without Google sign-in. Get a release from github.com/c9dev/penguin-mail/releases."
+msgstr "This copy of Penguin Mail was built without Google sign-in. Get a release from github.com/c9dev/penguin-mail/releases."
+
+#: app/src/core.rs:614
+msgid "Gave up waiting for the browser after five minutes."
+msgstr "Gave up waiting for the browser after five minutes."
+
+#: app/src/core.rs:622
+msgid "You signed in as {account}. Choose {wanted} to reconnect that account."
+msgstr "You signed in as {account}. Choose {wanted} to reconnect that account."
+
+#: app/src/format.rs:35
+msgid "%H:%M"
+msgstr "%H:%M"
+
+#: app/src/format.rs:36 app/src/format.rs:222
+msgid "Yesterday"
+msgstr "Yesterday"
+
+#: app/src/format.rs:37 app/src/format.rs:221
+msgid "Tomorrow"
+msgstr "Tomorrow"
+
+#: app/src/format.rs:38 app/src/format.rs:223
+msgid "%A"
+msgstr "%A"
+
+#: app/src/format.rs:39
+msgid "%-d %b"
+msgstr "%-d %b"
+
+#: app/src/format.rs:40
+msgid "%Y-%m-%d"
+msgstr "%Y-%m-%d"
+
+#: app/src/format.rs:55
+msgid "Today at %H:%M"
+msgstr "Today at %H:%M"
+
+#: app/src/format.rs:56
+msgid "Yesterday at %H:%M"
+msgstr "Yesterday at %H:%M"
+
+#: app/src/format.rs:57
+msgid "Tomorrow at %H:%M"
+msgstr "Tomorrow at %H:%M"
+
+#: app/src/format.rs:58 app/src/format.rs:85
+msgid "%a %-d %b at %H:%M"
+msgstr "%a %-d %b at %H:%M"
+
+#: app/src/format.rs:59 app/src/format.rs:86
+msgid "%-d %b %Y at %H:%M"
+msgstr "%-d %b %Y at %H:%M"
+
+#: app/src/format.rs:60
+msgid "%-d %b %Y"
+msgstr "%-d %b %Y"
+
+#: app/src/format.rs:69
+msgid "%A, %-d %B %Y at %H:%M"
+msgstr "%A, %-d %B %Y at %H:%M"
+
+#: app/src/format.rs:82
+msgid "today at %H:%M"
+msgstr "today at %H:%M"
+
+#: app/src/format.rs:83
+msgid "tomorrow at %H:%M"
+msgstr "tomorrow at %H:%M"
+
+#: app/src/format.rs:84
+msgid "%A at %H:%M"
+msgstr "%A at %H:%M"
+
+#: app/src/format.rs:96
+msgid "Send {when}"
+msgstr "Send {when}"
+
+#: app/src/format.rs:103
+msgid "In 1 Hour"
+msgstr "In 1 Hour"
+
+#: app/src/format.rs:123
+msgid "Tonight at 21:00"
+msgstr "Tonight at 21:00"
+
+#: app/src/format.rs:127
+msgid "Tomorrow at 08:00"
+msgstr "Tomorrow at 08:00"
+
+#: app/src/format.rs:134
+msgid "Monday at 08:00"
+msgstr "Monday at 08:00"
+
+#: app/src/format.rs:145
+msgid "{day} · All day"
+msgstr "{day} · All day"
+
+#: app/src/format.rs:149
+msgid "{first} to {last} · All day"
+msgstr "{first} to {last} · All day"
+
+#: app/src/format.rs:163
+msgid "{day} · {start}"
+msgstr "{day} · {start}"
+
+#: app/src/format.rs:168 app/src/format.rs:180
+msgid "{day} · {start} to {end}"
+msgstr "{day} · {start} to {end}"
+
+#: app/src/format.rs:174
+msgid "%-d %b %H:%M"
+msgstr "%-d %b %H:%M"
+
+#: app/src/format.rs:199 app/src/format.rs:208
+msgid "%-d %B"
+msgstr "%-d %B"
+
+#: app/src/format.rs:211
+msgid "%-d %B %Y"
+msgstr "%-d %B %Y"
+
+#: app/src/format.rs:220
+msgid "Today"
+msgstr "Today"
+
+#: app/src/format.rs:224
+msgid "%A, %-d %B"
+msgstr "%A, %-d %B"
+
+#: app/src/format.rs:225
+msgid "%A, %-d %B %Y"
+msgstr "%A, %-d %B %Y"
+
+#: app/src/format.rs:241
+msgid "{day} {time}"
+msgstr "{day} {time}"
+
+#: app/src/format.rs:317
+msgid "Blue"
+msgstr "Blue"
+
+#: app/src/format.rs:318
+msgid "Teal"
+msgstr "Teal"
+
+#: app/src/format.rs:319
+msgid "Green"
+msgstr "Green"
+
+#: app/src/format.rs:320
+msgid "Yellow"
+msgstr "Yellow"
+
+#: app/src/format.rs:321
+msgid "Orange"
+msgstr "Orange"
+
+#: app/src/format.rs:322
+msgid "Red"
+msgstr "Red"
+
+#: app/src/format.rs:323
+msgid "Pink"
+msgstr "Pink"
+
+#: app/src/format.rs:324
+msgid "Purple"
+msgstr "Purple"
+
+#: app/src/format.rs:325
+msgid "Slate"
+msgstr "Slate"
+
+#: app/src/main.rs:54
+msgid ""
+"Usage: penguin-mail [--background] [--demo] [--compose [mailto:ADDRESS]]\n"
+"\n"
+"  --version      print the version and quit\n"
+"  --background   start in the tray without opening a window\n"
+"  --demo         open sample mail in a throwaway store; nothing syncs\n"
+"  --compose      open a new message, addressed to ADDRESS when given\n"
+"  mailto:...     the same as --compose mailto:..."
+msgstr ""
+"Usage: penguin-mail [--background] [--demo] [--compose [mailto:ADDRESS]]\n"
+"\n"
+"  --version      print the version and quit\n"
+"  --background   start in the tray without opening a window\n"
+"  --demo         open sample mail in a throwaway store; nothing syncs\n"
+"  --compose      open a new message, addressed to ADDRESS when given\n"
+"  mailto:...     the same as --compose mailto:..."
+
+#: app/src/main.rs:116
+msgid "penguin-mail: unknown option {option}"
+msgstr "penguin-mail: unknown option {option}"
+
+#: app/src/main.rs:239
+msgid "Penguin Mail Could Not Start"
+msgstr "Penguin Mail Could Not Start"
+
+#: app/src/main.rs:244 app/src/ui/about.rs:148
+msgid "Report a Problem"
+msgstr "Report a Problem"
+
+#: app/src/notify.rs:49 app/src/ui/conversation.rs:336
+#: app/src/ui/conversation.rs:471 app/src/ui/window/message_menu.rs:118
+#: app/src/ui/window/shortcuts.rs:356
+msgid "Archive"
+msgstr "Archive"
+
+#: app/src/notify.rs:50 app/src/ui/conversation.rs:337
+#: app/src/ui/conversation.rs:971 app/src/ui/preferences.rs:108
+#: app/src/ui/rules.rs:281 app/src/ui/window/message_menu.rs:121
+msgid "Mark as Read"
+msgstr "Mark as Read"
+
+#: app/src/notify.rs:51 app/src/ui/conversation.rs:457
+#: app/src/ui/hide_my_email.rs:279 app/src/ui/queued.rs:58
+#: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:92
+#: app/src/ui/window/organize.rs:137
+msgid "Delete"
+msgstr "Delete"
+
+#: app/src/notify.rs:52 app/src/ui/conversation.rs:465
+#: app/src/ui/window/message_menu.rs:115 app/src/ui/window/shortcuts.rs:435
+msgid "Reply"
+msgstr "Reply"
+
+#: app/src/notify.rs:112 app/src/notify.rs:151
+msgid "{count} new message"
+msgid_plural "{count} new messages"
+msgstr[0] "{count} new message"
+msgstr[1] "{count} new messages"
+
+#: app/src/notify.rs:127 app/src/ui/window/shortcuts.rs:427
+msgid "New message"
+msgstr "New message"
+
+#: app/src/notify.rs:157
+msgid "From {senders}"
+msgstr "From {senders}"
+
+#: app/src/notify.rs:195 app/src/ui/window.rs:1892
+msgid "Open"
+msgstr "Open"
+
+#: app/src/open_thread/run/translation.rs:121
+msgid "The model sent nothing back to put in the message."
+msgstr "The model sent nothing back to put in the message."
+
+#: app/src/open_thread/run/translation.rs:125
+msgid "The model could not translate this: {reason}"
+msgstr "The model could not translate this: {reason}"
+
+#: app/src/packaging.rs:89
+msgid "Updates come from dnf"
+msgstr "Updates come from dnf"
+
+#: app/src/packaging.rs:90
+msgid "Updates come from Flathub"
+msgstr "Updates come from Flathub"
+
+#: app/src/packaging.rs:91
+msgid "Updates come from the Snap Store"
+msgstr "Updates come from the Snap Store"
+
+#: app/src/permission.rs:97
+msgid "Allow Changes to Gmail Settings"
+msgstr "Allow Changes to Gmail Settings"
+
+#: app/src/permission.rs:99
+msgid "Penguin Mail needs permission to change Gmail settings for {account}. Google asks you to confirm in your browser."
+msgstr "Penguin Mail needs permission to change Gmail settings for {account}. Google asks you to confirm in your browser."
+
+#: app/src/permission.rs:104
+msgid "Allow Penguin Mail to Delete Mail"
+msgstr "Allow Penguin Mail to Delete Mail"
+
+#: app/src/permission.rs:106
+msgid "Deleting mail for good needs one more permission for {account}. Google asks you to confirm in your browser."
+msgstr "Deleting mail for good needs one more permission for {account}. Google asks you to confirm in your browser."
+
+#: app/src/permission.rs:111
+msgid "Allow Penguin Mail to Read Your Contacts"
+msgstr "Allow Penguin Mail to Read Your Contacts"
+
+#: app/src/permission.rs:113
+msgid "Reading the contacts of {account} needs one more permission. Google asks you to confirm in your browser. Names and photos stay on this computer."
+msgstr "Reading the contacts of {account} needs one more permission. Google asks you to confirm in your browser. Names and photos stay on this computer."
+
+#: app/src/permission.rs:119
+msgid "Allow Penguin Mail to Change Your Contacts"
+msgstr "Allow Penguin Mail to Change Your Contacts"
+
+#: app/src/permission.rs:121
+msgid "The assistant needs permission to add and change the contacts of {account}. Google asks you to confirm in your browser."
+msgstr "The assistant needs permission to add and change the contacts of {account}. Google asks you to confirm in your browser."
+
+#: app/src/permission.rs:126 app/src/permission.rs:133
+msgid "Allow Penguin Mail to Use Your Calendar"
+msgstr "Allow Penguin Mail to Use Your Calendar"
+
+#: app/src/permission.rs:128
+msgid "The assistant needs permission to read and change events on the calendar for {account}. Google asks you to confirm in your browser."
+msgstr "The assistant needs permission to read and change events on the calendar for {account}. Google asks you to confirm in your browser."
+
+#: app/src/permission.rs:135
+msgid "Your reply went to the organizer as mail. With permission to change events on the calendar for {account}, the meeting is marked on your own calendar too. Google asks you to confirm in your browser."
+msgstr "Your reply went to the organiser as mail. With permission to change events on the calendar for {account}, the meeting is marked on your own calendar too. Google asks you to confirm in your browser."
+
+#: app/src/pgp.rs:110
+msgid "Add a recipient whose key gpg holds."
+msgstr "Add a recipient whose key gpg holds."
+
+#: app/src/pgp.rs:119
+msgid "gpg holds no key for {addresses}."
+msgstr "gpg holds no key for {addresses}."
+
+#: app/src/pgp.rs:136
+msgid "gpg holds no key for any of the addresses you send from."
+msgstr "gpg holds no key for any of the addresses you send from."
+
+#: app/src/pgp.rs:138
+msgid "gpg holds a key for {addresses}."
+msgstr "gpg holds a key for {addresses}."
+
+#: app/src/pgp.rs:142
+msgid "gpg holds a key for {addresses}, and none for {without}."
+msgstr "gpg holds a key for {addresses}, and none for {without}."
+
+#: app/src/pgp.rs:245
+msgid "This computer has no gpg. Install GnuPG to read or send OpenPGP mail."
+msgstr "This computer has no gpg. Install GnuPG to read or send OpenPGP mail."
+
+#: app/src/pgp.rs:248 app/src/smime.rs:257
+msgid "Could not run {program}: {reason}"
+msgstr "Could not run {program}: {reason}"
+
+#: app/src/pgp.rs:252 app/src/smime.rs:261
+msgid "Could not write a temporary file: {reason}"
+msgstr "Could not write a temporary file: {reason}"
+
+#: app/src/pgp.rs:256
+msgid "This message is encrypted to a key this computer does not hold."
+msgstr "This message is encrypted to a key this computer does not hold."
+
+#: app/src/pgp.rs:259
+msgid "gpg holds no secret key to sign as {address}."
+msgstr "gpg holds no secret key to sign as {address}."
+
+#: app/src/pgp.rs:263
+msgid "gpg holds no key it can encrypt to for {address}."
+msgstr "gpg holds no key it can encrypt to for {address}."
+
+#: app/src/pgp.rs:266
+msgid "This text holds no OpenPGP block."
+msgstr "This text holds no OpenPGP block."
+
+#: app/src/pgp.rs:267
+msgid "gpg failed: {reason}"
+msgstr "gpg failed: {reason}"
+
+#: app/src/protection.rs:123
+msgid "{smime} {pgp}"
+msgstr "{smime} {pgp}"
+
+#: app/src/protection.rs:136
+msgid "This computer has nothing to encrypt with."
+msgstr "This computer has nothing to encrypt with."
+
+#: app/src/protection.rs:143
+msgid "S/MIME names every recipient inside an encrypted message, so a blind copy would not stay blind."
+msgstr "S/MIME names every recipient inside an encrypted message, so a blind copy would not stay blind."
+
+#: app/src/protection.rs:290
+msgid "Encrypt this message to the recipients' keys"
+msgstr "Encrypt this message to the recipients' keys"
+
+#: app/src/protection.rs:291
+msgid "Encrypt this message to the recipients' certificates"
+msgstr "Encrypt this message to the recipients' certificates"
+
+#: app/src/protection.rs:317
+msgid "gpg holds no key and gpgsm no trusted certificate for {addresses}."
+msgstr "gpg holds no key and gpgsm no trusted certificate for {addresses}."
+
+#: app/src/protection.rs:325
+msgid "A message goes out under one standard or the other. {pgp} {smime}"
+msgstr "A message goes out under one standard or the other. {pgp} {smime}"
+
+#: app/src/protection.rs:585
+msgid "This key does not name {sender}, the address the message says it is from."
+msgstr "This key does not name {sender}, the address the message says it is from."
+
+#: app/src/protection.rs:589
+msgid "This certificate does not name {sender}, the address the message says it is from."
+msgstr "This certificate does not name {sender}, the address the message says it is from."
+
+#: app/src/protection.rs:598
+msgid "Signed by {signer}"
+msgstr "Signed by {signer}"
+
+#: app/src/protection.rs:604
+msgid "This message changed after it was signed"
+msgstr "This message changed after it was signed"
+
+#: app/src/protection.rs:606
+msgid "The signature of {signer} does not match what arrived."
+msgstr "The signature of {signer} does not match what arrived."
+
+#: app/src/protection.rs:613
+msgid "Signed by {signer}, whose key has expired"
+msgstr "Signed by {signer}, whose key has expired"
+
+#: app/src/protection.rs:617
+msgid "The text is as it was written, and the key behind it ran out."
+msgstr "The text is as it was written, and the key behind it ran out."
+
+#: app/src/protection.rs:623
+msgid "Signed by {signer}, whose certificate has run out"
+msgstr "Signed by {signer}, whose certificate has run out"
+
+#: app/src/protection.rs:627
+msgid "The text is as it was written, and the certificate behind it has expired."
+msgstr "The text is as it was written, and the certificate behind it has expired."
+
+#: app/src/protection.rs:633
+msgid "Signed by {signer}, who took this key back"
+msgstr "Signed by {signer}, who took this key back"
+
+#: app/src/protection.rs:637
+msgid "The owner revoked it, so it says nothing about who wrote this."
+msgstr "The owner revoked it, so it says nothing about who wrote this."
+
+#: app/src/protection.rs:643
+msgid "Signed by {signer}, whose certificate was taken back"
+msgstr "Signed by {signer}, whose certificate was taken back"
+
+#: app/src/protection.rs:647
+msgid "Whoever issued it revoked it, so it says nothing about who wrote this."
+msgstr "Whoever issued it revoked it, so it says nothing about who wrote this."
+
+#: app/src/protection.rs:653
+msgid "Signed by {signer}, and the signature has run out"
+msgstr "Signed by {signer}, and the signature has run out"
+
+#: app/src/protection.rs:657
+msgid "It carried a date to stop being good on, and that date has passed."
+msgstr "It carried a date to stop being good on, and that date has passed."
+
+#: app/src/protection.rs:662
+msgid "Signed by a key this computer does not hold"
+msgstr "Signed by a key this computer does not hold"
+
+#: app/src/protection.rs:664
+msgid "Nothing here can check it. Ask gpg for key {key}."
+msgstr "Nothing here can check it. Ask gpg for key {key}."
+
+#: app/src/protection.rs:671
+msgid "it names"
+msgstr "it names"
+
+#: app/src/protection.rs:677
+msgid "Signed by a certificate this computer does not hold"
+msgstr "Signed by a certificate this computer does not hold"
+
+#: app/src/protection.rs:679
+msgid "The message carried none either, so there is nothing here to check it against."
+msgstr "The message carried none either, so there is nothing here to check it against."
+
+#: app/src/protection.rs:685
+msgid "gpg could not check this signature"
+msgstr "gpg could not check this signature"
+
+#: app/src/protection.rs:690
+msgid "gpgsm could not check this signature"
+msgstr "gpgsm could not check this signature"
+
+#: app/src/protection.rs:713
+msgid "Encrypted, and signed by {signer}"
+msgstr "Encrypted, and signed by {signer}"
+
+#: app/src/protection.rs:722
+msgid "Encrypted. {what}"
+msgstr "Encrypted. {what}"
+
+#: app/src/protection.rs:728
+msgid "This message arrived encrypted"
+msgstr "This message arrived encrypted"
+
+#: app/src/protection.rs:730
+msgid "Nobody signed it, so it says nothing about who sent it."
+msgstr "Nobody signed it, so it says nothing about who sent it."
+
+#: app/src/protection.rs:738
+msgid "{detail} {files}"
+msgstr "{detail} {files}"
+
+#: app/src/protection.rs:752
+msgid "This message is encrypted to a key you do not hold"
+msgstr "This message is encrypted to a key you do not hold"
+
+#: app/src/protection.rs:754
+msgid "Whoever sent it used a key gpg has no secret half of."
+msgstr "Whoever sent it used a key gpg has no secret half of."
+
+#: app/src/protection.rs:759
+msgid "This message is encrypted to a certificate you do not hold"
+msgstr "This message is encrypted to a certificate you do not hold"
+
+#: app/src/protection.rs:761
+msgid "Whoever sent it used a certificate gpgsm has no secret key for."
+msgstr "Whoever sent it used a certificate gpgsm has no secret key for."
+
+#: app/src/protection.rs:767
+msgid "This message says it is OpenPGP and is not"
+msgstr "This message says it is OpenPGP and is not"
+
+#: app/src/protection.rs:768
+msgid "This message says it is S/MIME and is not"
+msgstr "This message says it is S/MIME and is not"
+
+#: app/src/protection.rs:771
+msgid "Its parts are not where a signed or encrypted message keeps them."
+msgstr "Its parts are not where a signed or encrypted message keeps them."
+
+#: app/src/protection.rs:777
+msgid "gpg could not open this message"
+msgstr "gpg could not open this message"
+
+#: app/src/protection.rs:778
+msgid "gpgsm could not open this message"
+msgstr "gpgsm could not open this message"
+
+#: app/src/protection.rs:791
+msgid "You marked this key as one not to trust."
+msgstr "You marked this key as one not to trust."
+
+#: app/src/protection.rs:792
+msgid "This is one of your own keys."
+msgstr "This is one of your own keys."
+
+#: app/src/protection.rs:793
+msgid "You have vouched for this key."
+msgstr "You have vouched for this key."
+
+#: app/src/protection.rs:795
+msgid "Only people you partly trust have vouched for this key, so it is not fully checked."
+msgstr "Only people you partly trust have vouched for this key, so it is not fully checked."
+
+#: app/src/protection.rs:798
+msgid "Nobody has vouched for this key, so it names no one."
+msgstr "Nobody has vouched for this key, so it names no one."
+
+#: app/src/protection.rs:801
+msgid "Its certificate leads back to an authority you trust, but this computer could not check whether it was revoked."
+msgstr "Its certificate leads back to an authority you trust, but this computer could not check whether it was revoked."
+
+#: app/src/protection.rs:805
+msgid "Its certificate leads back to an authority you trust."
+msgstr "Its certificate leads back to an authority you trust."
+
+#: app/src/protection.rs:808
+msgid "Its certificate leads back to nobody you trust, so it names no one."
+msgstr "Its certificate leads back to nobody you trust, so it names no one."
+
+#: app/src/protection.rs:811
+msgid "Nothing here says who that certificate belongs to."
+msgstr "Nothing here says who that certificate belongs to."
+
+#: app/src/protection.rs:847
+msgid "key {key}"
+msgstr "key {key}"
+
+#: app/src/protection.rs:850
+msgid "a key gpg would not name"
+msgstr "a key gpg would not name"
+
+#: app/src/protection.rs:851
+msgid "a certificate gpgsm would not name"
+msgstr "a certificate gpgsm would not name"
+
+#: app/src/protection.rs:862
+msgid "It carries a file, kept in this window only."
+msgstr "It carries a file, kept in this window only."
+
+#: app/src/protection.rs:864
+msgid "It carries {count} file, kept in this window only."
+msgid_plural "It carries {count} files, kept in this window only."
+msgstr[0] "It carries {count} file, kept in this window only."
+msgstr[1] "It carries {count} files, kept in this window only."
+
+#: app/src/protection.rs:950
+msgid "{names} or {last}"
+msgstr "{names} or {last}"
+
+#: app/src/protection.rs:962
+msgid "{names} and {last}"
+msgstr "{names} and {last}"
+
+#: app/src/protection/draft.rs:96 app/src/protection/draft.rs:162
+msgid "Draft not saved: {reason}"
+msgstr "Draft not saved: {reason}"
+
+#: app/src/protection/draft.rs:124
+msgid "Draft not saved. An encrypted message waits in Drafts encrypted to your own key, and this computer holds no key or certificate for {address}."
+msgstr "Draft not saved. An encrypted message waits in Drafts encrypted to your own key, and this computer holds no key or certificate for {address}."
+
+#: app/src/protection/draft.rs:143
+msgid "That account is not connected."
+msgstr "That account is not connected."
+
+#: app/src/protection/draft.rs:156 app/src/ui/vacation.rs:144
+msgid "Could not save: {reason}"
+msgstr "Could not save: {reason}"
+
+#: app/src/protection/draft.rs:200 app/src/ui/window.rs:1810
+msgid "Could not open the draft: {reason}"
+msgstr "Could not open the draft: {reason}"
+
+#: app/src/render.rs:126
+msgid "{count} message"
+msgid_plural "{count} messages"
+msgstr[0] "{count} message"
+msgstr[1] "{count} messages"
+
+#: app/src/render.rs:168 app/src/ui/thread_row.rs:263
+msgid "Unknown sender"
+msgstr "Unknown sender"
+
+#: app/src/render.rs:180
+msgid "Show or hide this message"
+msgstr "Show or hide this message"
+
+#: app/src/render.rs:182 app/src/ui/contact_card.rs:43
+msgid "Contact"
+msgstr "Contact"
+
+#: app/src/render.rs:187
+msgid "Contact card for {person}"
+msgstr "Contact card for {person}"
+
+#: app/src/render.rs:245
+msgid "Loading…"
+msgstr "Loading…"
+
+#: app/src/render.rs:250
+msgid "This message could not be loaded: {reason}"
+msgstr "This message could not be loaded: {reason}"
+
+#: app/src/render.rs:284
+msgid "to {recipients}"
+msgstr "to {recipients}"
+
+#: app/src/render.rs:306
+msgid "from"
+msgstr "from"
+
+#: app/src/render.rs:317
+msgid "to"
+msgstr "to"
+
+#: app/src/render.rs:319
+msgid "cc"
+msgstr "cc"
+
+#: app/src/render.rs:321
+msgid "date"
+msgstr "date"
+
+#: app/src/render.rs:322
+msgid "subject"
+msgstr "subject"
+
+#: app/src/render.rs:324
+msgid "mailed-by"
+msgstr "mailed-by"
+
+#: app/src/render.rs:327
+msgid "signed-by"
+msgstr "signed-by"
+
+#: app/src/render.rs:331
+msgid "security"
+msgstr "security"
+
+#: app/src/render.rs:333
+msgid "Standard encryption (TLS)"
+msgstr "Standard encryption (TLS)"
+
+#: app/src/render.rs:338
+msgid "Not encrypted in transit"
+msgstr "Not encrypted in transit"
+
+#: app/src/render.rs:375 app/src/ui/composer/mod.rs:1377
+msgid "{count} attachment"
+msgid_plural "{count} attachments"
+msgstr[0] "{count} attachment"
+msgstr[1] "{count} attachments"
+
+#: app/src/render.rs:407
+msgid "Quick Look"
+msgstr "Quick Look"
+
+#: app/src/render.rs:408 app/src/ui/window/attachments.rs:319
+#: app/src/ui/window/attachments.rs:325
+msgid "Save to Downloads"
+msgstr "Save to Downloads"
+
+#: app/src/render.rs:410
+msgid "Open {file}, {size}"
+msgstr "Open {file}, {size}"
+
+#: app/src/render.rs:417
+msgid "Save {file} to Downloads"
+msgstr "Save {file} to Downloads"
+
+#: app/src/render.rs:424
+msgid "Save All ({count})"
+msgid_plural "Save All ({count})"
+msgstr[0] "Save All ({count})"
+msgstr[1] "Save All ({count})"
+
+#: app/src/render.rs:435
+msgid "Save every attachment to a folder"
+msgstr "Save every attachment to a folder"
+
+#: app/src/render.rs:499
+msgid "undisclosed recipients"
+msgstr "undisclosed recipients"
+
+#: app/src/render.rs:502
+msgid "{named}, and {count} other"
+msgid_plural "{named}, and {count} others"
+msgstr[0] "{named}, and {count} other"
+msgstr[1] "{named}, and {count} others"
+
+#: app/src/render.rs:515
+msgid "me"
+msgstr "me"
+
+#: app/src/rules.rs:73
+msgid "From {address}"
+msgstr "From {address}"
+
+#: app/src/rules.rs:76
+msgid "To {address}"
+msgstr "To {address}"
+
+#: app/src/rules.rs:80
+msgid "Subject has “{words}”"
+msgstr "Subject has “{words}”"
+
+#: app/src/rules.rs:85
+msgid "Has “{words}”"
+msgstr "Has “{words}”"
+
+#: app/src/rules.rs:89
+msgid "Doesn't have “{words}”"
+msgstr "Doesn't have “{words}”"
+
+#: app/src/rules.rs:94
+msgid "Has an attachment"
+msgstr "Has an attachment"
+
+#: app/src/rules.rs:97
+msgid "All mail"
+msgstr "All mail"
+
+#: app/src/rules.rs:117
+msgid "Delete it"
+msgstr "Delete it"
+
+#: app/src/rules.rs:119 app/src/ui/rules.rs:280
+msgid "Skip the Inbox"
+msgstr "Skip the Inbox"
+
+#: app/src/rules.rs:130
+msgid "Apply {label}"
+msgstr "Apply {label}"
+
+#: app/src/rules.rs:139
+msgid "Star it"
+msgstr "Star it"
+
+#: app/src/rules.rs:142
+msgid "Mark as read"
+msgstr "Mark as read"
+
+#: app/src/rules.rs:145
+msgid "Mark as important"
+msgstr "Mark as important"
+
+#: app/src/rules.rs:148
+msgid "Never mark as important"
+msgstr "Never mark as important"
+
+#: app/src/rules.rs:151
+msgid "Never send to Spam"
+msgstr "Never send to Spam"
+
+#: app/src/rules.rs:154
+msgid "Forward to {address}"
+msgstr "Forward to {address}"
+
+#: app/src/rules.rs:157
+msgid "Nothing"
+msgstr "Nothing"
+
+#: app/src/search.rs:31
+msgid "Subject contains “{words}”"
+msgstr "Subject contains “{words}”"
+
+#: app/src/search.rs:38
+msgid "From {person}"
+msgstr "From {person}"
+
+#: app/src/search.rs:45
+msgid "To {person}"
+msgstr "To {person}"
+
+#: app/src/search.rs:68
+msgid "In {label}"
+msgstr "In {label}"
+
+#: app/src/settings/mod.rs:164 app/src/settings/mod.rs:339
+#: app/src/settings/mod.rs:614 app/src/ui/assistant_mcp_prefs.rs:184
+msgid "Off"
+msgstr "Off"
+
+#: app/src/settings/mod.rs:165
+msgid "Local server"
+msgstr "Local server"
+
+#: app/src/settings/mod.rs:166
+msgid "Anthropic API"
+msgstr "Anthropic API"
+
+#: app/src/settings/mod.rs:167
+msgid "Claude subscription"
+msgstr "Claude subscription"
+
+#: app/src/settings/mod.rs:192 app/src/ui/assistant.rs:99
+msgid "Assistant"
+msgstr "Assistant"
+
+#: app/src/settings/mod.rs:193
+msgid "Translation"
+msgstr "Translation"
+
+#. The assistant's running label says "Unsubscribing" too, an"
+#. means the act rather than the feature, which Portuguese
+#. words differently.
+#: app/src/settings/mod.rs:197
+msgctxt "ai feature"
+msgid "Unsubscribing"
+msgstr "Unsubscribing"
+
+#: app/src/settings/mod.rs:203
+msgid "Answers questions and acts on your mail"
+msgstr "Answers questions and acts on your mail"
+
+#: app/src/settings/mod.rs:204
+msgid "Translates a message when you ask"
+msgstr "Translates a message when you ask"
+
+#: app/src/settings/mod.rs:206
+msgid "Reads a newsletter's unsubscribe page when the rules cannot"
+msgstr "Reads a newsletter's unsubscribe page when the rules cannot"
+
+#: app/src/settings/mod.rs:244
+msgid "Same as the Assistant"
+msgstr "Same as the Assistant"
+
+#: app/src/settings/mod.rs:340
+msgid "Claude's own only"
+msgstr "Claude's own only"
+
+#: app/src/settings/mod.rs:341
+msgid "Brave Search"
+msgstr "Brave Search"
+
+#: app/src/settings/mod.rs:342
+msgid "SearXNG"
+msgstr "SearXNG"
+
+#: app/src/settings/mod.rs:473
+msgid "Rich text"
+msgstr "Rich text"
+
+#: app/src/settings/mod.rs:474
+msgid "Markdown"
+msgstr "Markdown"
+
+#: app/src/settings/mod.rs:521
+msgid "When opened"
+msgstr "When opened"
+
+#: app/src/settings/mod.rs:522
+msgid "After 2 seconds"
+msgstr "After 2 seconds"
+
+#: app/src/settings/mod.rs:523
+msgid "Only when I choose"
+msgstr "Only when I choose"
+
+#: app/src/settings/mod.rs:539
+msgid "Ask each time"
+msgstr "Ask each time"
+
+#: app/src/settings/mod.rs:540
+msgid "Always load"
+msgstr "Always load"
+
+#: app/src/settings/mod.rs:574
+msgid "Small"
+msgstr "Small"
+
+#: app/src/settings/mod.rs:575
+msgid "Default"
+msgstr "Default"
+
+#: app/src/settings/mod.rs:576
+msgid "Large"
+msgstr "Large"
+
+#: app/src/settings/mod.rs:577
+msgid "Larger"
+msgstr "Larger"
+
+#: app/src/settings/mod.rs:615
+msgid "5 seconds"
+msgstr "5 seconds"
+
+#: app/src/settings/mod.rs:616
+msgid "10 seconds"
+msgstr "10 seconds"
+
+#: app/src/settings/mod.rs:617
+msgid "20 seconds"
+msgstr "20 seconds"
+
+#: app/src/settings/mod.rs:618
+msgid "30 seconds"
+msgstr "30 seconds"
+
+#: app/src/settings/mod.rs:635
+msgid "Follow system"
+msgstr "Follow system"
+
+#: app/src/settings/mod.rs:636
+msgid "Light"
+msgstr "Light"
+
+#: app/src/settings/mod.rs:637
+msgid "Dark"
+msgstr "Dark"
+
+#: app/src/settings/mod.rs:647
+msgid "Every second"
+msgid_plural "Every {count} seconds"
+msgstr[0] "Every second"
+msgstr[1] "Every {count} seconds"
+
+#: app/src/settings/mod.rs:655
+msgid "Every minute"
+msgid_plural "Every {count} minutes"
+msgstr[0] "Every minute"
+msgstr[1] "Every {count} minutes"
+
+#: app/src/settings/mod.rs:672
+msgid "2 weeks"
+msgstr "2 weeks"
+
+#: app/src/settings/mod.rs:673
+msgid "30 days"
+msgstr "30 days"
+
+#: app/src/settings/mod.rs:674
+msgid "90 days"
+msgstr "90 days"
+
+#: app/src/settings/mod.rs:675
+msgid "1 year"
+msgstr "1 year"
+
+#: app/src/settings/mod.rs:682
+msgid "256 MB"
+msgstr "256 MB"
+
+#: app/src/settings/mod.rs:683
+msgid "1 GB"
+msgstr "1 GB"
+
+#: app/src/settings/mod.rs:684
+msgid "4 GB"
+msgstr "4 GB"
+
+#: app/src/smime.rs:93
+msgid "Add a recipient whose certificate gpgsm trusts."
+msgstr "Add a recipient whose certificate gpgsm trusts."
+
+#: app/src/smime.rs:103
+msgid "gpgsm holds no trusted certificate for {addresses}. A certificate that only arrived in mail does not count."
+msgstr "gpgsm holds no trusted certificate for {addresses}. A certificate that only arrived in mail does not count."
+
+#: app/src/smime.rs:123
+msgid "gpgsm holds no certificate for any of the addresses you send from."
+msgstr "gpgsm holds no certificate for any of the addresses you send from."
+
+#: app/src/smime.rs:125
+msgid "gpgsm holds a certificate for {addresses}."
+msgstr "gpgsm holds a certificate for {addresses}."
+
+#: app/src/smime.rs:129
+msgid "gpgsm holds a certificate for {addresses}, and none for {without}."
+msgstr "gpgsm holds a certificate for {addresses}, and none for {without}."
+
+#: app/src/smime.rs:254
+msgid "This computer has no gpgsm. Install GnuPG to read or send S/MIME mail."
+msgstr "This computer has no gpgsm. Install GnuPG to read or send S/MIME mail."
+
+#: app/src/smime.rs:265
+msgid "This message is encrypted to a certificate this computer does not hold."
+msgstr "This message is encrypted to a certificate this computer does not hold."
+
+#: app/src/smime.rs:268
+msgid "gpgsm holds no secret key to sign as {address}."
+msgstr "gpgsm holds no secret key to sign as {address}."
+
+#: app/src/smime.rs:272
+msgid "gpgsm holds no trusted certificate it can encrypt to for {address}."
+msgstr "gpgsm holds no trusted certificate it can encrypt to for {address}."
+
+#: app/src/smime.rs:275
+msgid "This part holds no S/MIME data."
+msgstr "This part holds no S/MIME data."
+
+#: app/src/smime.rs:277
+msgid "gpgsm failed: {reason}"
+msgstr "gpgsm failed: {reason}"
+
+#: app/src/translation.rs:76
+msgid "Portuguese"
+msgstr "Portuguese"
+
+#: app/src/translation.rs:77
+msgid "Spanish"
+msgstr "Spanish"
+
+#: app/src/translation.rs:78
+msgid "French"
+msgstr "French"
+
+#: app/src/translation.rs:79
+msgid "German"
+msgstr "German"
+
+#: app/src/translation.rs:80
+msgid "Italian"
+msgstr "Italian"
+
+#: app/src/translation.rs:81
+msgid "Dutch"
+msgstr "Dutch"
+
+#: app/src/translation.rs:82
+msgid "Greek"
+msgstr "Greek"
+
+#: app/src/translation.rs:83
+msgid "Hebrew"
+msgstr "Hebrew"
+
+#: app/src/translation.rs:84
+msgid "Japanese"
+msgstr "Japanese"
+
+#: app/src/translation.rs:85
+msgid "Korean"
+msgstr "Korean"
+
+#: app/src/translation.rs:86
+msgid "Chinese"
+msgstr "Chinese"
+
+#: app/src/translation.rs:87
+msgid "English"
+msgstr "English"
+
+#: app/src/translation.rs:843
+msgid "The message goes to {host}, for {model} to read."
+msgstr "The message goes to {host}, for {model} to read."
+
+#: app/src/translation.rs:847
+msgid "The message goes to {model} on this computer and no further."
+msgstr "The message goes to {model} on this computer and no further."
+
+#: app/src/translation.rs:852
+msgid "The message goes to Anthropic, for {model} to read."
+msgstr "The message goes to Anthropic, for {model} to read."
+
+#: app/src/translation.rs:856
+msgid "The message goes to Anthropic, for Claude to read through your subscription."
+msgstr "The message goes to Anthropic, for Claude to read through your subscription."
+
+#: app/src/tray.rs:44
+msgid "No unread mail"
+msgstr "No unread mail"
+
+#: app/src/tray.rs:46
+msgid "{count} unread message"
+msgid_plural "{count} unread messages"
+msgstr[0] "{count} unread message"
+msgstr[1] "{count} unread messages"
+
+#: app/src/tray.rs:60 app/src/ui/sidebar.rs:525
+msgid "{account}, {count} unread message"
+msgid_plural "{account}, {count} unread messages"
+msgstr[0] "{account}, {count} unread message"
+msgstr[1] "{account}, {count} unread messages"
+
+#: app/src/tray.rs:96 app/src/tray.rs:113
+msgid "Penguin Mail: {summary}"
+msgstr "Penguin Mail: {summary}"
+
+#: app/src/tray.rs:157
+msgid "Open Penguin Mail"
+msgstr "Open Penguin Mail"
+
+#: app/src/tray.rs:158 app/src/ui/composer/mod.rs:195
+#: app/src/ui/composer/mod.rs:435 app/src/ui/composer/mod.rs:951
+#: app/src/ui/contact_card.rs:146
+msgid "New Message"
+msgstr "New Message"
+
+#: app/src/tray.rs:159 app/src/ui/sidebar.rs:741 app/src/ui/window.rs:2185
+msgid "Check for Mail"
+msgstr "Check for Mail"
+
+#: app/src/tray.rs:163 app/src/update/mod.rs:98
+msgid "Install Update {version}"
+msgstr "Install Update {version}"
+
+#: app/src/tray.rs:166
+msgid "What's New in {version}"
+msgstr "What's New in {version}"
+
+#: app/src/tray.rs:170 app/src/ui/about.rs:87 app/src/ui/about.rs:194
+#: app/src/ui/about.rs:202 app/src/ui/about.rs:209
+#: app/src/ui/preferences.rs:663 app/src/update/mod.rs:108
+msgid "Check for Updates"
+msgstr "Check for Updates"
+
+#: app/src/tray.rs:175 app/src/ui/window.rs:2197
+#: app/src/ui/window/shortcuts.rs:508
+msgid "Quit"
+msgstr "Quit"
+
+#: app/src/ui/about.rs:60
+msgid "Version {version}"
+msgstr "Version {version}"
+
+#: app/src/ui/about.rs:77
+msgid "A fast, private Gmail client for the GNOME desktop. Mail stays on your computer and your own Google Cloud project."
+msgstr "A fast, private Gmail client for the GNOME desktop. Mail stays on your computer and your own Google Cloud project."
+
+#: app/src/ui/about.rs:142
+msgid "What's New"
+msgstr "What's New"
+
+#: app/src/ui/about.rs:146
+msgid "Website"
+msgstr "Website"
+
+#: app/src/ui/about.rs:153
+msgid "License"
+msgstr "Licence"
+
+#: app/src/ui/about.rs:170 app/src/ui/window.rs:2196
+msgid "About Penguin Mail"
+msgstr "About Penguin Mail"
+
+#: app/src/ui/about.rs:200
+msgid "Checking…"
+msgstr "Checking…"
+
+#: app/src/ui/about.rs:206
+msgid "Penguin Mail is up to date"
+msgstr "Penguin Mail is up to date"
+
+#: app/src/ui/about.rs:214
+msgid "Could not reach GitHub. Check your connection and try again."
+msgstr "Could not reach GitHub. Check your connection and try again."
+
+#: app/src/ui/about.rs:219
+msgid "Install {version}"
+msgstr "Install {version}"
+
+#: app/src/ui/about.rs:226
+msgid "Version {version} is available"
+msgstr "Version {version} is available"
+
+#: app/src/ui/about.rs:231
+msgid "Installing…"
+msgstr "Installing…"
+
+#: app/src/ui/about.rs:236
+msgid "Installing version {version}"
+msgstr "Installing version {version}"
+
+#: app/src/ui/about.rs:241 app/src/update/mod.rs:104
+msgid "Restart to Update"
+msgstr "Restart to Update"
+
+#: app/src/ui/about.rs:246
+msgid "Version {version} is installed"
+msgstr "Version {version} is installed"
+
+#: app/src/ui/about.rs:251 app/src/update/mod.rs:137
+msgid "Show Log"
+msgstr "Show Log"
+
+#: app/src/ui/about.rs:256 app/src/update/mod.rs:134
+msgid "The update to {version} failed"
+msgstr "The update to {version} failed"
+
+#: app/src/ui/assistant.rs:31
+msgid "Summarize this conversation"
+msgstr "Summarise this conversation"
+
+#: app/src/ui/assistant.rs:32
+msgid "What needs a reply today?"
+msgstr "What needs a reply today?"
+
+#: app/src/ui/assistant.rs:33
+msgid "Archive newsletters older than a week"
+msgstr "Archive newsletters older than a week"
+
+#: app/src/ui/assistant.rs:34
+msgid "Set an out-of-office reply for next week"
+msgstr "Set an out-of-office reply for next week"
+
+#: app/src/ui/assistant.rs:35
+msgid "Draft a reply to the open conversation"
+msgstr "Draft a reply to the open conversation"
+
+#: app/src/ui/assistant.rs:102 app/src/ui/assistant.rs:104
+msgid "New Chat"
+msgstr "New Chat"
+
+#: app/src/ui/assistant.rs:127
+msgid "Ask about your mail, or tell me what to tidy. I can search, summarize, sort, draft, and change settings."
+msgstr "Ask about your mail, or tell me what to tidy. I can search, summarise, sort, draft, and change settings."
+
+#: app/src/ui/assistant.rs:151
+msgid "Ask Penguin Mail…"
+msgstr "Ask Penguin Mail…"
+
+#: app/src/ui/assistant.rs:156 app/src/ui/assistant.rs:160
+#: app/src/ui/assistant.rs:446 app/src/ui/composer/mod.rs:212
+#: app/src/ui/window/shortcuts.rs:456
+msgid "Send"
+msgstr "Send"
+
+#: app/src/ui/assistant.rs:159
+msgid "Ask Penguin Mail"
+msgstr "Ask Penguin Mail"
+
+#: app/src/ui/assistant.rs:175
+msgid "Choose a Model"
+msgstr "Choose a Model"
+
+#: app/src/ui/assistant.rs:181
+msgid "Set Up the Assistant"
+msgstr "Set Up the Assistant"
+
+#: app/src/ui/assistant.rs:183
+msgid "Use a local model from LM Studio, Ollama, or Unsloth, an Anthropic API key, or your Claude subscription."
+msgstr "Use a local model from LM Studio, Ollama, or Unsloth, an Anthropic API key, or your Claude subscription."
+
+#: app/src/ui/assistant.rs:445
+msgid "Stop"
+msgstr "Stop"
+
+#: app/src/ui/assistant.rs:550
+msgid "Don't Allow"
+msgstr "Don't Allow"
+
+#: app/src/ui/assistant.rs:552
+msgid "Allow"
+msgstr "Allow"
+
+#: app/src/ui/assistant.rs:556
+msgid "Always Allow"
+msgstr "Always Allow"
+
+#: app/src/ui/assistant.rs:592
+msgid "Allowed"
+msgstr "Allowed"
+
+#: app/src/ui/assistant.rs:593
+msgid "Always allowed"
+msgstr "Always allowed"
+
+#: app/src/ui/assistant.rs:594
+msgid "Not allowed"
+msgstr "Not allowed"
+
+#: app/src/ui/assistant.rs:834
+msgid "Result"
+msgstr "Result"
+
+#: app/src/ui/assistant.rs:842
+msgid "Input"
+msgstr "Input"
+
+#: app/src/ui/assistant.rs:920
+msgid "Running"
+msgstr "Running"
+
+#: app/src/ui/assistant.rs:921 app/src/ui/hide_my_email.rs:450
+msgid "Done"
+msgstr "Done"
+
+#: app/src/ui/assistant.rs:922
+msgid "Failed"
+msgstr "Failed"
+
+#: app/src/ui/assistant_mcp_prefs.rs:26
+msgid "MCP Servers"
+msgstr "MCP Servers"
+
+#: app/src/ui/assistant_mcp_prefs.rs:28
+msgid "Tools from servers you add. The assistant asks before each call, unless you choose Always Allow. A server gets what the assistant sends it."
+msgstr "Tools from servers you add. The assistant asks before each call, unless you choose Always Allow. A server gets what the assistant sends it."
+
+#: app/src/ui/assistant_mcp_prefs.rs:36 app/src/ui/assistant_mcp_prefs.rs:38
+#: app/src/ui/assistant_mcp_prefs.rs:361
+msgid "Add Server"
+msgstr "Add Server"
+
+#: app/src/ui/assistant_mcp_prefs.rs:105
+msgid "Use {server}"
+msgstr "Use {server}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:111
+msgid "Edit"
+msgstr "Edit"
+
+#: app/src/ui/assistant_mcp_prefs.rs:115
+msgid "Edit {server}"
+msgstr "Edit {server}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/composer/mod.rs:1413
+#: app/src/ui/composer/recipients.rs:304 app/src/ui/window.rs:2020
+msgid "Remove"
+msgstr "Remove"
+
+#: app/src/ui/assistant_mcp_prefs.rs:125
+msgid "Remove {server}"
+msgstr "Remove {server}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:153
+msgid "Removed {server}"
+msgstr "Removed {server}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:223
+msgid "Starts when the assistant needs it"
+msgstr "Starts when the assistant needs it"
+
+#: app/src/ui/assistant_mcp_prefs.rs:224
+msgid "Starting…"
+msgstr "Starting…"
+
+#: app/src/ui/assistant_mcp_prefs.rs:226
+msgid "Connected, {count} tool"
+msgid_plural "Connected, {count} tools"
+msgstr[0] "Connected, {count} tool"
+msgstr[1] "Connected, {count} tools"
+
+#: app/src/ui/assistant_mcp_prefs.rs:232
+msgid "Could not connect: {reason}"
+msgstr "Could not connect: {reason}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:249
+msgid "A command runs on this computer and talks over its input and output, as in npx -y @modelcontextprotocol/server-filesystem ~/Documents. Put NAME=value in front for the environment. A URL reaches a server over HTTP."
+msgstr "A command runs on this computer and talks over its input and output, as in npx -y @modelcontextprotocol/server-filesystem ~/Documents. Put NAME=value in front for the environment. A URL reaches a server over HTTP."
+
+#: app/src/ui/assistant_mcp_prefs.rs:254 app/src/ui/composer/mod.rs:1921
+#: app/src/ui/smart_editor.rs:37 app/src/ui/templates.rs:190
+msgid "Name"
+msgstr "Name"
+
+#: app/src/ui/assistant_mcp_prefs.rs:255
+msgid "Command"
+msgstr "Command"
+
+#: app/src/ui/assistant_mcp_prefs.rs:255 app/src/ui/assistant_mcp_prefs.rs:263
+msgid "URL"
+msgstr "URL"
+
+#: app/src/ui/assistant_mcp_prefs.rs:257
+msgid "Connect With"
+msgstr "Connect With"
+
+#: app/src/ui/assistant_mcp_prefs.rs:261
+msgid "Command Line"
+msgstr "Command Line"
+
+#: app/src/ui/assistant_mcp_prefs.rs:265
+msgid "Bearer Token (Optional)"
+msgstr "Bearer Token (Optional)"
+
+#: app/src/ui/assistant_mcp_prefs.rs:268
+msgid "Test the Server"
+msgstr "Test the Server"
+
+#: app/src/ui/assistant_mcp_prefs.rs:272 app/src/ui/assistant_prefs.rs:257
+#: app/src/ui/assistant_web_prefs.rs:59
+msgid "Test"
+msgstr "Test"
+
+#: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/composer/mod.rs:1926
+#: app/src/ui/smart_editor.rs:144 app/src/ui/templates.rs:233
+#: app/src/ui/vacation.rs:41 app/src/ui/window/arrange.rs:132
+msgid "Save"
+msgstr "Save"
+
+#: app/src/ui/assistant_mcp_prefs.rs:343
+msgid "Add"
+msgstr "Add"
+
+#: app/src/ui/assistant_mcp_prefs.rs:347 app/src/ui/composer/mod.rs:1245
+#: app/src/ui/composer/mod.rs:1314 app/src/ui/composer/mod.rs:1632
+#: app/src/ui/composer/mod.rs:1926 app/src/ui/confirm.rs:29
+#: app/src/ui/smart_editor.rs:150 app/src/ui/templates.rs:239
+#: app/src/ui/unsubscribe.rs:95 app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
+#: app/src/ui/window/arrange.rs:132 app/src/ui/window/images.rs:101
+#: app/src/ui/window/organize.rs:53 app/src/ui/window/organize.rs:101
+msgid "Cancel"
+msgstr "Cancel"
+
+#: app/src/ui/assistant_mcp_prefs.rs:359
+msgid "Edit Server"
+msgstr "Edit Server"
+
+#: app/src/ui/assistant_mcp_prefs.rs:382
+msgid "Give the server a short name of letters, digits, - and _"
+msgstr "Give the server a short name of letters, digits, - and _"
+
+#: app/src/ui/assistant_mcp_prefs.rs:391
+msgid "Another server has that name"
+msgstr "Another server has that name"
+
+#: app/src/ui/assistant_mcp_prefs.rs:396
+msgid "Enter a URL that starts with http:// or https://"
+msgstr "Enter a URL that starts with http:// or https://"
+
+#: app/src/ui/assistant_mcp_prefs.rs:402
+msgid "The command line does not read: {problem}"
+msgstr "The command line does not read: {problem}"
+
+#: app/src/ui/assistant_mcp_prefs.rs:436
+msgid "Connecting…"
+msgstr "Connecting…"
+
+#: app/src/ui/assistant_prefs.rs:24
+msgid "AI"
+msgstr "AI"
+
+#: app/src/ui/assistant_prefs.rs:30
+msgid "Connections"
+msgstr "Connections"
+
+#: app/src/ui/assistant_prefs.rs:32
+msgid "A local server is LM Studio, Ollama, or any server with OpenAI's API. Local models keep your mail on this computer. With Anthropic or a Claude subscription, what a feature reads goes to Anthropic."
+msgstr "A local server is LM Studio, Ollama, or any server with OpenAI's API. Local models keep your mail on this computer. With Anthropic or a Claude subscription, what a feature reads goes to Anthropic."
+
+#: app/src/ui/assistant_prefs.rs:40
+msgid "Server Address"
+msgstr "Server Address"
+
+#: app/src/ui/assistant_prefs.rs:45
+msgid "API Key (Optional)"
+msgstr "API Key (Optional)"
+
+#: app/src/ui/assistant_prefs.rs:50
+msgid "Anthropic API Key"
+msgstr "Anthropic API Key"
+
+#: app/src/ui/assistant_prefs.rs:73
+msgid "Uses your Claude subscription through {path}"
+msgstr "Uses your Claude subscription through {path}"
+
+#: app/src/ui/assistant_prefs.rs:76
+msgid "Not found. Install Claude Code and sign in by running claude once."
+msgstr "Not found. Install Claude Code and sign in by running claude once."
+
+#: app/src/ui/assistant_prefs.rs:101
+msgid "Removed the key"
+msgstr "Removed the key"
+
+#: app/src/ui/assistant_prefs.rs:103
+msgid "Saved in the keyring"
+msgstr "Saved in the keyring"
+
+#: app/src/ui/assistant_prefs.rs:110
+msgid "Key saved in the keyring"
+msgstr "Key saved in the keyring"
+
+#: app/src/ui/assistant_prefs.rs:112
+msgid "No key saved"
+msgstr "No key saved"
+
+#: app/src/ui/assistant_prefs.rs:126
+msgid "Anthropic API Key (Saved)"
+msgstr "Anthropic API Key (Saved)"
+
+#: app/src/ui/assistant_prefs.rs:130
+msgid "Used For"
+msgstr "Used For"
+
+#: app/src/ui/assistant_prefs.rs:132
+msgid "Each feature sends what it reads to the model chosen for it."
+msgstr "Each feature sends what it reads to the model chosen for it."
+
+#: app/src/ui/assistant_prefs.rs:151
+msgid "Safety"
+msgstr "Safety"
+
+#: app/src/ui/assistant_prefs.rs:154
+msgid "Ask Before Acting"
+msgstr "Ask Before Acting"
+
+#: app/src/ui/assistant_prefs.rs:156
+msgid "Approve each message the assistant sends and each change to Gmail settings, such as automatic replies and rules"
+msgstr "Approve each message the assistant sends and each change to Gmail settings, such as automatic replies and rules"
+
+#: app/src/ui/assistant_prefs.rs:177 app/src/ui/conversation.rs:559
+#: app/src/ui/window/detached.rs:56
+msgid "Conversation"
+msgstr "Conversation"
+
+#: app/src/ui/assistant_prefs.rs:180
+msgid "Show Details Expanded"
+msgstr "Show Details Expanded"
+
+#: app/src/ui/assistant_prefs.rs:182
+msgid "Open the model's thinking and each tool it runs as they appear"
+msgstr "Open the model's thinking and each tool it runs as they appear"
+
+#: app/src/ui/assistant_prefs.rs:202
+msgid "Always Allowed"
+msgstr "Always Allowed"
+
+#: app/src/ui/assistant_prefs.rs:204
+msgid "Tools from outside sources that run without asking. Remove one to be asked again next time."
+msgstr "Tools from outside sources that run without asking. Remove one to be asked again next time."
+
+#: app/src/ui/assistant_prefs.rs:220
+msgid "Ask Again"
+msgstr "Ask Again"
+
+#: app/src/ui/assistant_prefs.rs:224
+msgid "Ask again before {tool}"
+msgstr "Ask again before {tool}"
+
+#: app/src/ui/assistant_prefs.rs:261
+msgid "Test the Connection"
+msgstr "Test the Connection"
+
+#: app/src/ui/assistant_prefs.rs:286 app/src/ui/assistant_web_prefs.rs:90
+msgid "No answer: {reason}"
+msgstr "No answer: {reason}"
+
+#: app/src/ui/assistant_prefs.rs:346
+msgid "Connection"
+msgstr "Connection"
+
+#: app/src/ui/assistant_prefs.rs:492
+msgid "Claude Code's own default"
+msgstr "Claude Code's own default"
+
+#: app/src/ui/assistant_prefs.rs:500
+msgid "Model"
+msgstr "Model"
+
+#: app/src/ui/assistant_prefs.rs:519 app/src/ui/assistant_prefs.rs:523
+msgid "Models You Can Use"
+msgstr "Models You Can Use"
+
+#: app/src/ui/assistant_prefs.rs:544
+msgid "Search models"
+msgstr "Search models"
+
+#: app/src/ui/assistant_prefs.rs:561
+msgid "Asking for the model list…"
+msgstr "Asking for the model list…"
+
+#: app/src/ui/assistant_prefs.rs:677
+msgid "This provider lists no models. Type a name in the field instead."
+msgstr "This provider lists no models. Type a name in the field instead."
+
+#: app/src/ui/assistant_prefs.rs:712
+msgid "alias"
+msgstr "alias"
+
+#: app/src/ui/assistant_prefs.rs:752
+msgid "Found on This Computer"
+msgstr "Found on This Computer"
+
+#: app/src/ui/assistant_prefs.rs:756
+msgid "Looking for LM Studio, Ollama, Unsloth, and Claude Code…"
+msgstr "Looking for LM Studio, Ollama, Unsloth, and Claude Code…"
+
+#: app/src/ui/assistant_prefs.rs:772
+msgid "Nothing found"
+msgstr "Nothing found"
+
+#: app/src/ui/assistant_prefs.rs:774
+msgid "Start LM Studio's server or Ollama, or install Claude Code, then open Preferences again."
+msgstr "Start LM Studio's server or Ollama, or install Claude Code, then open Preferences again."
+
+#: app/src/ui/assistant_prefs.rs:786
+msgid "{model} and {count} more"
+msgid_plural "{model} and {count} more"
+msgstr[0] "{model} and {count} more"
+msgstr[1] "{model} and {count} more"
+
+#: app/src/ui/assistant_prefs.rs:797
+msgid "Use"
+msgstr "Use"
+
+#: app/src/ui/assistant_prefs.rs:802
+msgid "Use {provider}"
+msgstr "Use {provider}"
+
+#: app/src/ui/assistant_skills_prefs.rs:17
+msgid "Skills"
+msgstr "Skills"
+
+#: app/src/ui/assistant_skills_prefs.rs:19
+msgid "Instructions the assistant follows for one kind of task, found in Penguin Mail's skills folder and in Claude Code's. Each skill is off until you turn it on. Scripts in a skill run in a sandbox that cannot reach your mail, keys or home folder, and the assistant asks before each command."
+msgstr "Instructions the assistant follows for one kind of task, found in Penguin Mail's skills folder and in Claude Code's. Each skill is off until you turn it on. Scripts in a skill run in a sandbox that cannot reach your mail, keys or home folder, and the assistant asks before each command."
+
+#: app/src/ui/assistant_skills_prefs.rs:30
+msgid "Open Folder"
+msgstr "Open Folder"
+
+#: app/src/ui/assistant_skills_prefs.rs:32
+msgid "Open Penguin Mail's skills folder"
+msgstr "Open Penguin Mail's skills folder"
+
+#: app/src/ui/assistant_skills_prefs.rs:42
+msgid "Scripts Cannot Run"
+msgstr "Scripts Cannot Run"
+
+#: app/src/ui/assistant_skills_prefs.rs:51
+msgid "No Skills Found"
+msgstr "No Skills Found"
+
+#: app/src/ui/assistant_skills_prefs.rs:53
+msgid "Put a folder holding a SKILL.md file in {folder}."
+msgstr "Put a folder holding a SKILL.md file in {folder}."
+
+#: app/src/ui/assistant_skills_prefs.rs:69
+msgid "Skills Are Off in This Version"
+msgstr "Skills Are Off in This Version"
+
+#: app/src/ui/assistant_skills_prefs.rs:72
+msgid "Skill scripts run in a sandbox of their own, which cannot start inside the {sandbox} sandbox Penguin Mail runs in. The .deb and the rpm have skills."
+msgstr "Skill scripts run in a sandbox of their own, which cannot start inside the {sandbox} sandbox Penguin Mail runs in. The .deb and the rpm have skills."
+
+#: app/src/ui/assistant_skills_prefs.rs:86
+msgid "{origin}: {description}"
+msgstr "{origin}: {description}"
+
+#: app/src/ui/assistant_skills_prefs.rs:128
+msgid "Use the skill {skill}"
+msgstr "Use the skill {skill}"
+
+#: app/src/ui/assistant_skills_prefs.rs:141
+msgid "Allow Network"
+msgstr "Allow Network"
+
+#: app/src/ui/assistant_skills_prefs.rs:143
+msgid "Let this skill's scripts reach the internet. Without it they can only use what is on this computer."
+msgstr "Let this skill's scripts reach the internet. Without it they can only use what is on this computer."
+
+#: app/src/ui/assistant_web_prefs.rs:18
+msgid "Web Search"
+msgstr "Web Search"
+
+#: app/src/ui/assistant_web_prefs.rs:20
+msgid "Lets the assistant search the web and read pages. Claude searches with Anthropic's own tools. A local model searches with the engine chosen here, which receives every query."
+msgstr "Lets the assistant search the web and read pages. Claude searches with Anthropic's own tools. A local model searches with the engine chosen here, which receives every query."
+
+#: app/src/ui/assistant_web_prefs.rs:29
+msgid "Search With"
+msgstr "Search With"
+
+#: app/src/ui/assistant_web_prefs.rs:47
+msgid "SearXNG Server Address"
+msgstr "SearXNG Server Address"
+
+#: app/src/ui/assistant_web_prefs.rs:63
+msgid "Test the Search"
+msgstr "Test the Search"
+
+#: app/src/ui/assistant_web_prefs.rs:64
+msgid "Runs one search and shows the first result"
+msgstr "Runs one search and shows the first result"
+
+#: app/src/ui/assistant_web_prefs.rs:79
+msgid "Searching…"
+msgstr "Searching…"
+
+#: app/src/ui/assistant_web_prefs.rs:88
+msgid "First result: {title}"
+msgstr "First result: {title}"
+
+#: app/src/ui/assistant_web_prefs.rs:126
+msgid "Brave Search API Key (Saved)"
+msgstr "Brave Search API Key (Saved)"
+
+#: app/src/ui/assistant_web_prefs.rs:127
+msgid "Brave Search API Key"
+msgstr "Brave Search API Key"
+
+#: app/src/ui/composer/mod.rs:204 app/src/ui/conversation.rs:1509
+msgid "Choose a Time…"
+msgstr "Choose a Time…"
+
+#: app/src/ui/composer/mod.rs:216 app/src/ui/composer/mod.rs:1260
+#: app/src/ui/sidebar.rs:263
+msgid "Send Later"
+msgstr "Send Later"
+
+#: app/src/ui/composer/mod.rs:218 app/src/ui/composer/mod.rs:980
+msgid "Send (Ctrl+Enter)"
+msgstr "Send (Ctrl+Enter)"
+
+#: app/src/ui/composer/mod.rs:222
+msgid "Attach Files (Ctrl+Shift+A)"
+msgstr "Attach Files (Ctrl+Shift+A)"
+
+#: app/src/ui/composer/mod.rs:226
+msgid "Preview"
+msgstr "Preview"
+
+#: app/src/ui/composer/mod.rs:233
+msgid "Save as Template…"
+msgstr "Save as Template…"
+
+#: app/src/ui/composer/mod.rs:239 app/src/ui/templates.rs:23
+msgid "Templates"
+msgstr "Templates"
+
+#: app/src/ui/composer/mod.rs:243
+msgid "Sign"
+msgstr "Sign"
+
+#: app/src/ui/composer/mod.rs:244
+msgid "Sign this message with your own key"
+msgstr "Sign this message with your own key"
+
+#: app/src/ui/composer/mod.rs:248
+msgid "Encrypt"
+msgstr "Encrypt"
+
+#: app/src/ui/composer/mod.rs:249
+msgid "Add a recipient this computer can encrypt to."
+msgstr "Add a recipient this computer can encrypt to."
+
+#: app/src/ui/composer/mod.rs:289 app/src/ui/composer/mod.rs:295
+msgid "Signing and encryption"
+msgstr "Signing and encryption"
+
+#: app/src/ui/composer/mod.rs:316
+msgid "Recipients"
+msgstr "Recipients"
+
+#: app/src/ui/composer/mod.rs:317
+msgid "Carbon copy"
+msgstr "Carbon copy"
+
+#: app/src/ui/composer/mod.rs:318
+msgid "Blind carbon copy"
+msgstr "Blind carbon copy"
+
+#: app/src/ui/composer/mod.rs:320 app/src/ui/composer/mod.rs:359
+#: app/src/ui/rules.rs:266 app/src/ui/templates.rs:192
+#: app/src/ui/vacation.rs:213
+msgid "Subject"
+msgstr "Subject"
+
+#: app/src/ui/composer/mod.rs:327
+msgid "Cc/Bcc"
+msgstr "Cc/Bcc"
+
+#: app/src/ui/composer/mod.rs:328 app/src/ui/composer/mod.rs:837
+msgid "Show Cc and Bcc"
+msgstr "Show Cc and Bcc"
+
+#: app/src/ui/composer/mod.rs:338 app/src/ui/rules.rs:264
+msgid "From"
+msgstr "From"
+
+#: app/src/ui/composer/mod.rs:343 app/src/ui/rules.rs:265
+msgid "To"
+msgstr "To"
+
+#: app/src/ui/composer/mod.rs:347
+msgid "Cc"
+msgstr "Cc"
+
+#: app/src/ui/composer/mod.rs:349
+msgid "Bcc"
+msgstr "Bcc"
+
+#: app/src/ui/composer/mod.rs:372 app/src/ui/vacation.rs:224
+#: app/src/ui/vacation.rs:233
+msgid "Message"
+msgstr "Message"
+
+#: app/src/ui/composer/mod.rs:417
+msgid "Formatting"
+msgstr "Formatting"
+
+#: app/src/ui/composer/mod.rs:835
+msgid "Hide Cc and Bcc"
+msgstr "Hide Cc and Bcc"
+
+#: app/src/ui/composer/mod.rs:871
+msgid "a message"
+msgstr "a message"
+
+#: app/src/ui/composer/mod.rs:876
+msgid "Forwarding {sender}"
+msgstr "Forwarding {sender}"
+
+#: app/src/ui/composer/mod.rs:878
+msgid "Forwarding “{subject}” from {sender}"
+msgstr "Forwarding “{subject}” from {sender}"
+
+#: app/src/ui/composer/mod.rs:901 app/src/ui/composer/mod.rs:904
+msgid "Do Not Forward the Original"
+msgstr "Do Not Forward the Original"
+
+#: app/src/ui/composer/mod.rs:959
+msgid "Scheduled to send {when}"
+msgstr "Scheduled to send {when}"
+
+#: app/src/ui/composer/mod.rs:970
+msgid "No account to send from."
+msgstr "No account to send from."
+
+#: app/src/ui/composer/mod.rs:1033
+msgid "Signed and encrypted"
+msgstr "Signed and encrypted"
+
+#: app/src/ui/composer/mod.rs:1034
+msgid "Signed"
+msgstr "Signed"
+
+#: app/src/ui/composer/mod.rs:1035
+msgid "Encrypted"
+msgstr "Encrypted"
+
+#: app/src/ui/composer/mod.rs:1036
+msgid "Not signed or encrypted"
+msgstr "Not signed or encrypted"
+
+#: app/src/ui/composer/mod.rs:1212
+msgid "Attachment Missing?"
+msgstr "Attachment Missing?"
+
+#: app/src/ui/composer/mod.rs:1214
+msgid "The message says “{sentence}” and carries no file."
+msgstr "The message says “{sentence}” and carries no file."
+
+#: app/src/ui/composer/mod.rs:1219
+msgid "Add Attachment"
+msgstr "Add Attachment"
+
+#: app/src/ui/composer/mod.rs:1220
+msgid "Send Anyway"
+msgstr "Send Anyway"
+
+#: app/src/ui/composer/mod.rs:1238
+msgid "Send Without Encryption?"
+msgstr "Send Without Encryption?"
+
+#: app/src/ui/composer/mod.rs:1240
+msgid "This message was to go out encrypted, and it cannot be. {reason}"
+msgstr "This message was to go out encrypted, and it cannot be. {reason}"
+
+#: app/src/ui/composer/mod.rs:1246
+msgid "Send Readable"
+msgstr "Send Readable"
+
+#: app/src/ui/composer/mod.rs:1261
+msgid "Penguin Mail sends it at this time while it runs, even in the tray."
+msgstr "Penguin Mail sends it at this time while it runs, even in the tray."
+
+#: app/src/ui/composer/mod.rs:1262
+msgid "Schedule"
+msgstr "Schedule"
+
+#: app/src/ui/composer/mod.rs:1295
+msgid "Draft saved, encrypted to your own key"
+msgstr "Draft saved, encrypted to your own key"
+
+#: app/src/ui/composer/mod.rs:1297
+msgid "Draft saved"
+msgstr "Draft saved"
+
+#: app/src/ui/composer/mod.rs:1307
+msgid "Save as Draft?"
+msgstr "Save as Draft?"
+
+#: app/src/ui/composer/mod.rs:1309
+msgid "The draft is kept in Gmail, so you can finish it later on any device."
+msgstr "The draft is kept in Gmail, so you can finish it later on any device."
+
+#: app/src/ui/composer/mod.rs:1313
+msgid "Discard"
+msgstr "Discard"
+
+#: app/src/ui/composer/mod.rs:1315
+msgid "Save Draft"
+msgstr "Save Draft"
+
+#: app/src/ui/composer/mod.rs:1336
+msgid "Attach Files"
+msgstr "Attach Files"
+
+#: app/src/ui/composer/mod.rs:1372
+msgid "{files}  ·  {size}"
+msgstr "{files}  ·  {size}"
+
+#: app/src/ui/composer/mod.rs:1417
+msgid "Remove {file}"
+msgstr "Remove {file}"
+
+#: app/src/ui/composer/mod.rs:1454
+msgid "Bold (Ctrl+B)"
+msgstr "Bold (Ctrl+B)"
+
+#: app/src/ui/composer/mod.rs:1455
+msgid "Italic (Ctrl+I)"
+msgstr "Italic (Ctrl+I)"
+
+#: app/src/ui/composer/mod.rs:1458
+msgid "Strikethrough (Ctrl+Shift+X)"
+msgstr "Strikethrough (Ctrl+Shift+X)"
+
+#: app/src/ui/composer/mod.rs:1461
+msgid "Code (Ctrl+E)"
+msgstr "Code (Ctrl+E)"
+
+#: app/src/ui/composer/mod.rs:1498
+msgid "Link (Ctrl+K)"
+msgstr "Link (Ctrl+K)"
+
+#: app/src/ui/composer/mod.rs:1508
+msgid "Bulleted List (Ctrl+Shift+8)"
+msgstr "Bulleted List (Ctrl+Shift+8)"
+
+#: app/src/ui/composer/mod.rs:1513
+msgid "Numbered List (Ctrl+Shift+7)"
+msgstr "Numbered List (Ctrl+Shift+7)"
+
+#: app/src/ui/composer/mod.rs:1518
+msgid "Quote (Ctrl+Shift+9)"
+msgstr "Quote (Ctrl+Shift+9)"
+
+#: app/src/ui/composer/mod.rs:1535
+msgid "Insert Image (Ctrl+Shift+P)"
+msgstr "Insert Image (Ctrl+Shift+P)"
+
+#: app/src/ui/composer/mod.rs:1545
+msgid "Paragraph"
+msgstr "Paragraph"
+
+#: app/src/ui/composer/mod.rs:1546
+msgid "Heading 1"
+msgstr "Heading 1"
+
+#: app/src/ui/composer/mod.rs:1547
+msgid "Heading 2"
+msgstr "Heading 2"
+
+#: app/src/ui/composer/mod.rs:1548
+msgid "Heading 3"
+msgstr "Heading 3"
+
+#: app/src/ui/composer/mod.rs:1549
+msgid "Code Block"
+msgstr "Code Block"
+
+#: app/src/ui/composer/mod.rs:1558
+msgid "Format Markdown"
+msgstr "Format Markdown"
+
+#: app/src/ui/composer/mod.rs:1562
+msgid "Clear Formatting"
+msgstr "Clear Formatting"
+
+#: app/src/ui/composer/mod.rs:1568
+msgid "Edit as Markdown"
+msgstr "Edit as Markdown"
+
+#: app/src/ui/composer/mod.rs:1574 app/src/ui/composer/mod.rs:1578
+msgid "More Formatting"
+msgstr "More Formatting"
+
+#: app/src/ui/composer/mod.rs:1615
+msgid "Add a Link"
+msgstr "Add a Link"
+
+#: app/src/ui/composer/mod.rs:1621
+msgid "Text"
+msgstr "Text"
+
+#: app/src/ui/composer/mod.rs:1633
+msgid "Add Link"
+msgstr "Add Link"
+
+#: app/src/ui/composer/mod.rs:1669
+msgid "Markdown formatted"
+msgstr "Markdown formatted"
+
+#: app/src/ui/composer/mod.rs:1681
+msgid "Editing as Markdown"
+msgstr "Editing as Markdown"
+
+#: app/src/ui/composer/mod.rs:1707
+msgid "Images"
+msgstr "Images"
+
+#: app/src/ui/composer/mod.rs:1712
+msgid "Insert Image"
+msgstr "Insert Image"
+
+#: app/src/ui/composer/mod.rs:1755
+msgid "Could not read the file: {reason}"
+msgstr "Could not read the file: {reason}"
+
+#: app/src/ui/composer/mod.rs:1820
+msgid "Could not paste the image"
+msgstr "Could not paste the image"
+
+#: app/src/ui/composer/mod.rs:1865
+msgid "No Templates Yet"
+msgstr "No Templates Yet"
+
+#: app/src/ui/composer/mod.rs:1915
+msgid "Save as Template"
+msgstr "Save as Template"
+
+#: app/src/ui/composer/mod.rs:1917
+msgid "Placeholders such as {{first_name}} fill in each time you use it."
+msgstr "Placeholders such as {{first_name}} fill in each time you use it."
+
+#: app/src/ui/composer/mod.rs:1940 app/src/ui/templates.rs:280
+msgid "Give the template a name"
+msgstr "Give the template a name"
+
+#: app/src/ui/composer/mod.rs:1948
+msgid "Template saved"
+msgstr "Template saved"
+
+#: app/src/ui/composer/mod.rs:1951
+msgid "Template not saved: {reason}"
+msgstr "Template not saved: {reason}"
+
+#: app/src/ui/composer/recipients.rs:47
+msgid "{name}, {address}"
+msgstr "{name}, {address}"
+
+#: app/src/ui/composer/recipients.rs:54
+msgid "{recipient}, not an address"
+msgstr "{recipient}, not an address"
+
+#: app/src/ui/composer/recipients.rs:309
+msgid "Remove {recipient}"
+msgstr "Remove {recipient}"
+
+#: app/src/ui/composer/recipients.rs:323
+msgid "Press Delete to remove"
+msgstr "Press Delete to remove"
+
+#: app/src/ui/composer/spell.rs:653
+msgid "No Suggestions"
+msgstr "No Suggestions"
+
+#: app/src/ui/composer/spell.rs:665
+msgid "Add to Dictionary"
+msgstr "Add to Dictionary"
+
+#: app/src/ui/composer/spell.rs:666
+msgid "Ignore"
+msgstr "Ignore"
+
+#: app/src/ui/confirm.rs:46 app/src/ui/invitation.rs:276
+msgid "Not Now"
+msgstr "Not Now"
+
+#: app/src/ui/contact_card.rs:94
+msgid "Email"
+msgstr "Email"
+
+#: app/src/ui/contact_card.rs:96
+msgid "Other email"
+msgstr "Other email"
+
+#: app/src/ui/contact_card.rs:116
+msgid "Phone"
+msgstr "Phone"
+
+#: app/src/ui/contact_card.rs:156 app/src/ui/sidebar.rs:231
+msgid "Remove from VIPs"
+msgstr "Remove from VIPs"
+
+#: app/src/ui/contact_card.rs:158
+msgid "Add to VIPs"
+msgstr "Add to VIPs"
+
+#: app/src/ui/contact_card.rs:169
+msgid "All Their Mail"
+msgstr "All Their Mail"
+
+#: app/src/ui/contacts_prefs.rs:15
+msgid "Contacts & Calendar"
+msgstr "Contacts & Calendar"
+
+#: app/src/ui/contacts_prefs.rs:29
+msgid "Google Contacts"
+msgstr "Google Contacts"
+
+#: app/src/ui/contacts_prefs.rs:31
+msgid "Penguin Mail can read an account's contacts: names, email addresses, photos, organizations, and phone numbers. It uses them to suggest recipients, to show faces beside mail, and to fill the card behind a sender's name. What it reads stays on this computer, and turning an account off deletes its contacts."
+msgstr "Penguin Mail can read an account's contacts: names, email addresses, photos, organisations, and phone numbers. It uses them to suggest recipients, to show faces beside mail, and to fill the card behind a sender's name. What it reads stays on this computer, and turning an account off deletes its contacts."
+
+#: app/src/ui/contacts_prefs.rs:40
+msgid "No accounts yet"
+msgstr "No accounts yet"
+
+#: app/src/ui/contacts_prefs.rs:47
+msgid "Google asks your permission the first time"
+msgstr "Google asks your permission the first time"
+
+#: app/src/ui/contacts_prefs.rs:70
+msgid "Calendar"
+msgstr "Calendar"
+
+#: app/src/ui/contacts_prefs.rs:72
+msgid "Answering a meeting invitation records your answer in that account's Google Calendar, and Google asks your permission the first time. To see the meetings in GNOME Calendar and the clock, add the account to GNOME Online Accounts."
+msgstr "Answering a meeting invitation records your answer in that account's Google Calendar, and Google asks your permission the first time. To see the meetings in GNOME Calendar and the clock, add the account to GNOME Online Accounts."
+
+#: app/src/ui/contacts_prefs.rs:85
+msgid "In GNOME Online Accounts"
+msgstr "In GNOME Online Accounts"
+
+#: app/src/ui/contacts_prefs.rs:87
+msgid "Not in GNOME Online Accounts"
+msgstr "Not in GNOME Online Accounts"
+
+#: app/src/ui/contacts_prefs.rs:89
+msgid "Add…"
+msgstr "Add…"
+
+#: app/src/ui/contacts_prefs.rs:95
+msgid "Add {account} to GNOME Online Accounts"
+msgstr "Add {account} to GNOME Online Accounts"
+
+#: app/src/ui/conversation.rs:315
+msgid "No Conversation Selected"
+msgstr "No Conversation Selected"
+
+#: app/src/ui/conversation.rs:319
+msgid "Remote images are hidden to protect your privacy"
+msgstr "Remote images are hidden to protect your privacy"
+
+#: app/src/ui/conversation.rs:320
+msgid "Load Images"
+msgstr "Load Images"
+
+#: app/src/ui/conversation.rs:324
+msgid "This message is from a mailing list"
+msgstr "This message is from a mailing list"
+
+#: app/src/ui/conversation.rs:325 app/src/ui/unsubscribe.rs:96
+msgid "Unsubscribe"
+msgstr "Unsubscribe"
+
+#: app/src/ui/conversation.rs:338 app/src/ui/conversation.rs:978
+#: app/src/ui/window/message_menu.rs:123
+msgid "Flag"
+msgstr "Flag"
+
+#: app/src/ui/conversation.rs:339 app/src/ui/conversation.rs:481
+#: app/src/ui/conversation.rs:807 app/src/ui/conversation.rs:983
+msgid "Mute"
+msgstr "Mute"
+
+#: app/src/ui/conversation.rs:340 app/src/ui/conversation.rs:473
+#: app/src/ui/conversation.rs:928 app/src/ui/window/shortcuts.rs:375
+msgid "Junk"
+msgstr "Junk"
+
+#: app/src/ui/conversation.rs:341 app/src/ui/conversation.rs:472
+#: app/src/ui/conversation.rs:922 app/src/ui/window/message_menu.rs:119
+msgid "Move to Trash"
+msgstr "Move to Trash"
+
+#: app/src/ui/conversation.rs:368
+msgid "Several Conversations Selected"
+msgstr "Several Conversations Selected"
+
+#: app/src/ui/conversation.rs:370
+msgid "Actions and shortcuts apply to all of them. Esc clears the selection."
+msgstr "Actions and shortcuts apply to all of them. Esc clears the selection."
+
+#: app/src/ui/conversation.rs:410
+msgid "Archive (E or Ctrl+Alt+A)"
+msgstr "Archive (E or Ctrl+Alt+A)"
+
+#: app/src/ui/conversation.rs:412 app/src/ui/conversation.rs:905
+msgid "Move to Trash (Delete)"
+msgstr "Move to Trash (Delete)"
+
+#: app/src/ui/conversation.rs:413 app/src/ui/conversation.rs:915
+msgid "Junk (Ctrl+Shift+J)"
+msgstr "Junk (Ctrl+Shift+J)"
+
+#: app/src/ui/conversation.rs:416
+msgid "Mark as Unread (Ctrl+Shift+U)"
+msgstr "Mark as Unread (Ctrl+Shift+U)"
+
+#: app/src/ui/conversation.rs:421 app/src/ui/conversation.rs:425
+#: app/src/ui/conversation.rs:1552
+msgid "Flag (Ctrl+Shift+L)"
+msgstr "Flag (Ctrl+Shift+L)"
+
+#: app/src/ui/conversation.rs:422 app/src/ui/window/message_menu.rs:125
+msgid "Flag Color"
+msgstr "Flag Colour"
+
+#: app/src/ui/conversation.rs:428
+msgid "Reply (Ctrl+R)"
+msgstr "Reply (Ctrl+R)"
+
+#: app/src/ui/conversation.rs:431
+msgid "Reply All (Ctrl+Shift+R)"
+msgstr "Reply All (Ctrl+Shift+R)"
+
+#: app/src/ui/conversation.rs:433
+msgid "Forward (Ctrl+Shift+F)"
+msgstr "Forward (Ctrl+Shift+F)"
+
+#: app/src/ui/conversation.rs:435
+msgid "Edit Draft"
+msgstr "Edit Draft"
+
+#: app/src/ui/conversation.rs:442 app/src/ui/conversation.rs:445
+msgid "More Actions"
+msgstr "More Actions"
+
+#: app/src/ui/conversation.rs:455 app/src/ui/queued.rs:60
+#: app/src/ui/sidebar.rs:573
+msgid "Edit…"
+msgstr "Edit…"
+
+#: app/src/ui/conversation.rs:456 app/src/ui/queued.rs:56
+msgid "Send Now"
+msgstr "Send Now"
+
+#: app/src/ui/conversation.rs:466 app/src/ui/window/message_menu.rs:116
+msgid "Reply All"
+msgstr "Reply All"
+
+#: app/src/ui/conversation.rs:467 app/src/ui/window/message_menu.rs:117
+#: app/src/ui/window/shortcuts.rs:448
+msgid "Forward"
+msgstr "Forward"
+
+#: app/src/ui/conversation.rs:476
+msgid "Flag or Unflag"
+msgstr "Flag or Unflag"
+
+#: app/src/ui/conversation.rs:478
+msgid "Mark Read or Unread"
+msgstr "Mark Read or Unread"
+
+#: app/src/ui/conversation.rs:482 app/src/ui/window/message_menu.rs:126
+msgid "Labels…"
+msgstr "Labels…"
+
+#: app/src/ui/conversation.rs:484 app/src/ui/sidebar.rs:269
+#: app/src/ui/window/reminders.rs:25 app/src/ui/window/reminders.rs:30
+msgid "Remind Me"
+msgstr "Remind Me"
+
+#: app/src/ui/conversation.rs:488
+msgid "Open in New Window"
+msgstr "Open in New Window"
+
+#: app/src/ui/conversation.rs:491
+msgid "Print…"
+msgstr "Print…"
+
+#: app/src/ui/conversation.rs:492
+msgid "View Source"
+msgstr "View Source"
+
+#: app/src/ui/conversation.rs:493 app/src/ui/window/message_menu.rs:127
+msgid "Export…"
+msgstr "Export…"
+
+#: app/src/ui/conversation.rs:496 app/src/ui/conversation.rs:792
+msgid "Add Sender to VIPs"
+msgstr "Add Sender to VIPs"
+
+#: app/src/ui/conversation.rs:497
+msgid "Unsubscribe…"
+msgstr "Unsubscribe…"
+
+#: app/src/ui/conversation.rs:499
+msgid "Always Load Images…"
+msgstr "Always Load Images…"
+
+#: app/src/ui/conversation.rs:502
+msgid "Block Sender…"
+msgstr "Block Sender…"
+
+#: app/src/ui/conversation.rs:513
+msgid "Categorize Sender"
+msgstr "Categorise Sender"
+
+#: app/src/ui/conversation.rs:526 app/src/ui/conversation.rs:528
+msgid "Labels (L)"
+msgstr "Labels (L)"
+
+#: app/src/ui/conversation.rs:790
+msgid "Remove Sender from VIPs"
+msgstr "Remove Sender from VIPs"
+
+#: app/src/ui/conversation.rs:805 app/src/ui/conversation.rs:981
+msgid "Unmute"
+msgstr "Unmute"
+
+#: app/src/ui/conversation.rs:904
+msgid "Delete Forever (Delete)"
+msgstr "Delete Forever (Delete)"
+
+#: app/src/ui/conversation.rs:913
+msgid "Not Junk (Ctrl+Shift+J)"
+msgstr "Not Junk (Ctrl+Shift+J)"
+
+#: app/src/ui/conversation.rs:921 app/src/ui/window/message_menu.rs:120
+#: app/src/ui/window/press.rs:289
+msgid "Delete Forever"
+msgstr "Delete Forever"
+
+#: app/src/ui/conversation.rs:927
+msgid "Not Junk"
+msgstr "Not Junk"
+
+#: app/src/ui/conversation.rs:973 app/src/ui/window/message_menu.rs:122
+msgid "Mark as Unread"
+msgstr "Mark as Unread"
+
+#: app/src/ui/conversation.rs:976 app/src/ui/window/message_menu.rs:124
+msgid "Unflag"
+msgstr "Unflag"
+
+#: app/src/ui/conversation.rs:992
+msgid "{count} Conversation Selected"
+msgid_plural "{count} Conversations Selected"
+msgstr[0] "{count} Conversation Selected"
+msgstr[1] "{count} Conversations Selected"
+
+#: app/src/ui/conversation.rs:998
+msgid "{count} Message Selected"
+msgid_plural "{count} Messages Selected"
+msgstr[0] "{count} Message Selected"
+msgstr[1] "{count} Messages Selected"
+
+#: app/src/ui/conversation.rs:1551
+msgid "Unflag (Ctrl+Shift+L)"
+msgstr "Unflag (Ctrl+Shift+L)"
+
+#: app/src/ui/conversation.rs:1564
+msgid "Mark as Read (U)"
+msgstr "Mark as Read (U)"
+
+#: app/src/ui/conversation.rs:1565
+msgid "Mark as Unread (U)"
+msgstr "Mark as Unread (U)"
+
+#: app/src/ui/conversation.rs:1723
+msgid "{color} (Ctrl+Alt+{number})"
+msgstr "{color} (Ctrl+Alt+{number})"
+
+#: app/src/ui/conversation.rs:1740 app/src/ui/window/message_menu.rs:239
+msgid "Clear Flag"
+msgstr "Clear Flag"
+
+#: app/src/ui/find.rs:81
+msgid "No matches"
+msgstr "No matches"
+
+#: app/src/ui/find.rs:89
+msgid "{position} of {total} match"
+msgid_plural "{position} of {total} matches"
+msgstr[0] "{position} of {total} match"
+msgstr[1] "{position} of {total} matches"
+
+#: app/src/ui/find.rs:128 app/src/ui/find.rs:143
+#: app/src/ui/window/shortcuts.rs:294
+msgid "Find in the conversation"
+msgstr "Find in the conversation"
+
+#: app/src/ui/find.rs:141 app/src/ui/find.rs:144
+msgid "Previous Match"
+msgstr "Previous Match"
+
+#: app/src/ui/find.rs:142 app/src/ui/find.rs:145
+msgid "Next Match"
+msgstr "Next Match"
+
+#: app/src/ui/hide_my_email.rs:22
+msgid "Gmail delivers mail sent to these addresses to your inbox. Each one shows which site shared your address, and you can turn one off when the spam starts. Your real address is part of each one, so anyone who removes the tag can still reach you, and your replies come from your main address."
+msgstr "Gmail delivers mail sent to these addresses to your inbox. Each one shows which site shared your address, and you can turn one off when the spam starts. Your real address is part of each one, so anyone who removes the tag can still reach you, and your replies come from your main address."
+
+#: app/src/ui/hide_my_email.rs:64 app/src/ui/hide_my_email.rs:66
+#: app/src/ui/hide_my_email.rs:358
+msgid "Create Address"
+msgstr "Create Address"
+
+#: app/src/ui/hide_my_email.rs:73
+msgid "Hide My Email"
+msgstr "Hide My Email"
+
+#: app/src/ui/hide_my_email.rs:121
+msgid "Created {date}"
+msgstr "Created {date}"
+
+#: app/src/ui/hide_my_email.rs:155
+msgid "No addresses yet"
+msgstr "No addresses yet"
+
+#: app/src/ui/hide_my_email.rs:156
+msgid "Create one with the + button."
+msgstr "Create one with the + button."
+
+#: app/src/ui/hide_my_email.rs:176
+msgid "Off: mail goes to the Trash"
+msgstr "Off: mail goes to the Trash"
+
+#: app/src/ui/hide_my_email.rs:198 app/src/ui/window/message_menu.rs:128
+msgid "Copy Address"
+msgstr "Copy Address"
+
+#: app/src/ui/hide_my_email.rs:199
+msgid "Copy {address}"
+msgstr "Copy {address}"
+
+#: app/src/ui/hide_my_email.rs:206 app/src/ui/hide_my_email.rs:434
+msgid "Address copied"
+msgstr "Address copied"
+
+#: app/src/ui/hide_my_email.rs:214
+msgid "Receive Mail"
+msgstr "Receive Mail"
+
+#: app/src/ui/hide_my_email.rs:219
+msgid "Receive mail at {address}"
+msgstr "Receive mail at {address}"
+
+#: app/src/ui/hide_my_email.rs:234
+msgid "Mail to this address reaches you again"
+msgstr "Mail to this address reaches you again"
+
+#: app/src/ui/hide_my_email.rs:237
+msgid "Mail to this address now goes to the Trash"
+msgstr "Mail to this address now goes to the Trash"
+
+#: app/src/ui/hide_my_email.rs:241
+msgid "Could not change the address: {reason}"
+msgstr "Could not change the address: {reason}"
+
+#: app/src/ui/hide_my_email.rs:252
+msgid "Delete Address"
+msgstr "Delete Address"
+
+#: app/src/ui/hide_my_email.rs:254
+msgid "Delete {address}"
+msgstr "Delete {address}"
+
+#: app/src/ui/hide_my_email.rs:271
+msgid "Delete Address?"
+msgstr "Delete Address?"
+
+#: app/src/ui/hide_my_email.rs:274
+msgid "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
+msgstr "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
+
+#: app/src/ui/hide_my_email.rs:288
+msgid "Address deleted"
+msgstr "Address deleted"
+
+#: app/src/ui/hide_my_email.rs:290
+msgid "Could not delete the address: {reason}"
+msgstr "Could not delete the address: {reason}"
+
+#: app/src/ui/hide_my_email.rs:300
+msgid "Allow Hide My Email"
+msgstr "Allow Hide My Email"
+
+#: app/src/ui/hide_my_email.rs:320 app/src/ui/window.rs:2279
+msgid "Add an account first"
+msgstr "Add an account first"
+
+#: app/src/ui/hide_my_email.rs:324
+msgid "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
+msgstr "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
+
+#: app/src/ui/hide_my_email.rs:330
+msgid "Account"
+msgstr "Account"
+
+#: app/src/ui/hide_my_email.rs:341
+msgid "Where Did You Use It?"
+msgstr "Where Did You Use It?"
+
+#: app/src/ui/hide_my_email.rs:348 app/src/ui/rules.rs:307
+#: app/src/ui/smart_editor.rs:146 app/src/ui/templates.rs:235
+#: app/src/ui/window/organize.rs:54 app/src/ui/window/organize.rs:277
+msgid "Create"
+msgstr "Create"
+
+#: app/src/ui/hide_my_email.rs:386
+msgid "Could not create the address: {reason}"
+msgstr "Could not create the address: {reason}"
+
+#: app/src/ui/hide_my_email.rs:411
+msgid "Your New Address"
+msgstr "Your New Address"
+
+#: app/src/ui/hide_my_email.rs:426
+msgid "Copy"
+msgstr "Copy"
+
+#: app/src/ui/hide_my_email.rs:441
+msgid "It is on your clipboard. Mail sent to it gets the Hide My Email label in Gmail."
+msgstr "It is on your clipboard. Mail sent to it gets the Hide My Email label in Gmail."
+
+#: app/src/ui/hide_my_email.rs:465
+msgid "Address Created"
+msgstr "Address Created"
+
+#: app/src/ui/invitation.rs:188
+msgid "Answer"
+msgstr "Answer"
+
+#: app/src/ui/invitation.rs:201
+msgid "What the answer covers"
+msgstr "What the answer covers"
+
+#: app/src/ui/invitation.rs:203
+msgid "This Event"
+msgstr "This Event"
+
+#: app/src/ui/invitation.rs:208
+msgid "All Events"
+msgstr "All Events"
+
+#: app/src/ui/invitation.rs:220
+msgid "Propose New Time"
+msgstr "Propose New Time"
+
+#: app/src/ui/invitation.rs:230
+msgid "Add to Calendar"
+msgstr "Add to Calendar"
+
+#: app/src/ui/invitation.rs:267
+msgid "Add this account to GNOME Online Accounts and Calendar shows these events too."
+msgstr "Add this account to GNOME Online Accounts and Calendar shows these events too."
+
+#: app/src/ui/invitation.rs:272
+msgid "Open Settings"
+msgstr "Open Settings"
+
+#: app/src/ui/invitation.rs:289
+msgid "Invitation"
+msgstr "Invitation"
+
+#: app/src/ui/invitation.rs:461
+msgid "Untitled event"
+msgstr "Untitled event"
+
+#: app/src/ui/invitation.rs:535
+msgid "Pick a Time…"
+msgstr "Pick a Time…"
+
+#: app/src/ui/invitation.rs:576
+msgid "No reply yet"
+msgstr "No reply yet"
+
+#: app/src/ui/invitation.rs:605
+msgid "Half an Hour Later"
+msgstr "Half an Hour Later"
+
+#: app/src/ui/invitation.rs:608
+msgid "An Hour Later"
+msgstr "An Hour Later"
+
+#: app/src/ui/invitation.rs:610
+msgid "Same Time Tomorrow"
+msgstr "Same Time Tomorrow"
+
+#: app/src/ui/invitation.rs:614
+msgid "Same Time Next Week"
+msgstr "Same Time Next Week"
+
+#: app/src/ui/invitation.rs:629
+msgid "You have {event} then"
+msgstr "You have {event} then"
+
+#: app/src/ui/invitation.rs:631
+msgid "You have {event} and {other} then"
+msgstr "You have {event} and {other} then"
+
+#: app/src/ui/invitation.rs:635
+msgid "You have {event} and {count} more then"
+msgid_plural "You have {event} and {count} more then"
+msgstr[0] "You have {event} and {count} more then"
+msgstr[1] "You have {event} and {count} more then"
+
+#: app/src/ui/invitation.rs:649
+msgid "Reply to the invitation from {organizer}"
+msgstr "Reply to the invitation from {organizer}"
+
+#: app/src/ui/invitation.rs:652
+msgid "Invitation from {organizer}"
+msgstr "Invitation from {organizer}"
+
+#: app/src/ui/invitation.rs:672
+msgid "You"
+msgstr "You"
+
+#: app/src/ui/invitation.rs:698
+msgid "{count} yes"
+msgid_plural "{count} yes"
+msgstr[0] "{count} yes"
+msgstr[1] "{count} yes"
+
+#: app/src/ui/invitation.rs:706
+msgid "{count} no"
+msgid_plural "{count} no"
+msgstr[0] "{count} no"
+msgstr[1] "{count} no"
+
+#: app/src/ui/invitation.rs:714
+msgid "{count} maybe"
+msgid_plural "{count} maybe"
+msgstr[0] "{count} maybe"
+msgstr[1] "{count} maybe"
+
+#: app/src/ui/invitation.rs:722
+msgid "{count} awaiting"
+msgid_plural "{count} awaiting"
+msgstr[0] "{count} awaiting"
+msgstr[1] "{count} awaiting"
+
+#: app/src/ui/invitation.rs:730
+msgid "{count} guest"
+msgid_plural "{count} guests"
+msgstr[0] "{count} guest"
+msgstr[1] "{count} guests"
+
+#: app/src/ui/invitation.rs:736
+msgid "{guests} · {answers}"
+msgstr "{guests} · {answers}"
+
+#: app/src/ui/invitation.rs:746
+msgid "This meeting moved from {when}"
+msgstr "This meeting moved from {when}"
+
+#: app/src/ui/invitation.rs:749
+msgid "The organizer changed this meeting"
+msgstr "The organiser changed this meeting"
+
+#: app/src/ui/invitation.rs:750
+msgid "The organizer canceled this meeting"
+msgstr "The organiser cancelled this meeting"
+
+#: app/src/ui/invitation.rs:751
+msgid "This meeting is canceled"
+msgstr "This meeting is cancelled"
+
+#: app/src/ui/mod.rs:262
+msgid "Gray"
+msgstr "Grey"
+
+#: app/src/ui/mod.rs:276 app/src/ui/sidebar.rs:474
+msgid "Inbox"
+msgstr "Inbox"
+
+#: app/src/ui/mod.rs:277
+msgid "Flagged"
+msgstr "Flagged"
+
+#: app/src/ui/mod.rs:278
+msgid "Sent"
+msgstr "Sent"
+
+#: app/src/ui/mod.rs:279
+msgid "Drafts"
+msgstr "Drafts"
+
+#: app/src/ui/mod.rs:280 app/src/ui/thread_row.rs:82 app/src/ui/window.rs:223
+msgid "Muted"
+msgstr "Muted"
+
+#: app/src/ui/mod.rs:281 app/src/ui/thread_list.rs:261
+msgid "Mail"
+msgstr "Mail"
+
+#: app/src/ui/moving.rs:37
+msgid "The mail is already there"
+msgstr "The mail is already there"
+
+#: app/src/ui/moving.rs:52
+msgid "Move it from the Trash to the Inbox first"
+msgstr "Move it from the Trash to the Inbox first"
+
+#: app/src/ui/moving.rs:92
+msgid "The mail is already in All Mail"
+msgstr "The mail is already in All Mail"
+
+#: app/src/ui/moving.rs:97
+msgid "Mail cannot go there"
+msgstr "Mail cannot go there"
+
+#: app/src/ui/permission.rs:41 app/src/ui/permission.rs:64
+msgid "Grant Access"
+msgstr "Grant Access"
+
+#: app/src/ui/pgp.rs:110
+msgid "Checked"
+msgstr "Checked"
+
+#: app/src/ui/pgp.rs:111
+msgid "Warning"
+msgstr "Warning"
+
+#: app/src/ui/pgp.rs:112
+msgid "Not checked"
+msgstr "Not checked"
+
+#: app/src/ui/preferences.rs:65 app/src/ui/window/shortcuts.rs:214
+msgid "General"
+msgstr "General"
+
+#: app/src/ui/preferences.rs:70 app/src/ui/window/shortcuts.rs:211
+msgid "Reading"
+msgstr "Reading"
+
+#: app/src/ui/preferences.rs:74
+msgid "Group Messages into Conversations"
+msgstr "Group Messages into Conversations"
+
+#: app/src/ui/preferences.rs:76
+msgid "Show a thread's replies together instead of one row per message"
+msgstr "Show a thread's replies together instead of one row per message"
+
+#: app/src/ui/preferences.rs:83
+msgid "Group Inbox into Categories"
+msgstr "Group Inbox into Categories"
+
+#: app/src/ui/preferences.rs:85
+msgid "Sort the inbox into Primary, Updates, Promotions, and Social, as Gmail does"
+msgstr "Sort the inbox into Primary, Updates, Promotions, and Social, as Gmail does"
+
+#: app/src/ui/preferences.rs:92
+msgid "Open the Inbox On"
+msgstr "Open the Inbox On"
+
+#: app/src/ui/preferences.rs:93
+msgid "Which category the window starts on"
+msgstr "Which category the window starts on"
+
+#: app/src/ui/preferences.rs:99
+msgid "Suggest Follow-Ups"
+msgstr "Suggest Follow-Ups"
+
+#: app/src/ui/preferences.rs:101
+msgid "List mail you sent that has had no reply for three days"
+msgstr "List mail you sent that has had no reply for three days"
+
+#: app/src/ui/preferences.rs:115
+msgid "Remote Images"
+msgstr "Remote Images"
+
+#: app/src/ui/preferences.rs:117
+msgid "Loading them can tell senders when you read their mail"
+msgstr "Loading them can tell senders when you read their mail"
+
+#: app/src/ui/preferences.rs:125
+msgid "Text Size"
+msgstr "Text Size"
+
+#: app/src/ui/preferences.rs:133
+msgid "Appearance"
+msgstr "Appearance"
+
+#: app/src/ui/preferences.rs:137
+msgid "Style"
+msgstr "Style"
+
+#: app/src/ui/preferences.rs:146
+msgid "Notifications"
+msgstr "Notifications"
+
+#: app/src/ui/preferences.rs:150
+msgid "Notify About New Mail"
+msgstr "Notify About New Mail"
+
+#: app/src/ui/preferences.rs:157
+msgid "Show Sender and Subject"
+msgstr "Show Sender and Subject"
+
+#: app/src/ui/preferences.rs:158
+msgid "Turn off to see only how much mail arrived"
+msgstr "Turn off to see only how much mail arrived"
+
+#: app/src/ui/preferences.rs:168
+msgid "Only for VIPs"
+msgstr "Only for VIPs"
+
+#: app/src/ui/preferences.rs:169
+msgid "Stay quiet about mail from everyone else"
+msgstr "Stay quiet about mail from everyone else"
+
+#: app/src/ui/preferences.rs:178
+msgid "Buttons"
+msgstr "Buttons"
+
+#: app/src/ui/preferences.rs:180
+msgid "What a notification offers besides opening the conversation"
+msgstr "What a notification offers besides opening the conversation"
+
+#: app/src/ui/preferences.rs:212 app/src/ui/window/shortcuts.rs:213
+msgid "Writing"
+msgstr "Writing"
+
+#: app/src/ui/preferences.rs:217
+msgid "No Accounts Yet"
+msgstr "No Accounts Yet"
+
+#: app/src/ui/preferences.rs:219
+msgid "Add an account to choose a sender and write signatures."
+msgstr "Add an account to choose a sender and write signatures."
+
+#: app/src/ui/preferences.rs:228
+msgid "New Messages"
+msgstr "New Messages"
+
+#: app/src/ui/preferences.rs:238
+msgid "Send New Messages From"
+msgstr "Send New Messages From"
+
+#: app/src/ui/preferences.rs:240
+msgid "Replies always come from the account that received the message"
+msgstr "Replies always come from the account that received the message"
+
+#: app/src/ui/preferences.rs:257
+msgid "New Messages Start As"
+msgstr "New Messages Start As"
+
+#: app/src/ui/preferences.rs:259
+msgid "Rich text styles the words themselves; Markdown shows its marks"
+msgstr "Rich text styles the words themselves; Markdown shows its marks"
+
+#: app/src/ui/preferences.rs:266
+msgid "Undo Send"
+msgstr "Undo Send"
+
+#: app/src/ui/preferences.rs:268
+msgid "How long you can take a message back after sending it"
+msgstr "How long you can take a message back after sending it"
+
+#: app/src/ui/preferences.rs:275
+msgid "Check for Missing Attachments"
+msgstr "Check for Missing Attachments"
+
+#: app/src/ui/preferences.rs:277
+msgid "Ask before sending a message that promises a file and carries none"
+msgstr "Ask before sending a message that promises a file and carries none"
+
+#: app/src/ui/preferences.rs:285
+msgid "Signatures"
+msgstr "Signatures"
+
+#: app/src/ui/preferences.rs:287
+msgid "Added below new messages and above quoted text in replies. Markdown works."
+msgstr "Added below new messages and above quoted text in replies. Markdown works."
+
+#: app/src/ui/preferences.rs:309
+msgid "Signature for {account}"
+msgstr "Signature for {account}"
+
+#: app/src/ui/preferences.rs:322
+msgid "Import from Gmail"
+msgstr "Import from Gmail"
+
+#: app/src/ui/preferences.rs:339
+msgid "This account is not syncing yet"
+msgstr "This account is not syncing yet"
+
+#: app/src/ui/preferences.rs:354
+msgid "Imported the signature from Gmail"
+msgstr "Imported the signature from Gmail"
+
+#: app/src/ui/preferences.rs:358
+msgid "Gmail has no signature for this account"
+msgstr "Gmail has no signature for this account"
+
+#: app/src/ui/preferences.rs:361
+msgid "Could not import: {reason}"
+msgstr "Could not import: {reason}"
+
+#: app/src/ui/preferences.rs:407
+msgid "Signing and Encryption"
+msgstr "Signing and Encryption"
+
+#: app/src/ui/preferences.rs:409
+msgid "Penguin Mail signs and encrypts through GnuPG, which holds your keys and asks for your passphrase itself."
+msgstr "Penguin Mail signs and encrypts through GnuPG, which holds your keys and asks for your passphrase itself."
+
+#: app/src/ui/preferences.rs:414
+msgid "Your OpenPGP Keys"
+msgstr "Your OpenPGP Keys"
+
+#: app/src/ui/preferences.rs:415
+msgid "Asking gpg…"
+msgstr "Asking gpg…"
+
+#: app/src/ui/preferences.rs:419
+msgid "Your S/MIME Certificates"
+msgstr "Your S/MIME Certificates"
+
+#: app/src/ui/preferences.rs:420
+msgid "Asking gpgsm…"
+msgstr "Asking gpgsm…"
+
+#: app/src/ui/preferences.rs:427
+msgid "Sign My Messages by Default"
+msgstr "Sign My Messages by Default"
+
+#: app/src/ui/preferences.rs:428
+msgid "New messages open with Sign turned on"
+msgstr "New messages open with Sign turned on"
+
+#: app/src/ui/preferences.rs:434
+msgid "Encrypt When I Can"
+msgstr "Encrypt When I Can"
+
+#: app/src/ui/preferences.rs:436
+msgid "Turn Encrypt on as soon as every recipient has a key or a certificate"
+msgstr "Turn Encrypt on as soon as every recipient has a key or a certificate"
+
+#: app/src/ui/preferences.rs:459
+msgid "gpg could not be asked: {reason}"
+msgstr "gpg could not be asked: {reason}"
+
+#: app/src/ui/preferences.rs:478
+msgid "gpgsm could not be asked: {reason}"
+msgstr "gpgsm could not be asked: {reason}"
+
+#: app/src/ui/preferences.rs:487
+msgid "Penguin Mail signs and encrypts through {programs}, which holds your keys and asks for your passphrase itself."
+msgstr "Penguin Mail signs and encrypts through {programs}, which holds your keys and asks for your passphrase itself."
+
+#: app/src/ui/preferences.rs:518
+msgid "Spelling"
+msgstr "Spelling"
+
+#: app/src/ui/preferences.rs:521
+msgid "No dictionaries are installed, so Penguin Mail is not checking spelling. Install a Hunspell dictionary, such as hunspell-en-us or hunspell-pt-pt, and reopen the composer."
+msgstr "No dictionaries are installed, so Penguin Mail is not checking spelling. Install a Hunspell dictionary, such as hunspell-en-us or hunspell-pt-pt, and reopen the composer."
+
+#: app/src/ui/preferences.rs:527
+msgid "Dictionaries found: {languages}."
+msgstr "Dictionaries found: {languages}."
+
+#: app/src/ui/preferences.rs:540
+msgid "Follow the System Language ({language})"
+msgstr "Follow the System Language ({language})"
+
+#: app/src/ui/preferences.rs:567
+msgid "Check Spelling In"
+msgstr "Check Spelling In"
+
+#: app/src/ui/preferences.rs:591
+msgid "Sync"
+msgstr "Sync"
+
+#: app/src/ui/preferences.rs:597
+msgid "Checking"
+msgstr "Checking"
+
+#: app/src/ui/preferences.rs:603
+msgid "Check for New Mail"
+msgstr "Check for New Mail"
+
+#: app/src/ui/preferences.rs:612
+msgid "Storage"
+msgstr "Storage"
+
+#: app/src/ui/preferences.rs:617
+msgid "Keep Mail on This Computer For"
+msgstr "Keep Mail on This Computer For"
+
+#: app/src/ui/preferences.rs:619
+msgid "Everything in your inbox stays too, and older mail remains searchable"
+msgstr "Everything in your inbox stays too, and older mail remains searchable"
+
+#: app/src/ui/preferences.rs:628
+msgid "Message Cache"
+msgstr "Message Cache"
+
+#: app/src/ui/preferences.rs:630
+msgid "Bodies of mail you have read, kept for opening offline"
+msgstr "Bodies of mail you have read, kept for opening offline"
+
+#: app/src/ui/preferences.rs:639
+msgid "Startup"
+msgstr "Startup"
+
+#: app/src/ui/preferences.rs:642
+msgid "Start in the Tray at Login"
+msgstr "Start in the Tray at Login"
+
+#: app/src/ui/preferences.rs:656
+msgid "Not available in demo mode"
+msgstr "Not available in demo mode"
+
+#: app/src/ui/preferences.rs:664
+msgid "Look for a new release once a day"
+msgstr "Look for a new release once a day"
+
+#: app/src/ui/preferences.rs:671
+msgid "Updates"
+msgstr "Updates"
+
+#: app/src/ui/preferences.rs:685
+msgid "Senders Who May Load Images"
+msgstr "Senders Who May Load Images"
+
+#: app/src/ui/preferences.rs:686 app/src/ui/preferences.rs:694
+msgid "Nobody yet"
+msgstr "Nobody yet"
+
+#: app/src/ui/preferences.rs:696
+msgid "{count} sender"
+msgid_plural "{count} senders"
+msgstr[0] "{count} sender"
+msgstr[1] "{count} senders"
+
+#: app/src/ui/preferences.rs:706
+msgid "Anyone at this domain"
+msgstr "Anyone at this domain"
+
+#: app/src/ui/preferences.rs:708
+msgid "This address"
+msgstr "This address"
+
+#: app/src/ui/preferences.rs:713
+msgid "Stop Loading Images from This Sender"
+msgstr "Stop Loading Images from This Sender"
+
+#: app/src/ui/preferences.rs:720
+msgid "Stop loading images from {sender}"
+msgstr "Stop loading images from {sender}"
+
+#: app/src/ui/preferences.rs:795
+msgid "Follow System"
+msgstr "Follow System"
+
+#: app/src/ui/preferences.rs:799
+msgid "Language"
+msgstr "Language"
+
+#: app/src/ui/preferences.rs:800
+msgid "Penguin Mail shows a new language after a restart"
+msgstr "Penguin Mail shows a new language after a restart"
+
+#: app/src/ui/preferences.rs:872
+msgid "No signature"
+msgstr "No signature"
+
+#: app/src/ui/queued.rs:65 app/src/ui/window/press.rs:303
+msgid "Cancel Send"
+msgstr "Cancel Send"
+
+#: app/src/ui/queued.rs:97
+msgid "This message has not been sent"
+msgstr "This message has not been sent"
+
+#: app/src/ui/queued.rs:98
+msgid "This message is waiting to be sent"
+msgstr "This message is waiting to be sent"
+
+#: app/src/ui/rules.rs:55
+msgid "Gmail runs these on new mail as it arrives, even when this computer is off."
+msgstr "Gmail runs these on new mail as it arrives, even when this computer is off."
+
+#: app/src/ui/rules.rs:63 app/src/ui/rules.rs:65 app/src/ui/rules.rs:317
+msgid "New Rule"
+msgstr "New Rule"
+
+#: app/src/ui/rules.rs:75
+msgid "Rules for {account}"
+msgstr "Rules for {account}"
+
+#: app/src/ui/rules.rs:141 app/src/ui/vacation.rs:70
+msgid "This account is not syncing yet."
+msgstr "This account is not syncing yet."
+
+#: app/src/ui/rules.rs:165
+msgid "No rules yet"
+msgstr "No rules yet"
+
+#: app/src/ui/rules.rs:166
+msgid "Add one with the + button."
+msgstr "Add one with the + button."
+
+#: app/src/ui/rules.rs:183
+msgid "Delete Rule"
+msgstr "Delete Rule"
+
+#: app/src/ui/rules.rs:190
+msgid "Delete the rule for {mail}"
+msgstr "Delete the rule for {mail}"
+
+#: app/src/ui/rules.rs:217
+msgid "Rule deleted"
+msgstr "Rule deleted"
+
+#: app/src/ui/rules.rs:221
+msgid "Could not delete the rule: {reason}"
+msgstr "Could not delete the rule: {reason}"
+
+#: app/src/ui/rules.rs:229
+msgid "Could Not Load the Rules"
+msgstr "Could Not Load the Rules"
+
+#: app/src/ui/rules.rs:238
+msgid "Allow Rules"
+msgstr "Allow Rules"
+
+#: app/src/ui/rules.rs:267
+msgid "Has the Words"
+msgstr "Has the Words"
+
+#: app/src/ui/rules.rs:268
+msgid "Doesn't Have"
+msgstr "Doesn't Have"
+
+#: app/src/ui/rules.rs:270
+msgid "Has an Attachment"
+msgstr "Has an Attachment"
+
+#: app/src/ui/rules.rs:272
+msgid "When Mail Matches"
+msgstr "When Mail Matches"
+
+#: app/src/ui/rules.rs:282
+msgid "Star It"
+msgstr "Star It"
+
+#: app/src/ui/rules.rs:283
+msgid "Never Send to Spam"
+msgstr "Never Send to Spam"
+
+#: app/src/ui/rules.rs:284
+msgid "Delete It"
+msgstr "Delete It"
+
+#: app/src/ui/rules.rs:286
+msgid "Don't Apply a Label"
+msgstr "Don't Apply a Label"
+
+#: app/src/ui/rules.rs:290
+msgid "Apply Label"
+msgstr "Apply Label"
+
+#: app/src/ui/rules.rs:294
+msgid "Do This"
+msgstr "Do This"
+
+#: app/src/ui/rules.rs:358
+msgid "Rule added"
+msgstr "Rule added"
+
+#: app/src/ui/rules.rs:367
+msgid "Could not add the rule: {reason}"
+msgstr "Could not add the rule: {reason}"
+
+#: app/src/ui/sidebar.rs:73
+msgid "Mailboxes"
+msgstr "Mailboxes"
+
+#: app/src/ui/sidebar.rs:79
+msgid "Add Account"
+msgstr "Add Account"
+
+#: app/src/ui/sidebar.rs:221 app/src/ui/sidebar.rs:223
+msgid "VIPs"
+msgstr "VIPs"
+
+#: app/src/ui/sidebar.rs:257
+msgid "Outbox"
+msgstr "Outbox"
+
+#: app/src/ui/sidebar.rs:275
+msgid "Follow Up"
+msgstr "Follow Up"
+
+#: app/src/ui/sidebar.rs:288
+msgid "Smart Mailboxes"
+msgstr "Smart Mailboxes"
+
+#: app/src/ui/sidebar.rs:299 app/src/ui/smart_editor.rs:43
+msgid "Accounts"
+msgstr "Accounts"
+
+#: app/src/ui/sidebar.rs:481 app/src/ui/sidebar.rs:798
+msgid "Show or hide this account's mailboxes"
+msgstr "Show or hide this account's mailboxes"
+
+#: app/src/ui/sidebar.rs:503
+msgid "{mailbox}, {count} unread message"
+msgid_plural "{mailbox}, {count} unread messages"
+msgstr[0] "{mailbox}, {count} unread message"
+msgstr[1] "{mailbox}, {count} unread messages"
+
+#: app/src/ui/sidebar.rs:509
+msgid "{mailbox}, {count} message"
+msgid_plural "{mailbox}, {count} messages"
+msgstr[0] "{mailbox}, {count} message"
+msgstr[1] "{mailbox}, {count} messages"
+
+#: app/src/ui/sidebar.rs:575 app/src/ui/sidebar.rs:764
+msgid "Move Up"
+msgstr "Move Up"
+
+#: app/src/ui/sidebar.rs:576 app/src/ui/sidebar.rs:765
+msgid "Move Down"
+msgstr "Move Down"
+
+#: app/src/ui/sidebar.rs:579 app/src/ui/sidebar.rs:637
+msgid "Delete…"
+msgstr "Delete…"
+
+#: app/src/ui/sidebar.rs:626 app/src/ui/sidebar.rs:753
+msgid "Rename…"
+msgstr "Rename…"
+
+#: app/src/ui/sidebar.rs:636 app/src/ui/sidebar.rs:763
+msgid "Color"
+msgstr "Colour"
+
+#: app/src/ui/sidebar.rs:698
+msgid "Sign in again to keep syncing"
+msgstr "Sign in again to keep syncing"
+
+#: app/src/ui/sidebar.rs:700
+msgid "Offline"
+msgstr "Offline"
+
+#: app/src/ui/sidebar.rs:703
+msgid "Gmail is not responding; retrying"
+msgstr "Gmail is not responding; retrying"
+
+#: app/src/ui/sidebar.rs:706
+msgid "Downloading mail"
+msgstr "Downloading mail"
+
+#: app/src/ui/sidebar.rs:710
+msgid "Syncing stopped after an error; restart Penguin Mail to try again"
+msgstr "Syncing stopped after an error; restart Penguin Mail to try again"
+
+#: app/src/ui/sidebar.rs:743
+msgid "Automatic Reply…"
+msgstr "Automatic Reply…"
+
+#: app/src/ui/sidebar.rs:744
+msgid "Signature…"
+msgstr "Signature…"
+
+#: app/src/ui/sidebar.rs:745
+msgid "Rules…"
+msgstr "Rules…"
+
+#: app/src/ui/sidebar.rs:747 app/src/ui/window.rs:2188
+msgid "Hide My Email…"
+msgstr "Hide My Email…"
+
+#: app/src/ui/sidebar.rs:750 app/src/ui/window.rs:1571
+msgid "New Label…"
+msgstr "New Label…"
+
+#: app/src/ui/sidebar.rs:768
+msgid "Sign In Again…"
+msgstr "Sign In Again…"
+
+#: app/src/ui/sidebar.rs:771
+msgid "Remove Account…"
+msgstr "Remove Account…"
+
+#: app/src/ui/sidebar.rs:778
+msgid "Account options"
+msgstr "Account options"
+
+#: app/src/ui/sidebar.rs:783
+msgid "Options for {account}"
+msgstr "Options for {account}"
+
+#: app/src/ui/smart_editor.rs:39
+msgid "All Accounts"
+msgstr "All Accounts"
+
+#: app/src/ui/smart_editor.rs:54
+msgid "Match"
+msgstr "Match"
+
+#: app/src/ui/smart_editor.rs:56
+msgid "All of the conditions"
+msgstr "All of the conditions"
+
+#: app/src/ui/smart_editor.rs:57
+msgid "Any of the conditions"
+msgstr "Any of the conditions"
+
+#: app/src/ui/smart_editor.rs:67
+msgid "Conditions"
+msgstr "Conditions"
+
+#: app/src/ui/smart_editor.rs:73
+msgid "Add Condition"
+msgstr "Add Condition"
+
+#: app/src/ui/smart_editor.rs:106 app/src/ui/smart_editor.rs:112
+msgid "Remove Condition"
+msgstr "Remove Condition"
+
+#: app/src/ui/smart_editor.rs:110
+msgid "Condition"
+msgstr "Condition"
+
+#: app/src/ui/smart_editor.rs:111
+msgid "Matches"
+msgstr "Matches"
+
+#: app/src/ui/smart_editor.rs:162
+msgid "Edit Smart Mailbox"
+msgstr "Edit Smart Mailbox"
+
+#: app/src/ui/smart_editor.rs:164
+msgid "New Smart Mailbox"
+msgstr "New Smart Mailbox"
+
+#: app/src/ui/smart_editor.rs:193
+msgid "Give the mailbox a name"
+msgstr "Give the mailbox a name"
+
+#: app/src/ui/smart_editor.rs:197
+msgid "Add a condition with a value"
+msgstr "Add a condition with a value"
+
+#: app/src/ui/templates.rs:25
+msgid "Saved bodies the composer's Templates menu drops into a message. Markdown works, and {{first_name}}, {{name}}, {{email}}, {{subject}} and {{date}} fill in when you use one."
+msgstr "Saved bodies the composer's Templates menu drops into a message. Markdown works, and {{first_name}}, {{name}}, {{email}}, {{subject}} and {{date}} fill in when you use one."
+
+#: app/src/ui/templates.rs:34
+msgid "Add Template"
+msgstr "Add Template"
+
+#: app/src/ui/templates.rs:93 app/src/ui/templates.rs:251
+msgid "Edit Template"
+msgstr "Edit Template"
+
+#: app/src/ui/templates.rs:94
+msgid "Edit {template}"
+msgstr "Edit {template}"
+
+#: app/src/ui/templates.rs:109
+msgid "Delete Template"
+msgstr "Delete Template"
+
+#: app/src/ui/templates.rs:110
+msgid "Delete {template}"
+msgstr "Delete {template}"
+
+#: app/src/ui/templates.rs:135
+msgid "Empty"
+msgstr "Empty"
+
+#: app/src/ui/templates.rs:147
+msgid "Delete {name}?"
+msgstr "Delete {name}?"
+
+#: app/src/ui/templates.rs:148
+msgid "This computer keeps the only copy."
+msgstr "This computer keeps the only copy."
+
+#: app/src/ui/templates.rs:196
+msgid "The subject is optional. A template with one gives it to a message that has none."
+msgstr "The subject is optional. A template with one gives it to a message that has none."
+
+#: app/src/ui/templates.rs:212 app/src/ui/templates.rs:214
+msgid "Body"
+msgstr "Body"
+
+#: app/src/ui/templates.rs:253
+msgid "New Template"
+msgstr "New Template"
+
+#: app/src/ui/thread_list.rs:180
+msgid "No Mail"
+msgstr "No Mail"
+
+#. The two search terms are Gmail's own and stay in English.
+#: app/src/ui/thread_list.rs:198
+msgid "Search mail, e.g. from:ann has:attachment"
+msgstr "Search mail, e.g. from:ann has:attachment"
+
+#: app/src/ui/thread_list.rs:212
+msgid "All Inboxes"
+msgstr "All Inboxes"
+
+#: app/src/ui/thread_list.rs:215 app/src/ui/thread_list.rs:239
+msgid "Show Mailboxes"
+msgstr "Show Mailboxes"
+
+#: app/src/ui/thread_list.rs:220
+msgid "New Message (C)"
+msgstr "New Message (C)"
+
+#: app/src/ui/thread_list.rs:225
+msgid "Search (/)"
+msgstr "Search (/)"
+
+#: app/src/ui/thread_list.rs:234
+msgid "Assistant (Ctrl+J)"
+msgstr "Assistant (Ctrl+J)"
+
+#. The tooltips already say what these do; the spoken name takes
+#. the words and leaves the keys to a property of their own.
+#: app/src/ui/thread_list.rs:238
+msgid "Search mail"
+msgstr "Search mail"
+
+#: app/src/ui/thread_row.rs:77
+msgid "VIP"
+msgstr "VIP"
+
+#: app/src/ui/thread_row.rs:311
+msgid "Unread, {sender}, {subject}, {snippet}"
+msgstr "Unread, {sender}, {subject}, {snippet}"
+
+#: app/src/ui/thread_row.rs:312
+msgid "{sender}, {subject}, {snippet}"
+msgstr "{sender}, {subject}, {snippet}"
+
+#: app/src/ui/translation.rs:50 app/src/ui/translation.rs:90
+#: app/src/ui/translation.rs:130
+msgid "Translate"
+msgstr "Translate"
+
+#: app/src/ui/translation.rs:84
+msgid "This message is in {language}"
+msgstr "This message is in {language}"
+
+#: app/src/ui/translation.rs:87
+msgid "This message is in another language"
+msgstr "This message is in another language"
+
+#: app/src/ui/translation.rs:97
+msgid "Translating…"
+msgstr "Translating…"
+
+#: app/src/ui/translation.rs:106
+msgid "Showing the message as it arrived"
+msgstr "Showing the message as it arrived"
+
+#: app/src/ui/translation.rs:108
+msgid "Translated from {language}"
+msgstr "Translated from {language}"
+
+#: app/src/ui/translation.rs:111
+msgid "Translated"
+msgstr "Translated"
+
+#: app/src/ui/translation.rs:114
+msgid "The message was long, so only the start of it was translated."
+msgstr "The message was long, so only the start of it was translated."
+
+#: app/src/ui/translation.rs:119
+msgid "Show Original"
+msgstr "Show Original"
+
+#: app/src/ui/translation.rs:120
+msgid "Show Translation"
+msgstr "Show Translation"
+
+#: app/src/ui/unsubscribe.rs:165
+msgid "Unsubscribe from {sender}?"
+msgstr "Unsubscribe from {sender}?"
+
+#: app/src/ui/unsubscribe.rs:169
+msgid "Unsubscribe from {count} list?"
+msgid_plural "Unsubscribe from {count} lists?"
+msgstr[0] "Unsubscribe from {count} list?"
+msgstr[1] "Unsubscribe from {count} lists?"
+
+#: app/src/ui/unsubscribe.rs:184
+msgid "Loading a page tells the sender you acted, as opening it yourself does."
+msgstr "Loading a page tells the sender you acted, as opening it yourself does."
+
+#: app/src/ui/unsubscribe.rs:190
+msgid "Reading the page…"
+msgstr "Reading the page…"
+
+#: app/src/ui/unsubscribe.rs:191
+msgid "ask the sender to take you off the list"
+msgstr "ask the sender to take you off the list"
+
+#: app/src/ui/unsubscribe.rs:193
+msgid "send a request from {address}"
+msgstr "send a request from {address}"
+
+#: app/src/ui/unsubscribe.rs:205
+msgid "nothing: the page says you are off the list already"
+msgstr "nothing: the page says you are off the list already"
+
+#: app/src/ui/unsubscribe.rs:206
+msgid "open the page in the browser"
+msgstr "open the page in the browser"
+
+#: app/src/ui/unsubscribe.rs:219
+msgid "press “{button}” on {site} with {address}, all emails"
+msgstr "press “{button}” on {site} with {address}, all emails"
+
+#: app/src/ui/unsubscribe.rs:223
+msgid "press “{button}” on {site} with {address}"
+msgstr "press “{button}” on {site} with {address}"
+
+#: app/src/ui/unsubscribe.rs:226
+msgid "press “{button}” on {site}, all emails"
+msgstr "press “{button}” on {site}, all emails"
+
+#: app/src/ui/unsubscribe.rs:227
+msgid "press “{button}” on {site}"
+msgstr "press “{button}” on {site}"
+
+#: app/src/ui/unsubscribe.rs:237
+msgid "Unsubscribed from {sender}"
+msgstr "Unsubscribed from {sender}"
+
+#: app/src/ui/unsubscribe.rs:238
+msgid "Sent, but the page did not say it worked"
+msgstr "Sent, but the page did not say it worked"
+
+#: app/src/ui/unsubscribe.rs:239
+msgid "The page needs you to finish it"
+msgstr "The page needs you to finish it"
+
+#: app/src/ui/unsubscribe.rs:241
+msgid "Could not unsubscribe from {sender}: {reason}"
+msgstr "Could not unsubscribe from {sender}: {reason}"
+
+#: app/src/ui/unsubscribe.rs:253
+msgid "Unsubscribed from {count} list"
+msgid_plural "Unsubscribed from {count} lists"
+msgstr[0] "Unsubscribed from {count} list"
+msgstr[1] "Unsubscribed from {count} lists"
+
+#: app/src/ui/unsubscribe.rs:259
+msgid "{count} list needs you"
+msgid_plural "{count} lists need you"
+msgstr[0] "{count} list needs you"
+msgstr[1] "{count} lists need you"
+
+#: app/src/ui/unsubscribe.rs:265
+msgid "Unsubscribed from {done}. {count} needs you"
+msgid_plural "Unsubscribed from {done}. {count} need you"
+msgstr[0] "Unsubscribed from {done}. {count} needs you"
+msgstr[1] "Unsubscribed from {done}. {count} need you"
+
+#: app/src/ui/vacation.rs:58
+msgid "Automatic Reply"
+msgstr "Automatic Reply"
+
+#: app/src/ui/vacation.rs:88
+msgid "Allow Automatic Replies"
+msgstr "Allow Automatic Replies"
+
+#: app/src/ui/vacation.rs:131
+msgid "Automatic reply is on"
+msgstr "Automatic reply is on"
+
+#: app/src/ui/vacation.rs:133
+msgid "Automatic reply is off"
+msgstr "Automatic reply is off"
+
+#: app/src/ui/vacation.rs:139
+msgid "Penguin Mail needs permission to change Gmail settings"
+msgstr "Penguin Mail needs permission to change Gmail settings"
+
+#: app/src/ui/vacation.rs:156
+msgid "Could Not Load the Automatic Reply"
+msgstr "Could Not Load the Automatic Reply"
+
+#: app/src/ui/vacation.rs:177
+msgid "Send Automatic Replies"
+msgstr "Send Automatic Replies"
+
+#: app/src/ui/vacation.rs:179
+msgid "Gmail answers new mail while you are away, even when this computer is off"
+msgstr "Gmail answers new mail while you are away, even when this computer is off"
+
+#: app/src/ui/vacation.rs:194
+msgid "Only Between These Dates"
+msgstr "Only Between These Dates"
+
+#: app/src/ui/vacation.rs:197
+msgid "First Day"
+msgstr "First Day"
+
+#: app/src/ui/vacation.rs:198
+msgid "Last Day"
+msgstr "Last Day"
+
+#: app/src/ui/vacation.rs:206
+msgid "Dates"
+msgstr "Dates"
+
+#: app/src/ui/vacation.rs:240
+msgid "Only Reply to My Contacts"
+msgstr "Only Reply to My Contacts"
+
+#: app/src/ui/vacation.rs:332
+msgid "%a, %-d %b %Y"
+msgstr "%a, %-d %b %Y"
+
+#: app/src/ui/welcome.rs:10 app/src/ui/window.rs:1962
+msgid "Sign In with Google"
+msgstr "Sign In with Google"
+
+#: app/src/ui/welcome.rs:17
+msgid "Add Your First Account"
+msgstr "Add Your First Account"
+
+#: app/src/ui/welcome.rs:19
+msgid "Your browser opens Google's sign-in page. Until Google finishes checking Penguin Mail, it warns that it has not verified the app: choose Advanced, then continue."
+msgstr "Your browser opens Google's sign-in page. Until Google finishes checking Penguin Mail, it warns that it has not verified the app: choose Advanced, then continue."
+
+#: app/src/ui/window.rs:151
+msgid "Deleted forever"
+msgstr "Deleted forever"
+
+#: app/src/ui/window.rs:153
+msgid "Deleted {count} conversation forever"
+msgid_plural "Deleted {count} conversations forever"
+msgstr[0] "Deleted {count} conversation forever"
+msgstr[1] "Deleted {count} conversations forever"
+
+#: app/src/ui/window.rs:159
+msgid "Deleted {count} message forever"
+msgid_plural "Deleted {count} messages forever"
+msgstr[0] "Deleted {count} message forever"
+msgstr[1] "Deleted {count} messages forever"
+
+#: app/src/ui/window.rs:172
+msgid "{label}, on this mail"
+msgstr "{label}, on this mail"
+
+#: app/src/ui/window.rs:180
+msgid "Added {person} to VIPs"
+msgstr "Added {person} to VIPs"
+
+#: app/src/ui/window.rs:181
+msgid "Removed {person} from VIPs"
+msgstr "Removed {person} from VIPs"
+
+#: app/src/ui/window.rs:187
+msgid "Could not load mail: {reason}"
+msgstr "Could not load mail: {reason}"
+
+#: app/src/ui/window.rs:203
+msgid "Flagged red"
+msgstr "Flagged red"
+
+#: app/src/ui/window.rs:204
+msgid "Flagged orange"
+msgstr "Flagged orange"
+
+#: app/src/ui/window.rs:205
+msgid "Flagged yellow"
+msgstr "Flagged yellow"
+
+#: app/src/ui/window.rs:206
+msgid "Flagged green"
+msgstr "Flagged green"
+
+#: app/src/ui/window.rs:207
+msgid "Flagged blue"
+msgstr "Flagged blue"
+
+#: app/src/ui/window.rs:208
+msgid "Flagged purple"
+msgstr "Flagged purple"
+
+#: app/src/ui/window.rs:209
+msgid "Flagged gray"
+msgstr "Flagged grey"
+
+#: app/src/ui/window.rs:220 app/src/ui/window.rs:318
+msgid "Labels changed"
+msgstr "Labels changed"
+
+#: app/src/ui/window.rs:224
+msgid "Unmuted"
+msgstr "Unmuted"
+
+#: app/src/ui/window.rs:226
+msgid "Muted {count} conversation"
+msgid_plural "Muted {count} conversations"
+msgstr[0] "Muted {count} conversation"
+msgstr[1] "Muted {count} conversations"
+
+#: app/src/ui/window.rs:232
+msgid "Muted {count} message"
+msgid_plural "Muted {count} messages"
+msgstr[0] "Muted {count} message"
+msgstr[1] "Muted {count} messages"
+
+#: app/src/ui/window.rs:238
+msgid "Unmuted {count} conversation"
+msgid_plural "Unmuted {count} conversations"
+msgstr[0] "Unmuted {count} conversation"
+msgstr[1] "Unmuted {count} conversations"
+
+#: app/src/ui/window.rs:244
+msgid "Unmuted {count} message"
+msgid_plural "Unmuted {count} messages"
+msgstr[0] "Unmuted {count} message"
+msgstr[1] "Unmuted {count} messages"
+
+#: app/src/ui/window.rs:254
+msgid "Dismissed {count} follow-up"
+msgid_plural "Dismissed {count} follow-ups"
+msgstr[0] "Dismissed {count} follow-up"
+msgstr[1] "Dismissed {count} follow-ups"
+
+#: app/src/ui/window.rs:263
+msgid "Archived"
+msgstr "Archived"
+
+#: app/src/ui/window.rs:265
+msgid "Archived {count} conversation"
+msgid_plural "Archived {count} conversations"
+msgstr[0] "Archived {count} conversation"
+msgstr[1] "Archived {count} conversations"
+
+#: app/src/ui/window.rs:271
+msgid "Archived {count} message"
+msgid_plural "Archived {count} messages"
+msgstr[0] "Archived {count} message"
+msgstr[1] "Archived {count} messages"
+
+#: app/src/ui/window.rs:276
+msgid "Moved to Trash"
+msgstr "Moved to Trash"
+
+#: app/src/ui/window.rs:278
+msgid "Moved {count} conversation to Trash"
+msgid_plural "Moved {count} conversations to Trash"
+msgstr[0] "Moved {count} conversation to Trash"
+msgstr[1] "Moved {count} conversations to Trash"
+
+#: app/src/ui/window.rs:284
+msgid "Moved {count} message to Trash"
+msgid_plural "Moved {count} messages to Trash"
+msgstr[0] "Moved {count} message to Trash"
+msgstr[1] "Moved {count} messages to Trash"
+
+#: app/src/ui/window.rs:289
+msgid "Marked as junk"
+msgstr "Marked as junk"
+
+#: app/src/ui/window.rs:291
+msgid "Marked {count} conversation as junk"
+msgid_plural "Marked {count} conversations as junk"
+msgstr[0] "Marked {count} conversation as junk"
+msgstr[1] "Marked {count} conversations as junk"
+
+#: app/src/ui/window.rs:297
+msgid "Marked {count} message as junk"
+msgid_plural "Marked {count} messages as junk"
+msgstr[0] "Marked {count} message as junk"
+msgstr[1] "Marked {count} messages as junk"
+
+#: app/src/ui/window.rs:302
+msgid "Moved to the Inbox"
+msgstr "Moved to the Inbox"
+
+#: app/src/ui/window.rs:304
+msgid "Moved {count} conversation to the Inbox"
+msgid_plural "Moved {count} conversations to the Inbox"
+msgstr[0] "Moved {count} conversation to the Inbox"
+msgstr[1] "Moved {count} conversations to the Inbox"
+
+#: app/src/ui/window.rs:310
+msgid "Moved {count} message to the Inbox"
+msgid_plural "Moved {count} messages to the Inbox"
+msgstr[0] "Moved {count} message to the Inbox"
+msgstr[1] "Moved {count} messages to the Inbox"
+
+#: app/src/ui/window.rs:447
+msgid "Penguin Mail (Demo)"
+msgstr "Penguin Mail (Demo)"
+
+#: app/src/ui/window.rs:744
+msgid "Could not read accounts: {reason}"
+msgstr "Could not read accounts: {reason}"
+
+#: app/src/ui/window.rs:788
+msgid "Sign in again to keep {account} syncing"
+msgstr "Sign in again to keep {account} syncing"
+
+#: app/src/ui/window.rs:791
+msgid "Sign In"
+msgstr "Sign In"
+
+#: app/src/ui/window.rs:1320
+msgid "Could not delete the mail: {reason}"
+msgstr "Could not delete the mail: {reason}"
+
+#: app/src/ui/window.rs:1380
+msgid "Turn On the {service}"
+msgstr "Turn On the {service}"
+
+#: app/src/ui/window.rs:1383
+msgid "The Google Cloud project Penguin Mail signs in with has the {service} switched off, so Google refuses before it can ask for your permission. Turn it on, wait a minute, and try again."
+msgstr "The Google Cloud project Penguin Mail signs in with has the {service} switched off, so Google refuses before it can ask for your permission. Turn it on, wait a minute, and try again."
+
+#: app/src/ui/window.rs:1389
+msgid "Open Google Cloud"
+msgstr "Open Google Cloud"
+
+#: app/src/ui/window.rs:1470 app/src/ui/window/scheduled.rs:21
+#: app/src/ui/window/shortcuts.rs:422
+msgid "Undo"
+msgstr "Undo"
+
+#: app/src/ui/window.rs:1491
+msgid "Nothing to undo"
+msgstr "Nothing to undo"
+
+#: app/src/ui/window.rs:1497
+msgid "{action} undone"
+msgstr "{action} undone"
+
+#: app/src/ui/window.rs:1547
+msgid "Open or select mail to label it."
+msgstr "Open or select mail to label it."
+
+#: app/src/ui/window.rs:1556
+msgid "Select mail from one account to label it."
+msgstr "Select mail from one account to label it."
+
+#: app/src/ui/window.rs:1599
+msgid "This account has no labels yet."
+msgstr "This account has no labels yet."
+
+#: app/src/ui/window.rs:1757
+msgid "Could not include {file}: {reason}"
+msgstr "Could not include {file}: {reason}"
+
+#: app/src/ui/window.rs:1868
+msgid "Downloading {file}…"
+msgstr "Downloading {file}…"
+
+#: app/src/ui/window.rs:1889 app/src/ui/window/attachments.rs:229
+msgid "Saved {file} to Downloads"
+msgstr "Saved {file} to Downloads"
+
+#: app/src/ui/window.rs:1907 app/src/ui/window/attachments.rs:234
+msgid "Could not save {file}: {reason}"
+msgstr "Could not save {file}: {reason}"
+
+#: app/src/ui/window.rs:1941
+msgid "Waiting for Your Browser…"
+msgstr "Waiting for Your Browser…"
+
+#: app/src/ui/window.rs:1943
+msgid "Continue in your browser"
+msgstr "Continue in your browser"
+
+#: app/src/ui/window.rs:1949
+msgid "Added {account}. Downloading mail…"
+msgstr "Added {account}. Downloading mail…"
+
+#: app/src/ui/window.rs:1972
+msgid "This copy of Penguin Mail was built without Google sign-in."
+msgstr "This copy of Penguin Mail was built without Google sign-in."
+
+#: app/src/ui/window.rs:1974
+msgid "Get a Release"
+msgstr "Get a Release"
+
+#: app/src/ui/window.rs:2013
+msgid "Remove {account}?"
+msgstr "Remove {account}?"
+
+#: app/src/ui/window.rs:2017
+msgid "Its downloaded mail and saved sign-in are deleted from this computer. Nothing changes in Gmail."
+msgstr "Its downloaded mail and saved sign-in are deleted from this computer. Nothing changes in Gmail."
+
+#: app/src/ui/window.rs:2033
+msgid "Removed {account}"
+msgstr "Removed {account}"
+
+#: app/src/ui/window.rs:2035
+msgid "Could not remove {account}: {reason}"
+msgstr "Could not remove {account}: {reason}"
+
+#: app/src/ui/window.rs:2186
+msgid "Add Account…"
+msgstr "Add Account…"
+
+#: app/src/ui/window.rs:2187
+msgid "New Smart Mailbox…"
+msgstr "New Smart Mailbox…"
+
+#: app/src/ui/window.rs:2194 app/src/ui/window/shortcuts.rs:485
+msgid "Preferences"
+msgstr "Preferences"
+
+#: app/src/ui/window.rs:2195
+msgid "Keyboard Shortcuts"
+msgstr "Keyboard Shortcuts"
+
+#: app/src/ui/window.rs:2203 app/src/ui/window.rs:2205
+msgid "Main Menu"
+msgstr "Main Menu"
+
+#: app/src/ui/window.rs:2459
+msgid "Open a message from the person first"
+msgstr "Open a message from the person first"
+
+#: app/src/ui/window.rs:2530
+msgid "Penguin Mail shows the new language after a restart"
+msgstr "Penguin Mail shows the new language after a restart"
+
+#: app/src/ui/window.rs:2532 app/src/update/mod.rs:130
+msgid "Restart"
+msgstr "Restart"
+
+#: app/src/ui/window/arrange.rs:90 app/src/ui/window/organize.rs:135
+msgid "Delete “{name}”?"
+msgstr "Delete “{name}”?"
+
+#: app/src/ui/window/arrange.rs:91
+msgid "Only the smart mailbox goes. The mail it shows stays where it is."
+msgstr "Only the smart mailbox goes. The mail it shows stays where it is."
+
+#: app/src/ui/window/arrange.rs:125
+msgid "Name This Account"
+msgstr "Name This Account"
+
+#: app/src/ui/window/arrange.rs:127
+msgid "The sidebar shows the name instead of the address. Leave it empty for the address."
+msgstr "The sidebar shows the name instead of the address. Leave it empty for the address."
+
+#: app/src/ui/window/attachments.rs:57
+msgid "Could not open {file}: {reason}"
+msgstr "Could not open {file}: {reason}"
+
+#: app/src/ui/window/attachments.rs:102
+msgid "Save Attachments"
+msgstr "Save Attachments"
+
+#: app/src/ui/window/attachments.rs:113
+msgid "Saving {count} attachment…"
+msgid_plural "Saving {count} attachments…"
+msgstr[0] "Saving {count} attachment…"
+msgstr[1] "Saving {count} attachments…"
+
+#: app/src/ui/window/attachments.rs:161
+msgid "Saved {count} attachment to {folder}"
+msgid_plural "Saved {count} attachments to {folder}"
+msgstr[0] "Saved {count} attachment to {folder}"
+msgstr[1] "Saved {count} attachments to {folder}"
+
+#: app/src/ui/window/attachments.rs:168
+msgid "Saved {count} to {folder}. Could not save {files}"
+msgstr "Saved {count} to {folder}. Could not save {files}"
+
+#: app/src/ui/window/attachments.rs:279
+msgid "Could not open {file}"
+msgstr "Could not open {file}"
+
+#: app/src/ui/window/attachments.rs:323 app/src/ui/window/attachments.rs:326
+msgid "Open in Another Program"
+msgstr "Open in Another Program"
+
+#: app/src/ui/window/attachments.rs:330
+msgid "{file}, preview"
+msgstr "{file}, preview"
+
+#: app/src/ui/window/categories.rs:152
+msgid "{name}, {count} unread"
+msgid_plural "{name}, {count} unread"
+msgstr[0] "{name}, {count} unread"
+msgstr[1] "{name}, {count} unread"
+
+#: app/src/ui/window/categories.rs:217
+msgid "Open a message from the sender first"
+msgstr "Open a message from the sender first"
+
+#: app/src/ui/window/categories.rs:261
+msgid "Mail from {sender} now goes to {category}"
+msgstr "Mail from {sender} now goes to {category}"
+
+#: app/src/ui/window/categories.rs:266
+msgid "Moved mail from {sender} to {category}"
+msgstr "Moved mail from {sender} to {category}"
+
+#: app/src/ui/window/categories.rs:273
+msgid "Moved mail from {sender} to {category}, but could not sort new mail: {reason}"
+msgstr "Moved mail from {sender} to {category}, but could not sort new mail: {reason}"
+
+#: app/src/ui/window/detached.rs:28 app/src/ui/window/export.rs:72
+#: app/src/ui/window/export.rs:123
+msgid "Open a conversation first"
+msgstr "Open a conversation first"
+
+#: app/src/ui/window/detached.rs:130 app/src/ui/window/export.rs:75
+#: app/src/ui/window/export.rs:138 app/src/ui/window/organize.rs:69
+#: app/src/ui/window/organize.rs:117 app/src/ui/window/organize.rs:146
+#: app/src/ui/window/organize.rs:174 app/src/ui/window/senders.rs:230
+msgid "That account is not connected"
+msgstr "That account is not connected"
+
+#: app/src/ui/window/detached.rs:140
+msgid "Could not load the source: {reason}"
+msgstr "Could not load the source: {reason}"
+
+#: app/src/ui/window/detached.rs:158 app/src/ui/window/detached.rs:164
+#: app/src/ui/window/detached.rs:176
+msgid "Message Source"
+msgstr "Message Source"
+
+#: app/src/ui/window/detached.rs:160
+msgid "Save As…"
+msgstr "Save As…"
+
+#: app/src/ui/window/detached.rs:161
+msgid "Save as an .eml file"
+msgstr "Save as an .eml file"
+
+#: app/src/ui/window/detached.rs:198
+msgid "Save Message"
+msgstr "Save Message"
+
+#: app/src/ui/window/export.rs:79 app/src/ui/window/export.rs:142
+msgid "Export Mail"
+msgstr "Export Mail"
+
+#: app/src/ui/window/export.rs:93 app/src/ui/window/export.rs:151
+msgid "Exporting…"
+msgstr "Exporting…"
+
+#: app/src/ui/window/export.rs:103 app/src/ui/window/export.rs:161
+msgid "Saved {file}"
+msgstr "Saved {file}"
+
+#: app/src/ui/window/export.rs:104 app/src/ui/window/export.rs:162
+msgid "Could not export the mail: {reason}"
+msgstr "Could not export the mail: {reason}"
+
+#: app/src/ui/window/followup.rs:35
+msgid "Review"
+msgstr "Review"
+
+#: app/src/ui/window/followup.rs:40 app/src/ui/window/followup.rs:44
+msgid "Hide Until Next Launch"
+msgstr "Hide Until Next Launch"
+
+#: app/src/ui/window/followup.rs:109
+msgid "{count} sent message has had no reply"
+msgid_plural "{count} sent messages have had no reply"
+msgstr[0] "{count} sent message has had no reply"
+msgstr[1] "{count} sent messages have had no reply"
+
+#: app/src/ui/window/images.rs:71
+msgid "Always"
+msgstr "Always"
+
+#: app/src/ui/window/images.rs:92
+msgid "This message has no sender to remember."
+msgstr "This message has no sender to remember."
+
+#: app/src/ui/window/images.rs:96
+msgid "Always Load Images?"
+msgstr "Always Load Images?"
+
+#: app/src/ui/window/images.rs:104
+msgid "From {sender}"
+msgstr "From {sender}"
+
+#: app/src/ui/window/images.rs:110
+msgid "From Anyone at {domain}"
+msgstr "From Anyone at {domain}"
+
+#: app/src/ui/window/images.rs:160
+msgid "Images from anyone at {domain} will load from now on"
+msgstr "Images from anyone at {domain} will load from now on"
+
+#: app/src/ui/window/images.rs:165
+msgid "Images from {sender} will load from now on"
+msgstr "Images from {sender} will load from now on"
+
+#: app/src/ui/window/images.rs:170
+msgid "Could not remember that sender: {reason}"
+msgstr "Could not remember that sender: {reason}"
+
+#: app/src/ui/window/invitation.rs:54
+msgid "Could not open Settings: {reason}"
+msgstr "Could not open Settings: {reason}"
+
+#: app/src/ui/window/invitation.rs:84
+msgid "This invitation names no event, so there is nothing to answer"
+msgstr "This invitation names no event, so there is nothing to answer"
+
+#: app/src/ui/window/invitation.rs:110
+msgid "This invitation names no organizer, so there is nobody to reply to"
+msgstr "This invitation names no organiser, so there is nobody to reply to"
+
+#: app/src/ui/window/invitation.rs:132
+msgid "Could not send your reply: {reason}"
+msgstr "Could not send your reply: {reason}"
+
+#: app/src/ui/window/invitation.rs:162
+msgid "Nobody"
+msgstr "Nobody"
+
+#: app/src/ui/window/invitation.rs:166
+msgid "Propose a New Time"
+msgstr "Propose a New Time"
+
+#: app/src/ui/window/invitation.rs:168
+msgid "The organizer decides. {organizer} hears what you suggest."
+msgstr "The organiser decides. {organizer} hears what you suggest."
+
+#: app/src/ui/window/invitation.rs:171
+msgid "Propose"
+msgstr "Propose"
+
+#: app/src/ui/window/invitation.rs:189
+msgid "This invitation names no organizer, so there is nobody to ask"
+msgstr "This invitation names no organiser, so there is nobody to ask"
+
+#: app/src/ui/window/invitation.rs:196
+msgid "Proposed a new time to {organizer}"
+msgstr "Proposed a new time to {organizer}"
+
+#: app/src/ui/window/invitation.rs:199
+msgid "Proposed a new time"
+msgstr "Proposed a new time"
+
+#: app/src/ui/window/invitation.rs:202
+msgid "New time proposed. The organizer decides."
+msgstr "New time proposed. The organiser decides."
+
+#: app/src/ui/window/invitation.rs:204
+msgid "Could not send your proposal: {reason}"
+msgstr "Could not send your proposal: {reason}"
+
+#: app/src/ui/window/invitation.rs:225
+msgid "Could not save the invitation: {reason}"
+msgstr "Could not save the invitation: {reason}"
+
+#: app/src/ui/window/invitation.rs:235
+msgid "No app on this desktop opens invitations: {reason}"
+msgstr "No app on this desktop opens invitations: {reason}"
+
+#: app/src/ui/window/invitation.rs:266
+msgid "Replied Yes"
+msgstr "Replied Yes"
+
+#: app/src/ui/window/invitation.rs:267
+msgid "Replied No"
+msgstr "Replied No"
+
+#: app/src/ui/window/invitation.rs:268
+msgid "Replied Maybe"
+msgstr "Replied Maybe"
+
+#: app/src/ui/window/invitation.rs:271
+msgid "{answer}. The organizer has been told."
+msgstr "{answer}. The organiser has been told."
+
+#: app/src/ui/window/invitation.rs:272
+msgid "{answer}. Your reply is on its way to the organizer."
+msgstr "{answer}. Your reply is on its way to the organiser."
+
+#: app/src/ui/window/invitation.rs:282
+msgid "Answered on your calendar"
+msgstr "Answered on your calendar"
+
+#: app/src/ui/window/invitation.rs:284
+msgid "Replied by email to {organizer}"
+msgstr "Replied by email to {organizer}"
+
+#: app/src/ui/window/invitation.rs:287
+msgid "Replied by email"
+msgstr "Replied by email"
+
+#: app/src/ui/window/message_menu.rs:200
+msgid "Message from {sender}"
+msgstr "Message from {sender}"
+
+#: app/src/ui/window/message_menu.rs:201
+msgid "This Message"
+msgstr "This Message"
+
+#: app/src/ui/window/message_menu.rs:346
+msgid "Copied {address}"
+msgstr "Copied {address}"
+
+#: app/src/ui/window/notice.rs:82 app/src/ui/window/outbox.rs:103
+msgid "Message sent"
+msgstr "Message sent"
+
+#: app/src/ui/window/on_screen.rs:222 app/src/ui/window/shortcuts.rs:286
+msgid "Search"
+msgstr "Search"
+
+#: app/src/ui/window/organize.rs:44
+msgid "Name, or Parent/Name to nest it"
+msgstr "Name, or Parent/Name to nest it"
+
+#: app/src/ui/window/organize.rs:49
+msgid "New Label"
+msgstr "New Label"
+
+#: app/src/ui/window/organize.rs:79
+msgid "Created “{name}”"
+msgstr "Created “{name}”"
+
+#: app/src/ui/window/organize.rs:81
+msgid "Could not create the label: {reason}"
+msgstr "Could not create the label: {reason}"
+
+#: app/src/ui/window/organize.rs:96
+msgid "Rename Label"
+msgstr "Rename Label"
+
+#: app/src/ui/window/organize.rs:97
+msgid "Labels nested under it move along."
+msgstr "Labels nested under it move along."
+
+#: app/src/ui/window/organize.rs:102
+msgid "Rename"
+msgstr "Rename"
+
+#: app/src/ui/window/organize.rs:125
+msgid "Could not rename the label: {reason}"
+msgstr "Could not rename the label: {reason}"
+
+#: app/src/ui/window/organize.rs:136
+msgid "Its mail stays in Gmail, without the label. Nested labels stay too."
+msgstr "Its mail stays in Gmail, without the label. Nested labels stay too."
+
+#: app/src/ui/window/organize.rs:156
+msgid "Deleted “{name}”"
+msgstr "Deleted “{name}”"
+
+#: app/src/ui/window/organize.rs:158
+msgid "Could not delete the label: {reason}"
+msgstr "Could not delete the label: {reason}"
+
+#: app/src/ui/window/organize.rs:187
+msgid "Could not change the color: {reason}"
+msgstr "Could not change the colour: {reason}"
+
+#: app/src/ui/window/organize.rs:279
+msgid "Only Where It Exists"
+msgstr "Only Where It Exists"
+
+#: app/src/ui/window/outbox.rs:105
+msgid "Still not sent. It stays in the Outbox."
+msgstr "Still not sent. It stays in the Outbox."
+
+#: app/src/ui/window/outbox.rs:129
+msgid "That message is no longer waiting."
+msgstr "That message is no longer waiting."
+
+#: app/src/ui/window/outbox.rs:133
+msgid "Penguin Mail cannot reopen this message. Send it as it is."
+msgstr "Penguin Mail cannot reopen this message. Send it as it is."
+
+#: app/src/ui/window/outbox.rs:142
+msgid "Could not open it: {reason}"
+msgstr "Could not open it: {reason}"
+
+#: app/src/ui/window/outbox.rs:166
+msgid "Could not delete: {reason}"
+msgstr "Could not delete: {reason}"
+
+#: app/src/ui/window/outbox.rs:172
+msgid "Deleted. It will not be sent."
+msgstr "Deleted. It will not be sent."
+
+#: app/src/ui/window/outbox.rs:174
+msgid "Deleted. They will not be sent."
+msgstr "Deleted. They will not be sent."
+
+#: app/src/ui/window/press.rs:205
+msgid "Back in the Inbox"
+msgstr "Back in the Inbox"
+
+#: app/src/ui/window/press.rs:224
+msgid "Will remind you {when}"
+msgstr "Will remind you {when}"
+
+#: app/src/ui/window/press.rs:244
+msgid "Drop mail on its own account's mailboxes"
+msgstr "Drop mail on its own account's mailboxes"
+
+#: app/src/ui/window/press.rs:257
+msgid "Moved to {mailbox}"
+msgstr "Moved to {mailbox}"
+
+#: app/src/ui/window/press.rs:268
+msgid "Delete This Conversation Forever?"
+msgstr "Delete This Conversation Forever?"
+
+#: app/src/ui/window/press.rs:270
+msgid "Delete {count} Conversation Forever?"
+msgid_plural "Delete {count} Conversations Forever?"
+msgstr[0] "Delete {count} Conversation Forever?"
+msgstr[1] "Delete {count} Conversations Forever?"
+
+#: app/src/ui/window/press.rs:275
+msgid "Delete This Message Forever?"
+msgstr "Delete This Message Forever?"
+
+#: app/src/ui/window/press.rs:277
+msgid "Delete {count} Message Forever?"
+msgid_plural "Delete {count} Messages Forever?"
+msgstr[0] "Delete {count} Message Forever?"
+msgstr[1] "Delete {count} Messages Forever?"
+
+#: app/src/ui/window/press.rs:286
+msgid "Gmail deletes it from every device and cannot bring it back."
+msgstr "Gmail deletes it from every device and cannot bring it back."
+
+#: app/src/ui/window/press.rs:287
+msgid "Gmail deletes them from every device and cannot bring them back."
+msgstr "Gmail deletes them from every device and cannot bring them back."
+
+#: app/src/ui/window/press.rs:303
+msgid "Cancel Send (Delete)"
+msgstr "Cancel Send (Delete)"
+
+#: app/src/ui/window/press.rs:305
+msgid "Delete from Outbox"
+msgstr "Delete from Outbox"
+
+#: app/src/ui/window/press.rs:306
+msgid "Delete from Outbox (Delete)"
+msgstr "Delete from Outbox (Delete)"
+
+#: app/src/ui/window/press.rs:309
+msgid "Cancel Reminder"
+msgstr "Cancel Reminder"
+
+#: app/src/ui/window/press.rs:310
+msgid "Cancel Reminder (Delete)"
+msgstr "Cancel Reminder (Delete)"
+
+#: app/src/ui/window/press.rs:313
+msgid "Dismiss Follow-Up"
+msgstr "Dismiss Follow-Up"
+
+#: app/src/ui/window/press.rs:314
+msgid "Dismiss Follow-Up (Delete)"
+msgstr "Dismiss Follow-Up (Delete)"
+
+#: app/src/ui/window/reminders.rs:27
+msgid "The conversation leaves the inbox now and comes back at this time, marked unread."
+msgstr "The conversation leaves the inbox now and comes back at this time, marked unread."
+
+#: app/src/ui/window/reveal.rs:75
+msgid "Could not open the conversation to reply to it"
+msgstr "Could not open the conversation to reply to it"
+
+#: app/src/ui/window/scheduled.rs:20
+msgid "Sending…"
+msgstr "Sending…"
+
+#: app/src/ui/window/scheduled.rs:60
+msgid "Could not cancel: {reason}"
+msgstr "Could not cancel: {reason}"
+
+#: app/src/ui/window/scheduled.rs:118
+msgid "Gmail is out of reach and Penguin Mail cannot reopen a message, so it stays in Send Later."
+msgstr "Gmail is out of reach and Penguin Mail cannot reopen a message, so it stays in Send Later."
+
+#: app/src/ui/window/scheduled.rs:121
+msgid "Won't be sent. Gmail is out of reach, so the message is open for you to save."
+msgstr "Won't be sent. Gmail is out of reach, so the message is open for you to save."
+
+#: app/src/ui/window/scheduled.rs:124
+msgid "Won't be sent. Gmail is out of reach, so the messages are open for you to save."
+msgstr "Won't be sent. Gmail is out of reach, so the messages are open for you to save."
+
+#: app/src/ui/window/scheduled.rs:126
+msgid "Won't be sent. The message is in Drafts."
+msgstr "Won't be sent. The message is in Drafts."
+
+#: app/src/ui/window/scheduled.rs:127
+msgid "Won't be sent. The messages are in Drafts."
+msgstr "Won't be sent. The messages are in Drafts."
+
+#: app/src/ui/window/scheduled.rs:129
+msgid "Won't be sent. Some are in Drafts, and the ones Gmail could not take are open for you to save."
+msgstr "Won't be sent. Some are in Drafts, and the ones Gmail could not take are open for you to save."
+
+#: app/src/ui/window/senders.rs:52
+msgid "This message has no unsubscribe link"
+msgstr "This message has no unsubscribe link"
+
+#: app/src/ui/window/senders.rs:56
+msgid "This message's unsubscribe link is not one Penguin Mail can use"
+msgstr "This message's unsubscribe link is not one Penguin Mail can use"
+
+#: app/src/ui/window/senders.rs:154
+msgid "Open Page"
+msgstr "Open Page"
+
+#: app/src/ui/window/senders.rs:193
+msgid "The app is closing."
+msgstr "The app is closing."
+
+#: app/src/ui/window/senders.rs:209
+msgid "Open a message from the sender to block"
+msgstr "Open a message from the sender to block"
+
+#: app/src/ui/window/senders.rs:213
+msgid "Block {sender}?"
+msgstr "Block {sender}?"
+
+#: app/src/ui/window/senders.rs:216
+msgid "New mail from {email} goes straight to the Trash. This conversation moves there now. Remove the rule under Rules to unblock."
+msgstr "New mail from {email} goes straight to the Trash. This conversation moves there now. Remove the rule under Rules to unblock."
+
+#: app/src/ui/window/senders.rs:221
+msgid "Block"
+msgstr "Block"
+
+#: app/src/ui/window/senders.rs:248
+msgid "Blocked {sender}"
+msgstr "Blocked {sender}"
+
+#: app/src/ui/window/senders.rs:254
+msgid "Could not block the sender: {reason}"
+msgstr "Could not block the sender: {reason}"
+
+#: app/src/ui/window/shortcuts.rs:212
+msgid "Organizing"
+msgstr "Organising"
+
+#: app/src/ui/window/shortcuts.rs:263
+msgid "Next or previous conversation"
+msgstr "Next or previous conversation"
+
+#: app/src/ui/window/shortcuts.rs:271
+msgid "Open mailbox 1 to 9"
+msgstr "Open mailbox 1 to 9"
+
+#: app/src/ui/window/shortcuts.rs:299
+msgid "Get new mail"
+msgstr "Get new mail"
+
+#: app/src/ui/window/shortcuts.rs:307
+msgid "Select all"
+msgstr "Select all"
+
+#: app/src/ui/window/shortcuts.rs:312
+msgid "Clear the selection"
+msgstr "Clear the selection"
+
+#: app/src/ui/window/shortcuts.rs:317
+msgid "Bigger or smaller text"
+msgstr "Bigger or smaller text"
+
+#: app/src/ui/window/shortcuts.rs:326
+msgid "Open the menu of the conversation in focus"
+msgstr "Open the menu of the conversation in focus"
+
+#: app/src/ui/window/shortcuts.rs:331
+msgid "Open the menu of the message in focus"
+msgstr "Open the menu of the message in focus"
+
+#: app/src/ui/window/shortcuts.rs:336
+msgid "Open in a new window"
+msgstr "Open in a new window"
+
+#: app/src/ui/window/shortcuts.rs:341
+msgid "Print"
+msgstr "Print"
+
+#: app/src/ui/window/shortcuts.rs:346
+msgid "View source"
+msgstr "View source"
+
+#: app/src/ui/window/shortcuts.rs:351
+msgid "Normal text size"
+msgstr "Normal text size"
+
+#: app/src/ui/window/shortcuts.rs:364
+msgid "Move to trash"
+msgstr "Move to trash"
+
+#: app/src/ui/window/shortcuts.rs:380
+msgid "Flag or unflag"
+msgstr "Flag or unflag"
+
+#: app/src/ui/window/shortcuts.rs:388
+msgid "Flag colors"
+msgstr "Flag colours"
+
+#: app/src/ui/window/shortcuts.rs:401
+msgid "Mark read or unread"
+msgstr "Mark read or unread"
+
+#: app/src/ui/window/shortcuts.rs:409
+msgid "Mute or unmute"
+msgstr "Mute or unmute"
+
+#: app/src/ui/window/shortcuts.rs:414
+msgid "Labels"
+msgstr "Labels"
+
+#: app/src/ui/window/shortcuts.rs:440
+msgid "Reply all"
+msgstr "Reply all"
+
+#: app/src/ui/window/shortcuts.rs:461
+msgid "Attach files"
+msgstr "Attach files"
+
+#: app/src/ui/window/shortcuts.rs:466
+msgid "Insert image"
+msgstr "Insert image"
+
+#: app/src/ui/window/shortcuts.rs:471
+msgid "Bold, italic, link"
+msgstr "Bold, italic, link"
+
+#: app/src/ui/window/shortcuts.rs:480
+msgid "Save draft"
+msgstr "Save draft"
+
+#: app/src/ui/window/shortcuts.rs:490
+msgid "Keyboard shortcuts"
+msgstr "Keyboard shortcuts"
+
+#: app/src/ui/window/shortcuts.rs:495
+msgid "Show or hide the assistant"
+msgstr "Show or hide the assistant"
+
+#: app/src/ui/window/shortcuts.rs:500
+msgid "Close window"
+msgstr "Close window"
+
+#: app/src/ui/window/shortcuts.rs:581
+msgid "Checking for mail"
+msgstr "Checking for mail"
+
+#: app/src/update/mod.rs:103
+msgid "Installing Update…"
+msgstr "Installing Update…"
+
+#: app/src/update/mod.rs:105
+msgid "Show Update Log"
+msgstr "Show Update Log"
+
+#: app/src/update/mod.rs:106
+msgid "Checking for Updates…"
+msgstr "Checking for Updates…"
+
+#: app/src/update/mod.rs:116 app/src/update/mod.rs:206
+msgid "Penguin Mail {version} is available"
+msgstr "Penguin Mail {version} is available"
+
+#: app/src/update/mod.rs:119 app/src/update/mod.rs:212
+msgid "Install"
+msgstr "Install"
+
+#: app/src/update/mod.rs:123
+msgid "Installing Penguin Mail {version}"
+msgstr "Installing Penguin Mail {version}"
+
+#: app/src/update/mod.rs:129
+msgid "Restart to finish updating"
+msgstr "Restart to finish updating"
+
+#: app/src/update/mod.rs:209
+msgid "Install it now, or later from the tray."
+msgstr "Install it now, or later from the tray."
+
+#: app/src/update/signature.rs:31
+msgid "This release has no signature, so Penguin Mail will not install it."
+msgstr "This release has no signature, so Penguin Mail will not install it."
+
+#: app/src/update/signature.rs:99
+msgid "Penguin Mail could not check the release's signature: {reason}"
+msgstr "Penguin Mail could not check the release's signature: {reason}"
+
+#: app/src/update/signature.rs:147
+msgid "This release is not signed with Penguin Mail's key, so Penguin Mail will not install it."
+msgstr "This release is not signed with Penguin Mail's key, so Penguin Mail will not install it."
+
+#: app/src/update/signature.rs:151
+msgid "Checking the release's signature needs gpgv or gpg, and neither is installed."
+msgstr "Checking the release's signature needs gpgv or gpg, and neither is installed."
+
+#: domain/src/category.rs:58
+msgid "All"
+msgstr "All"
+
+#: domain/src/category.rs:59
+msgid "Primary"
+msgstr "Primary"
+
+#: domain/src/category.rs:61
+msgid "Promotions"
+msgstr "Promotions"
+
+#: domain/src/category.rs:62
+msgid "Social"
+msgstr "Social"
+
+#: domain/src/invitation.rs:68
+msgid "Yes"
+msgstr "Yes"
+
+#: domain/src/invitation.rs:69
+msgid "No"
+msgstr "No"
+
+#: domain/src/invitation.rs:70 domain/src/invitation.rs:79
+msgid "Maybe"
+msgstr "Maybe"
+
+#: domain/src/invitation.rs:77
+msgid "Going"
+msgstr "Going"
+
+#: domain/src/invitation.rs:78
+msgid "Not going"
+msgstr "Not going"
+
+#: domain/src/invitation/recurrence.rs:24
+msgid "Every day"
+msgid_plural "Every {count} days"
+msgstr[0] "Every day"
+msgstr[1] "Every {count} days"
+
+#: domain/src/invitation/recurrence.rs:26
+msgid "Every week"
+msgid_plural "Every {count} weeks"
+msgstr[0] "Every week"
+msgstr[1] "Every {count} weeks"
+
+#: domain/src/invitation/recurrence.rs:28
+msgid "Every {days}"
+msgstr "Every {days}"
+
+#: domain/src/invitation/recurrence.rs:30
+msgid "{every} on {days}"
+msgstr "{every} on {days}"
+
+#: domain/src/invitation/recurrence.rs:38
+msgid "Every month"
+msgid_plural "Every {count} months"
+msgstr[0] "Every month"
+msgstr[1] "Every {count} months"
+
+#: domain/src/invitation/recurrence.rs:45
+msgid "{every} on {day}"
+msgstr "{every} on {day}"
+
+#: domain/src/invitation/recurrence.rs:51
+msgid "Every year"
+msgid_plural "Every {count} years"
+msgstr[0] "Every year"
+msgstr[1] "Every {count} years"
+
+#: domain/src/invitation/recurrence.rs:52
+msgid "Every hour"
+msgid_plural "Every {count} hours"
+msgstr[0] "Every hour"
+msgstr[1] "Every {count} hours"
+
+#: domain/src/invitation/recurrence.rs:63
+msgid "{every} until {day}"
+msgstr "{every} until {day}"
+
+#: domain/src/invitation/recurrence.rs:68
+msgid "once"
+msgstr "once"
+
+#: domain/src/invitation/recurrence.rs:70
+msgid "{count} time"
+msgid_plural "{count} times"
+msgstr[0] "{count} time"
+msgstr[1] "{count} times"
+
+#: domain/src/invitation/recurrence.rs:77
+msgid "{every}, {repeats}"
+msgstr "{every}, {repeats}"
+
+#: domain/src/invitation/recurrence.rs:100
+msgid "{every}, no end date"
+msgstr "{every}, no end date"
+
+#: domain/src/invitation/recurrence.rs:115
+msgid "{every}, none left"
+msgstr "{every}, none left"
+
+#: domain/src/invitation/recurrence.rs:117
+msgid "{every}, {count} left"
+msgid_plural "{every}, {count} left"
+msgstr[0] "{every}, {count} left"
+msgstr[1] "{every}, {count} left"
+
+#: domain/src/invitation/recurrence.rs:196
+msgid "{days} and {last}"
+msgstr "{days} and {last}"
+
+#: domain/src/invitation/recurrence.rs:204
+msgid "Monday"
+msgstr "Monday"
+
+#: domain/src/invitation/recurrence.rs:205
+msgid "Tuesday"
+msgstr "Tuesday"
+
+#: domain/src/invitation/recurrence.rs:206
+msgid "Wednesday"
+msgstr "Wednesday"
+
+#: domain/src/invitation/recurrence.rs:207
+msgid "Thursday"
+msgstr "Thursday"
+
+#: domain/src/invitation/recurrence.rs:208
+msgid "Friday"
+msgstr "Friday"
+
+#: domain/src/invitation/recurrence.rs:209
+msgid "Saturday"
+msgstr "Saturday"
+
+#: domain/src/invitation/recurrence.rs:210
+msgid "Sunday"
+msgstr "Sunday"
+
+#: domain/src/invitation/recurrence.rs:220
+msgid "the last day"
+msgstr "the last day"
+
+#: domain/src/invitation/recurrence.rs:229
+msgid "the last {weekday}"
+msgstr "the last {weekday}"
+
+#: domain/src/invitation/recurrence.rs:231
+msgid "the {nth} {weekday}"
+msgstr "the {nth} {weekday}"
+
+#: domain/src/invitation/recurrence.rs:240
+msgid "first"
+msgstr "first"
+
+#: domain/src/invitation/recurrence.rs:241
+msgid "second"
+msgstr "second"
+
+#: domain/src/invitation/recurrence.rs:242
+msgid "third"
+msgstr "third"
+
+#: domain/src/invitation/recurrence.rs:243
+msgid "fourth"
+msgstr "fourth"
+
+#: domain/src/invitation/recurrence.rs:244
+msgid "fifth"
+msgstr "fifth"
+
+#: domain/src/invitation/recurrence.rs:257
+#: domain/src/invitation/recurrence.rs:261
+msgid "the {day}th"
+msgstr "the {day}th"
+
+#: domain/src/invitation/recurrence.rs:258
+msgid "the {day}st"
+msgstr "the {day}st"
+
+#: domain/src/invitation/recurrence.rs:259
+msgid "the {day}nd"
+msgstr "the {day}nd"
+
+#: domain/src/invitation/recurrence.rs:260
+msgid "the {day}rd"
+msgstr "the {day}rd"
+
+#: domain/src/smart.rs:68
+msgid "From contains"
+msgstr "From contains"
+
+#: domain/src/smart.rs:69
+msgid "To contains"
+msgstr "To contains"
+
+#: domain/src/smart.rs:70
+msgid "Subject contains"
+msgstr "Subject contains"
+
+#: domain/src/smart.rs:71
+msgid "Message contains"
+msgstr "Message contains"
+
+#: domain/src/smart.rs:72
+msgid "Has label"
+msgstr "Has label"
+
+#: domain/src/smart.rs:73
+msgid "Received in the last (days)"
+msgstr "Received in the last (days)"
+
+#: domain/src/smart.rs:74
+msgid "Larger than (MB)"
+msgstr "Larger than (MB)"
+
+#: domain/src/smart.rs:76
+msgid "Is unread"
+msgstr "Is unread"
+
+#: domain/src/smart.rs:77
+msgid "Is flagged"
+msgstr "Is flagged"
+
+#: sync/src/account/writes.rs:473
+msgid "Gmail is busy. Still working on {conversations}."
+msgstr "Gmail is busy. Still working on {conversations}."
+
+#: sync/src/account/writes.rs:488
+msgid "Gmail is busy, so {action} did not go through for {conversations}. Try again in a moment."
+msgstr "Gmail is busy, so {action} did not go through for {conversations}. Try again in a moment."
+
+#: sync/src/account/writes.rs:497
+msgid "Gmail stayed busy for {waited}, so {action} did not go through for {conversations}."
+msgstr "Gmail stayed busy for {waited}, so {action} did not go through for {conversations}."
+
+#: sync/src/account/writes.rs:504
+msgid "{action} failed: {reason}"
+msgstr "{action} failed: {reason}"
+
+#: sync/src/account/writes.rs:522
+msgid "a moment"
+msgstr "a moment"
+
+#: sync/src/account/writes.rs:524
+msgid "{count} second"
+msgid_plural "{count} seconds"
+msgstr[0] "{count} second"
+msgstr[1] "{count} seconds"
+
+#: sync/src/account/writes.rs:529
+msgid "a minute"
+msgstr "a minute"
+
+#: sync/src/actions.rs:115 sync/src/actions.rs:591
+msgid "Change labels"
+msgstr "Change labels"
+
+#: sync/src/actions.rs:314
+msgid "Delete Forever failed: {reason}"
+msgstr "Delete Forever failed: {reason}"
+
+#: sync/src/actions.rs:484
+msgid "This mail has moved since, so Undo left it where it is."
+msgstr "This mail has moved since, so Undo left it where it is."
+
+#: sync/src/actions.rs:545 sync/src/actions.rs:598
+msgid "Could not undo: {reason}"
+msgstr "Could not undo: {reason}"
+
+#: sync/src/actions/labelling.rs:101
+msgid "Create the label {names}?"
+msgid_plural "Create the labels {names}?"
+msgstr[0] "Create the label {names}?"
+msgstr[1] "Create the labels {names}?"
+
+#: sync/src/actions/labelling.rs:112
+msgid "{accounts} will get a new label."
+msgid_plural "{accounts} will get new labels."
+msgstr[0] "{accounts} will get a new label."
+msgstr[1] "{accounts} will get new labels."
+
+#: sync/src/error.rs:100
+msgid "Gmail keeps “{name}” for its own label. Choose another name."
+msgstr "Gmail keeps “{name}” for its own label. Choose another name."
+
+#: sync/src/mailbox.rs:90
+msgid "{color} Flag"
+msgstr "{color} Flag"
+
+#: sync/src/mailbox.rs:151
+msgid "No Results"
+msgstr "No Results"
+
+#: sync/src/mailbox.rs:154
+msgid "Nothing Scheduled"
+msgstr "Nothing Scheduled"
+
+#: sync/src/mailbox.rs:157
+msgid "Outbox Is Empty"
+msgstr "Outbox Is Empty"
+
+#: sync/src/mailbox.rs:159
+msgid "No Reminders"
+msgstr "No Reminders"
+
+#: sync/src/mailbox.rs:161
+msgid "No Follow-Ups"
+msgstr "No Follow-Ups"
+
+#: sync/src/mailbox.rs:164
+msgid "No Flagged Mail"
+msgstr "No Flagged Mail"
+
+#: sync/src/mailbox.rs:166
+msgid "No Mail from VIPs"
+msgstr "No Mail from VIPs"
+
+#: sync/src/mailbox.rs:168
+msgid "No Matching Mail"
+msgstr "No Matching Mail"
+
+#: sync/src/mailbox.rs:173
+msgid "No Archived Mail"
+msgstr "No Archived Mail"
+
+#: sync/src/mailbox.rs:174
+msgid "No Junk"
+msgstr "No Junk"
+
+#: sync/src/mailbox.rs:175
+msgid "Trash Is Empty"
+msgstr "Trash Is Empty"
+
+#: sync/src/mailbox.rs:181
+msgid "Inbox Zero"
+msgstr "Inbox Zero"
+
+#: sync/src/mailbox.rs:182
+msgid "No Starred Mail"
+msgstr "No Starred Mail"
+
+#: sync/src/mailbox.rs:183
+msgid "No Sent Mail"
+msgstr "No Sent Mail"
+
+#: sync/src/mailbox.rs:184
+msgid "No Drafts"
+msgstr "No Drafts"
+
+#: sync/src/mailbox.rs:185
+msgid "No Muted Mail"
+msgstr "No Muted Mail"
+
+#: sync/src/mailbox.rs:229
+msgctxt "mailbox"
+msgid "Archive"
+msgstr "Archive"
+
+#: sync/src/mailbox.rs:231
+msgid "Trash"
+msgstr "Trash"
+
+#: sync/src/mailbox.rs:232
+msgid "All Mail"
+msgstr "All Mail"
+
+#: sync/src/mailbox.rs:500
+msgid "This smart mailbox has no conditions"
+msgstr "This smart mailbox has no conditions"
+
+#: sync/src/mailbox.rs:821
+msgid "Could not load mail for {account}: {reason}"
+msgstr "Could not load mail for {account}: {reason}"
+
+#: sync/src/mailbox.rs:939
+msgid "Returns {when}"
+msgstr "Returns {when}"
+
+#: sync/src/mailbox.rs:982 sync/src/mailbox.rs:1053
+msgid "No recipients"
+msgstr "No recipients"
+
+#: sync/src/mailbox.rs:985 sync/src/mailbox.rs:1056
+msgid "To {recipients}"
+msgstr "To {recipients}"
+
+#: sync/src/mailbox.rs:1018
+msgid "{count} unread"
+msgid_plural "{count} unread"
+msgstr[0] "{count} unread"
+msgstr[1] "{count} unread"
+
+#: sync/src/mailbox.rs:1028
+msgid "Sent yesterday, no reply yet"
+msgstr "Sent yesterday, no reply yet"
+
+#: sync/src/mailbox.rs:1030
+msgid "Sent {days} day ago, no reply yet"
+msgid_plural "Sent {days} days ago, no reply yet"
+msgstr[0] "Sent {days} day ago, no reply yet"
+msgstr[1] "Sent {days} days ago, no reply yet"
+
+#: sync/src/mailbox.rs:1068
+msgid "Sends {when}"
+msgstr "Sends {when}"
+
+#: sync/src/mailbox.rs:1072
+msgid "Not sent"
+msgstr "Not sent"
+
+#: sync/src/mailbox.rs:1079
+msgid "{problem}. Trying again {when}"
+msgstr "{problem}. Trying again {when}"
+
+#: sync/src/mailbox.rs:1086
+msgid "{problem}. Penguin Mail stopped trying"
+msgstr "{problem}. Penguin Mail stopped trying"
+
+#: sync/src/triage.rs:41
+msgid "Mark read"
+msgstr "Mark read"
+
+#: sync/src/triage.rs:42
+msgid "Mark unread"
+msgstr "Mark unread"
+
+#: sync/src/triage.rs:43
+msgid "Star"
+msgstr "Star"
+
+#: sync/src/triage.rs:44
+msgid "Unstar"
+msgstr "Unstar"
+
+#: sync/src/triage.rs:46
+msgid "Add label {label}"
+msgstr "Add label {label}"
+
+#: sync/src/triage.rs:49
+msgid "Remove label {label}"
+msgstr "Remove label {label}"
+
+#: sync/src/triage.rs:52
+msgid "Move out of trash"
+msgstr "Move out of trash"
+
+#: sync/src/triage.rs:53
+msgid "Mark as junk"
+msgstr "Mark as junk"
+
+#: sync/src/triage.rs:54
+msgid "Mark as not junk"
+msgstr "Mark as not junk"

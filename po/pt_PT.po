@@ -421,7 +421,7 @@ msgid "Renaming a label"
 msgstr "A mudar o nome de uma etiqueta"
 
 #: app/src/assistant/run/catalog.rs:498
-msgid "Colouring a label"
+msgid "Coloring a label"
 msgstr "A mudar a cor de uma etiqueta"
 
 #: app/src/assistant/run/catalog.rs:512
@@ -533,7 +533,7 @@ msgid "Sending a waiting message"
 msgstr "A enviar uma mensagem em espera"
 
 #: app/src/assistant/run/catalog.rs:842
-msgid "Cancelling a scheduled message"
+msgid "Canceling a scheduled message"
 msgstr "A cancelar uma mensagem agendada"
 
 #: app/src/assistant/run/catalog.rs:850
@@ -549,7 +549,7 @@ msgid "Reading reminders"
 msgstr "A ler os lembretes"
 
 #: app/src/assistant/run/catalog.rs:879
-msgid "Cancelling a reminder"
+msgid "Canceling a reminder"
 msgstr "A cancelar um lembrete"
 
 #: app/src/assistant/run/catalog.rs:887
@@ -643,7 +643,7 @@ msgid "Phones: {phones}"
 msgstr "Telefones: {phones}"
 
 #: app/src/assistant/run/manage.rs:142
-msgid "Organisation: {organisation}"
+msgid "Organization: {organisation}"
 msgstr "Organização: {organisation}"
 
 #: app/src/assistant/run/manage.rs:231
@@ -655,7 +655,7 @@ msgstr ""
 "dentro dela acompanham-na."
 
 #: app/src/assistant/run/manage.rs:260
-msgid "Colour the label “{label}” in {account} {color}?"
+msgid "Color the label “{label}” in {account} {color}?"
 msgstr "Dar a cor {color} à etiqueta “{label}” de {account}?"
 
 #: app/src/assistant/run/manage.rs:294
@@ -5634,7 +5634,7 @@ msgid "Could not delete the label: {reason}"
 msgstr "Não foi possível eliminar a etiqueta: {reason}"
 
 #: app/src/ui/window/organize.rs:187
-msgid "Could not change the colour: {reason}"
+msgid "Could not change the color: {reason}"
 msgstr "Não foi possível alterar a cor: {reason}"
 
 #: app/src/ui/window/organize.rs:279
