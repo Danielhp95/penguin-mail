@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:response>
+    <d:href>/remote.php/dav/principals/users/robin/</d:href>
+    <d:propstat>
+      <d:prop>
+        <cal:calendar-home-set><d:href>/remote.php/dav/calendars/robin/</d:href></cal:calendar-home-set>
+        <card:addressbook-home-set><d:href>/remote.php/dav/addressbooks/users/robin/</d:href></card:addressbook-home-set>
+        <cal:calendar-user-address-set>
+          <d:href>mailto:Robin@Example.org</d:href>
+          <d:href>/remote.php/dav/principals/users/robin/</d:href>
+        </cal:calendar-user-address-set>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>

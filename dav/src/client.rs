@@ -45,6 +45,10 @@ pub struct Homes {
     pub principal: String,
     pub calendar: Option<String>,
     pub addressbook: Option<String>,
+    /// The addresses the principal goes by in an invitation, as its
+    /// `calendar-user-address-set` names them. Empty on a server that
+    /// names none, such as one that does no scheduling.
+    pub addresses: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,7 +333,12 @@ impl DavApi for DavClient {
         let homes = xml::parse_multistatus(&answer.body)?;
         let props = homes.responses.first().map(|r| r.props.clone()).unwrap_or_default();
         let resolve = |home: Option<String>| home.map(|h| self.resolve(&answer.url, &h));
-        Ok(Homes { principal, calendar: resolve(props.calendar_home), addressbook: resolve(props.addressbook_home) })
+        Ok(Homes {
+            principal,
+            calendar: resolve(props.calendar_home),
+            addressbook: resolve(props.addressbook_home),
+            addresses: props.addresses,
+        })
     }
 
     async fn collections(&self, home: &str, kind: Kind) -> Result<Vec<Collection>, DavError> {

@@ -53,6 +53,10 @@ pub struct Props {
     pub principal: Option<String>,
     pub calendar_home: Option<String>,
     pub addressbook_home: Option<String>,
+    /// The `mailto:` entries of `calendar-user-address-set`, lower-cased
+    /// and without the scheme: the addresses invitations name the
+    /// principal by. Its other entries are URLs of the principal itself.
+    pub addresses: Vec<String>,
     /// `calendar-timezone`: a VCALENDAR holding one VTIMEZONE.
     pub timezone: Option<String>,
     /// `supported-report-set` lists `sync-collection`.
@@ -80,6 +84,14 @@ fn text(node: Node) -> Option<String> {
 fn status_code(node: Node) -> Option<u16> {
     // "HTTP/1.1 404 Not Found"
     text(node)?.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// The address a `mailto:` URL names, lower-cased; `None` for any other
+/// URL.
+fn mailto(href: &str) -> Option<String> {
+    let (scheme, address) = href.split_once(':')?;
+    let address = address.trim();
+    (scheme.eq_ignore_ascii_case("mailto") && !address.is_empty()).then(|| address.to_ascii_lowercase())
 }
 
 fn href_in(node: Node) -> Option<String> {
@@ -151,6 +163,14 @@ fn read_props(prop: Node, props: &mut Props) {
             (DAV, "current-user-principal") => props.principal = href_in(p),
             (CALDAV, "calendar-home-set") => props.calendar_home = href_in(p),
             (CARDDAV, "addressbook-home-set") => props.addressbook_home = href_in(p),
+            (CALDAV, "calendar-user-address-set") => {
+                props.addresses = p
+                    .children()
+                    .filter(|c| is(*c, DAV, "href"))
+                    .filter_map(text)
+                    .filter_map(|href| mailto(&href))
+                    .collect();
+            }
             (CALDAV, "calendar-timezone") => props.timezone = text(p),
             (DAV, "supported-report-set") => {
                 props.reports_sync = p.descendants().any(|d| is(d, DAV, "sync-collection"));
@@ -188,7 +208,7 @@ pub mod body {
     pub fn homes() -> &'static str {
         r#"<?xml version="1.0" encoding="utf-8"?>
 <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CR="urn:ietf:params:xml:ns:carddav">
-<D:prop><C:calendar-home-set/><CR:addressbook-home-set/></D:prop></D:propfind>"#
+<D:prop><C:calendar-home-set/><CR:addressbook-home-set/><C:calendar-user-address-set/></D:prop></D:propfind>"#
     }
 
     pub fn collections() -> &'static str {
@@ -323,6 +343,26 @@ mod tests {
         assert!(props.reports_sync);
         assert_eq!(props.getctag.as_deref(), Some("ctag-9"));
         assert_eq!(props.timezone, None, "a property the server did not have stays empty");
+    }
+
+    #[test]
+    fn a_principal_names_its_mailto_addresses_and_no_others() {
+        let homes = r#"<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:response><d:href>/principals/users/robin/</d:href>
+    <d:propstat><d:prop>
+      <c:calendar-home-set><d:href>/calendars/robin/</d:href></c:calendar-home-set>
+      <c:calendar-user-address-set>
+        <d:href>mailto:Robin@Example.org</d:href>
+        <d:href>/principals/users/robin/</d:href>
+        <d:href>MAILTO:second@example.org</d:href>
+      </c:calendar-user-address-set>
+    </d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+  </d:response>
+</d:multistatus>"#;
+        let read = parse_multistatus(homes).unwrap();
+        assert_eq!(read.responses[0].props.addresses, ["robin@example.org", "second@example.org"]);
+        let bare = parse_multistatus(COLLECTIONS).unwrap();
+        assert!(bare.responses[0].props.addresses.is_empty(), "a principal that names none has none");
     }
 
     #[test]

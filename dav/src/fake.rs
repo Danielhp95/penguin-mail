@@ -36,6 +36,8 @@ pub struct FakeState {
     pub always_more: bool,
     /// How many `sync-collection` reports were asked.
     pub syncs: usize,
+    /// The addresses the principal goes by.
+    pub addresses: Vec<String>,
 }
 
 #[derive(Default)]
@@ -176,8 +178,8 @@ impl FakeDav {
 
 impl DavApi for FakeDav {
     async fn homes(&self) -> Result<Homes, DavError> {
-        drop(self.open()?);
-        Ok(Homes { principal: "/principal/".into(), calendar: Some("/cal/".into()), addressbook: Some("/card/".into()) })
+        let addresses = self.open()?.addresses.clone();
+        Ok(Homes { principal: "/principal/".into(), calendar: Some("/cal/".into()), addressbook: Some("/card/".into()), addresses })
     }
 
     async fn collections(&self, home: &str, kind: Kind) -> Result<Vec<Collection>, DavError> {
@@ -322,6 +324,14 @@ mod tests {
     use super::*;
 
     const EVENT: &str = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u\r\nDTSTART:20261101T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    #[tokio::test]
+    async fn the_homes_name_the_addresses_a_test_gave() {
+        let dav = FakeDav::new();
+        assert!(dav.homes().await.unwrap().addresses.is_empty());
+        dav.with(|s| s.addresses = vec!["me@example.org".into()]);
+        assert_eq!(dav.homes().await.unwrap().addresses, ["me@example.org"]);
+    }
 
     #[tokio::test]
     async fn a_sync_after_a_change_elsewhere_names_that_change_alone() {
