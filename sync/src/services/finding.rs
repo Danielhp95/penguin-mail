@@ -192,6 +192,18 @@ pub async fn keep_found(db: &Db, account_id: AccountId, found: &FoundServices) -
 
 /// A URL the person typed for `kind`, checked with the login and kept.
 pub async fn use_typed<P: ServiceProbe>(probe: &P, db: &Db, account_id: AccountId, kind: ServiceKind, url: &str, user: &str, password: &str) -> Result<FoundService, SyncError> {
+    let url = checked_url(probe, kind, url, user, password).await?;
+    let found = FoundService { kind, url, user_name: user.to_string(), confirmed: true, source: "typed".into() };
+    let kept = found.clone();
+    db.write(move |c| services::save(c, account_id, &kept)).await?;
+    Ok(found)
+}
+
+/// A CalDAV or CardDAV address as the person typed it, in the form the
+/// client takes, once the server there took the login: HTTPS only, and a
+/// bare host stands for its root. Nothing is kept; the password goes to
+/// the address the person named and nowhere else.
+pub async fn checked_url<P: ServiceProbe>(probe: &P, kind: ServiceKind, url: &str, user: &str, password: &str) -> Result<String, SyncError> {
     let url = url.trim();
     if url.starts_with("http://") {
         return Err(BackendError::Refused(mailrs_domain::translate::gettext("Penguin Mail reaches calendar and contact servers over HTTPS only.")).into());
@@ -213,10 +225,7 @@ pub async fn use_typed<P: ServiceProbe>(probe: &P, db: &Db, account_id: AccountI
     tokio::time::timeout(PROBE_LIMIT, probe.dav(&url, user, password, dav_kind))
         .await
         .map_err(|_| BackendError::Offline("the server took too long".into()))??;
-    let found = FoundService { kind, url, user_name: user.to_string(), confirmed: true, source: "typed".into() };
-    let kept = found.clone();
-    db.write(move |c| services::save(c, account_id, &kept)).await?;
-    Ok(found)
+    Ok(url)
 }
 
 /// The person said yes to the server kept for `kind`: try the login

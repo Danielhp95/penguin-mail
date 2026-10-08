@@ -136,6 +136,12 @@ pub fn same_site(host: &str, other: &str) -> bool {
     }
 }
 
+/// The host a server address names, in lower case, without the port or
+/// a user name written into it. `None` for text that is no such address.
+pub fn host_of(url: &str) -> Option<String> {
+    Url::parse(url).ok()?.host_str().map(str::to_ascii_lowercase)
+}
+
 pub struct DavClient {
     base: Url,
     /// Which well-known URL `homes` falls back on (RFC 6764).

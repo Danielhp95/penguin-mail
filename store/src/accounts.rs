@@ -103,6 +103,21 @@ pub fn insert_imap_account(
     Ok(Some(conn.last_insert_rowid()))
 }
 
+/// Adds a calendar account under `name`, or finds the one already here
+/// under it. `None` when an account of another provider holds the name:
+/// that account stays as it is. The name stands in the column a mail
+/// account keeps its address in, which keeps it unique.
+pub fn insert_caldav_account(conn: &Connection, name: &str, now: EpochMillis) -> Result<Option<AccountId>> {
+    if let Some(existing) = account_by_email(conn, name)? {
+        return Ok((existing.provider == Provider::CalDav).then_some(existing.id));
+    }
+    conn.execute(
+        "INSERT INTO accounts (email, added_at, provider) VALUES (?1, ?2, ?3)",
+        params![name, now, Provider::CalDav.as_str()],
+    )?;
+    Ok(Some(conn.last_insert_rowid()))
+}
+
 /// Adds a POP3 account with its removal setting, or finds the one already
 /// here for the address and takes the new `provider_name`. `None` when an
 /// account of another provider holds the address. Signing in again keeps

@@ -150,6 +150,36 @@ fn a_new_account_is_served_by_gmail() {
 }
 
 #[test]
+fn a_calendar_account_is_added_found_again_and_refused_a_taken_name() {
+    let conn = open_in_memory().unwrap();
+    let id = accounts::insert_caldav_account(&conn, "robin@cloud.example.org", 5)
+        .unwrap()
+        .expect("nobody else holds the name");
+    let listed = accounts::list_accounts(&conn).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].provider, Provider::CalDav);
+    assert_eq!(listed[0].provider_name(), "CalDAV");
+    assert_eq!(
+        accounts::insert_caldav_account(&conn, "robin@cloud.example.org", 6).unwrap(),
+        Some(id),
+        "signing in again finds the account"
+    );
+    accounts::insert_imap_account(&conn, "me@example.org", "example.org", 1)
+        .unwrap()
+        .expect("a mail account");
+    assert_eq!(
+        accounts::insert_caldav_account(&conn, "me@example.org", 7).unwrap(),
+        None,
+        "a mail account holds the name"
+    );
+    assert_eq!(
+        accounts::insert_imap_account(&conn, "robin@cloud.example.org", "example.org", 8).unwrap(),
+        None,
+        "and a calendar account's name is not a mail account's to take"
+    );
+}
+
+#[test]
 fn an_imap_account_keeps_its_provider_and_its_name() {
     let conn = open_in_memory().unwrap();
     let id = accounts::insert_imap_account(&conn, "dana@fastmail.com", "Fastmail", 5)

@@ -227,7 +227,7 @@ impl Secrets {
                     })
                 })
             }
-            Provider::Imap | Provider::Pop3 => {
+            Provider::Imap | Provider::Pop3 | Provider::CalDav => {
                 let passwords = Arc::clone(&self.passwords);
                 Box::new(move || passwords.delete(id))
             }

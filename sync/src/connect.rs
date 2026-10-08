@@ -18,8 +18,8 @@ use crate::config::Config;
 use crate::passwords::{PasswordError, PasswordStore, Secrets};
 use crate::sign_in::account_client;
 use crate::{
-    AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyRules, AnySieve, BackendError,
-    CalDav, CardDav, ImapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
+    AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyMail, AnyRules, AnySieve,
+    BackendError, CalDav, CardDav, ImapSettings, LocalRules, MicrosoftSettings, NoMail, Pop3Settings, SieveRules, SyncError,
 };
 
 /// How long starting an account waits on one step, such as a keyring
@@ -105,7 +105,8 @@ pub enum Lacks {
     /// The client it signed in with: this build has none, or an own
     /// Google client left `config.toml`.
     Client,
-    /// Its refresh token or password, or an IMAP or POP3 account's servers.
+    /// Its refresh token or password, or an IMAP or POP3 account's
+    /// servers, or a calendar account's server.
     Secret,
 }
 
@@ -139,6 +140,7 @@ impl Connector {
             }
             Provider::Imap => connect_imap(db, Arc::clone(&self.secrets.passwords), account, window_days).await,
             Provider::Pop3 => connect_pop3(db, Arc::clone(&self.secrets.passwords), account).await,
+            Provider::CalDav => connect_caldav(db, Arc::clone(&self.secrets.passwords), account).await,
             Provider::Microsoft => {
                 let Some(client) = self.clients.microsoft.clone() else {
                     tracing::warn!(account = %account.email, "no Microsoft client in this build");
@@ -421,6 +423,41 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
         services = attach(services, &service, &secret, account, &provider_name);
     }
     Ok(services)
+}
+
+/// The services for a calendar account, from the server the store keeps
+/// for it and the password in `passwords`: a calendar and no mail.
+/// Without either, the store records that the account needs to sign in
+/// again before this answers `NeedsReauth`, since no loop runs to say so.
+/// The server tells the adapter which addresses the account goes by, so
+/// none is handed in. Nothing here connects.
+pub async fn connect_caldav<P: PasswordStore + 'static>(
+    db: &Db,
+    passwords: Arc<P>,
+    account: &Account,
+) -> Result<AccountServices, SyncError> {
+    connect_caldav_within(db, passwords, account, STEP_WAIT).await
+}
+
+pub(crate) async fn connect_caldav_within<P: PasswordStore + 'static>(
+    db: &Db,
+    passwords: Arc<P>,
+    account: &Account,
+    wait: Duration,
+) -> Result<AccountServices, SyncError> {
+    let id = account.id;
+    let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
+    let server = found.into_iter().find(|f| f.kind == ServiceKind::CalDav && f.confirmed);
+    let password = read_secret(passwords, id, wait).await?;
+    let (Some(server), Some(password)) = (server, password) else {
+        let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
+        bounded(id, "the mail store", wait, marked).await?;
+        return Err(BackendError::NeedsReauth.into());
+    };
+    let client = DavClient::new(&server.url, DavKind::Calendar, DavLogin::new(&server.user_name, password))
+        .map_err(|err| BackendError::Refused(err.to_string()))?;
+    let calendar = CalDav::new(Arc::new(AnyDav::from(client)), AnyMail::NoMail(NoMail), Vec::new());
+    Ok(AccountServices::calendar_only(AnyCalendar::Dav(calendar)))
 }
 
 /// `services` with the server `service` names put behind the service it

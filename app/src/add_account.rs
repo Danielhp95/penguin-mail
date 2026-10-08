@@ -1217,13 +1217,14 @@ pub enum Kept {
 }
 
 /// Whether the added page lists `role` for a new account of `provider`:
-/// the folders its server fills. Gmail has no Archive of its own, and a
-/// POP3 server holds an inbox alone.
+/// the folders its server fills. Gmail has no Archive of its own, a POP3
+/// server holds an inbox alone, and a calendar account has no mail.
 pub fn shows_folder(provider: Provider, role: mailrs_domain::Role) -> bool {
     match provider {
         Provider::Gmail => role != mailrs_domain::Role::Archive,
         Provider::Pop3 => role == mailrs_domain::Role::Inbox,
         Provider::Imap | Provider::Microsoft => true,
+        Provider::CalDav => false,
     }
 }
 
@@ -2679,5 +2680,6 @@ mod tests {
         assert!(shows_folder(Provider::Pop3, MailRole::Inbox));
         assert!(!shows_folder(Provider::Pop3, MailRole::Sent));
         assert!(!shows_folder(Provider::Pop3, MailRole::Archive));
+        assert!(!shows_folder(Provider::CalDav, MailRole::Inbox));
     }
 }

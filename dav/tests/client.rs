@@ -132,6 +132,14 @@ async fn an_answer_past_the_limit_is_refused_without_reading_it_whole() {
 }
 
 #[test]
+fn the_host_of_an_address_is_lower_case_and_alone() {
+    assert_eq!(mailrs_dav::host_of("https://Cloud.Example.org:8443/remote.php/dav/").as_deref(), Some("cloud.example.org"));
+    assert_eq!(mailrs_dav::host_of("https://robin@cloud.example.org/").as_deref(), Some("cloud.example.org"));
+    assert_eq!(mailrs_dav::host_of("not an address"), None);
+    assert_eq!(mailrs_dav::host_of("mailto:me@example.org"), None);
+}
+
+#[test]
 fn a_plain_http_context_is_refused() {
     assert!(DavClient::new("http://dav.example.org/", Kind::Calendar, Login::new("me", "pw")).is_err());
 }

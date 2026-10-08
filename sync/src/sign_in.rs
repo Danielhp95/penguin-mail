@@ -17,10 +17,13 @@ use mailrs_gmail::{OAuthClient, TokenStore};
 use mailrs_imap::{CheckError, ImapError};
 use mailrs_pop3::{Pop3Api, Pop3Client, Pop3Error};
 use mailrs_store::servers::{self, Pop3Servers, Servers};
+use mailrs_store::services::{self, FoundService, ServiceKind};
 use mailrs_store::{Db, StoreError, accounts};
 
 use crate::config::Config;
 use crate::passwords::{PasswordError, PasswordStore};
+use crate::services::finding::{self, ServiceProbe};
+use crate::{BackendError, SyncError};
 
 /// The client `account` signs in with, from what the store recorded for
 /// it. An account with no client left, such as an own account whose
@@ -225,7 +228,7 @@ pub async fn imap_signed_in<P: PasswordStore + 'static>(
             if let Err(err) = save_password(Arc::clone(&passwords), id, password.clone()).await
             {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
-                return Err(err);
+                return Err(err.into());
             }
             id
         }
@@ -250,6 +253,122 @@ pub async fn imap_signed_in<P: PasswordStore + 'static>(
         .ok_or(ImapSignInError::Store(StoreError::Sqlite(
             rusqlite::Error::QueryReturnedNoRows,
         )))
+}
+
+/// A calendar account a person is signing in to: the server's address as
+/// they typed it, the user name and the password. No `Debug`: the
+/// password must not reach a log line.
+pub struct NewCalDav {
+    pub url: String,
+    pub user_name: String,
+    pub password: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CalDavSignInError {
+    /// The name belongs to an account another provider serves.
+    #[error("{}", taken(.name, .provider))]
+    Taken { name: String, provider: String },
+    /// The address is not one a calendar can be at, or the server there
+    /// did not take the login.
+    #[error(transparent)]
+    Server(#[from] SyncError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error(transparent)]
+    Password(#[from] PasswordError),
+}
+
+/// What a calendar account on the server at `url` is called: its user on
+/// its host, as GNOME names one. A mail account is called by its address;
+/// a name that carries the host cannot be one, so a calendar account
+/// never takes a mail account's place even where the person signs in to
+/// both with one address. `None` for an address with no host, or no user.
+pub fn calendar_account_name(url: &str, user_name: &str) -> Option<String> {
+    let (host, user) = (mailrs_dav::host_of(url)?, user_name.trim());
+    (!user.is_empty()).then(|| format!("{user}@{host}"))
+}
+
+/// Keeps a calendar account once its server took the login: adds it, or
+/// finds the one already here under its name, with the server's address,
+/// the user name and the password. `probe` tries the login first, so a
+/// wrong address or password keeps nothing. As for an IMAP account, the
+/// keyring takes the password before anything else is settled: a new
+/// account goes again when it refuses, and one signing in again stays as
+/// it was. An account signing in again keeps its calendars and stops
+/// needing a sign-in.
+pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
+    probe: &S,
+    db: &Db,
+    passwords: Arc<P>,
+    new: NewCalDav,
+    now: EpochMillis,
+) -> Result<Account, CalDavSignInError> {
+    let NewCalDav { url, user_name, password } = new;
+    let user_name = user_name.trim().to_string();
+    let url = finding::checked_url(probe, ServiceKind::CalDav, &url, &user_name, &password).await?;
+    let name = calendar_account_name(&url, &user_name)
+        .ok_or_else(|| SyncError::Backend(BackendError::Refused(gettext("Enter the server's address and your user name."))))?;
+    let server = FoundService {
+        kind: ServiceKind::CalDav,
+        url,
+        user_name,
+        // The person typed the address, which is their yes to sending
+        // the password there.
+        confirmed: true,
+        source: "typed".into(),
+    };
+    let lookup = name.clone();
+    let before = db.read(move |c| accounts::account_by_email(c, &lookup)).await?;
+    let id = match &before {
+        Some(held) if held.provider != Provider::CalDav => {
+            return Err(CalDavSignInError::Taken { name, provider: held.provider_name().to_string() });
+        }
+        Some(held) => {
+            save_password(Arc::clone(&passwords), held.id, password).await?;
+            held.id
+        }
+        None => {
+            let (added_as, kept) = (name.clone(), server.clone());
+            let added = db
+                .write(move |c| {
+                    let Some(id) = accounts::insert_caldav_account(c, &added_as, now)? else {
+                        // Another provider's account took the name
+                        // between the read and this write.
+                        let held = accounts::account_by_email(c, &added_as)?;
+                        return Ok(Err(held.map(|a| a.provider_name().to_string())));
+                    };
+                    services::save(c, id, &kept)?;
+                    Ok(Ok(id))
+                })
+                .await?;
+            let id = added.map_err(|provider| CalDavSignInError::Taken {
+                name: name.clone(),
+                provider: provider.unwrap_or_default(),
+            })?;
+            if let Err(err) = save_password(Arc::clone(&passwords), id, password).await {
+                db.write(move |c| accounts::delete_account(c, id)).await?;
+                return Err(err.into());
+            }
+            id
+        }
+    };
+    if let Some(held) = before {
+        let again = held.state;
+        db.write(move |c| {
+            services::save(c, id, &server)?;
+            // Signing in again is what ends Needs Sign-In; the engine
+            // says the account is working once it starts.
+            if again == AccountState::NeedsReauth {
+                accounts::set_state(c, id, AccountState::Ok)?;
+            }
+            Ok(())
+        })
+        .await?;
+    }
+    db.read(move |c| accounts::account(c, id))
+        .await?
+        .ok_or(CalDavSignInError::Store(StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)))
 }
 
 /// A POP3 account a person just signed in to. No `Debug`: the password
@@ -318,7 +437,7 @@ pub async fn pop3_signed_in<P: PasswordStore + 'static>(
             })?;
             if let Err(err) = save_password(Arc::clone(&passwords), id, password).await {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
-                return Err(err);
+                return Err(err.into());
             }
             id
         }
@@ -482,7 +601,7 @@ async fn save_password<P: PasswordStore + 'static>(
     passwords: Arc<P>,
     id: AccountId,
     password: String,
-) -> Result<(), ImapSignInError> {
+) -> Result<(), PasswordError> {
     tokio::task::spawn_blocking(move || passwords.save(id, &password))
         .await
         .map_err(|err| PasswordError::Keyring(err.to_string()))??;

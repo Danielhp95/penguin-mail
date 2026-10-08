@@ -559,7 +559,8 @@ pub fn failing_lines(failing: &[Failing]) -> Vec<String> {
         .collect()
 }
 
-/// What Remove Account's confirmation says happens to `account`'s mail.
+/// What Remove Account's confirmation says happens to `account`'s mail,
+/// or to a calendar account's calendars.
 /// `remove` is a POP3 account's removal setting. Under one that removes
 /// mail from the server, the server has let go of what came down, so
 /// removing the account loses it.
@@ -573,6 +574,10 @@ pub fn remove_account_body(account: &Account, remove: RemoveSetting) -> String {
             "Mail already removed from the server exists only on this computer, \
              and removing the account deletes it with the saved sign-in. Mail \
              still on the server stays there.",
+        ),
+        (Provider::CalDav, _) => gettext(
+            "Its calendars and saved sign-in are deleted from this computer. \
+             Nothing changes on the server.",
         ),
         _ => fill(
             &gettext(
@@ -713,6 +718,20 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn removing_a_calendar_account_speaks_of_calendars_not_mail() {
+        let account = Account {
+            id: 7,
+            email: "robin@cloud.example.org".into(),
+            state: AccountState::Ok,
+            provider: Provider::CalDav,
+            provider_name: None,
+        };
+        let body = remove_account_body(&account, RemoveSetting::Never);
+        assert!(body.contains("calendars"), "{body}");
+        assert!(!body.contains("mail"), "{body}");
     }
 
     #[test]

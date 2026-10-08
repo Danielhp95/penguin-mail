@@ -458,15 +458,15 @@ msgstr "Escreva o nome do servidor de entrada."
 msgid "Type the outgoing server's name."
 msgstr "Escreva o nome do servidor de saída."
 
-#: app/src/add_account.rs:1243
+#: app/src/add_account.rs:1244
 msgid "Mail is downloading. You can close this window."
 msgstr "O correio está a ser transferido. Pode fechar esta janela."
 
-#: app/src/add_account.rs:1244 app/src/add_account.rs:1273
+#: app/src/add_account.rs:1245 app/src/add_account.rs:1274
 msgid "Your mail is here."
 msgstr "O seu correio já está aqui."
 
-#: app/src/add_account.rs:1258
+#: app/src/add_account.rs:1259
 msgid ""
 "Your organization did not allow one of the permissions Penguin Mail asked "
 "for, so this feature stays off:"
@@ -480,7 +480,7 @@ msgstr[1] ""
 "A sua organização não autorizou {count} das permissões que o Penguin Mail "
 "pediu, por isso estas funcionalidades ficam desligadas:"
 
-#: app/src/add_account.rs:1265
+#: app/src/add_account.rs:1266
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural ""
 "You left {count} boxes unticked on Google's page, so these features stay off:"
@@ -491,11 +491,11 @@ msgstr[1] ""
 "Deixou {count} caixas por marcar na página da Google, por isso estas "
 "funcionalidades ficam desligadas:"
 
-#: app/src/add_account.rs:1272
+#: app/src/add_account.rs:1273
 msgid "Mail is downloading."
 msgstr "O correio está a ser transferido."
 
-#: app/src/add_account.rs:1292
+#: app/src/add_account.rs:1293
 msgid ""
 "Newest mail comes first. Older mail keeps coming in the background, even "
 "with the window closed."
@@ -503,13 +503,13 @@ msgstr ""
 "O correio mais recente chega primeiro. O mais antigo continua a chegar em "
 "segundo plano, mesmo com a janela fechada."
 
-#: app/src/add_account.rs:1294
+#: app/src/add_account.rs:1295
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr ""
 "O Penguin Mail continua a verificar se há correio novo, mesmo com a janela "
 "fechada."
 
-#: app/src/add_account.rs:1304
+#: app/src/add_account.rs:1305
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. Mail stays on the server."
@@ -518,7 +518,7 @@ msgstr ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. O correio "
 "fica no servidor."
 
-#: app/src/add_account.rs:1307
+#: app/src/add_account.rs:1308
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -528,7 +528,7 @@ msgstr ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. Remove "
 "cada mensagem do servidor depois de a transferir."
 
-#: app/src/add_account.rs:1310
+#: app/src/add_account.rs:1311
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -546,7 +546,7 @@ msgstr[1] ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. Remove "
 "cada mensagem do servidor {days} dias depois de a transferir."
 
-#: app/src/add_account.rs:1326
+#: app/src/add_account.rs:1327
 msgid "Penguin Mail needs the password for {address} again."
 msgstr "O Penguin Mail precisa de novo da palavra-passe de {address}."
 
@@ -2394,7 +2394,7 @@ msgstr "Uma mensagem de {sender}: {words}"
 msgid "Message {number}: {words}"
 msgstr "Mensagem {number}: {words}"
 
-#: app/src/offered.rs:569
+#: app/src/offered.rs:570
 msgid ""
 "Removing the account deletes this computer's copy of its mail and the saved "
 "sign-in. Mail still on the server stays there."
@@ -2402,7 +2402,7 @@ msgstr ""
 "Remover a conta elimina a cópia do correio neste computador e a sessão "
 "guardada. O correio que ainda está no servidor fica lá."
 
-#: app/src/offered.rs:573
+#: app/src/offered.rs:574
 msgid ""
 "Mail already removed from the server exists only on this computer, and "
 "removing the account deletes it with the saved sign-in. Mail still on the "
@@ -2414,13 +2414,19 @@ msgstr ""
 
 #: app/src/offered.rs:579
 msgid ""
+"Its calendars and saved sign-in are deleted from this computer. Nothing "
+"changes on the server."
+msgstr "Os calendários e a sessão guardada são eliminados deste computador. Nada muda no servidor."
+
+#: app/src/offered.rs:584
+msgid ""
 "Its downloaded mail and saved sign-in are deleted from this computer. "
 "Nothing changes in {provider}."
 msgstr ""
 "O correio transferido e a sessão guardada são eliminados deste computador. "
 "Nada muda em {provider}."
 
-#: app/src/offered.rs:595
+#: app/src/offered.rs:600
 msgid ""
 "Mail from {address} is kept only on this computer. To keep a copy, quit "
 "Penguin Mail, then back up this file."
@@ -10243,7 +10249,7 @@ msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr ""
 "O Penguin Mail não pode alterar a lista de calendários de um servidor CalDAV."
 
-#: sync/src/services/finding.rs:197
+#: sync/src/services/finding.rs:209
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr ""
 "O Penguin Mail só acede a servidores de calendário e contactos por HTTPS."
@@ -10384,17 +10390,21 @@ msgstr "Escolha o que a regra faz"
 msgid "The rule is read-only."
 msgstr "A regra é só de leitura."
 
-#: sync/src/sign_in.rs:168
+#: sync/src/sign_in.rs:171
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} já está no Penguin Mail como conta {provider}."
 
-#: sync/src/sign_in/browser.rs:109
+#: sync/src/sign_in.rs:311
+msgid "Enter the server's address and your user name."
+msgstr "Introduza o endereço do servidor e o seu nome de utilizador."
+
+#: sync/src/sign_in/browser.rs:110
 msgid "You signed in as {account}. Choose {wanted} to reconnect that account."
 msgstr ""
 "Iniciou sessão como {account}. Escolha {wanted} para voltar a ligar essa "
 "conta."
 
-#: sync/src/sign_in/browser.rs:119
+#: sync/src/sign_in/browser.rs:120
 msgid ""
 "Penguin Mail cannot work without access to your mail. Sign in again and "
 "leave the Gmail permission ticked."
@@ -10402,11 +10412,11 @@ msgstr ""
 "O Penguin Mail não funciona sem acesso ao seu correio. Inicie sessão de novo "
 "e deixe a permissão do Gmail assinalada."
 
-#: sync/src/sign_in/browser.rs:128
+#: sync/src/sign_in/browser.rs:129
 msgid "Your organization's administrator must approve Penguin Mail."
 msgstr "O administrador da sua organização tem de aprovar o Penguin Mail."
 
-#: sync/src/sign_in/browser.rs:130
+#: sync/src/sign_in/browser.rs:131
 msgid ""
 "Penguin Mail cannot work without access to your mail. Sign in again and "
 "allow it."

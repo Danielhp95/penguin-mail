@@ -263,7 +263,7 @@ async fn remove_account(db: &Db, email: &str) -> Result<()> {
             Provider::Gmail => format!(
                 "Removed {email}. Revoke Google's side at https://myaccount.google.com/permissions if you want."
             ),
-            Provider::Imap | Provider::Pop3 => format!("Removed {email} and its password."),
+            Provider::Imap | Provider::Pop3 | Provider::CalDav => format!("Removed {email} and its password."),
             Provider::Microsoft => format!(
                 "Removed {email} and its sign-in. Revoke Microsoft's side at https://account.live.com/consent/Manage if you want."
             ),
@@ -284,7 +284,14 @@ async fn run_sync(db: &Db, dir: &Path, config: &Config) -> Result<()> {
         ),
         Err(err) => return Err(err.into()),
     };
-    let all = db.read(accounts::list_accounts).await?;
+    // This command syncs mail, so a calendar account, which has none,
+    // is left to the app.
+    let all: Vec<Account> = db
+        .read(accounts::list_accounts)
+        .await?
+        .into_iter()
+        .filter(|account| account.provider.serves_mail())
+        .collect();
     if all.is_empty() {
         bail!("no accounts; run `penguin-mail-cli account add` first");
     }

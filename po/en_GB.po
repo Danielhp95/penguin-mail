@@ -387,53 +387,53 @@ msgstr "Type the incoming server's name."
 msgid "Type the outgoing server's name."
 msgstr "Type the outgoing server's name."
 
-#: app/src/add_account.rs:1243
+#: app/src/add_account.rs:1244
 msgid "Mail is downloading. You can close this window."
 msgstr "Mail is downloading. You can close this window."
 
-#: app/src/add_account.rs:1244 app/src/add_account.rs:1273
+#: app/src/add_account.rs:1245 app/src/add_account.rs:1274
 msgid "Your mail is here."
 msgstr "Your mail is here."
 
-#: app/src/add_account.rs:1258
+#: app/src/add_account.rs:1259
 msgid "Your organization did not allow one of the permissions Penguin Mail asked for, so this feature stays off:"
 msgid_plural "Your organization did not allow {count} of the permissions Penguin Mail asked for, so these features stay off:"
 msgstr[0] "Your organisation did not allow one of the permissions Penguin Mail asked for, so this feature stays off:"
 msgstr[1] "Your organisation did not allow {count} of the permissions Penguin Mail asked for, so these features stay off:"
 
-#: app/src/add_account.rs:1265
+#: app/src/add_account.rs:1266
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural "You left {count} boxes unticked on Google's page, so these features stay off:"
 msgstr[0] "You left one box unticked on Google's page, so this feature stays off:"
 msgstr[1] "You left {count} boxes unticked on Google's page, so these features stay off:"
 
-#: app/src/add_account.rs:1272
+#: app/src/add_account.rs:1273
 msgid "Mail is downloading."
 msgstr "Mail is downloading."
 
-#: app/src/add_account.rs:1292
+#: app/src/add_account.rs:1293
 msgid "Newest mail comes first. Older mail keeps coming in the background, even with the window closed."
 msgstr "Newest mail comes first. Older mail keeps coming in the background, even with the window closed."
 
-#: app/src/add_account.rs:1294
+#: app/src/add_account.rs:1295
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr "Penguin Mail keeps checking for new mail, even with the window closed."
 
-#: app/src/add_account.rs:1304
+#: app/src/add_account.rs:1305
 msgid "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. Mail stays on the server."
 msgstr "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. Mail stays on the server."
 
-#: app/src/add_account.rs:1307
+#: app/src/add_account.rs:1308
 msgid "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server after downloading it."
 msgstr "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server after downloading it."
 
-#: app/src/add_account.rs:1310
+#: app/src/add_account.rs:1311
 msgid "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server {days} day after downloading it."
 msgid_plural "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server {days} days after downloading it."
 msgstr[0] "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server {days} day after downloading it."
 msgstr[1] "Penguin Mail downloads the server's mail into Inbox and keeps checking in the background, even with the window closed. It removes each message from the server {days} days after downloading it."
 
-#: app/src/add_account.rs:1326
+#: app/src/add_account.rs:1327
 msgid "Penguin Mail needs the password for {address} again."
 msgstr "Penguin Mail needs the password for {address} again."
 
@@ -2167,19 +2167,23 @@ msgstr "A message from {sender}: {words}"
 msgid "Message {number}: {words}"
 msgstr "Message {number}: {words}"
 
-#: app/src/offered.rs:569
+#: app/src/offered.rs:570
 msgid "Removing the account deletes this computer's copy of its mail and the saved sign-in. Mail still on the server stays there."
 msgstr "Removing the account deletes this computer's copy of its mail and the saved sign-in. Mail still on the server stays there."
 
-#: app/src/offered.rs:573
+#: app/src/offered.rs:574
 msgid "Mail already removed from the server exists only on this computer, and removing the account deletes it with the saved sign-in. Mail still on the server stays there."
 msgstr "Mail already removed from the server exists only on this computer, and removing the account deletes it with the saved sign-in. Mail still on the server stays there."
 
 #: app/src/offered.rs:579
+msgid "Its calendars and saved sign-in are deleted from this computer. Nothing changes on the server."
+msgstr "Its calendars and saved sign-in are deleted from this computer. Nothing changes on the server."
+
+#: app/src/offered.rs:584
 msgid "Its downloaded mail and saved sign-in are deleted from this computer. Nothing changes in {provider}."
 msgstr "Its downloaded mail and saved sign-in are deleted from this computer. Nothing changes in {provider}."
 
-#: app/src/offered.rs:595
+#: app/src/offered.rs:600
 msgid "Mail from {address} is kept only on this computer. To keep a copy, quit Penguin Mail, then back up this file."
 msgstr "Mail from {address} is kept only on this computer. To keep a copy, quit Penguin Mail, then back up this file."
 
@@ -9514,7 +9518,7 @@ msgstr "You are not a guest of this event."
 msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr "Penguin Mail cannot change the calendar list of a CalDAV server."
 
-#: sync/src/services/finding.rs:197
+#: sync/src/services/finding.rs:209
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 
@@ -9632,23 +9636,27 @@ msgstr "Choose what the rule does"
 msgid "The rule is read-only."
 msgstr "The rule is read-only."
 
-#: sync/src/sign_in.rs:168
+#: sync/src/sign_in.rs:171
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} is already in Penguin Mail as a {provider} account."
 
-#: sync/src/sign_in/browser.rs:109
+#: sync/src/sign_in.rs:311
+msgid "Enter the server's address and your user name."
+msgstr "Enter the server's address and your user name."
+
+#: sync/src/sign_in/browser.rs:110
 msgid "You signed in as {account}. Choose {wanted} to reconnect that account."
 msgstr "You signed in as {account}. Choose {wanted} to reconnect that account."
 
-#: sync/src/sign_in/browser.rs:119
+#: sync/src/sign_in/browser.rs:120
 msgid "Penguin Mail cannot work without access to your mail. Sign in again and leave the Gmail permission ticked."
 msgstr "Penguin Mail cannot work without access to your mail. Sign in again and leave the Gmail permission ticked."
 
-#: sync/src/sign_in/browser.rs:128
+#: sync/src/sign_in/browser.rs:129
 msgid "Your organization's administrator must approve Penguin Mail."
 msgstr "Your organisation's administrator must approve Penguin Mail."
 
-#: sync/src/sign_in/browser.rs:130
+#: sync/src/sign_in/browser.rs:131
 msgid "Penguin Mail cannot work without access to your mail. Sign in again and allow it."
 msgstr "Penguin Mail cannot work without access to your mail. Sign in again and allow it."
 
