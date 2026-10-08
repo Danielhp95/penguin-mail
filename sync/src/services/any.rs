@@ -20,7 +20,7 @@ use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyPop3, AnySieve, Any
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    IdentityService, Imap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, Refused,
+    IdentityService, Imap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, NoMail, Pop3, RawMessage, Refused,
     Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, SieveRules, SyncState, Unapplied,
     Want, Withheld,
 };
@@ -64,7 +64,8 @@ macro_rules! forward_reply {
     };
 }
 
-/// As `forward_dav!`, for an enum that holds every mail adapter.
+/// As `forward_dav!`, for an enum that holds every mail adapter, and
+/// the one that stands in for an account with no mail.
 macro_rules! forward_all {
     ($enum:ident, $self:ident, $method:ident($($arg:expr),*)) => {
         match $self {
@@ -72,6 +73,7 @@ macro_rules! forward_all {
             $enum::Imap(adapter) => adapter.$method($($arg),*).await,
             $enum::Microsoft(adapter) => adapter.$method($($arg),*).await,
             $enum::Pop3(adapter) => adapter.$method($($arg),*).await,
+            $enum::NoMail(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -84,6 +86,7 @@ macro_rules! forward_all_now {
             $enum::Imap(adapter) => adapter.$method($($arg),*),
             $enum::Microsoft(adapter) => adapter.$method($($arg),*),
             $enum::Pop3(adapter) => adapter.$method($($arg),*),
+            $enum::NoMail(adapter) => adapter.$method($($arg),*),
         }
     };
 }
@@ -100,6 +103,8 @@ pub enum AnyMail {
     Imap(ImapAdapter),
     Microsoft(MicrosoftAdapter),
     Pop3(Pop3Adapter),
+    /// A calendar account, which has none.
+    NoMail(NoMail),
 }
 
 /// An account's calendar.
@@ -107,7 +112,8 @@ pub enum AnyMail {
 pub enum AnyCalendar {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
-    /// A CalDAV server, whose replies go out through the account's mail.
+    /// A CalDAV server, whose replies go out through the account's mail
+    /// where it has mail.
     Dav(CalDav<AnyDav>),
 }
 
@@ -143,6 +149,8 @@ pub enum AnyIdentities {
     Imap(ImapAdapter),
     Microsoft(MicrosoftAdapter),
     Pop3(Pop3Adapter),
+    /// A calendar account, which sends nothing.
+    NoMail(NoMail),
 }
 
 impl AnyMail {
@@ -155,6 +163,7 @@ impl AnyMail {
             AnyMail::Imap(_) => Withheld::NONE,
             AnyMail::Microsoft(adapter) => adapter.withheld(),
             AnyMail::Pop3(_) => Withheld::NONE,
+            AnyMail::NoMail(_) => Withheld::NONE,
         }
     }
 
@@ -521,6 +530,16 @@ impl AnyCalendar {
         match self {
             AnyCalendar::Dav(adapter) => adapter.login_refused(),
             _ => None,
+        }
+    }
+
+    /// Whether an answer to an invitation reaches its organizer. Google
+    /// and Microsoft send it themselves; a CalDAV server may leave it to
+    /// the account's mail, which a calendar account lacks.
+    pub fn tells_organizer(&self) -> bool {
+        match self {
+            AnyCalendar::Google(_) | AnyCalendar::Microsoft(_) => true,
+            AnyCalendar::Dav(adapter) => adapter.tells_organizer(),
         }
     }
 }

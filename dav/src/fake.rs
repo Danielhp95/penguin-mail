@@ -38,6 +38,8 @@ pub struct FakeState {
     pub syncs: usize,
     /// The addresses the principal goes by.
     pub addresses: Vec<String>,
+    /// How many times the homes were asked.
+    pub homes: usize,
 }
 
 #[derive(Default)]
@@ -178,7 +180,9 @@ impl FakeDav {
 
 impl DavApi for FakeDav {
     async fn homes(&self) -> Result<Homes, DavError> {
-        let addresses = self.open()?.addresses.clone();
+        let mut state = self.open()?;
+        state.homes += 1;
+        let addresses = state.addresses.clone();
         Ok(Homes { principal: "/principal/".into(), calendar: Some("/cal/".into()), addressbook: Some("/card/".into()), addresses })
     }
 
