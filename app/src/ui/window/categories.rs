@@ -261,7 +261,7 @@ impl MainWindow {
     /// categories on, and an account the mailbox lists sorts its inbox
     /// into Gmail's categories or into Focused and Other.
     pub(super) fn inbox_bar(&self, mailbox: &Mailbox) -> Option<InboxBar> {
-        let ids: Vec<AccountId> = self.accounts().iter().map(|a| a.id).collect();
+        let ids: Vec<AccountId> = self.mail_accounts().iter().map(|a| a.id).collect();
         crate::offered::inbox_bar(
             self.settings_with(|s| s.inbox_categories),
             mailbox,

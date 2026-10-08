@@ -575,6 +575,9 @@ impl<A: Accounts> Tools<A> {
 
     fn sync_for(&self, email: &str) -> Result<Syncing, String> {
         let account = self.account_named(email)?;
+        if !account.provider.serves_mail() {
+            return Err(format!("{} holds calendars and no mail.", account.email));
+        }
         let sync = self
             .modules
             .accounts
@@ -743,11 +746,17 @@ impl<A: Accounts> Tools<A> {
                             .collect()
                     })
                     .unwrap_or_default();
-                json!({
+                let mut account = json!({
                     "email": a.email,
                     "name": settings.account_names.get(&a.email),
                     "labels": names,
-                })
+                });
+                // Said only of an account without mail, so the model does
+                // not hand it to a mail tool.
+                if !a.provider.serves_mail() {
+                    account["calendar_only"] = json!(true);
+                }
+                account
             })
             .collect();
         let screen = self.desk.on_screen();

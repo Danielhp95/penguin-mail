@@ -1152,6 +1152,26 @@ impl MainWindow {
         };
         self.stack.set_visible_child_name(page);
         let live: HashSet<AccountId> = data.iter().map(|(a, _)| a.id).collect();
+        // The calendar lists every account, so the ones without mail are
+        // kept aside before the mail sidebar's are sorted out below.
+        let calendars_alone: Vec<Account> = data
+            .iter()
+            .filter(|(a, _)| !a.provider.serves_mail())
+            .map(|(a, _)| a.clone())
+            .collect();
+        // Any account can need to sign in again, a calendar account too.
+        let reauth: Vec<String> = data
+            .iter()
+            .filter(|(a, _)| a.state == AccountState::NeedsReauth)
+            .map(|(a, _)| a.email.clone())
+            .collect();
+        // A calendar account has no mailboxes, so the mail sidebar and
+        // everything worded by what the accounts offer for mail is built
+        // from the accounts that have mail.
+        let data: Vec<(Account, Vec<Label>)> = data
+            .into_iter()
+            .filter(|(a, _)| a.provider.serves_mail())
+            .collect();
         self.followed.borrow_mut().retain(|id, _| live.contains(id));
         // A label deleted elsewhere, by the assistant or in the browser,
         // leaves the window on a mailbox that is no longer there, so the
@@ -1194,11 +1214,6 @@ impl MainWindow {
         self.follow_gates();
         self.list
             .set_show_accounts(mailbox.account().is_none() && data.len() > 1);
-        let reauth: Vec<&str> = data
-            .iter()
-            .filter(|(a, _)| a.state == AccountState::NeedsReauth)
-            .map(|(a, _)| a.email.as_str())
-            .collect();
         match reauth.first() {
             Some(email) => {
                 self.list.banner.set_title(&fill(
@@ -1224,8 +1239,11 @@ impl MainWindow {
         // app.reload_accounts already read every account's consent in the
         // same pass as the accounts themselves, so this costs no round
         // trip of its own and settles with everything else above.
-        let accounts: Vec<Account> = data.iter().map(|(a, _)| a.clone()).collect();
+        let mut accounts: Vec<Account> = data.iter().map(|(a, _)| a.clone()).collect();
         self.rebuild_grant_banners(&accounts, &app.consent());
+        // The mail accounts in the sidebar's order, then the calendar
+        // accounts, which the mail sidebar has no place for.
+        accounts.extend(calendars_alone);
         self.accounts_for_calendar(&accounts);
     }
 
@@ -1383,7 +1401,7 @@ impl MainWindow {
 
     /// The accounts a listing may read, in sidebar order.
     fn scope(&self) -> Scope {
-        Scope::over(self.accounts())
+        Scope::over(self.mail_accounts())
     }
 
     /// The settings that change what a mailbox lists.
@@ -1455,7 +1473,7 @@ impl MainWindow {
         if redraw.follow {
             let mailbox = self.shown();
             self.list
-                .set_show_accounts(mailbox.account().is_none() && self.accounts().len() > 1);
+                .set_show_accounts(mailbox.account().is_none() && self.mail_accounts().len() > 1);
             let accounts = self.accounts_of(&mailbox);
             self.word_buttons(&self.conversation, &mailbox, accounts);
             self.follow_outbox();
@@ -1919,7 +1937,7 @@ impl MainWindow {
     fn accounts_of(&self, mailbox: &Mailbox) -> Vec<AccountId> {
         match mailbox.account() {
             Some(id) => vec![id],
-            None => self.accounts().iter().map(|a| a.id).collect(),
+            None => self.mail_accounts().iter().map(|a| a.id).collect(),
         }
     }
 
@@ -2887,6 +2905,12 @@ impl MainWindow {
             .unwrap_or_default()
     }
 
+    /// The accounts with mail: what a mailbox lists and what the mail
+    /// buttons are worded for. A calendar account is not among them.
+    fn mail_accounts(&self) -> Vec<Account> {
+        crate::offered::mail_accounts(&self.accounts())
+    }
+
     fn account(&self, account_id: AccountId) -> Option<Account> {
         self.app.upgrade()?.account(account_id)
     }
@@ -3475,7 +3499,9 @@ impl MainWindow {
         let Some(app) = self.app.upgrade() else {
             return;
         };
-        let accounts = app.accounts();
+        // Every page of Preferences that lists accounts is about their
+        // mail or their contacts, which a calendar account has neither of.
+        let accounts = app.mail_accounts();
         let weak = Rc::downgrade(self);
         super::preferences::present(
             &app,
@@ -3508,7 +3534,7 @@ impl MainWindow {
         let Some(app) = self.app.upgrade() else {
             return;
         };
-        let accounts = app.accounts();
+        let accounts = app.mail_accounts();
         let weak = Rc::downgrade(self);
         super::preferences::present_page(
             &app,
@@ -3647,7 +3673,7 @@ impl MainWindow {
     /// Shows the Keyboard Shortcuts window. Its label line says Move to
     /// folder when every account files mail in folders.
     fn show_shortcuts(&self) {
-        let offers: Vec<Offers> = self.accounts().iter().map(|a| self.offers(a.id)).collect();
+        let offers: Vec<Offers> = self.mail_accounts().iter().map(|a| self.offers(a.id)).collect();
         shortcuts::dialog(Filing::of(offers)).present(Some(&self.window));
     }
 

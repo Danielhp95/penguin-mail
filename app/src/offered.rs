@@ -21,6 +21,20 @@ pub fn withheld_for(services: Option<&AccountServices>) -> Withheld {
     services.map_or(Withheld::NONE, AccountServices::withheld)
 }
 
+/// The accounts that have mail, in the order given. A calendar account
+/// has none, so the mail sidebar, the From list and the mail pages of
+/// Preferences are built from these and the calendar from every account.
+pub fn mail_accounts(accounts: &[Account]) -> Vec<Account> {
+    accounts.iter().filter(|account| account.provider.serves_mail()).cloned().collect()
+}
+
+/// Whether the window has accounts and none of them has mail. It then
+/// shows the calendar and offers no switch to a mail space that would be
+/// empty. No account at all is the first-run page instead.
+pub fn only_calendars(accounts: &[Account]) -> bool {
+    !accounts.is_empty() && accounts.iter().all(|account| !account.provider.serves_mail())
+}
+
 /// Whether the sidebar offers the Mail / Calendar switch. `started` holds
 /// what each running account offers; `waiting` says some account has not
 /// started yet. Once one running account offers a calendar the switch
@@ -720,16 +734,34 @@ mod tests {
         }
     }
 
-    #[test]
-    fn removing_a_calendar_account_speaks_of_calendars_not_mail() {
-        let account = Account {
+    fn calendar_account() -> Account {
+        Account {
             id: 7,
             email: "robin@cloud.example.org".into(),
             state: AccountState::Ok,
             provider: Provider::CalDav,
             provider_name: None,
-        };
-        let body = remove_account_body(&account, RemoveSetting::Never);
+        }
+    }
+
+    #[test]
+    fn mail_accounts_leave_out_a_calendar_account() {
+        let all = [calendar_account(), pop3_account()];
+        let mail = super::mail_accounts(&all);
+        assert_eq!(mail.iter().map(|a| a.id).collect::<Vec<_>>(), [pop3_account().id]);
+        assert!(super::mail_accounts(&[calendar_account()]).is_empty());
+    }
+
+    #[test]
+    fn a_window_with_calendar_accounts_alone_has_no_mail_to_show() {
+        assert!(super::only_calendars(&[calendar_account()]));
+        assert!(!super::only_calendars(&[calendar_account(), pop3_account()]));
+        assert!(!super::only_calendars(&[]), "no account at all is the first-run page's business");
+    }
+
+    #[test]
+    fn removing_a_calendar_account_speaks_of_calendars_not_mail() {
+        let body = remove_account_body(&calendar_account(), RemoveSetting::Never);
         assert!(body.contains("calendars"), "{body}");
         assert!(!body.contains("mail"), "{body}");
     }

@@ -522,7 +522,8 @@ impl App {
     /// and each account's own address first.
     pub fn identities(&self) -> Vec<Identity> {
         let settings = self.settings.borrow();
-        let accounts = self.accounts.borrow();
+        // A calendar account sends nothing, so it has no place in From.
+        let accounts = self.mail_accounts();
         let emails: Vec<&str> = accounts.iter().map(|a| a.email.as_str()).collect();
         let mut identities = Vec::new();
         for email in settings.ordered(&emails) {
@@ -684,6 +685,12 @@ impl App {
         self.accounts.borrow().clone()
     }
 
+    /// The accounts with mail, which leaves out a calendar account: what
+    /// the mail window and the mail pages of Preferences list.
+    pub fn mail_accounts(&self) -> Vec<Account> {
+        crate::offered::mail_accounts(&self.accounts.borrow())
+    }
+
     pub fn account(&self, account_id: AccountId) -> Option<Account> {
         self.accounts
             .borrow()
@@ -767,7 +774,9 @@ impl App {
     /// asks Gmail only for what it has never told this computer.
     fn remember_accounts(self: &Rc<Self>, arrived: &[Account]) {
         for account in arrived {
-            if self.names.borrow().contains_key(&account.id) {
+            // The name is the one mail goes out under, and a calendar
+            // account sends none.
+            if !account.provider.serves_mail() || self.names.borrow().contains_key(&account.id) {
                 continue;
             }
             if let Some(name) = self.settings_with(|s| s.display_name(&account.email)) {
