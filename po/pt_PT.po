@@ -10006,18 +10006,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "Etiqueta nova em: {accounts}."
 msgstr[1] "Etiquetas novas em: {accounts}."
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:938 sync/src/calendar_copy.rs:1007
+#: sync/src/calendar_copy.rs:1052
 msgid "deleted elsewhere"
 msgstr "eliminado noutro lado"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:943
 msgid "the calendar is gone"
 msgstr "o calendário já não existe"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1704
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10154,62 +10154,62 @@ msgstr "Todo o correio"
 msgid "This smart mailbox has no conditions"
 msgstr "Esta caixa inteligente não tem condições"
 
-#: sync/src/mailbox.rs:1115
+#: sync/src/mailbox.rs:1121
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr ""
 "Os resultados de {account} vêm apenas do correio guardado neste computador"
 
-#: sync/src/mailbox.rs:1127
+#: sync/src/mailbox.rs:1133
 msgid "Could not load mail for {account}: {reason}"
 msgstr "Não foi possível carregar o correio de {account}: {reason}"
 
-#: sync/src/mailbox.rs:1248
+#: sync/src/mailbox.rs:1254
 msgid "Returns {when}"
 msgstr "Volta {when}"
 
-#: sync/src/mailbox.rs:1291 sync/src/mailbox.rs:1373
+#: sync/src/mailbox.rs:1297 sync/src/mailbox.rs:1379
 msgid "No recipients"
 msgstr "Sem destinatários"
 
-#: sync/src/mailbox.rs:1294 sync/src/mailbox.rs:1376
+#: sync/src/mailbox.rs:1300 sync/src/mailbox.rs:1382
 msgid "To {recipients}"
 msgstr "Para {recipients}"
 
-#: sync/src/mailbox.rs:1336
+#: sync/src/mailbox.rs:1342
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} por ler · {category}"
 msgstr[1] "{count} por ler · {category}"
 
-#: sync/src/mailbox.rs:1341
+#: sync/src/mailbox.rs:1347
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} por ler"
 msgstr[1] "{count} por ler"
 
-#: sync/src/mailbox.rs:1348
+#: sync/src/mailbox.rs:1354
 msgid "Sent yesterday, no reply yet"
 msgstr "Enviada ontem, ainda sem resposta"
 
-#: sync/src/mailbox.rs:1350
+#: sync/src/mailbox.rs:1356
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Enviada há {days} dia, ainda sem resposta"
 msgstr[1] "Enviada há {days} dias, ainda sem resposta"
 
-#: sync/src/mailbox.rs:1388
+#: sync/src/mailbox.rs:1394
 msgid "Sends {when}"
 msgstr "Envia {when}"
 
-#: sync/src/mailbox.rs:1392
+#: sync/src/mailbox.rs:1398
 msgid "Not sent"
 msgstr "Não enviada"
 
-#: sync/src/mailbox.rs:1399
+#: sync/src/mailbox.rs:1405
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Nova tentativa {when}"
 
-#: sync/src/mailbox.rs:1406
+#: sync/src/mailbox.rs:1412
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. O Penguin Mail deixou de tentar"
 

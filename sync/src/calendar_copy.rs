@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use mailrs_domain::calendar::series::{self, Picked, RepeatScope, Step};
 use mailrs_domain::calendar::{self, Access, Calendar, Event, Notify, Occurrence};
 use mailrs_domain::translate::{fill, gettext};
-use mailrs_domain::{AccountId, EpochMillis};
+use mailrs_domain::{AccountId, AccountState, EpochMillis};
 use mailrs_store::Db;
 use mailrs_store::calendar as store;
 
@@ -281,6 +281,12 @@ impl<A: Accounts> CalendarCopy<A> {
             if self.accounts.services(account_id).is_none() {
                 continue;
             }
+            // A calendar account whose server refused its password would
+            // be refused again at every tick. It waits for the person to
+            // sign in again, which starts it on new services.
+            if self.awaits_sign_in(account_id) {
+                continue;
+            }
             // Queued changes go out before the account is read, so an
             // edit made here shows up in what comes back rather than
             // waiting for the read after it. Calls
@@ -324,7 +330,34 @@ impl<A: Accounts> CalendarCopy<A> {
         };
         // Nobody waits on a refresh; it runs behind the person's own
         // calls.
-        crate::background(self.refresh_calendars(&calendar, account_id, now)).await
+        let read = crate::background(self.refresh_calendars(&calendar, account_id, now)).await;
+        self.report_refusal(account_id).await;
+        read
+    }
+
+    /// Whether `account_id` is a calendar account whose server refused
+    /// its password. A mail account whose calendar server did still reads
+    /// and sends as before: its mail works, and Preferences says why the
+    /// calendar does not.
+    fn awaits_sign_in(&self, account_id: AccountId) -> bool {
+        self.accounts.services(account_id).is_some_and(|services| {
+            !services.serves_mail() && services.calendar.as_ref().is_some_and(|c| c.login_refused().is_some())
+        })
+    }
+
+    /// Records that a calendar account needs to sign in again. A mail
+    /// account's loop finds a refused password and says so; an account
+    /// with no mail has no loop, so the read that was refused says it.
+    async fn report_refusal(&self, account_id: AccountId) {
+        if !self.awaits_sign_in(account_id) {
+            return;
+        }
+        let Some(sync) = self.accounts.account(account_id) else {
+            return;
+        };
+        if let Err(err) = sync.set_state(AccountState::NeedsReauth).await {
+            tracing::warn!(account = account_id, %err, "could not record that the calendar account needs to sign in");
+        }
     }
 
     /// Reads the account's calendars now when the copy has never read

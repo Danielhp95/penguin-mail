@@ -1010,7 +1010,13 @@ impl<A: Accounts> Mailboxes<A> {
         Reading { from, stop }: Reading<'_>,
     ) -> Result<Listing, SyncError> {
         let limit = view.limit.unwrap_or(REMOTE_LIMIT);
-        let targets = scope.searched(only);
+        // An account with no mail has nothing to search, and asking it
+        // would only add a line saying where its results come from.
+        let targets: Vec<&Account> = scope
+            .searched(only)
+            .into_iter()
+            .filter(|account| self.accounts.account(account.id).is_none_or(|sync| sync.services().serves_mail()))
+            .collect();
         let ids: Vec<AccountId> = targets.iter().map(|a| a.id).collect();
         // Read before the search goes out, so a change made while it runs
         // leaves the next listing asking again.
