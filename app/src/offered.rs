@@ -21,6 +21,15 @@ pub fn withheld_for(services: Option<&AccountServices>) -> Withheld {
     services.map_or(Withheld::NONE, AccountServices::withheld)
 }
 
+/// Whether an answer to an invitation on the account reaches its
+/// organizer, read from the account's services as they stand now. What the
+/// window keeps of an account's offers is taken when the accounts are
+/// read, which is before a calendar account's server has said whether it
+/// sends replies, so the event popover asks here each time it opens.
+pub fn organizer_hears(services: Option<&AccountServices>) -> bool {
+    services.is_none_or(|services| services.offers().tells_organizer)
+}
+
 /// The accounts that have mail, in the order given. A calendar account
 /// has none, so the mail sidebar, the From list and the mail pages of
 /// Preferences are built from these and the calendar from every account.
@@ -742,6 +751,27 @@ mod tests {
             provider: Provider::CalDav,
             provider_name: None,
         }
+    }
+
+    /// The window's own copy of what an account offers is taken when the
+    /// accounts are read, before a calendar account's server has said
+    /// whether it sends replies. The popover's line under the answers has
+    /// to read the services as they stand when it opens.
+    #[tokio::test]
+    async fn whether_the_organizer_hears_is_read_from_the_services_as_they_stand() {
+        use mailrs_sync::fake::{DavKind, FakeDav};
+        use mailrs_sync::{AccountServices, AnyCalendar, AnyDav, AnyMail, CalDav, CalendarService, NoMail};
+
+        let dav = std::sync::Arc::new(FakeDav::new());
+        dav.add_collection("/cal/personal/", DavKind::Calendar, "Personal", None);
+        let api = std::sync::Arc::new(AnyDav::from(std::sync::Arc::clone(&dav)));
+        let calendar = AnyCalendar::Dav(CalDav::new(api, AnyMail::NoMail(NoMail), Vec::new()));
+        let services = AccountServices::calendar_only(calendar.clone());
+
+        assert!(super::organizer_hears(None), "an account that has not started is not said to be mute");
+        assert!(super::organizer_hears(Some(&services)), "nor one whose server has not been asked");
+        calendar.calendars().await.expect("the calendar list");
+        assert!(!super::organizer_hears(Some(&services)), "the server has said it sends no replies");
     }
 
     #[test]

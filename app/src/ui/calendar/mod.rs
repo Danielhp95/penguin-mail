@@ -1868,8 +1868,8 @@ impl CalendarView {
                 }
             }) as Box<dyn Fn()>
         });
-        self.popover
-            .set_organizer_hears(self.offers_of(o.account_id).tells_organizer);
+        let running = self.core.account(o.account_id);
+        self.popover.set_organizer_hears(crate::offered::organizer_hears(running.as_deref().map(|sync| sync.services())));
         self.popover.show(
             anchor,
             o,
