@@ -221,6 +221,29 @@ impl Foot {
     }
 }
 
+/// What the header says in place of the switch: the name of the list
+/// under it. The switch is away while no account offers a calendar, and
+/// also while none has mail, when the list is the calendars'.
+fn list_title(mail_showing: bool) -> String {
+    match mail_showing {
+        true => gettext("Mailboxes"),
+        false => gettext("Calendars"),
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::list_title;
+
+    /// With calendar accounts alone the switch is away and the calendar
+    /// shows, under a title that said "Mailboxes".
+    #[test]
+    fn the_title_names_the_list_under_it() {
+        assert_eq!(list_title(true), "Mailboxes");
+        assert_eq!(list_title(false), "Calendars");
+    }
+}
+
 #[cfg(test)]
 mod foot_tests {
     use super::{Foot, Slot};
@@ -280,7 +303,8 @@ pub struct Sidebar {
     /// Switches between the mail and the calendar. Its toggles are named
     /// `mail` and `calendar`; it hides while no account offers a
     /// calendar, and "Mailboxes" shows in its place, since a switch to a
-    /// calendar that cannot show anything would only mislead.
+    /// calendar that cannot show anything would only mislead. It hides
+    /// too while no account has mail, over the calendars.
     pub switch: adw::ToggleGroup,
     /// The badge on the Mail toggle and on the Calendar one.
     badges: [(Space, gtk::Label); 2],
@@ -345,7 +369,7 @@ impl Sidebar {
             .vexpand(true)
             .child(&list)
             .build();
-        let title = adw::WindowTitle::new(&gettext("Mailboxes"), "");
+        let title = adw::WindowTitle::new(&list_title(true), "");
         let switch = adw::ToggleGroup::builder()
             .css_classes(["round", "space-switch"])
             .valign(gtk::Align::Center)
@@ -639,7 +663,7 @@ impl Sidebar {
         true
     }
 
-    /// Shows the switch, or "Mailboxes" in its place.
+    /// Shows the switch, or the name of the list in its place.
     pub fn set_switch_visible(&self, visible: bool) {
         self.switch.set_visible(visible);
         self.title.set_visible(!visible);
@@ -655,6 +679,7 @@ impl Sidebar {
         }
         self.content.set_visible_child_name("calendar");
         self.mail_showing.set(false);
+        self.title.set_title(&list_title(false));
         self.sync_foot();
         self.sync_badges();
     }
@@ -663,6 +688,7 @@ impl Sidebar {
     pub fn show_mail(&self) {
         self.content.set_visible_child_name("mail");
         self.mail_showing.set(true);
+        self.title.set_title(&list_title(true));
         self.sync_foot();
         self.sync_badges();
     }
