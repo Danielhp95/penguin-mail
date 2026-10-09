@@ -1905,20 +1905,8 @@ fn imap_services(
 /// CalDAV server holds them.
 fn fastmail_calendar(now: EpochMillis) -> Vec<(String, String)> {
     let monday = week_monday(now);
-    let stamp = |at: EpochMillis| {
-        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at)
-            .unwrap_or_default()
-            .format("%Y%m%dT%H%M%SZ")
-            .to_string()
-    };
     let event = |uid: &str, title: &str, start: EpochMillis, minutes: i64, rule: &str| {
-        format!(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Fastmail//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:{}\r\n\
-             DTSTART:{}\r\nDTEND:{}\r\n{rule}SUMMARY:{title}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-            stamp(now),
-            stamp(start),
-            stamp(start + minutes * 60_000),
-        )
+        caldav_event("Fastmail", now, uid, title, start..start + minutes * 60_000, rule)
     };
     vec![
         ("/cal/personal/climbing.ics".into(), event("climbing", "Climbing", at_week(monday, 1, 18, 30), 90, "")),
@@ -1928,6 +1916,25 @@ fn fastmail_calendar(now: EpochMillis) -> Vec<(String, String)> {
             event("book-club", "Book club", at_week(monday, 2, 19, 0), 120, "RRULE:FREQ=WEEKLY\r\n"),
         ),
     ]
+}
+
+/// One event as the CalDAV server `product` holds it, written at `now`.
+/// `rule` is a whole RRULE line, or nothing for an event that happens
+/// once.
+fn caldav_event(product: &str, now: EpochMillis, uid: &str, title: &str, span: std::ops::Range<EpochMillis>, rule: &str) -> String {
+    let stamp = |at: EpochMillis| {
+        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at)
+            .unwrap_or_default()
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string()
+    };
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//{product}//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:{}\r\n\
+         DTSTART:{}\r\nDTEND:{}\r\n{rule}SUMMARY:{title}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+        stamp(now),
+        stamp(span.start),
+        stamp(span.end),
+    )
 }
 
 /// The Fastmail account's address book, as vCards.

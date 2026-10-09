@@ -15,7 +15,7 @@ use mailrs_store::{Db, StoreError, accounts};
 use mailrs_sync::fake::{DavKind, FakeDav};
 use mailrs_sync::{AccountServices, AccountSync, SyncError};
 
-use super::{at_week, week_monday};
+use super::{at_week, caldav_event, week_monday};
 
 /// The variable that asks for the account.
 const WANTED: &str = "MAILRS_DEMO_CALENDAR_ACCOUNT";
@@ -99,23 +99,9 @@ pub async fn seed(
 /// Thursday morning, and dinner on Friday, as a CalDAV server holds them.
 fn household(now: EpochMillis) -> Vec<(String, String)> {
     let monday = week_monday(now);
-    let stamp = |at: EpochMillis| {
-        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at)
-            .unwrap_or_default()
-            .format("%Y%m%dT%H%M%SZ")
-            .to_string()
-    };
     let event = |uid: &str, title: &str, start: EpochMillis, minutes: i64, rule: &str| {
-        (
-            format!("{HOUSEHOLD}{uid}.ics"),
-            format!(
-                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Nextcloud//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:{}\r\n\
-                 DTSTART:{}\r\nDTEND:{}\r\n{rule}SUMMARY:{title}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-                stamp(now),
-                stamp(start),
-                stamp(start + minutes * 60_000),
-            ),
-        )
+        let body = caldav_event("Nextcloud", now, uid, title, start..start + minutes * 60_000, rule);
+        (format!("{HOUSEHOLD}{uid}.ics"), body)
     };
     vec![
         event("piano", "Piano lesson", at_week(monday, 1, 16, 30), 45, "RRULE:FREQ=WEEKLY\r\n"),
