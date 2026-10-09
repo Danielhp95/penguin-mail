@@ -94,7 +94,7 @@ pub fn present(
         .build();
     let this = Rc::new(Dialog {
         app: Rc::clone(app),
-        accounts: with_rules(app.accounts(), offers),
+        accounts: with_rules(app.mail_accounts(), offers),
         preselect,
         nav,
         home,

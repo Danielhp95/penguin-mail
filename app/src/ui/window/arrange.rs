@@ -163,7 +163,9 @@ impl MainWindow {
     }
 
     pub(super) fn move_account(self: &Rc<Self>, account: Account, step: isize) {
-        let emails: Vec<String> = self.accounts().into_iter().map(|a| a.email).collect();
+        // The mail sidebar's own accounts: a step past a calendar account,
+        // which it does not show, would move nothing on screen.
+        let emails: Vec<String> = self.mail_accounts().into_iter().map(|a| a.email).collect();
         if let Some(app) = self.app.upgrade() {
             app.change_settings(Change::MoveAccount {
                 emails,
