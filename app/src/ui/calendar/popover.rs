@@ -13,7 +13,7 @@
 //! dismisses the popover. `new` closes it on Escape and on a press
 //! anywhere else in the window instead.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -124,8 +124,6 @@ pub struct EventPopover {
     /// Under the answers: that the organizer will not hear this one. Only
     /// a calendar account on a server that sends no replies shows it.
     unheard: gtk::Label,
-    /// Whether an answer from the account on show reaches its organizer.
-    organizer_hears: Cell<bool>,
     /// "Add a note", under the answer buttons: words the organizer reads
     /// with the answer. Emptied each time the popover opens.
     note: gtk::Entry,
@@ -470,7 +468,6 @@ impl EventPopover {
             answer_buttons,
             on_answer: RefCell::new(None),
             unheard,
-            organizer_hears: Cell::new(true),
             note,
             propose_row,
             on_propose: RefCell::new(None),
@@ -676,25 +673,21 @@ impl EventPopover {
         self.hushed.set(None);
     }
 
-    /// Says whether an answer from the account whose event shows next
-    /// reaches its organizer (`Offers::tells_organizer`), for the line
-    /// under the answers. Set before [`Self::show`].
-    pub fn set_organizer_hears(&self, hears: bool) {
-        self.organizer_hears.set(hears);
-    }
-
     /// Shows the popover for `o`, pointed at `anchor` (the block or "N
     /// more" button pressed). `on_answer` runs when a guest picks Yes,
     /// Maybe or No, with the note they wrote; the caller asks which
     /// occurrences it covers and sends it through
-    /// `Invitations::answer_event`. `on_propose`, when given, puts
-    /// "Propose New Time" under the answers.
+    /// `Invitations::answer_event`. `organizer_hears` is whether such an
+    /// answer reaches the organizer; a guest is told when it does not.
+    /// `on_propose`, when given, puts "Propose New Time" under the
+    /// answers.
     #[expect(clippy::too_many_arguments, reason = "each is a separate door the popover opens")]
     pub fn show(
         self: &Rc<Self>,
         anchor: &gtk::Widget,
         o: &Occurrence,
         calendar: &mailrs_domain::calendar::Calendar,
+        organizer_hears: bool,
         on_answer: impl Fn(Answer, Option<String>) + 'static,
         on_propose: Option<Box<dyn Fn()>>,
         on_edit: Option<Box<dyn Fn()>>,
@@ -786,7 +779,7 @@ impl EventPopover {
 
         let guest = draft::limited(event);
         self.answer_box.set_visible(guest);
-        self.unheard.set_visible(guest && !self.organizer_hears.get());
+        self.unheard.set_visible(guest && !organizer_hears);
         self.note.set_visible(guest);
         self.note.set_text("");
         self.propose_row.set_visible(guest && on_propose.is_some());
@@ -1023,20 +1016,13 @@ pub(crate) mod checks {
             end: 3_600_000,
         };
         let mine = Occurrence { account_id: 1, event: Arc::new(Event::default()), start: 0, end: 3_600_000 };
-        let show = |o: &Occurrence| popover.show(anchor.upcast_ref(), o, &Calendar::default(), |_, _| {}, None, None, None);
-
-        show(&invited);
-        assert!(!popover.unheard.is_visible(), "an account that can tell the organizer says nothing more");
-
-        popover.set_organizer_hears(false);
-        show(&invited);
-        assert!(popover.unheard.is_visible(), "a guest is told the answer goes no further");
-        show(&mine);
-        assert!(!popover.unheard.is_visible(), "an event with no answer to give has nothing to say");
-
-        popover.set_organizer_hears(true);
-        show(&invited);
-        assert!(!popover.unheard.is_visible());
+        let show = |o: &Occurrence, hears| {
+            popover.show(anchor.upcast_ref(), o, &Calendar::default(), hears, |_, _| {}, None, None, None);
+            popover.unheard.is_visible()
+        };
+        assert!(!show(&invited, true), "an account that can tell the organizer says nothing more");
+        assert!(show(&invited, false), "a guest is told the answer goes no further");
+        assert!(!show(&mine, false), "an event with no answer to give has nothing to say");
         popover.popover.popdown();
         window.destroy();
     }
@@ -1057,7 +1043,7 @@ pub(crate) mod checks {
         let watching = || window.observe_controllers().n_items();
         let before = watching();
 
-        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         assert_eq!(watching(), before + 1, "nothing watches for a press outside the open popover");
 
         popover.popover.popdown();
@@ -1081,11 +1067,11 @@ pub(crate) mod checks {
         let event = Event { title: "Design review".to_string(), ..Event::default() };
         let o = Occurrence { account_id: 1, event: Arc::new(event), start: 0, end: 3_600_000 };
 
-        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         assert!(!anchor.has_tooltip(), "the block's tooltip can still cover its popover");
 
         // A press on another event moves the popover there.
-        popover.show(other.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(other.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         assert!(anchor.has_tooltip(), "the first block lost its tooltip for good");
         assert!(!other.has_tooltip());
 
@@ -1112,7 +1098,7 @@ pub(crate) mod checks {
             ..Event::default()
         };
         let o = Occurrence { account_id: 1, event: Arc::new(event), start: 0, end: 3_600_000 };
-        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         assert!(popover.notes_more.get_visible(), "notes this long should offer Show more");
 
         popover.notes_more.emit_clicked();
@@ -1137,7 +1123,7 @@ pub(crate) mod checks {
             ..Event::default()
         };
         let o = Occurrence { account_id: 1, event: Arc::new(event), start: 0, end: 3_600_000 };
-        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         popover.popover.set_visible(true);
         let more = popover.notes_more.clone().upcast::<gtk::Widget>();
         assert!(more.grab_focus(), "Show more should take the focus to begin with");
@@ -1163,7 +1149,7 @@ pub(crate) mod checks {
         let guests = (0..7).map(|n| super::tests::guest(&format!("{n}@example.com"))).collect();
         let event = Event { title: "All hands".to_string(), guests, ..Event::default() };
         let o = Occurrence { account_id: 1, event: Arc::new(event), start: 0, end: 3_600_000 };
-        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), |_, _| {}, None, None, None);
+        popover.show(anchor.upcast_ref(), &o, &Calendar::default(), true, |_, _| {}, None, None, None);
         popover.popover.set_visible(true);
         let more = popover.guests_more.clone().upcast::<gtk::Widget>();
         assert!(more.grab_focus(), "Show all should take the focus to begin with");

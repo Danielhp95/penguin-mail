@@ -1869,11 +1869,11 @@ impl CalendarView {
             }) as Box<dyn Fn()>
         });
         let running = self.core.account(o.account_id);
-        self.popover.set_organizer_hears(crate::offered::organizer_hears(running.as_deref().map(|sync| sync.services())));
         self.popover.show(
             anchor,
             o,
             &calendar,
+            crate::offered::organizer_hears(running.as_deref().map(|sync| sync.services())),
             move |answer, note| {
                 if let Some(view) = weak.upgrade() {
                     view.answer(occurrence.clone(), answer, note);

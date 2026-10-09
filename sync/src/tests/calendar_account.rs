@@ -7,10 +7,8 @@ use std::sync::Arc;
 use mailrs_dav::Kind;
 use mailrs_dav::fake::FakeDav;
 
-use crate::services::{CalDav, NoMail};
-use crate::{
-    AccountServices, AnyCalendar, AnyDav, AnyMail, BackendError, IdentityService, MailBackend, SearchQuery, Withheld,
-};
+use crate::services::NoMail;
+use crate::{AccountServices, BackendError, IdentityService, MailBackend, SearchQuery, Withheld};
 
 pub(super) const PERSONAL: &str = "/cal/personal/";
 
@@ -19,16 +17,8 @@ pub(super) const PERSONAL: &str = "/cal/personal/";
 pub(super) fn calendar_only() -> (Arc<FakeDav>, AccountServices) {
     let dav = Arc::new(FakeDav::new());
     dav.add_collection(PERSONAL, Kind::Calendar, "Personal", Some("#0082c9"));
-    let services = services_on(&dav);
+    let services = AccountServices::calendar_only(Arc::clone(&dav));
     (dav, services)
-}
-
-/// The services of a calendar account on `dav`, as each sign-in builds
-/// them anew.
-pub(super) fn services_on(dav: &Arc<FakeDav>) -> AccountServices {
-    let api = Arc::new(AnyDav::from(Arc::clone(dav)));
-    let calendar = CalDav::new(api, AnyMail::NoMail(NoMail), Vec::new());
-    AccountServices::calendar_only(AnyCalendar::Dav(calendar))
 }
 
 #[tokio::test]
@@ -52,9 +42,7 @@ async fn calendar_only_services_offer_a_calendar_and_no_mail() {
     assert!(!services.serves_mail());
     let offers = services.offers();
     assert!(offers.calendar);
-    assert!(!offers.mail);
     assert!(!offers.contacts && !offers.rules && !offers.auto_reply && !offers.search);
-    assert!(offers.missing().is_empty(), "nothing is said to be missing of an account that was never a mail account");
     assert_eq!(services.withheld(), Withheld::NONE);
     assert!(services.identities.identities().await.unwrap().is_empty());
 }

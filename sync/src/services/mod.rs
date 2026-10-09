@@ -396,13 +396,15 @@ impl AccountServices {
         }
     }
 
-    /// A calendar account: a CalDAV server's calendars and no mail. The
-    /// mail and the identities are the stand-ins that answer for an
-    /// account with neither.
-    pub fn calendar_only(calendar: AnyCalendar) -> Self {
+    /// A calendar account: the calendars of the CalDAV server behind
+    /// `dav` and no mail. The mail and the identities are the stand-ins
+    /// that answer for an account with neither, and the calendar asks the
+    /// server which addresses the account goes by.
+    pub fn calendar_only(dav: impl Into<AnyDav>) -> Self {
+        let calendar = CalDav::new(Arc::new(dav.into()), AnyMail::NoMail(NoMail), Vec::new());
         AccountServices {
             mail: AnyMail::NoMail(NoMail),
-            calendar: Some(calendar),
+            calendar: Some(AnyCalendar::Dav(calendar)),
             contacts: None,
             rules: None,
             auto_reply: None,
@@ -413,7 +415,15 @@ impl AccountServices {
     /// Whether the account has mail at all. A calendar account has
     /// none, and the engine runs no mail loop for it.
     pub fn serves_mail(&self) -> bool {
-        !matches!(self.mail, AnyMail::NoMail(_))
+        self.mail.serves_mail()
+    }
+
+    /// Whether an answer to an invitation reaches its organizer, as the
+    /// calendar stands now. A calendar account's server says whether it
+    /// sends replies only once it has been read, so this is asked when
+    /// the answer is offered and never kept.
+    pub fn tells_organizer(&self) -> bool {
+        self.calendar.as_ref().is_none_or(AnyCalendar::tells_organizer)
     }
 
     pub fn with_calendar(mut self, calendar: AnyCalendar) -> Self {
@@ -524,9 +534,7 @@ impl AccountServices {
         let caps = self.capabilities();
         let features = CalendarFeatures::of(self.calendar.as_ref());
         let refused = self.mail.refused();
-        let mail = self.serves_mail();
         Offers {
-            mail,
             labels: caps.labels,
             categories: caps.categories,
             delete_forever: caps.delete_forever,
@@ -538,7 +546,8 @@ impl AccountServices {
             auto_reply_contacts_only: self.auto_reply.as_ref().is_some_and(AutoReplyService::limits_to_contacts),
             // Gmail, IMAP and Graph search on the server. A POP3 account's
             // server keeps nothing to search; its mail is all in the store.
-            search: mail && !caps.local_mailboxes,
+            // A calendar account has no mail to search at all.
+            search: self.serves_mail() && !caps.local_mailboxes,
             tags: caps.tags,
             focused: caps.focus,
             event_files: features.event_files,
@@ -549,7 +558,6 @@ impl AccountServices {
             out_of_office: features.out_of_office,
             focus_time: features.focus_time,
             declines: features.declines,
-            tells_organizer: self.calendar.as_ref().is_none_or(AnyCalendar::tells_organizer),
         }
     }
 }
@@ -708,9 +716,6 @@ impl Withheld {
 /// the services themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Offers {
-    /// The account has mail. False for a calendar account alone, which
-    /// the window then lists nowhere mail is listed.
-    pub mail: bool,
     /// Mail can sit in several mailboxes; otherwise it moves between
     /// folders.
     pub labels: bool,
@@ -756,18 +761,12 @@ pub struct Offers {
     /// Out of office and focus time keep which meetings they decline and
     /// a message, so the editor offers both.
     pub declines: bool,
-    /// An answer to an invitation reaches its organizer: the provider
-    /// sends it, or the account's mail does. False only for a calendar
-    /// account on a server that schedules nothing, where the answer is
-    /// saved on the calendar and nobody hears of it.
-    pub tells_organizer: bool,
 }
 
 impl Offers {
     /// Everything Gmail offers (it has neither tags nor Focused), and as the window assumes of an account
     /// that has not started yet, so nothing disappears for a moment.
     pub const EVERYTHING: Offers = Offers {
-        mail: true,
         labels: true,
         categories: true,
         delete_forever: true,
@@ -790,16 +789,10 @@ impl Offers {
         out_of_office: false,
         focus_time: false,
         declines: false,
-        tells_organizer: true,
     };
 
-    /// What the account lacks, in the order Preferences lists it. A
-    /// calendar account lacks nothing: it was never a mail account, so
-    /// a list of the mail features it is without would say nothing.
+    /// What the account lacks, in the order Preferences lists it.
     pub fn missing(&self) -> Vec<Missing> {
-        if !self.mail {
-            return Vec::new();
-        }
         [
             (self.calendar, Missing::Calendar),
             (self.contacts, Missing::Contacts),

@@ -44,7 +44,6 @@ fn an_imap_account_offers_mail_alone() {
     assert_eq!(
         services.offers(),
         Offers {
-            mail: true,
             labels: false,
             categories: false,
             delete_forever: true,
@@ -65,7 +64,6 @@ fn an_imap_account_offers_mail_alone() {
             out_of_office: false,
             focus_time: false,
             declines: false,
-            tells_organizer: true,
         }
     );
 }

@@ -22,9 +22,6 @@ use super::{
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
 
-/// What the calendar list and a log line call the account's server.
-const PROVIDER_NAME: &str = "CalDAV";
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NoMail;
 
@@ -51,7 +48,7 @@ impl MailBackend for NoMail {
     }
 
     fn provider_name(&self) -> &str {
-        PROVIDER_NAME
+        mailrs_domain::Provider::CalDav.name()
     }
 
     fn person_waiting(&self) -> bool {

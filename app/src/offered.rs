@@ -22,12 +22,11 @@ pub fn withheld_for(services: Option<&AccountServices>) -> Withheld {
 }
 
 /// Whether an answer to an invitation on the account reaches its
-/// organizer, read from the account's services as they stand now. What the
-/// window keeps of an account's offers is taken when the accounts are
-/// read, which is before a calendar account's server has said whether it
-/// sends replies, so the event popover asks here each time it opens.
+/// organizer. A calendar account's server says whether it sends replies
+/// only once it has been read, so the event popover asks each time it
+/// opens. An account that is not running yet is not said to be mute.
 pub fn organizer_hears(services: Option<&AccountServices>) -> bool {
-    services.is_none_or(|services| services.offers().tells_organizer)
+    services.is_none_or(AccountServices::tells_organizer)
 }
 
 /// The accounts that have mail, in the order given. A calendar account
@@ -753,24 +752,21 @@ mod tests {
         }
     }
 
-    /// The window's own copy of what an account offers is taken when the
-    /// accounts are read, before a calendar account's server has said
-    /// whether it sends replies. The popover's line under the answers has
-    /// to read the services as they stand when it opens.
+    /// A calendar account's server says whether it sends replies once
+    /// its calendars are read, which is after the window read what the
+    /// account offers.
     #[tokio::test]
     async fn whether_the_organizer_hears_is_read_from_the_services_as_they_stand() {
         use mailrs_sync::fake::{DavKind, FakeDav};
-        use mailrs_sync::{AccountServices, AnyCalendar, AnyDav, AnyMail, CalDav, CalendarService, NoMail};
+        use mailrs_sync::{AccountServices, CalendarService};
 
         let dav = std::sync::Arc::new(FakeDav::new());
         dav.add_collection("/cal/personal/", DavKind::Calendar, "Personal", None);
-        let api = std::sync::Arc::new(AnyDav::from(std::sync::Arc::clone(&dav)));
-        let calendar = AnyCalendar::Dav(CalDav::new(api, AnyMail::NoMail(NoMail), Vec::new()));
-        let services = AccountServices::calendar_only(calendar.clone());
+        let services = AccountServices::calendar_only(dav);
 
         assert!(super::organizer_hears(None), "an account that has not started is not said to be mute");
         assert!(super::organizer_hears(Some(&services)), "nor one whose server has not been asked");
-        calendar.calendars().await.expect("the calendar list");
+        services.calendar.as_ref().expect("the calendar").calendars().await.expect("the calendar list");
         assert!(!super::organizer_hears(Some(&services)), "the server has said it sends no replies");
     }
 

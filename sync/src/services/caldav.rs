@@ -132,11 +132,7 @@ impl<D: DavApi> CalDav<D> {
     /// with mail to send the REPLY, and otherwise unless the server has
     /// said it leaves the REPLY to the client.
     pub fn tells_organizer(&self) -> bool {
-        self.has_mail() || locked(&self.schedules).unwrap_or(true)
-    }
-
-    fn has_mail(&self) -> bool {
-        !matches!(self.mail, AnyMail::NoMail(_))
+        self.mail.serves_mail() || locked(&self.schedules).unwrap_or(true)
     }
 
     /// The addresses the account goes by on an event: the ones it was
@@ -344,7 +340,7 @@ impl<D: DavApi> CalDav<D> {
         let master = read.events.iter().find(|e| e.series.is_none()).cloned();
         // Without mail nothing can carry the REPLY. The answer stays on
         // the calendar, and `tells_organizer` now says nobody heard it.
-        if !schedules && self.has_mail() && let Some(master) = &master {
+        if !schedules && self.mail.serves_mail() && let Some(master) = &master {
             self.tell_organizer(master, me, answer, occurrence, note, now).await?;
         }
         let event = read.events.into_iter().find(|e| e.id == id).or(master);
@@ -421,8 +417,8 @@ impl<D: DavApi> CalendarService for CalDav<D> {
         // The window says before an answer whether its organizer will
         // hear of it, which only an account without mail has to ask. A
         // server that does not say leaves the question open.
-        if !self.has_mail() && self.server_schedules().await.is_err() {
-            tracing::debug!("the calendar server did not say whether it schedules");
+        if !self.mail.serves_mail() {
+            let _ = self.server_schedules().await;
         }
         let home_path = path_of(&home);
         let calendars: Vec<model::Calendar> = found

@@ -154,6 +154,12 @@ pub enum AnyIdentities {
 }
 
 impl AnyMail {
+    /// Whether this is mail at all, and not what stands in for it in a
+    /// calendar account.
+    pub fn serves_mail(&self) -> bool {
+        !matches!(self, AnyMail::NoMail(_))
+    }
+
     /// What Google's account withholds, read from the scopes it granted.
     /// An IMAP account withholds nothing: it grants Google nothing to
     /// begin with.

@@ -7,7 +7,7 @@ use mailrs_domain::{AccountState, ChangeEvent};
 use mailrs_gmail::GmailError;
 use mailrs_store::{Db, accounts};
 
-use super::calendar_account::{PERSONAL, calendar_only, services_on};
+use super::calendar_account::{PERSONAL, calendar_only};
 use crate::calendar_copy::CalendarCopy;
 use crate::fake::{FakeGmail, fill_store, meta};
 use crate::{AccountServices, AccountSync, Accounts, BackendError, CalendarService, EngineConfig, SyncEngine, now_millis};
@@ -249,7 +249,7 @@ async fn a_calendar_account_whose_login_is_refused_waits_for_the_person_to_sign_
     assert_eq!(copy.refresh_due(&[1], later, true).await.unwrap().events, 0);
 
     // Signing in again starts the account on new services, and it reads.
-    s.engine.start_account(1, services_on(&dav));
+    s.engine.start_account(1, AccountServices::calendar_only(Arc::clone(&dav)));
     wait_for(&s.events, reached(AccountState::Ok)).await;
     assert_eq!(copy.refresh_due(&[1], later, true).await.unwrap().events, 1);
 }

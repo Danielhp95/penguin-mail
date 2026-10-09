@@ -13,7 +13,7 @@ use mailrs_domain::{AccountId, EpochMillis};
 use mailrs_store::services::{FoundService, ServiceKind};
 use mailrs_store::{Db, StoreError, accounts};
 use mailrs_sync::fake::{DavKind, FakeDav};
-use mailrs_sync::{AccountServices, AccountSync, AnyCalendar, AnyDav, AnyMail, CalDav, NoMail, SyncError};
+use mailrs_sync::{AccountServices, AccountSync, SyncError};
 
 use super::{at_week, week_monday};
 
@@ -50,8 +50,7 @@ pub fn wanted() -> Option<Wanted> {
 
 /// The account's services: the calendar on its server, and no mail.
 pub fn services(dav: &Arc<FakeDav>) -> AccountServices {
-    let api = Arc::new(AnyDav::from(Arc::clone(dav)));
-    AccountServices::calendar_only(AnyCalendar::Dav(CalDav::new(api, AnyMail::NoMail(NoMail), Vec::new())))
+    AccountServices::calendar_only(Arc::clone(dav))
 }
 
 /// Adds the calendar account with a server holding one calendar and this
