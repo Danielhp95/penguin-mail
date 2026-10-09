@@ -703,10 +703,10 @@ impl CalendarView {
             }
         });
         let weak = Rc::downgrade(&view);
-        view.carousel.connect_map(move |_| {
-            if let Some(view) = weak.upgrade() {
-                view.center();
-            }
+        view.carousel.connect_map(move |carousel| {
+            // On screen is not yet laid out, and the middle page needs a width.
+            let weak = weak.clone();
+            pager::when_laid_out(carousel, move || weak.upgrade().iter().for_each(|view| view.center()));
         });
         let weak = Rc::downgrade(&view);
         view.carousel.connect_page_changed(move |_, index| {
@@ -1549,9 +1549,9 @@ impl CalendarView {
     /// furthest away goes round to the other end for the next range.
     fn settled_on(self: &Rc<Self>, index: u32) {
         let pages = self.pages.borrow().clone();
-        // An unmapped carousel has no width to hold a position in and
-        // reports its first page; `connect_map` puts it back on the middle.
-        if self.arranging.get() || pages.len() != 3 || !self.carousel.is_mapped() {
+        // A carousel with no width, off screen or not laid out yet, reports
+        // its first page; it comes to rest on the middle once it has one.
+        if self.arranging.get() || pages.len() != 3 || !pager::rests(&self.carousel) {
             return;
         }
         // Which of the view's pages the carousel landed on, by widget:
