@@ -2131,189 +2131,189 @@ msgstr "Nova mensagem"
 msgid "From {senders}"
 msgstr "De {senders}"
 
-#: app/src/offered.rs:259 app/src/ui/window/shortcuts.rs:450
+#: app/src/offered.rs:270 app/src/ui/window/shortcuts.rs:450
 msgid "Labels"
 msgstr "Etiquetas"
 
-#: app/src/offered.rs:260
+#: app/src/offered.rs:271
 msgid "Move to folder"
 msgstr "Mover para pasta"
 
-#: app/src/offered.rs:266
+#: app/src/offered.rs:277
 msgid "Labels…"
 msgstr "Etiquetas…"
 
-#: app/src/offered.rs:267
+#: app/src/offered.rs:278
 msgid "Move to Folder…"
 msgstr "Mover para pasta…"
 
-#: app/src/offered.rs:276
+#: app/src/offered.rs:287
 msgid "Choose Labels"
 msgstr "Escolher etiquetas"
 
-#: app/src/offered.rs:277
+#: app/src/offered.rs:288
 msgid "Choose a Folder"
 msgstr "Escolher uma pasta"
 
-#: app/src/offered.rs:284
+#: app/src/offered.rs:295
 msgid "Labels (L)"
 msgstr "Etiquetas (L)"
 
-#: app/src/offered.rs:285
+#: app/src/offered.rs:296
 msgid "Move to Folder (L)"
 msgstr "Mover para pasta (L)"
 
-#: app/src/offered.rs:302
+#: app/src/offered.rs:313
 msgid "New Label…"
 msgstr "Nova etiqueta…"
 
-#: app/src/offered.rs:303
+#: app/src/offered.rs:314
 msgid "New Folder…"
 msgstr "Nova pasta…"
 
-#: app/src/offered.rs:311
+#: app/src/offered.rs:322
 msgid "New Label Inside…"
 msgstr "Nova etiqueta dentro desta…"
 
-#: app/src/offered.rs:312
+#: app/src/offered.rs:323
 msgid "New Folder Inside…"
 msgstr "Nova pasta dentro desta…"
 
-#: app/src/offered.rs:319
+#: app/src/offered.rs:330
 msgid "Label Options for {name}"
 msgstr "Opções da etiqueta {name}"
 
-#: app/src/offered.rs:320
+#: app/src/offered.rs:331
 msgid "Folder Options for {name}"
 msgstr "Opções da pasta {name}"
 
-#: app/src/offered.rs:327
+#: app/src/offered.rs:338
 msgid "Label options"
 msgstr "Opções da etiqueta"
 
-#: app/src/offered.rs:328
+#: app/src/offered.rs:339
 msgid "Folder options"
 msgstr "Opções da pasta"
 
-#: app/src/offered.rs:335
+#: app/src/offered.rs:346
 msgid "A label cannot go inside a label nested under it"
 msgstr ""
 "Uma etiqueta não pode ir para dentro de uma etiqueta que está dentro dela"
 
-#: app/src/offered.rs:336
+#: app/src/offered.rs:347
 msgid "A folder cannot go inside a folder nested under it"
 msgstr "Uma pasta não pode ir para dentro de uma pasta que está dentro dela"
 
-#: app/src/offered.rs:344
+#: app/src/offered.rs:355
 msgid "There is a label called “{name}” already"
 msgstr "Já existe uma etiqueta chamada “{name}”"
 
-#: app/src/offered.rs:346
+#: app/src/offered.rs:357
 msgid "There is a folder called “{name}” already"
 msgstr "Já existe uma pasta chamada “{name}”"
 
-#: app/src/offered.rs:354
+#: app/src/offered.rs:365
 msgid "New Label"
 msgstr "Nova etiqueta"
 
-#: app/src/offered.rs:355
+#: app/src/offered.rs:366
 msgid "New Folder"
 msgstr "Nova pasta"
 
-#: app/src/offered.rs:363
+#: app/src/offered.rs:374
 msgid "Could not create the label: {reason}"
 msgstr "Não foi possível criar a etiqueta: {reason}"
 
-#: app/src/offered.rs:364
+#: app/src/offered.rs:375
 msgid "Could not create the folder: {reason}"
 msgstr "Não foi possível criar a pasta: {reason}"
 
-#: app/src/offered.rs:371
+#: app/src/offered.rs:382
 msgid "Open or select mail to label it."
 msgstr "Abra ou selecione correio para o etiquetar."
 
-#: app/src/offered.rs:372
+#: app/src/offered.rs:383
 msgid "Open or select mail to move it."
 msgstr "Abra ou selecione correio para o mover."
 
-#: app/src/offered.rs:380
+#: app/src/offered.rs:391
 msgid "Select mail from one account to label it."
 msgstr "Selecione correio de uma só conta para o etiquetar."
 
-#: app/src/offered.rs:381
+#: app/src/offered.rs:392
 msgid "Select mail from one account to move it."
 msgstr "Selecione correio de uma só conta para o mover."
 
-#: app/src/offered.rs:387
+#: app/src/offered.rs:398
 msgid "Rename Label"
 msgstr "Mudar o nome da etiqueta"
 
-#: app/src/offered.rs:388
+#: app/src/offered.rs:399
 msgid "Rename Folder"
 msgstr "Mudar o nome da pasta"
 
-#: app/src/offered.rs:394
+#: app/src/offered.rs:405
 msgid "Labels nested under it move along."
 msgstr "As etiquetas aninhadas nela acompanham-na."
 
-#: app/src/offered.rs:395
+#: app/src/offered.rs:406
 msgid "Folders nested under it move along."
 msgstr "As pastas aninhadas nela acompanham-na."
 
-#: app/src/offered.rs:403
+#: app/src/offered.rs:414
 msgid "Could not rename the label: {reason}"
 msgstr "Não foi possível mudar o nome da etiqueta: {reason}"
 
-#: app/src/offered.rs:404
+#: app/src/offered.rs:415
 msgid "Could not rename the folder: {reason}"
 msgstr "Não foi possível mudar o nome da pasta: {reason}"
 
-#: app/src/offered.rs:414
+#: app/src/offered.rs:425
 msgid "Its mail stays in Gmail, without the label. Nested labels stay too."
 msgstr ""
 "O correio dela fica no Gmail, sem a etiqueta. As etiquetas aninhadas também "
 "ficam."
 
-#: app/src/offered.rs:416
+#: app/src/offered.rs:427
 msgid "The mail in the folder is deleted with it."
 msgstr "O correio da pasta é eliminado com ela."
 
-#: app/src/offered.rs:424
+#: app/src/offered.rs:435
 msgid "Could not delete the label: {reason}"
 msgstr "Não foi possível eliminar a etiqueta: {reason}"
 
-#: app/src/offered.rs:425
+#: app/src/offered.rs:436
 msgid "Could not delete the folder: {reason}"
 msgstr "Não foi possível eliminar a pasta: {reason}"
 
-#: app/src/offered.rs:432
+#: app/src/offered.rs:443
 msgid "This account has no labels yet."
 msgstr "Esta conta ainda não tem etiquetas."
 
-#: app/src/offered.rs:433
+#: app/src/offered.rs:444
 msgid "This account has no folders yet."
 msgstr "Esta conta ainda não tem pastas."
 
-#: app/src/offered.rs:449
+#: app/src/offered.rs:460
 msgid "Your organization does not allow Penguin Mail to use this calendar."
 msgstr "A sua organização não permite que o Penguin Mail use este calendário."
 
-#: app/src/offered.rs:452
+#: app/src/offered.rs:463
 msgid "Your organization does not allow Penguin Mail to read these contacts."
 msgstr "A sua organização não permite que o Penguin Mail leia estes contactos."
 
-#: app/src/offered.rs:455
+#: app/src/offered.rs:466
 msgid "Your organization does not allow Penguin Mail to change these rules."
 msgstr "A sua organização não permite que o Penguin Mail altere estas regras."
 
-#: app/src/offered.rs:458
+#: app/src/offered.rs:469
 msgid ""
 "Your organization does not allow Penguin Mail to change the automatic reply."
 msgstr ""
 "A sua organização não permite que o Penguin Mail altere a resposta "
 "automática."
 
-#: app/src/offered.rs:462
+#: app/src/offered.rs:473
 msgid ""
 "{provider} refused the password for calendars. Some providers need an app "
 "password with access to calendars and contacts."
@@ -2321,18 +2321,18 @@ msgstr ""
 "{provider} recusou a palavra-passe para os calendários. Alguns fornecedores "
 "pedem uma palavra-passe de aplicação com acesso a calendários e contactos."
 
-#: app/src/offered.rs:466
+#: app/src/offered.rs:477
 msgid "Penguin Mail could not reach the calendar server for {provider}."
 msgstr ""
 "O Penguin Mail não conseguiu contactar o servidor de calendário de "
 "{provider}."
 
-#: app/src/offered.rs:469
+#: app/src/offered.rs:480
 msgid "Penguin Mail found no calendar server for {provider}."
 msgstr ""
 "O Penguin Mail não encontrou nenhum servidor de calendário para {provider}."
 
-#: app/src/offered.rs:474
+#: app/src/offered.rs:485
 msgid ""
 "{provider} refused the password for contacts. Some providers need an app "
 "password with access to calendars and contacts."
@@ -2340,90 +2340,90 @@ msgstr ""
 "{provider} recusou a palavra-passe para os contactos. Alguns fornecedores "
 "pedem uma palavra-passe de aplicação com acesso a calendários e contactos."
 
-#: app/src/offered.rs:478
+#: app/src/offered.rs:489
 msgid "Penguin Mail could not reach the contacts server for {provider}."
 msgstr ""
 "O Penguin Mail não conseguiu contactar o servidor de contactos de {provider}."
 
-#: app/src/offered.rs:481
+#: app/src/offered.rs:492
 msgid "Penguin Mail found no contacts server for {provider}."
 msgstr ""
 "O Penguin Mail não encontrou nenhum servidor de contactos para {provider}."
 
-#: app/src/offered.rs:485
+#: app/src/offered.rs:496
 msgid "{provider} cannot send automatic replies over POP3."
 msgstr "{provider} não consegue enviar respostas automáticas por POP3."
 
-#: app/src/offered.rs:488
+#: app/src/offered.rs:499
 msgid "{provider} cannot send automatic replies."
 msgstr "{provider} não consegue enviar respostas automáticas."
 
-#: app/src/offered.rs:490
+#: app/src/offered.rs:501
 msgid "{provider} has no calendar that other apps can reach."
 msgstr ""
 "{provider} não tem um calendário a que outras aplicações possam aceder."
 
-#: app/src/offered.rs:492
+#: app/src/offered.rs:503
 msgid "{provider} keeps no contacts that other apps can reach."
 msgstr "{provider} não guarda contactos a que outras aplicações possam aceder."
 
-#: app/src/offered.rs:494
+#: app/src/offered.rs:505
 msgid "{provider} has no rules that other apps can change."
 msgstr "{provider} não tem regras que outras aplicações possam alterar."
 
-#: app/src/offered.rs:496
+#: app/src/offered.rs:507
 msgid "{provider} has no automatic reply that other apps can change."
 msgstr ""
 "{provider} não tem uma resposta automática que outras aplicações possam "
 "alterar."
 
-#: app/src/offered.rs:499
+#: app/src/offered.rs:510
 msgid "{provider} cannot delete mail for good. Delete moves it to the Trash."
 msgstr ""
 "{provider} não consegue eliminar mensagens definitivamente. Eliminar move-as "
 "para o Lixo."
 
-#: app/src/offered.rs:501
+#: app/src/offered.rs:512
 msgid "{provider} does not sort the inbox into categories."
 msgstr "{provider} não organiza a caixa de entrada em categorias."
 
-#: app/src/offered.rs:535
+#: app/src/offered.rs:546
 msgid "{address}: {reason}"
 msgstr "{address}: {reason}"
 
-#: app/src/offered.rs:550
+#: app/src/offered.rs:561
 msgid "The server would not hand it over."
 msgstr "O servidor não a entregou."
 
-#: app/src/offered.rs:552
+#: app/src/offered.rs:563
 msgid "The message is larger than Penguin Mail downloads."
 msgstr "A mensagem é maior do que o Penguin Mail transfere."
 
-#: app/src/offered.rs:555
+#: app/src/offered.rs:566
 msgid "Penguin Mail could not read the server's answer."
 msgstr "O Penguin Mail não conseguiu ler a resposta do servidor."
 
-#: app/src/offered.rs:558
+#: app/src/offered.rs:569
 msgid "The connection closed while the message downloaded."
 msgstr "A ligação fechou-se durante a transferência da mensagem."
 
-#: app/src/offered.rs:564
+#: app/src/offered.rs:575
 msgid "“{subject}” from {sender}: {words}"
 msgstr "“{subject}” de {sender}: {words}"
 
-#: app/src/offered.rs:568
+#: app/src/offered.rs:579
 msgid "“{subject}”: {words}"
 msgstr "“{subject}”: {words}"
 
-#: app/src/offered.rs:572
+#: app/src/offered.rs:583
 msgid "A message from {sender}: {words}"
 msgstr "Uma mensagem de {sender}: {words}"
 
-#: app/src/offered.rs:576
+#: app/src/offered.rs:587
 msgid "Message {number}: {words}"
 msgstr "Mensagem {number}: {words}"
 
-#: app/src/offered.rs:592
+#: app/src/offered.rs:603
 msgid ""
 "Removing the account deletes this computer's copy of its mail and the saved "
 "sign-in. Mail still on the server stays there."
@@ -2431,7 +2431,7 @@ msgstr ""
 "Remover a conta elimina a cópia do correio neste computador e a sessão "
 "guardada. O correio que ainda está no servidor fica lá."
 
-#: app/src/offered.rs:596
+#: app/src/offered.rs:607
 msgid ""
 "Mail already removed from the server exists only on this computer, and "
 "removing the account deletes it with the saved sign-in. Mail still on the "
@@ -2441,13 +2441,13 @@ msgstr ""
 "conta elimina-o com a sessão guardada. O correio que ainda está no servidor "
 "fica lá."
 
-#: app/src/offered.rs:601
+#: app/src/offered.rs:612
 msgid ""
 "Its calendars and saved sign-in are deleted from this computer. Nothing "
 "changes on the server."
 msgstr "Os calendários e a sessão guardada são eliminados deste computador. Nada muda no servidor."
 
-#: app/src/offered.rs:606
+#: app/src/offered.rs:617
 msgid ""
 "Its downloaded mail and saved sign-in are deleted from this computer. "
 "Nothing changes in {provider}."
@@ -2455,7 +2455,7 @@ msgstr ""
 "O correio transferido e a sessão guardada são eliminados deste computador. "
 "Nada muda em {provider}."
 
-#: app/src/offered.rs:622
+#: app/src/offered.rs:633
 msgid ""
 "Mail from {address} is kept only on this computer. To keep a copy, quit "
 "Penguin Mail, then back up this file."
@@ -9677,7 +9677,7 @@ msgstr "A sua alteração a “{title}” não foi guardada porque mudou noutro 
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "A sua alteração a “{title}” não foi guardada: {reason}"
 
-#: app/src/ui/window/spaces.rs:264
+#: app/src/ui/window/spaces.rs:266
 msgid "Show Event"
 msgstr "Mostrar evento"
 

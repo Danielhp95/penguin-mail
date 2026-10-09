@@ -52,9 +52,11 @@ impl MainWindow {
     }
 
     /// Shows `space` through the switch, which then shows it and
-    /// remembers it. The calendar stays away while the switch is hidden.
+    /// remembers it, unless the accounts leave it nothing to show
+    /// (`offered::may_show`).
     pub(super) fn show_space(self: &Rc<Self>, space: Space) {
-        if space == Space::Calendar && !self.sidebar.switch.is_visible() {
+        let only_calendars = crate::offered::only_calendars(&self.accounts());
+        if !crate::offered::may_show(space, self.sidebar.switch.is_visible(), only_calendars) {
             return;
         }
         let name = match space {
@@ -195,8 +197,8 @@ impl MainWindow {
         let visible = !only_calendars && crate::offered::shows_space_switch(&started, waiting, remembered);
         self.sidebar.set_switch_visible(visible);
         if only_calendars {
-            // Straight to the switch: `show_space` keeps the calendar
-            // away while the switch is hidden, which here it always is.
+            // Straight to the switch, for the accounts just read:
+            // `show_space` asks the app, which may not hold them yet.
             self.sidebar.switch.set_active_name(Some("calendar"));
         } else if !visible && self.space() == Space::Calendar {
             self.show_space(Space::Mail);
