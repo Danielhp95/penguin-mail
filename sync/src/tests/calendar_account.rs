@@ -72,7 +72,7 @@ mod engine {
     use crate::fake::meta;
     use crate::mailbox::{Loaded, Mailbox, Mailboxes, Scope, View};
     use crate::tests::{Connected, harness};
-    use crate::{AccountSync, Accounts, EngineConfig, SyncEngine, now_millis};
+    use crate::{AccountSync, Accounts, CalendarService, EngineConfig, SyncEngine, now_millis};
 
     const NAME: &str = "robin@cloud.example.org";
     const NOW: i64 = 1_790_000_000_000;
@@ -167,6 +167,33 @@ mod engine {
         s.engine.start_account(s.id, crate::AccountServices::calendar_only(crate::AnyCalendar::Dav(calendar)));
         assert_eq!(reported(&s).await, AccountState::Ok);
         assert_eq!(copy.refresh_due(&[s.id], later, true).await.unwrap().events, 1);
+    }
+
+    #[tokio::test]
+    async fn a_refusal_met_outside_the_read_is_reported_once() {
+        let s = setup().await;
+        let (dav, services) = calendar_only();
+        dav.put_resource(&format!("{PERSONAL}lunch.ics"), LUNCH);
+        s.engine.start_account(s.id, services);
+        assert_eq!(reported(&s).await, AccountState::Ok);
+        let copy = CalendarCopy::new(Arc::clone(&s.engine), s.db.clone());
+        assert_eq!(copy.refresh_due(&[s.id], NOW, true).await.unwrap().events, 1);
+
+        // The password stops working, and what meets the refusal first is
+        // not the periodic read but a call made for the person.
+        dav.with(|f| f.refuse_login = true);
+        let calendar = Accounts::services(&*s.engine, s.id).and_then(|services| services.calendar).expect("the calendar");
+        assert!(matches!(calendar.calendars().await, Err(crate::BackendError::NeedsReauth)));
+
+        // The next tick comes before another read is due. It still says so.
+        copy.refresh_due(&[s.id], NOW + 1_000, true).await.unwrap();
+        assert_eq!(reported(&s).await, AccountState::NeedsReauth);
+        assert_eq!(state(&s).await, AccountState::NeedsReauth);
+
+        // And says it once, not at every tick after.
+        copy.refresh_due(&[s.id], NOW + 2_000, true).await.unwrap();
+        copy.refresh_due(&[s.id], NOW + 3_000, true).await.unwrap();
+        assert!(s.events.try_recv().is_err(), "the state was reported again");
     }
 
     #[tokio::test]

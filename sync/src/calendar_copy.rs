@@ -283,8 +283,11 @@ impl<A: Accounts> CalendarCopy<A> {
             }
             // A calendar account whose server refused its password would
             // be refused again at every tick. It waits for the person to
-            // sign in again, which starts it on new services.
+            // sign in again, which starts it on new services. Whatever
+            // met the refusal, a read, the queue or a change the person
+            // made, the account says so here.
             if self.awaits_sign_in(account_id) {
+                self.report_refusal(account_id).await;
                 continue;
             }
             // Queued changes go out before the account is read, so an
@@ -347,7 +350,9 @@ impl<A: Accounts> CalendarCopy<A> {
 
     /// Records that a calendar account needs to sign in again. A mail
     /// account's loop finds a refused password and says so; an account
-    /// with no mail has no loop, so the read that was refused says it.
+    /// with no mail has no loop, so the read that was refused says it,
+    /// or the next tick. Once the store says so it is not said again:
+    /// the tick comes every fifteen seconds.
     async fn report_refusal(&self, account_id: AccountId) {
         if !self.awaits_sign_in(account_id) {
             return;
@@ -355,6 +360,10 @@ impl<A: Accounts> CalendarCopy<A> {
         let Some(sync) = self.accounts.account(account_id) else {
             return;
         };
+        let held = self.db.read(move |c| mailrs_store::accounts::account(c, account_id)).await;
+        if matches!(held, Ok(Some(account)) if account.state == AccountState::NeedsReauth) {
+            return;
+        }
         if let Err(err) = sync.set_state(AccountState::NeedsReauth).await {
             tracing::warn!(account = account_id, %err, "could not record that the calendar account needs to sign in");
         }
