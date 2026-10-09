@@ -704,9 +704,14 @@ impl CalendarView {
         });
         let weak = Rc::downgrade(&view);
         view.carousel.connect_map(move |carousel| {
-            // On screen is not yet laid out, and the middle page needs a width.
+            // A mapped carousel is not laid out yet, and the middle page
+            // needs a width.
             let weak = weak.clone();
-            pager::when_laid_out(carousel, move || weak.upgrade().iter().for_each(|view| view.center()));
+            pager::when_laid_out(carousel, move || {
+                if let Some(view) = weak.upgrade() {
+                    view.center();
+                }
+            });
         });
         let weak = Rc::downgrade(&view);
         view.carousel.connect_page_changed(move |_, index| {

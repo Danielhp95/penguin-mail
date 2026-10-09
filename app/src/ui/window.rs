@@ -1157,13 +1157,6 @@ impl MainWindow {
         };
         self.stack.set_visible_child_name(page);
         let live: HashSet<AccountId> = data.iter().map(|(a, _)| a.id).collect();
-        // The calendar lists every account, so the ones without mail are
-        // kept aside before the mail sidebar's are sorted out below.
-        let calendars_alone: Vec<Account> = data
-            .iter()
-            .filter(|(a, _)| !a.provider.serves_mail())
-            .map(|(a, _)| a.clone())
-            .collect();
         // Any account can need to sign in again, a calendar account too.
         let reauth: Vec<String> = data
             .iter()
@@ -1172,11 +1165,9 @@ impl MainWindow {
             .collect();
         // A calendar account has no mailboxes, so the mail sidebar and
         // everything worded by what the accounts offer for mail is built
-        // from the accounts that have mail.
-        let data: Vec<(Account, Vec<Label>)> = data
-            .into_iter()
-            .filter(|(a, _)| a.provider.serves_mail())
-            .collect();
+        // from the accounts that have mail. The calendar lists every
+        // account, so the others are kept aside for it.
+        let (data, calendar_accounts): (Vec<_>, Vec<_>) = data.into_iter().partition(|(a, _)| a.provider.serves_mail());
         self.followed.borrow_mut().retain(|id, _| live.contains(id));
         // A label deleted elsewhere, by the assistant or in the browser,
         // leaves the window on a mailbox that is no longer there, so the
@@ -1248,7 +1239,7 @@ impl MainWindow {
         self.rebuild_grant_banners(&accounts, &app.consent());
         // The mail accounts in the sidebar's order, then the calendar
         // accounts, which the mail sidebar has no place for.
-        accounts.extend(calendars_alone);
+        accounts.extend(calendar_accounts.into_iter().map(|(account, _)| account));
         self.accounts_for_calendar(&accounts);
     }
 
@@ -2762,7 +2753,12 @@ impl MainWindow {
                         &gettext("{account} is signed in again."),
                         &[("account", &account.email)],
                     ));
-                    win.refresh_accounts(Reload::Yes);
+                    // A calendar account has no mail for the list to read
+                    // again.
+                    win.refresh_accounts(match account.provider.serves_mail() {
+                        true => Reload::Yes,
+                        false => Reload::No,
+                    });
                 }
             }
         });
@@ -2772,7 +2768,7 @@ impl MainWindow {
     /// once they are the calendar shows and reads the new account's
     /// calendars, rather than leaving them to the next tick.
     fn calendar_added(self: &Rc<Self>) {
-        self.refresh_accounts(Reload::Yes);
+        self.refresh_accounts(Reload::No);
         let read = self.accounts_read.borrow().clone();
         let win = Rc::clone(self);
         glib::spawn_future_local(async move {

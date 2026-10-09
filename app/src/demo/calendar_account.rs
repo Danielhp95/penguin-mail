@@ -23,7 +23,7 @@ const WANTED: &str = "MAILRS_DEMO_CALENDAR_ACCOUNT";
 const REFUSED: &str = "refused";
 
 /// The account's name: Dana's user on the server's host.
-pub const NAME: &str = "dana@cloud.reyes.example";
+const NAME: &str = "dana@cloud.reyes.example";
 const SERVER: &str = "https://cloud.reyes.example/remote.php/dav/";
 const USER: &str = "dana";
 /// The address invitations name her by on that server.

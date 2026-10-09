@@ -33,17 +33,12 @@ fn choose_account(
     preferred: Option<&str>,
     hint: Option<AccountId>,
 ) -> Option<AccountId> {
-    let mut writers = accounts.iter().filter(|a| a.provider.serves_mail());
-    let writes = |id: AccountId| accounts.iter().any(|a| a.id == id && a.provider.serves_mail());
+    let writers: Vec<&Account> = accounts.iter().filter(|a| a.provider.serves_mail()).collect();
     preferred
-        .and_then(|email| {
-            writers
-                .clone()
-                .find(|a| a.email.eq_ignore_ascii_case(email))
-                .map(|a| a.id)
-        })
-        .or(hint.filter(|id| writes(*id)))
-        .or_else(|| writers.next().map(|a| a.id))
+        .and_then(|email| writers.iter().find(|a| a.email.eq_ignore_ascii_case(email)))
+        .or_else(|| hint.and_then(|id| writers.iter().find(|a| a.id == id)))
+        .or(writers.first())
+        .map(|a| a.id)
 }
 
 impl App {

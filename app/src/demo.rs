@@ -854,13 +854,12 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
     mail.insert(pop3_id, DemoServer::Pop3 { server, db: db.clone() });
     // A calendar account, only when asked for: the screenshots and the
     // tour were drawn with the accounts above.
-    let calendar_account = calendar_account::wanted();
-    let mut calendar_server = None;
-    if calendar_account.is_some() {
+    let mut to_refuse = None;
+    if let Some(wanted) = calendar_account::wanted() {
         let (id, dav, sync) = calendar_account::seed(db, now).await?;
         syncing.insert(id, sync);
         mail.insert(id, DemoServer::Calendar(Arc::clone(&dav)));
-        calendar_server = Some(dav);
+        to_refuse = (wanted == calendar_account::Wanted::Refused).then_some(dav);
     }
 
     // Reads each account's calendars into the store now, so the demo
@@ -874,7 +873,7 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
     }
     // Refused only now, with its calendar already in the store, as an
     // account is whose password changed after it had been in use.
-    if let (Some(calendar_account::Wanted::Refused), Some(dav)) = (calendar_account, &calendar_server) {
+    if let Some(dav) = &to_refuse {
         calendar_account::refuse(dav);
     }
     // The demo's cards carry no photos, so the address book writes none

@@ -39,7 +39,7 @@ pub(super) fn show_views(carousel: &adw::Carousel, holders: Vec<adw::Bin>, views
 /// no width it holds no position and reports its first page, whatever
 /// page it was sent to: while it is off screen, and also once it is on
 /// screen and not laid out yet, as when the calendar is shown in the pass
-/// that puts its page there. Read then, each report looked like a swipe
+/// that puts its page there. A report read then would pass for a swipe
 /// to the range before.
 pub(super) fn rests(carousel: &adw::Carousel) -> bool {
     holds_a_position(carousel.is_mapped(), carousel.width())
@@ -58,6 +58,11 @@ pub(super) fn when_laid_out(carousel: &adw::Carousel, send: impl Fn() + 'static)
         return send();
     }
     carousel.add_tick_callback(move |carousel, _| {
+        // Hidden again before it was laid out: the next time it is shown
+        // asks anew, and this stops waking every frame.
+        if !carousel.is_mapped() {
+            return gtk::glib::ControlFlow::Break;
+        }
         if carousel.width() <= 0 {
             return gtk::glib::ControlFlow::Continue;
         }
