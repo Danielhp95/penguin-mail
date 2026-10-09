@@ -1242,39 +1242,38 @@ pub fn signed_in_again(asked: Option<&Account>, now: &Account) -> bool {
     asked.is_some_and(|asked| asked.id == now.id)
 }
 
-/// What the calendar page says when its sign-in fails. A refusal the
-/// sign-in already put in words, an address that is not HTTPS or a name
-/// another account holds, stands as it is.
+/// What the calendar page says when its sign-in fails. What the sign-in
+/// already put in words, an address that is not HTTPS or a name another
+/// account holds, stands as it is.
 pub fn calendar_problem(err: &anyhow::Error) -> String {
     use mailrs_sync::sign_in::CalDavSignInError;
     use mailrs_sync::{BackendError, SyncError};
 
-    let Some(CalDavSignInError::Server(SyncError::Backend(backend))) = err.downcast_ref::<CalDavSignInError>() else {
-        return match err.downcast_ref::<CalDavSignInError>() {
-            // An IMAP or POP3 account that holds the name can take the
-            // server's calendars itself, which is the way on from here.
-            Some(taken @ CalDavSignInError::Taken { holder: Provider::Imap | Provider::Pop3, .. }) => format!(
-                "{taken} {}",
-                gettext("To see this server's calendars there, open Preferences, then Contacts & Calendar, and type its address for that account.")
-            ),
-            Some(taken @ CalDavSignInError::Taken { .. }) => taken.to_string(),
-            _ => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), err, &[]),
-        };
+    let unknown = |reason: &dyn std::fmt::Display| {
+        mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), &reason, &[])
     };
-    match backend {
-        BackendError::NeedsReauth => gettext(
-            "The server did not take that user name and password. Where it uses two-step \
-             sign-in, it needs an app password.",
+    match err.downcast_ref::<CalDavSignInError>() {
+        // An IMAP or POP3 account that holds the name can take the
+        // server's calendars itself, which is the way on from here.
+        Some(taken @ CalDavSignInError::Taken { holder: Provider::Imap | Provider::Pop3, .. }) => format!(
+            "{taken} {}",
+            gettext("To see this server's calendars there, open Preferences, then Contacts & Calendar, and type its address for that account.")
         ),
-        BackendError::Offline(_) => gettext(
-            "Penguin Mail could not reach that server. Check the address and your connection.",
-        ),
-        BackendError::Unsupported => gettext("No calendar was found at that address."),
-        BackendError::Refused(said) if *said == mailrs_sync::services::finding::https_only() => said.clone(),
-        // Whatever else was refused, the server said it in the protocol's
-        // own words: a web page at the address, or no CalDAV there.
-        BackendError::Refused(_) => gettext("No calendar was found at that address."),
-        other => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), other, &[]),
+        Some(said @ (CalDavSignInError::Taken { .. } | CalDavSignInError::NotHttps)) => said.to_string(),
+        Some(CalDavSignInError::Server(SyncError::Backend(backend))) => match backend {
+            BackendError::NeedsReauth => gettext(
+                "The server did not take that user name and password. Where it uses two-step \
+                 sign-in, it needs an app password.",
+            ),
+            BackendError::Offline(_) => gettext(
+                "Penguin Mail could not reach that server. Check the address and your connection.",
+            ),
+            // A web page at the address, or no CalDAV there, is refused in
+            // the protocol's own words, which are not for the page.
+            BackendError::Unsupported | BackendError::Refused(_) => gettext("No calendar was found at that address."),
+            other => unknown(other),
+        },
+        _ => unknown(err),
     }
 }
 
@@ -1437,36 +1436,25 @@ mod tests {
     use mailrs_sync::sign_in::CalDavSignInError;
     use mailrs_sync::{BackendError, SyncError};
 
-    fn calendar_failure(backend: BackendError) -> anyhow::Error {
-        CalDavSignInError::Server(SyncError::Backend(backend)).into()
-    }
-
     #[test]
     fn each_way_a_calendar_sign_in_fails_has_its_own_words() {
-        let refused = calendar_problem(&calendar_failure(BackendError::NeedsReauth));
-        assert!(refused.contains("user name") && refused.contains("app password"), "{refused}");
-        let unreachable = calendar_problem(&calendar_failure(BackendError::Offline("no route".into())));
-        assert!(unreachable.contains("could not reach"), "{unreachable}");
-        let not_a_calendar = calendar_problem(&calendar_failure(BackendError::Unsupported));
-        assert!(not_a_calendar.contains("No calendar was found"), "{not_a_calendar}");
-        let https = mailrs_sync::services::finding::https_only();
-        assert_eq!(calendar_problem(&calendar_failure(BackendError::Refused(https.clone()))), https, "words the sign-in chose stand");
-        let all = [refused, unreachable, not_a_calendar];
-        assert!(all.iter().all(|words| all.iter().filter(|other| *other == words).count() == 1));
-    }
-
-    /// A web page at the address, or a server that is no CalDAV server,
-    /// answers the login try in the protocol's own words. They are not for
-    /// the page.
-    #[test]
-    fn an_address_with_no_calendar_behind_it_says_so_plainly() {
-        for raw in ["HTTP 404: Not Found", "HTTP 405: Method Not Allowed", "the server named no principal"] {
-            assert_eq!(
-                calendar_problem(&calendar_failure(BackendError::Refused(raw.into()))),
-                "No calendar was found at that address.",
-                "{raw}"
-            );
+        let no_calendar = "No calendar was found";
+        let failures = [
+            (BackendError::NeedsReauth, "app password"),
+            (BackendError::Offline("no route".into()), "could not reach"),
+            (BackendError::Unsupported, no_calendar),
+            // A web page at the address, or a server that is no CalDAV
+            // server, answers the login try in the protocol's own words.
+            (BackendError::Refused("HTTP 404: Not Found".into()), no_calendar),
+            (BackendError::Refused("HTTP 405: Method Not Allowed".into()), no_calendar),
+            (BackendError::Refused("the server named no principal".into()), no_calendar),
+        ];
+        for (failure, words) in failures {
+            let shown = calendar_problem(&CalDavSignInError::Server(SyncError::Backend(failure)).into());
+            assert!(shown.contains(words) && !shown.contains("HTTP "), "{shown}");
         }
+        let not_https = calendar_problem(&CalDavSignInError::NotHttps.into());
+        assert!(not_https.contains("HTTPS only"), "words the sign-in chose stand: {not_https}");
     }
 
     #[test]

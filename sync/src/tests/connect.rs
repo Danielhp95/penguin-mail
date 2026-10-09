@@ -10,7 +10,7 @@ use mailrs_store::services::{self, FoundService, ServiceKind};
 use mailrs_store::{Db, accounts, calendar as store_calendar};
 
 use crate::passwords::{MemoryPasswords, PasswordError, PasswordStore};
-use crate::services::finding::{ServiceProbe, https_only};
+use crate::services::finding::ServiceProbe;
 use crate::sign_in::{
     CalDavSignInError, ImapSignInError, NewCalDav, NewImap, NewPop3, calendar_account_name, caldav_signed_in,
     imap_signed_in, in_imap_words, pop3_signed_in,
@@ -712,15 +712,12 @@ async fn a_calendar_sign_in_the_server_does_not_take_keeps_nothing() {
 }
 
 #[tokio::test]
-async fn any_scheme_but_https_is_refused_in_the_same_words_and_nothing_is_tried() {
+async fn any_scheme_but_https_is_refused_and_nothing_is_tried() {
     let (db, _dir) = store().await;
     let cloud = Cloud::default();
     for address in ["http://cloud.example.org/", "ftp://cloud.example.org/", "webcal://cloud.example.org/home.ics"] {
         let refused = caldav_signed_in(&cloud, &db, Arc::new(MemoryPasswords::default()), at(address, "robin"), 7).await;
-        let Err(CalDavSignInError::Server(SyncError::Backend(BackendError::Refused(said)))) = refused else {
-            panic!("{address} was not refused: {:?}", refused.map(|a| a.email));
-        };
-        assert_eq!(said, https_only(), "{address}");
+        assert!(matches!(refused, Err(CalDavSignInError::NotHttps)), "{address}");
     }
     assert!(cloud.0.lock().unwrap().is_empty(), "the password went nowhere");
     assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());

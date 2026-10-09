@@ -17,7 +17,7 @@ use mailrs_gmail::{OAuthClient, TokenStore};
 use mailrs_imap::{CheckError, ImapError};
 use mailrs_pop3::{Pop3Api, Pop3Client, Pop3Error};
 use mailrs_store::servers::{self, Pop3Servers, Servers};
-use mailrs_store::services::{self, FoundService, ServiceKind};
+use mailrs_store::services::{self, ServiceKind};
 use mailrs_store::{Db, StoreError, accounts};
 
 use crate::config::Config;
@@ -271,8 +271,12 @@ pub enum CalDavSignInError {
     /// calendars itself, and the page says so.
     #[error("{}", taken(.name, .provider))]
     Taken { name: String, provider: String, holder: Provider },
-    /// The address is not one a calendar can be at, or the server there
-    /// did not take the login.
+    /// The address is under a scheme other than HTTPS. Nothing was sent
+    /// to it.
+    #[error("{}", finding::https_only())]
+    NotHttps,
+    /// No calendar is at the address, or the server there did not take
+    /// the login.
     #[error(transparent)]
     Server(#[from] SyncError),
     #[error(transparent)]
@@ -286,7 +290,7 @@ pub enum CalDavSignInError {
 /// a name that carries the host cannot be one, so a calendar account
 /// never takes a mail account's place even where the person signs in to
 /// both with one address. `None` for an address with no host, or no user.
-pub fn calendar_account_name(url: &str, user_name: &str) -> Option<String> {
+pub(crate) fn calendar_account_name(url: &str, user_name: &str) -> Option<String> {
     let (host, user) = (mailrs_dav::host_of(url)?, user_name.trim());
     (!user.is_empty()).then(|| format!("{user}@{host}"))
 }
@@ -307,74 +311,63 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
     now: EpochMillis,
 ) -> Result<Account, CalDavSignInError> {
     let NewCalDav { url, user_name, password } = new;
-    let user_name = user_name.trim().to_string();
-    let url = finding::checked_url(probe, ServiceKind::CalDav, &url, &user_name, &password).await?;
-    let name = calendar_account_name(&url, &user_name)
-        .ok_or_else(|| SyncError::Backend(BackendError::Refused(gettext("Enter the server's address and your user name."))))?;
-    let server = FoundService {
-        kind: ServiceKind::CalDav,
-        url,
-        user_name,
-        // The person typed the address, which is their yes to sending
-        // the password there.
-        confirmed: true,
-        source: "typed".into(),
-    };
+    let user_name = user_name.trim();
+    let url = finding::https_url(&url).ok_or(CalDavSignInError::NotHttps)?;
+    let name = calendar_account_name(&url, user_name)
+        .ok_or_else(|| SyncError::Backend(BackendError::Refused("the address names no host, or no user was given".into())))?;
+    let server = finding::typed(probe, ServiceKind::CalDav, url, user_name, &password).await?;
     let lookup = name.clone();
     let before = db.read(move |c| accounts::account_by_email(c, &lookup)).await?;
-    let id = match &before {
-        Some(held) if held.provider != Provider::CalDav => {
-            return Err(CalDavSignInError::Taken {
-                name,
-                provider: held.provider_name().to_string(),
-                holder: held.provider,
-            });
-        }
+    let id = match before {
+        Some(held) if held.provider != Provider::CalDav => return Err(CalDavSignInError::taken(name, Some(&held))),
         Some(held) => {
-            save_password(Arc::clone(&passwords), held.id, password).await?;
-            held.id
+            save_password(passwords, held.id, password).await?;
+            db.write(move |c| {
+                services::save(c, held.id, &server)?;
+                // Signing in again is what ends Needs Sign-In; the
+                // calendar copy says the account works once it reads.
+                if held.state == AccountState::NeedsReauth {
+                    accounts::set_state(c, held.id, AccountState::Ok)?;
+                }
+                Ok(held.id)
+            })
+            .await?
         }
         None => {
-            let (added_as, kept) = (name.clone(), server.clone());
+            let added_as = name.clone();
             let added = db
                 .write(move |c| {
                     let Some(id) = accounts::insert_caldav_account(c, &added_as, now)? else {
                         // Another provider's account took the name
                         // between the read and this write.
-                        let held = accounts::account_by_email(c, &added_as)?;
-                        return Ok(Err(held.map(|a| (a.provider_name().to_string(), a.provider))));
+                        return Ok(Err(accounts::account_by_email(c, &added_as)?));
                     };
-                    services::save(c, id, &kept)?;
+                    services::save(c, id, &server)?;
                     Ok(Ok(id))
                 })
                 .await?;
-            let id = added.map_err(|held| {
-                let (provider, holder) = held.unwrap_or_default();
-                CalDavSignInError::Taken { name: name.clone(), provider, holder }
-            })?;
-            if let Err(err) = save_password(Arc::clone(&passwords), id, password).await {
+            let id = added.map_err(|held| CalDavSignInError::taken(name, held.as_ref()))?;
+            if let Err(err) = save_password(passwords, id, password).await {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
                 return Err(err.into());
             }
             id
         }
     };
-    if let Some(held) = before {
-        let again = held.state;
-        db.write(move |c| {
-            services::save(c, id, &server)?;
-            // Signing in again is what ends Needs Sign-In; the engine
-            // says the account is working once it starts.
-            if again == AccountState::NeedsReauth {
-                accounts::set_state(c, id, AccountState::Ok)?;
-            }
-            Ok(())
-        })
-        .await?;
-    }
     db.read(move |c| accounts::account(c, id))
         .await?
         .ok_or(CalDavSignInError::Store(StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)))
+}
+
+impl CalDavSignInError {
+    /// The name is `held`'s, an account another provider serves.
+    fn taken(name: String, held: Option<&Account>) -> Self {
+        CalDavSignInError::Taken {
+            name,
+            provider: held.map(|held| held.provider_name().to_string()).unwrap_or_default(),
+            holder: held.map(|held| held.provider).unwrap_or_default(),
+        }
+    }
 }
 
 /// A POP3 account a person just signed in to. No `Debug`: the password
