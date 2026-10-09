@@ -3627,7 +3627,7 @@ msgid "Not Now"
 msgstr "Not Now"
 
 #: app/src/ui/add_account.rs:1182 app/src/ui/calendar/editor.rs:1606
-#: app/src/ui/calendar/sidebar.rs:937 app/src/ui/contacts_prefs.rs:365
+#: app/src/ui/calendar/sidebar.rs:945 app/src/ui/contacts_prefs.rs:365
 #: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1349
 msgid "Grant Access"
@@ -3714,8 +3714,8 @@ msgstr "Calendar Server"
 msgid "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an app password for Penguin Mail."
 msgstr "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an app password for Penguin Mail."
 
-#: app/src/ui/add_account.rs:1551 app/src/ui/calendar/sidebar.rs:1305
-#: app/src/ui/calendar/sidebar.rs:1313
+#: app/src/ui/add_account.rs:1551 app/src/ui/calendar/sidebar.rs:1308
+#: app/src/ui/calendar/sidebar.rs:1316
 msgid "Add Calendar"
 msgstr "Add Calendar"
 
@@ -3752,7 +3752,7 @@ msgstr "Could not reach {host}"
 msgid "Your password was not sent."
 msgstr "Your password was not sent."
 
-#: app/src/ui/add_account.rs:2703 app/src/ui/calendar/sidebar.rs:1163
+#: app/src/ui/add_account.rs:2703 app/src/ui/calendar/sidebar.rs:1166
 msgid "Sign In Again"
 msgstr "Sign In Again"
 
@@ -4639,7 +4639,7 @@ msgid "Only people who can change this calendar see the details"
 msgstr "Only people who can change this calendar see the details"
 
 #: app/src/ui/calendar/editor.rs:1896 app/src/ui/calendar/manage.rs:353
-#: app/src/ui/calendar/sidebar.rs:1348 app/src/ui/sidebar.rs:1594
+#: app/src/ui/calendar/sidebar.rs:1351 app/src/ui/sidebar.rs:1594
 #: app/src/ui/sidebar.rs:1837
 msgid "Color"
 msgstr "Colour"
@@ -5123,7 +5123,7 @@ msgid "All-day"
 msgstr "All-day"
 
 #: app/src/ui/calendar/mod.rs:1699 app/src/ui/calendar/mod.rs:2813
-#: app/src/ui/calendar/sidebar.rs:328 app/src/ui/calendar/words.rs:373
+#: app/src/ui/calendar/sidebar.rs:343 app/src/ui/calendar/words.rs:373
 #: app/src/ui/preferences.rs:943 app/src/ui/preferences.rs:1104
 msgid "%a"
 msgstr "%a"
@@ -5284,7 +5284,7 @@ msgstr "Calendar: {name}"
 msgid "%A %-d"
 msgstr "%A %-d"
 
-#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:883
+#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:895
 msgid "%B %Y"
 msgstr "%B %Y"
 
@@ -5416,117 +5416,113 @@ msgstr "Next Week"
 msgid "Previous Week"
 msgstr "Previous Week"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:545
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:560
 msgid "Next Month"
 msgstr "Next Month"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:544
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:559
 msgid "Previous Month"
 msgstr "Previous Month"
 
-#: app/src/ui/calendar/sidebar.rs:634
+#: app/src/ui/calendar/sidebar.rs:649
 msgid "Waiting for your answer"
 msgstr "Waiting for your answer"
 
-#: app/src/ui/calendar/sidebar.rs:786
+#: app/src/ui/calendar/sidebar.rs:801
 msgid "Open mail"
 msgstr "Open mail"
 
-#: app/src/ui/calendar/sidebar.rs:927
+#: app/src/ui/calendar/sidebar.rs:935
 msgid "Grant Access to show shared calendars"
 msgstr "Grant Access to show shared calendars"
 
-#: app/src/ui/calendar/sidebar.rs:933
+#: app/src/ui/calendar/sidebar.rs:941
 msgid "Penguin Mail cannot see this account's calendars"
 msgstr "Penguin Mail cannot see this account's calendars"
 
-#: app/src/ui/calendar/sidebar.rs:949
-msgid "The server did not take this account's password"
-msgstr "The server did not take this account's password"
-
-#: app/src/ui/calendar/sidebar.rs:1032
+#: app/src/ui/calendar/sidebar.rs:1035
 msgid "Show or hide this account's calendars"
 msgstr "Show or hide this account's calendars"
 
-#: app/src/ui/calendar/sidebar.rs:1099
+#: app/src/ui/calendar/sidebar.rs:1102
 msgid "Calendar options"
 msgstr "Calendar options"
 
-#: app/src/ui/calendar/sidebar.rs:1103
+#: app/src/ui/calendar/sidebar.rs:1106
 msgid "Options for {calendar}"
 msgstr "Options for {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1143 app/src/ui/contacts_prefs.rs:371
+#: app/src/ui/calendar/sidebar.rs:1146 app/src/ui/contacts_prefs.rs:371
 msgid "Grant Access for {account}"
 msgstr "Grant Access for {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1171
+#: app/src/ui/calendar/sidebar.rs:1174
 msgid "Sign in again to {account}"
 msgstr "Sign in again to {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1182 app/src/ui/sidebar.rs:1842
+#: app/src/ui/calendar/sidebar.rs:1185 app/src/ui/sidebar.rs:1842
 msgid "Sign In Again…"
 msgstr "Sign In Again…"
 
-#: app/src/ui/calendar/sidebar.rs:1183 app/src/ui/sidebar.rs:1849
+#: app/src/ui/calendar/sidebar.rs:1186 app/src/ui/sidebar.rs:1849
 msgid "Remove Account…"
 msgstr "Remove Account…"
 
-#: app/src/ui/calendar/sidebar.rs:1197 app/src/ui/sidebar.rs:1856
+#: app/src/ui/calendar/sidebar.rs:1200 app/src/ui/sidebar.rs:1856
 msgid "Account options"
 msgstr "Account options"
 
-#: app/src/ui/calendar/sidebar.rs:1201 app/src/ui/sidebar.rs:1861
+#: app/src/ui/calendar/sidebar.rs:1204 app/src/ui/sidebar.rs:1861
 msgid "Options for {account}"
 msgstr "Options for {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1270
+#: app/src/ui/calendar/sidebar.rs:1273
 msgid "{address}. You can only read this calendar"
 msgstr "{address}. You can only read this calendar"
 
-#: app/src/ui/calendar/sidebar.rs:1292
+#: app/src/ui/calendar/sidebar.rs:1295
 msgid "New Calendar…"
 msgstr "New Calendar…"
 
-#: app/src/ui/calendar/sidebar.rs:1293
+#: app/src/ui/calendar/sidebar.rs:1296
 msgid "Subscribe to Calendar…"
 msgstr "Subscribe to Calendar…"
 
-#: app/src/ui/calendar/sidebar.rs:1294
+#: app/src/ui/calendar/sidebar.rs:1297
 msgid "Holiday Calendars…"
 msgstr "Holiday Calendars…"
 
-#: app/src/ui/calendar/sidebar.rs:1327
+#: app/src/ui/calendar/sidebar.rs:1330
 msgid "Hide from the List"
 msgstr "Hide from the List"
 
-#: app/src/ui/calendar/sidebar.rs:1340
+#: app/src/ui/calendar/sidebar.rs:1343
 msgid "Original Color"
 msgstr "Original Colour"
 
-#: app/src/ui/calendar/sidebar.rs:1352 app/src/ui/sidebar.rs:1583
+#: app/src/ui/calendar/sidebar.rs:1355 app/src/ui/sidebar.rs:1583
 #: app/src/ui/sidebar.rs:1827
 msgid "Rename…"
 msgstr "Rename…"
 
-#: app/src/ui/calendar/sidebar.rs:1353 app/src/ui/sidebar.rs:1493
+#: app/src/ui/calendar/sidebar.rs:1356 app/src/ui/sidebar.rs:1493
 #: app/src/ui/sidebar.rs:1609
 msgid "Delete…"
 msgstr "Delete…"
 
-#: app/src/ui/calendar/sidebar.rs:1354 app/src/ui/conversation.rs:572
+#: app/src/ui/calendar/sidebar.rs:1357 app/src/ui/conversation.rs:572
 msgid "Unsubscribe…"
 msgstr "Unsubscribe…"
 
-#: app/src/ui/calendar/sidebar.rs:1378
+#: app/src/ui/calendar/sidebar.rs:1381
 msgid "Show {calendar}"
 msgstr "Show {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1394
+#: app/src/ui/calendar/sidebar.rs:1397
 msgid "Hidden Calendars"
 msgstr "Hidden Calendars"
 
-#: app/src/ui/calendar/sidebar.rs:1414
+#: app/src/ui/calendar/sidebar.rs:1417
 msgid "{count} hidden calendar"
 msgid_plural "{count} hidden calendars"
 msgstr[0] "{count} hidden calendar"

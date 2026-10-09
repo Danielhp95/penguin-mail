@@ -42,6 +42,23 @@ pub enum CalendarReach {
     NeedsSignIn(Vec<Calendar>),
 }
 
+impl CalendarReach {
+    /// The calendars the account lists, whatever it says under them.
+    fn listed(&self) -> &[Calendar] {
+        match self {
+            CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) | CalendarReach::NeedsSignIn(list) => list,
+            CalendarReach::Withheld | CalendarReach::NotOffered(_) => &[],
+        }
+    }
+
+    fn listed_mut(&mut self) -> Option<&mut Vec<Calendar>> {
+        match self {
+            CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) | CalendarReach::NeedsSignIn(list) => Some(list),
+            CalendarReach::Withheld | CalendarReach::NotOffered(_) => None,
+        }
+    }
+}
+
 /// One account's row in the calendar list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SidebarAccount {
@@ -117,9 +134,7 @@ pub fn take_off_the_list(
         let Some(ids) = unlisted.get(&row.id) else {
             continue;
         };
-        if let CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) | CalendarReach::NeedsSignIn(list) =
-            &mut row.reach
-        {
+        if let Some(list) = row.reach.listed_mut() {
             let (hidden, kept) = std::mem::take(list)
                 .into_iter()
                 .partition(|calendar| ids.contains(&calendar.id));
@@ -829,10 +844,7 @@ impl CalendarSidebar {
             if account.id != account_id {
                 continue;
             }
-            if let CalendarReach::Calendars(calendars)
-            | CalendarReach::PrimaryOnly(calendars)
-            | CalendarReach::NeedsSignIn(calendars) = &mut account.reach
-            {
+            if let Some(calendars) = account.reach.listed_mut() {
                 for calendar in calendars.iter_mut().filter(|c| c.id == calendar_id) {
                     calendar.shown = shown;
                 }
@@ -912,16 +924,12 @@ impl CalendarSidebar {
                 .orientation(gtk::Orientation::Vertical)
                 .margin_top(12)
                 .build();
+            for calendar in account.reach.listed() {
+                body.append(&self.calendar_row(account, calendar));
+            }
             match &account.reach {
-                CalendarReach::Calendars(calendars) => {
-                    for calendar in calendars {
-                        body.append(&self.calendar_row(account, calendar));
-                    }
-                }
-                CalendarReach::PrimaryOnly(calendars) => {
-                    for calendar in calendars {
-                        body.append(&self.calendar_row(account, calendar));
-                    }
+                CalendarReach::Calendars(_) => {}
+                CalendarReach::PrimaryOnly(_) => {
                     body.append(&self.grant_row(
                         account.id,
                         &gettext("Grant Access to show shared calendars"),
@@ -941,13 +949,8 @@ impl CalendarSidebar {
                 CalendarReach::NotOffered(reason) => {
                     body.append(&dim_line(reason));
                 }
-                CalendarReach::NeedsSignIn(calendars) => {
-                    for calendar in calendars {
-                        body.append(&self.calendar_row(account, calendar));
-                    }
-                    body.append(&dim_line(&gettext(
-                        "The server did not take this account's password",
-                    )));
+                CalendarReach::NeedsSignIn(_) => {
+                    body.append(&dim_line(&gettext("The server refused the password")));
                     body.append(&sign_in_row(account));
                 }
             }
