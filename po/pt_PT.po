@@ -458,23 +458,23 @@ msgstr "Escreva o nome do servidor de entrada."
 msgid "Type the outgoing server's name."
 msgstr "Escreva o nome do servidor de saída."
 
-#: app/src/add_account.rs:1251
+#: app/src/add_account.rs:1258
 msgid ""
 "To see this server's calendars there, open Preferences, then Contacts & "
 "Calendar, and type its address for that account."
 msgstr "Para ver aí os calendários deste servidor, abra as Preferências, depois Contactos e calendário, e escreva o endereço dele para essa conta."
 
-#: app/src/add_account.rs:1254 app/src/add_account.rs:1270
+#: app/src/add_account.rs:1261 app/src/add_account.rs:1277
 msgid "Could not add the calendar: {reason}"
 msgstr "Não foi possível adicionar o calendário: {reason}"
 
-#: app/src/add_account.rs:1259
+#: app/src/add_account.rs:1266
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
 msgstr "O servidor não aceitou esse nome de utilizador e essa palavra-passe. Quando usa a verificação em dois passos, precisa de uma palavra-passe de aplicação."
 
-#: app/src/add_account.rs:1263
+#: app/src/add_account.rs:1270
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
@@ -482,19 +482,19 @@ msgstr "O Penguin Mail não conseguiu contactar esse servidor. Verifique o ender
 
 #. Whatever else was refused, the server said it in the protocol's
 #. own words: a web page at the address, or no CalDAV there.
-#: app/src/add_account.rs:1265 app/src/add_account.rs:1269
+#: app/src/add_account.rs:1272 app/src/add_account.rs:1276
 msgid "No calendar was found at that address."
 msgstr "Não foi encontrado nenhum calendário nesse endereço."
 
-#: app/src/add_account.rs:1287
+#: app/src/add_account.rs:1294
 msgid "Mail is downloading. You can close this window."
 msgstr "O correio está a ser transferido. Pode fechar esta janela."
 
-#: app/src/add_account.rs:1288 app/src/add_account.rs:1317
+#: app/src/add_account.rs:1295 app/src/add_account.rs:1324
 msgid "Your mail is here."
 msgstr "O seu correio já está aqui."
 
-#: app/src/add_account.rs:1302
+#: app/src/add_account.rs:1309
 msgid ""
 "Your organization did not allow one of the permissions Penguin Mail asked "
 "for, so this feature stays off:"
@@ -508,7 +508,7 @@ msgstr[1] ""
 "A sua organização não autorizou {count} das permissões que o Penguin Mail "
 "pediu, por isso estas funcionalidades ficam desligadas:"
 
-#: app/src/add_account.rs:1309
+#: app/src/add_account.rs:1316
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural ""
 "You left {count} boxes unticked on Google's page, so these features stay off:"
@@ -519,11 +519,11 @@ msgstr[1] ""
 "Deixou {count} caixas por marcar na página da Google, por isso estas "
 "funcionalidades ficam desligadas:"
 
-#: app/src/add_account.rs:1316
+#: app/src/add_account.rs:1323
 msgid "Mail is downloading."
 msgstr "O correio está a ser transferido."
 
-#: app/src/add_account.rs:1336
+#: app/src/add_account.rs:1343
 msgid ""
 "Newest mail comes first. Older mail keeps coming in the background, even "
 "with the window closed."
@@ -531,13 +531,13 @@ msgstr ""
 "O correio mais recente chega primeiro. O mais antigo continua a chegar em "
 "segundo plano, mesmo com a janela fechada."
 
-#: app/src/add_account.rs:1338
+#: app/src/add_account.rs:1345
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr ""
 "O Penguin Mail continua a verificar se há correio novo, mesmo com a janela "
 "fechada."
 
-#: app/src/add_account.rs:1348
+#: app/src/add_account.rs:1355
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. Mail stays on the server."
@@ -546,7 +546,7 @@ msgstr ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. O correio "
 "fica no servidor."
 
-#: app/src/add_account.rs:1351
+#: app/src/add_account.rs:1358
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -556,7 +556,7 @@ msgstr ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. Remove "
 "cada mensagem do servidor depois de a transferir."
 
-#: app/src/add_account.rs:1354
+#: app/src/add_account.rs:1361
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -574,7 +574,7 @@ msgstr[1] ""
 "continua a verificar em segundo plano, mesmo com a janela fechada. Remove "
 "cada mensagem do servidor {days} dias depois de a transferir."
 
-#: app/src/add_account.rs:1370
+#: app/src/add_account.rs:1377
 msgid "Penguin Mail needs the password for {address} again."
 msgstr "O Penguin Mail precisa de novo da palavra-passe de {address}."
 
@@ -4091,7 +4091,7 @@ msgstr "Adicionar calendário"
 msgid "Add a Calendar"
 msgstr "Adicionar um calendário"
 
-#: app/src/ui/add_account.rs:2003 app/src/ui/add_account.rs:3238
+#: app/src/ui/add_account.rs:2003 app/src/ui/add_account.rs:3244
 msgid "Looking up {domain}"
 msgstr "A procurar {domain}"
 
@@ -4111,8 +4111,8 @@ msgstr ""
 "Não é a palavra-passe do site de {provider}. Crie uma com acesso ao correio "
 "nas definições de {provider} e cole-a aqui."
 
-#: app/src/ui/add_account.rs:2379 app/src/ui/add_account.rs:2747
-#: app/src/ui/add_account.rs:3308
+#: app/src/ui/add_account.rs:2379 app/src/ui/add_account.rs:2751
+#: app/src/ui/add_account.rs:3314
 msgid "Signing In…"
 msgstr "A iniciar sessão…"
 
@@ -4128,11 +4128,11 @@ msgstr "A sua palavra-passe não foi enviada."
 msgid "Sign In Again"
 msgstr "Iniciar sessão de novo"
 
-#: app/src/ui/add_account.rs:2780
+#: app/src/ui/add_account.rs:2786
 msgid "Sign in with {provider} in your browser"
 msgstr "Inicie sessão com {provider} no navegador"
 
-#: app/src/ui/add_account.rs:2785
+#: app/src/ui/add_account.rs:2791
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
@@ -4140,7 +4140,7 @@ msgstr ""
 "A página de início de sessão de {provider} está aberta no navegador. Quando "
 "terminar lá, esta janela avança."
 
-#: app/src/ui/add_account.rs:2805
+#: app/src/ui/add_account.rs:2811
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4148,7 +4148,7 @@ msgstr ""
 "Esta cópia do Penguin Mail foi compilada sem início de sessão Google. "
 "Obtenha uma versão em github.com/c9dev/penguin-mail/releases."
 
-#: app/src/ui/add_account.rs:2808
+#: app/src/ui/add_account.rs:2814
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4156,19 +4156,19 @@ msgstr ""
 "Esta cópia do Penguin Mail foi compilada sem início de sessão da Microsoft. "
 "Obtenha uma versão em github.com/c9dev/penguin-mail/releases."
 
-#: app/src/ui/add_account.rs:2975
+#: app/src/ui/add_account.rs:2981
 msgid "Link copied"
 msgstr "Ligação copiada"
 
-#: app/src/ui/add_account.rs:3002
+#: app/src/ui/add_account.rs:3008
 msgid "{account} is added"
 msgstr "{account} foi adicionada"
 
-#: app/src/ui/add_account.rs:3022
+#: app/src/ui/add_account.rs:3028
 msgid "{account} is ready"
 msgstr "{account} está pronta"
 
-#: app/src/ui/add_account.rs:3311
+#: app/src/ui/add_account.rs:3317
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."

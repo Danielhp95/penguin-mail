@@ -2713,6 +2713,10 @@ impl Dialog {
             if let Some(server) = server {
                 this.calendar.server.set_text(&server.url);
                 this.calendar.user.set_text(&server.user_name);
+                // Signing in again takes a new password for this account.
+                // Another address or user name would be another account.
+                this.calendar.server.set_sensitive(false);
+                this.calendar.user.set_sensitive(false);
                 this.calendar.password.grab_focus();
             }
         });
@@ -2757,7 +2761,9 @@ impl Dialog {
                 return;
             }
             match signed_in {
-                Ok(account) if this.again.is_some() => this.finish(Done::SignedInAgain(account)),
+                Ok(account) if add_account::signed_in_again(this.again.as_ref(), &account) => {
+                    this.finish(Done::SignedInAgain(account))
+                }
                 Ok(_) => this.finish(Done::CalendarAdded),
                 Err(err) => {
                     this.calendar.problem.set_text(&add_account::calendar_problem(&err));

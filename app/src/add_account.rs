@@ -1235,6 +1235,13 @@ pub fn calendar_ready(server: &str, user_name: &str, password: &str) -> bool {
     !server.trim().is_empty() && !user_name.trim().is_empty() && !password.is_empty()
 }
 
+/// Whether the sign-in that ended as `now` is the one `asked` was opened
+/// for. The calendar page opened for Sign In Again takes a password for
+/// one account; a sign-in that ends as another account added that one.
+pub fn signed_in_again(asked: Option<&Account>, now: &Account) -> bool {
+    asked.is_some_and(|asked| asked.id == now.id)
+}
+
 /// What the calendar page says when its sign-in fails. A refusal the
 /// sign-in already put in words, an address that is not HTTPS or a name
 /// another account holds, stands as it is.
@@ -1479,6 +1486,25 @@ mod tests {
     fn anything_else_keeps_its_reason() {
         let odd = anyhow::anyhow!("the disk is full");
         assert!(calendar_problem(&odd).contains("the disk is full"));
+    }
+
+    /// Sign In Again opens the calendar page for one account. A sign-in
+    /// that ends as another account, because the address or the user
+    /// name changed, added one and left the first as it was.
+    #[test]
+    fn only_the_account_asked_to_sign_in_again_has() {
+        let asked = Account {
+            id: 5,
+            email: "robin@cloud.example.org".into(),
+            state: AccountState::NeedsReauth,
+            provider: Provider::CalDav,
+            provider_name: None,
+        };
+        let same = Account { state: AccountState::Ok, ..asked.clone() };
+        let another = Account { id: 6, email: "dani@cloud.example.org".into(), ..same.clone() };
+        assert!(signed_in_again(Some(&asked), &same));
+        assert!(!signed_in_again(Some(&asked), &another));
+        assert!(!signed_in_again(None, &same), "a first sign-in is not a second");
     }
 
     #[test]

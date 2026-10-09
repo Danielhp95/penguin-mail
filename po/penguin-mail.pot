@@ -410,23 +410,23 @@ msgstr ""
 msgid "Type the outgoing server's name."
 msgstr ""
 
-#: app/src/add_account.rs:1251
+#: app/src/add_account.rs:1258
 msgid ""
 "To see this server's calendars there, open Preferences, then Contacts & "
 "Calendar, and type its address for that account."
 msgstr ""
 
-#: app/src/add_account.rs:1254 app/src/add_account.rs:1270
+#: app/src/add_account.rs:1261 app/src/add_account.rs:1277
 msgid "Could not add the calendar: {reason}"
 msgstr ""
 
-#: app/src/add_account.rs:1259
+#: app/src/add_account.rs:1266
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
 msgstr ""
 
-#: app/src/add_account.rs:1263
+#: app/src/add_account.rs:1270
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
@@ -434,19 +434,19 @@ msgstr ""
 
 #. Whatever else was refused, the server said it in the protocol's
 #. own words: a web page at the address, or no CalDAV there.
-#: app/src/add_account.rs:1265 app/src/add_account.rs:1269
+#: app/src/add_account.rs:1272 app/src/add_account.rs:1276
 msgid "No calendar was found at that address."
 msgstr ""
 
-#: app/src/add_account.rs:1287
+#: app/src/add_account.rs:1294
 msgid "Mail is downloading. You can close this window."
 msgstr ""
 
-#: app/src/add_account.rs:1288 app/src/add_account.rs:1317
+#: app/src/add_account.rs:1295 app/src/add_account.rs:1324
 msgid "Your mail is here."
 msgstr ""
 
-#: app/src/add_account.rs:1302
+#: app/src/add_account.rs:1309
 msgid ""
 "Your organization did not allow one of the permissions Penguin Mail asked "
 "for, so this feature stays off:"
@@ -456,41 +456,41 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/add_account.rs:1309
+#: app/src/add_account.rs:1316
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural ""
 "You left {count} boxes unticked on Google's page, so these features stay off:"
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/add_account.rs:1316
+#: app/src/add_account.rs:1323
 msgid "Mail is downloading."
 msgstr ""
 
-#: app/src/add_account.rs:1336
+#: app/src/add_account.rs:1343
 msgid ""
 "Newest mail comes first. Older mail keeps coming in the background, even "
 "with the window closed."
 msgstr ""
 
-#: app/src/add_account.rs:1338
+#: app/src/add_account.rs:1345
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr ""
 
-#: app/src/add_account.rs:1348
+#: app/src/add_account.rs:1355
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. Mail stays on the server."
 msgstr ""
 
-#: app/src/add_account.rs:1351
+#: app/src/add_account.rs:1358
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
 "the server after downloading it."
 msgstr ""
 
-#: app/src/add_account.rs:1354
+#: app/src/add_account.rs:1361
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -502,7 +502,7 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: app/src/add_account.rs:1370
+#: app/src/add_account.rs:1377
 msgid "Penguin Mail needs the password for {address} again."
 msgstr ""
 
@@ -3841,7 +3841,7 @@ msgstr ""
 msgid "Add a Calendar"
 msgstr ""
 
-#: app/src/ui/add_account.rs:2003 app/src/ui/add_account.rs:3238
+#: app/src/ui/add_account.rs:2003 app/src/ui/add_account.rs:3244
 msgid "Looking up {domain}"
 msgstr ""
 
@@ -3859,8 +3859,8 @@ msgid ""
 "{provider}'s settings and paste it here."
 msgstr ""
 
-#: app/src/ui/add_account.rs:2379 app/src/ui/add_account.rs:2747
-#: app/src/ui/add_account.rs:3308
+#: app/src/ui/add_account.rs:2379 app/src/ui/add_account.rs:2751
+#: app/src/ui/add_account.rs:3314
 msgid "Signing In…"
 msgstr ""
 
@@ -3876,41 +3876,41 @@ msgstr ""
 msgid "Sign In Again"
 msgstr ""
 
-#: app/src/ui/add_account.rs:2780
+#: app/src/ui/add_account.rs:2786
 msgid "Sign in with {provider} in your browser"
 msgstr ""
 
-#: app/src/ui/add_account.rs:2785
+#: app/src/ui/add_account.rs:2791
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
 msgstr ""
 
-#: app/src/ui/add_account.rs:2805
+#: app/src/ui/add_account.rs:2811
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
 msgstr ""
 
-#: app/src/ui/add_account.rs:2808
+#: app/src/ui/add_account.rs:2814
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
 msgstr ""
 
-#: app/src/ui/add_account.rs:2975
+#: app/src/ui/add_account.rs:2981
 msgid "Link copied"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3002
+#: app/src/ui/add_account.rs:3008
 msgid "{account} is added"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3022
+#: app/src/ui/add_account.rs:3028
 msgid "{account} is ready"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3311
+#: app/src/ui/add_account.rs:3317
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."
