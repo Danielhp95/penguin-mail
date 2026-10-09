@@ -4,7 +4,7 @@ mod basics;
 mod bootstrap;
 mod caldav;
 mod calendar;
-pub(crate) mod calendar_account;
+mod calendar_account;
 mod calendar_attach;
 mod calendar_copy;
 mod calendar_read;

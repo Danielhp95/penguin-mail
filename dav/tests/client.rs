@@ -31,6 +31,7 @@ async fn a_principal_on_one_host_finds_its_home_on_another_of_the_same_domain() 
     let homes = client(&server).homes().await.unwrap();
     assert_eq!(homes.principal, "/1234567890/principal/");
     assert_eq!(homes.calendar.as_deref(), Some("https://p12-caldav.icloud.com:443/1234567890/calendars/"));
+    assert!(homes.addresses.is_empty(), "a principal that names no address has none");
 }
 
 #[tokio::test]
@@ -45,17 +46,6 @@ async fn the_homes_name_the_addresses_the_principal_goes_by() {
     let homes = client(&server).homes().await.unwrap();
     assert_eq!(homes.addresses, ["robin@example.org"]);
     assert!(homes.calendar.is_some_and(|home| home.ends_with("/remote.php/dav/calendars/robin/")));
-}
-
-#[tokio::test]
-async fn a_principal_that_names_no_address_has_none() {
-    let server = MockServer::start().await;
-    Mock::given(method("PROPFIND")).and(path("/"))
-        .respond_with(multistatus(fixture("icloud-principal.xml"))).mount(&server).await;
-    Mock::given(method("PROPFIND")).and(path("/1234567890/principal/"))
-        .respond_with(multistatus(fixture("icloud-homes.xml"))).mount(&server).await;
-    let homes = client(&server).homes().await.unwrap();
-    assert!(homes.addresses.is_empty());
 }
 
 #[tokio::test]

@@ -5,6 +5,7 @@ use mailrs_domain::{Account, AccountState, Provider, RemoveSetting};
 use mailrs_gmail::OAuthClient;
 use mailrs_graph::MicrosoftClient;
 use mailrs_store::servers::{self, Pop3Servers, Saved, Security, Servers};
+use mailrs_store::services::{self, FoundService, ServiceKind};
 use mailrs_store::{Db, accounts};
 
 use crate::config::Config;
@@ -100,6 +101,23 @@ async fn pop3_account(db: &Db) -> Account {
     .await
     .unwrap();
     account(db, "dana@example.org").await
+}
+
+async fn calendar_account(db: &Db) -> Account {
+    db.write(|c| {
+        let id = accounts::insert_caldav_account(c, "robin@cloud.example.org", 0)?.expect("nobody holds the name");
+        let server = FoundService {
+            kind: ServiceKind::CalDav,
+            url: "https://cloud.example.org/remote.php/dav/".into(),
+            user_name: "robin".into(),
+            confirmed: true,
+            source: "typed".into(),
+        };
+        services::save(c, id, &server)
+    })
+    .await
+    .unwrap();
+    account(db, "robin@cloud.example.org").await
 }
 
 async fn state(db: &Db, account: &Account) -> AccountState {
@@ -201,6 +219,28 @@ async fn a_pop3_account_without_its_password_needs_to_sign_in() {
     assert!(matches!(connected, Connected::NeedsSignIn(Lacks::Secret)));
 }
 
+#[tokio::test]
+async fn a_calendar_account_with_its_password_connects_to_a_calendar_and_no_mail() {
+    let (db, _dir) = store().await;
+    let robin = calendar_account(&db).await;
+    let reach = connector(&db, Clients::default());
+    reach.secrets.passwords.save(robin.id, "secret").unwrap();
+    let connected = reach.connect(&robin).await.unwrap();
+    assert!(matches!(
+        connected,
+        Connected::Ready(services) if matches!(services.mail, AnyMail::NoMail(_)) && services.calendar.is_some()
+    ));
+}
+
+#[tokio::test]
+async fn a_calendar_account_without_its_password_needs_to_sign_in_and_the_store_says_so() {
+    let (db, _dir) = store().await;
+    let robin = calendar_account(&db).await;
+    let connected = connector(&db, Clients::default()).connect(&robin).await.unwrap();
+    assert!(matches!(connected, Connected::NeedsSignIn(Lacks::Secret)));
+    assert_eq!(state(&db, &robin).await, AccountState::NeedsReauth, "no loop will run to say so");
+}
+
 /// Every store holds a secret for the account's id and address, so a
 /// forget that reached into the wrong store would leave its own behind.
 async fn forgetting(db: &Db, account: &Account) -> (Option<String>, Option<String>, Option<String>) {
@@ -245,6 +285,14 @@ async fn forgetting_a_pop3_account_deletes_only_its_password() {
     let (db, _dir) = store().await;
     let dana = pop3_account(&db).await;
     let left = forgetting(&db, &dana).await;
+    assert_eq!(left, (Some("token".into()), None, Some("refresh".into())));
+}
+
+#[tokio::test]
+async fn forgetting_a_calendar_account_deletes_only_its_password() {
+    let (db, _dir) = store().await;
+    let robin = calendar_account(&db).await;
+    let left = forgetting(&db, &robin).await;
     assert_eq!(left, (Some("token".into()), None, Some("refresh".into())));
 }
 

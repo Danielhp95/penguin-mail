@@ -1484,8 +1484,7 @@ mod tests {
 
     #[test]
     fn anything_else_keeps_its_reason() {
-        let odd = anyhow::anyhow!("the disk is full");
-        assert!(calendar_problem(&odd).contains("the disk is full"));
+        assert!(calendar_problem(&anyhow::anyhow!("the disk is full")).contains("the disk is full"));
     }
 
     /// Sign In Again opens the calendar page for one account. A sign-in
@@ -1493,18 +1492,11 @@ mod tests {
     /// name changed, added one and left the first as it was.
     #[test]
     fn only_the_account_asked_to_sign_in_again_has() {
-        let asked = Account {
-            id: 5,
-            email: "robin@cloud.example.org".into(),
-            state: AccountState::NeedsReauth,
-            provider: Provider::CalDav,
-            provider_name: None,
-        };
-        let same = Account { state: AccountState::Ok, ..asked.clone() };
-        let another = Account { id: 6, email: "dani@cloud.example.org".into(), ..same.clone() };
-        assert!(signed_in_again(Some(&asked), &same));
+        let asked = icloud_account();
+        let another = Account { id: asked.id + 1, ..asked.clone() };
+        assert!(signed_in_again(Some(&asked), &asked));
         assert!(!signed_in_again(Some(&asked), &another));
-        assert!(!signed_in_again(None, &same), "a first sign-in is not a second");
+        assert!(!signed_in_again(None, &asked), "a first sign-in is not a second");
     }
 
     #[test]

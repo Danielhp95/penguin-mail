@@ -232,10 +232,9 @@ async fn a_change_made_elsewhere_first_is_changed() {
     assert!(matches!(caldav.put_event(&mine, Some(&mine.etag), false, Notify::Nobody).await, Err(BackendError::Changed)));
 }
 
-#[tokio::test]
-async fn a_new_event_is_created_under_its_own_id() {
-    let (dav, _, caldav) = adapter().await;
-    let event = Event {
+/// An event of mine that the server does not hold yet.
+fn coffee() -> Event {
+    Event {
         calendar: WORK.into(),
         id: "pm0123456789abcdefghijklmnopqrstuv".into(),
         start: 1_791_300_000_000,
@@ -244,7 +243,13 @@ async fn a_new_event_is_created_under_its_own_id() {
         title: "Coffee".into(),
         busy: true,
         ..Event::default()
-    };
+    }
+}
+
+#[tokio::test]
+async fn a_new_event_is_created_under_its_own_id() {
+    let (dav, _, caldav) = adapter().await;
+    let event = coffee();
     let sent = caldav.put_event(&event, None, true, Notify::Nobody).await.unwrap();
     assert_eq!(sent.id, event.id);
     assert!(dav.body(&format!("{WORK}{}.ics", event.id)).is_some());
@@ -385,9 +390,11 @@ async fn an_answer_from_the_calendar_view_follows_the_same_rule() {
     let event = caldav.answer_event(WORK, "standup", ME, Answer::No, None).await.unwrap();
     assert_eq!(event.my_answer, Some(Answer::No));
     assert_eq!(smtp.sent().len(), 1);
+    assert!(caldav.tells_organizer(), "the account's mail carried the reply");
     dav.set_auto_schedule(true);
     caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
     assert_eq!(smtp.sent().len(), 1, "no second mail from a server that schedules");
+    assert!(caldav.tells_organizer(), "the server did");
 }
 
 #[tokio::test]
@@ -413,17 +420,20 @@ async fn answering_one_occurrence_leaves_the_rest_of_the_series_unanswered() {
     assert!(sent.contains("RECURRENCE-ID"), "the reply names the one occurrence");
 }
 
-/// The adapter of an account with no mail and no address handed in.
-fn alone(dav: &Arc<FakeDav>) -> Adapter {
-    CalDav::new(Arc::clone(dav), crate::AnyMail::NoMail(crate::services::NoMail), Vec::new())
+/// The adapter of an account with no mail and no address handed in, on
+/// a server that holds the standup invitation and says the account goes
+/// by `addresses`.
+async fn alone(addresses: &[&str]) -> (Arc<FakeDav>, Adapter) {
+    let (dav, _, _) = adapter().await;
+    dav.with(|s| s.addresses = addresses.iter().map(|address| address.to_string()).collect());
+    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
+    let caldav = CalDav::new(Arc::clone(&dav), crate::AnyMail::NoMail(crate::services::NoMail), Vec::new());
+    (dav, caldav)
 }
 
 #[tokio::test]
 async fn an_adapter_given_no_address_asks_the_server_once() {
-    let (dav, _, _) = adapter().await;
-    dav.with(|s| s.addresses = vec![ME.to_string()]);
-    let caldav = alone(&dav);
-    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
+    let (dav, caldav) = alone(&[ME]).await;
     let (events, _, _, _) = read_all(&caldav, None).await.unwrap();
     let mine: Vec<&str> = events[0].guests.iter().filter(|g| g.me).map(|g| g.email.as_str()).collect();
     assert_eq!(mine, [ME], "the server said who the account is");
@@ -433,67 +443,34 @@ async fn an_adapter_given_no_address_asks_the_server_once() {
 
 #[tokio::test]
 async fn an_adapter_whose_server_names_nobody_reads_and_writes() {
-    let (dav, _, _) = adapter().await;
-    let caldav = alone(&dav);
-    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
+    let (_, caldav) = alone(&[]).await;
     let (events, _, _, _) = read_all(&caldav, None).await.unwrap();
     assert!(events[0].guests.iter().all(|g| !g.me), "nobody on the event is the account");
-    let event = Event {
-        calendar: WORK.into(),
-        id: "pm0123456789abcdefghijklmnopqrstuv".into(),
-        start: 1_791_300_000_000,
-        end: 1_791_303_600_000,
-        zone: "UTC".into(),
-        title: "Coffee".into(),
-        busy: true,
-        ..Event::default()
-    };
-    let sent = caldav.put_event(&event, None, true, Notify::Nobody).await.unwrap();
+    let sent = caldav.put_event(&coffee(), None, true, Notify::Nobody).await.unwrap();
     assert_eq!(sent.title, "Coffee");
 }
 
 #[tokio::test]
-async fn an_answer_with_no_mail_and_no_scheduling_saves_and_sends_nothing() {
-    let (dav, _, _) = adapter().await;
-    dav.with(|s| s.addresses = vec![ME.to_string()]);
-    let caldav = alone(&dav);
-    assert!(caldav.tells_organizer(), "until the server says it does not schedule");
-    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
-    let event = caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
-    assert_eq!(event.my_answer, Some(Answer::Yes));
-    assert!(dav.body(&format!("{WORK}standup.ics")).unwrap().contains("PARTSTAT=ACCEPTED"));
-    assert!(!caldav.tells_organizer(), "nothing can carry the reply");
-}
-
-#[tokio::test]
-async fn an_account_with_no_mail_on_a_server_that_schedules_tells_the_organizer() {
-    let (dav, _, _) = adapter().await;
-    dav.with(|s| s.addresses = vec![ME.to_string()]);
-    dav.set_auto_schedule(true);
-    let caldav = alone(&dav);
-    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
-    caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
-    assert!(caldav.tells_organizer(), "the server mails the reply itself");
+async fn an_answer_with_no_mail_reaches_the_organizer_only_through_a_server_that_schedules() {
+    for schedules in [false, true] {
+        let (dav, caldav) = alone(&[ME]).await;
+        dav.set_auto_schedule(schedules);
+        assert!(caldav.tells_organizer(), "until the server has said whether it schedules");
+        let event = caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
+        assert_eq!(event.my_answer, Some(Answer::Yes));
+        assert!(dav.body(&format!("{WORK}standup.ics")).unwrap().contains("PARTSTAT=ACCEPTED"));
+        assert_eq!(caldav.tells_organizer(), schedules, "only the server can carry the reply");
+    }
 }
 
 #[tokio::test]
 async fn reading_the_calendar_list_settles_whether_the_organizer_will_hear() {
-    let (dav, _, _) = adapter().await;
-    let caldav = alone(&dav);
+    let (dav, caldav) = alone(&[]).await;
     caldav.calendars().await.unwrap();
     assert!(!caldav.tells_organizer(), "the window knows before the first answer");
     dav.set_auto_schedule(true);
     caldav.calendars().await.unwrap();
     assert!(caldav.tells_organizer());
-}
-
-#[tokio::test]
-async fn an_account_with_mail_always_tells_the_organizer() {
-    let (dav, smtp, caldav) = adapter().await;
-    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
-    caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
-    assert!(caldav.tells_organizer());
-    assert_eq!(smtp.sent().len(), 1);
 }
 
 #[tokio::test]

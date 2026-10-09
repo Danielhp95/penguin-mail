@@ -332,3 +332,22 @@ async fn a_caldav_invitation_to_one_occurrence_says_how_its_series_runs() {
         Some("Every Tuesday, 6 left")
     );
 }
+
+#[tokio::test]
+async fn a_caldav_calendar_that_refuses_the_login_leaves_the_mail_accounts_state_alone() {
+    let h = imap_harness().await;
+    let dav = Arc::new(FakeDav::new());
+    dav.refuse_login(true);
+    let mail = h.sync.services().mail.clone();
+    let calendar = CalDav::new(Arc::new(AnyDav::from(Arc::clone(&dav))), mail, vec![]);
+    let services = h.sync.services().clone().with_calendar(AnyCalendar::Dav(calendar));
+    let copy = CalendarCopy::new(Arc::new(ServedBy::new(h.account_id, Arc::clone(&h.sync), services)), h.db.clone());
+    copy.refresh_due(&[h.account_id], crate::now_millis(), true).await.unwrap();
+    let id = h.account_id;
+    let state = h.db.read(move |c| mailrs_store::accounts::account(c, id)).await.unwrap().unwrap().state;
+    assert_ne!(
+        state,
+        mailrs_domain::AccountState::NeedsReauth,
+        "its mail still works, and its loop says how the account is"
+    );
+}

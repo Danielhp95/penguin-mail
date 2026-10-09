@@ -854,3 +854,24 @@ async fn a_stopped_search_asks_gmail_nothing_and_leaves_the_next_one_whole() {
         .expect("the search lists");
     assert!(ids(&found).contains(&"k4".to_string()), "{:?}", ids(&found));
 }
+
+#[tokio::test]
+async fn a_search_leaves_out_an_account_with_no_mail() {
+    let h = harness().await;
+    h.fake.seed(meta("only-remote", "t5", now_millis(), &["SPAM"]));
+    let other = h
+        .db
+        .write(|c| mailrs_store::accounts::insert_account(c, "robin@cloud.example.org", 0))
+        .await
+        .unwrap();
+    let (sender, _events) = async_channel::unbounded();
+    let (_, services) = super::calendar_account::calendar_only();
+    let calendar_account = Arc::new(crate::AccountSync::new(other, services, h.db.clone(), sender));
+    let connected = HashMap::from([(h.account_id, Arc::clone(&h.sync)), (other, calendar_account)]);
+    let lists = Mailboxes::new(Arc::new(Connected(connected)), h.db.clone());
+    let scope = Scope::over(h.db.read(mailrs_store::accounts::list_accounts).await.unwrap());
+    let search = Mailbox::Search { query: "in:spam".into(), account_id: None };
+    let found = lists.list(&search, &scope, &view(), Loaded::nothing()).await.expect("the search runs");
+    assert_eq!(ids(&found), ["t5"]);
+    assert!(found.notices.is_empty(), "nothing is said of an account that was never asked: {:?}", found.notices);
+}

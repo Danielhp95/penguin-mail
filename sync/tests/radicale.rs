@@ -12,7 +12,7 @@ use std::sync::Arc;
 use mailrs_dav::{DavApi, DavClient, Login};
 use mailrs_discover::{Security, Server, UserName};
 use mailrs_domain::calendar::{Event, Notify, occurrence_id};
-use mailrs_domain::{AccountId, Provider};
+use mailrs_domain::Provider;
 use mailrs_imap::{ImapClient, SmtpClient};
 use mailrs_store::Db;
 use mailrs_sync::calendar_copy::CalendarCopy;
@@ -21,21 +21,12 @@ use mailrs_sync::services::CalDav;
 use mailrs_sync::services::finding::RealProbe;
 use mailrs_sync::sign_in::{CalDavSignInError, NewCalDav, caldav_signed_in};
 use mailrs_sync::{
-    AccountServices, AccountSync, Accounts, AnyMail, BackendError, CalendarService, ImapSettings, NoMail, SyncError,
+    AccountServices, AnyMail, BackendError, CalendarService, EngineConfig, ImapSettings, NoMail, SyncEngine, SyncError,
     connect_caldav,
 };
 use mailrs_testmail::{Certs, Radicale};
 
 const USER: &str = "me@example.test";
-
-/// The one account, for the calendar copy to read.
-struct One(AccountId, Arc<AccountSync>);
-
-impl Accounts for One {
-    fn account(&self, account_id: AccountId) -> Option<Arc<AccountSync>> {
-        (account_id == self.0).then(|| Arc::clone(&self.1))
-    }
-}
 
 fn series(title: &str) -> String {
     format!(
@@ -125,8 +116,8 @@ fn the_caldav_adapter_reads_and_writes_radicale() {
 
         // The whole way in, as Add Account goes: the login is tried at the
         // address, the account is kept under its user and host, connecting
-        // builds its services, and the calendar copy reads them into the
-        // store.
+        // builds its services, the engine keeps them, and the calendar
+        // copy reads them into the store.
         let dir = tempfile::tempdir().expect("a folder for the store");
         let db = Db::open(&dir.path().join("mail.db")).expect("a store");
         let passwords = Arc::new(MemoryPasswords::default());
@@ -144,17 +135,14 @@ fn the_caldav_adapter_reads_and_writes_radicale() {
 
         let services = connect_caldav(&db, passwords, &account).await.expect("the services");
         assert!(!services.serves_mail());
-        let (events, _listening) = async_channel::unbounded();
-        let sync = Arc::new(AccountSync::new(account.id, services, db.clone(), events));
-        let copy = CalendarCopy::new(Arc::new(One(account.id, sync)), db.clone());
+        let (engine, _events) = SyncEngine::new(db.clone(), EngineConfig::default());
+        engine.start_account(account.id, services);
+        let copy = CalendarCopy::new(Arc::new(engine), db.clone());
         copy.refresh(account.id, mailrs_sync::now_millis()).await.expect("a first read into the store");
         let id = account.id;
         let kept = db.read(move |c| mailrs_store::calendar::calendars(c, id)).await.expect("the stored calendars");
         assert!(kept.iter().any(|c| c.id == work), "{kept:?}");
-        let held = db
-            .read(move |c| mailrs_store::calendar::event(c, id, &work, "pm0123456789abcdefghijklmnopqrstuv"))
-            .await
-            .expect("the store");
+        let held = db.read(move |c| mailrs_store::calendar::event(c, id, &work, &made.id)).await.expect("the store");
         assert_eq!(held.map(|e| e.title).as_deref(), Some("Lunch"));
     });
 }

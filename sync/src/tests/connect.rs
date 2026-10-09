@@ -1,12 +1,20 @@
 use std::sync::Arc;
 
-use mailrs_domain::{Account, AccountId, AccountState};
+use mailrs_dav::Kind;
+use mailrs_domain::calendar::Calendar;
+use mailrs_domain::{Account, AccountId, AccountState, Provider};
 use mailrs_gmail::{MemoryTokenStore, OAuthClient, TokenStore};
+use mailrs_sieve::script::Extensions;
 use mailrs_store::servers::{self, Saved, Security, Servers};
-use mailrs_store::{Db, accounts};
+use mailrs_store::services::{self, FoundService, ServiceKind};
+use mailrs_store::{Db, accounts, calendar as store_calendar};
 
 use crate::passwords::{MemoryPasswords, PasswordError, PasswordStore};
-use crate::sign_in::{ImapSignInError, NewImap, NewPop3, imap_signed_in, in_imap_words, pop3_signed_in};
+use crate::services::finding::{ServiceProbe, https_only};
+use crate::sign_in::{
+    CalDavSignInError, ImapSignInError, NewCalDav, NewImap, NewPop3, calendar_account_name, caldav_signed_in,
+    imap_signed_in, in_imap_words, pop3_signed_in,
+};
 use mailrs_domain::RemoveSetting;
 use crate::{
     BackendError, MailBackend, SyncError, connect_account, connect_imap, server_of, servers_for,
@@ -605,4 +613,157 @@ fn a_pop3_failure_reads_as_the_incoming_servers() {
         in_imap_words(Pop3Error::InUse("[IN-USE]".into())),
         ImapError::TooManyConnections { .. }
     ));
+}
+
+const CLOUD: &str = "https://cloud.example.org/remote.php/dav/";
+const ROBIN: &str = "robin@cloud.example.org";
+
+/// A CalDAV server on cloud.example.org that takes the password
+/// `app-password` and records each address it is tried at. Any other host
+/// answers as no calendar server.
+#[derive(Default)]
+struct Cloud(std::sync::Mutex<Vec<String>>);
+
+impl ServiceProbe for Cloud {
+    async fn dav(&self, url: &str, _user: &str, password: &str, _kind: Kind) -> Result<(), BackendError> {
+        self.0.lock().unwrap().push(url.to_string());
+        match (url.starts_with("https://cloud.example.org/"), password) {
+            (false, _) => Err(BackendError::Unsupported),
+            (true, "app-password") => Ok(()),
+            (true, _) => Err(BackendError::NeedsReauth),
+        }
+    }
+
+    async fn sieve(&self, _: &str, _: u16, _: &str, _: &str) -> Result<Extensions, BackendError> {
+        Err(BackendError::Unsupported)
+    }
+}
+
+/// A calendar sign-in at `url` as `user`, with the password the cloud
+/// takes.
+fn at(url: &str, user: &str) -> NewCalDav {
+    NewCalDav { url: url.into(), user_name: user.into(), password: "app-password".into() }
+}
+
+/// Signs in to the cloud with a keyring nobody reads afterwards.
+async fn calendar_sign_in(db: &Db, new: NewCalDav) -> Result<Account, CalDavSignInError> {
+    caldav_signed_in(&Cloud::default(), db, Arc::new(MemoryPasswords::default()), new, 7).await
+}
+
+#[test]
+fn a_calendar_account_is_named_by_its_user_and_its_host() {
+    assert_eq!(calendar_account_name(CLOUD, "robin").as_deref(), Some(ROBIN));
+    assert_eq!(
+        calendar_account_name("https://Cloud.Example.org:8443/dav", " robin ").as_deref(),
+        Some(ROBIN),
+        "the host alone, in lower case, and the user name without its spaces"
+    );
+    assert_eq!(
+        calendar_account_name(CLOUD, "me@example.org").as_deref(),
+        Some("me@example.org@cloud.example.org"),
+        "a user name that is an address keeps the host, so it never names a mail account"
+    );
+    assert_eq!(calendar_account_name("not an address", "robin"), None);
+    assert_eq!(calendar_account_name(CLOUD, "  "), None);
+}
+
+#[tokio::test]
+async fn a_calendar_sign_in_keeps_the_account_its_server_and_its_password() {
+    // The address as the server gives it, then a bare host with spaces
+    // around it and around the user name.
+    for (typed, user, kept_as) in [(CLOUD, "robin", CLOUD), ("  cloud.example.org ", " robin ", "https://cloud.example.org/")] {
+        let (db, _dir) = store().await;
+        let passwords = Arc::new(MemoryPasswords::default());
+        let account = caldav_signed_in(&Cloud::default(), &db, Arc::clone(&passwords), at(typed, user), 7).await.unwrap();
+        assert_eq!((account.email.as_str(), account.provider), (ROBIN, Provider::CalDav));
+        let id = account.id;
+        let server = FoundService {
+            kind: ServiceKind::CalDav,
+            url: kept_as.into(),
+            user_name: "robin".into(),
+            // The person typed the address, so the password may go to it.
+            confirmed: true,
+            source: "typed".into(),
+        };
+        assert_eq!(db.read(move |c| services::load(c, id)).await.unwrap(), [server]);
+        assert_eq!(passwords.load(id).unwrap().as_deref(), Some("app-password"));
+    }
+}
+
+/// What the cloud refuses `new` with, once nothing was kept of it.
+async fn refused_and_kept_nothing(new: NewCalDav) -> BackendError {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let refused = caldav_signed_in(&Cloud::default(), &db, Arc::clone(&passwords), new, 7).await;
+    assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());
+    assert_eq!(passwords.load(1).unwrap(), None);
+    match refused {
+        Err(CalDavSignInError::Server(SyncError::Backend(why))) => why,
+        other => panic!("the server did not refuse it: {:?}", other.map(|account| account.email)),
+    }
+}
+
+#[tokio::test]
+async fn a_calendar_sign_in_the_server_does_not_take_keeps_nothing() {
+    let wrong_password = NewCalDav { password: "wrong".into(), ..at(CLOUD, "robin") };
+    assert!(matches!(refused_and_kept_nothing(wrong_password).await, BackendError::NeedsReauth));
+    let no_calendar_there = at("https://example.org/", "robin");
+    assert!(matches!(refused_and_kept_nothing(no_calendar_there).await, BackendError::Unsupported));
+}
+
+#[tokio::test]
+async fn any_scheme_but_https_is_refused_in_the_same_words_and_nothing_is_tried() {
+    let (db, _dir) = store().await;
+    let cloud = Cloud::default();
+    for address in ["http://cloud.example.org/", "ftp://cloud.example.org/", "webcal://cloud.example.org/home.ics"] {
+        let refused = caldav_signed_in(&cloud, &db, Arc::new(MemoryPasswords::default()), at(address, "robin"), 7).await;
+        let Err(CalDavSignInError::Server(SyncError::Backend(BackendError::Refused(said)))) = refused else {
+            panic!("{address} was not refused: {:?}", refused.map(|a| a.email));
+        };
+        assert_eq!(said, https_only(), "{address}");
+    }
+    assert!(cloud.0.lock().unwrap().is_empty(), "the password went nowhere");
+    assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_user_name_that_is_an_address_does_not_take_a_mail_accounts_name() {
+    let (db, _dir) = store().await;
+    db.write(|c| accounts::insert_imap_account(c, "me@example.org", "example.org", 1)).await.unwrap();
+    let account = calendar_sign_in(&db, at(CLOUD, "me@example.org")).await.unwrap();
+    assert_eq!(account.email, "me@example.org@cloud.example.org");
+    assert_eq!(db.read(accounts::list_accounts).await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn a_calendar_name_another_kind_of_account_holds_is_refused() {
+    let (db, _dir) = store().await;
+    db.write(|c| accounts::insert_imap_account(c, ROBIN, "example.org", 1)).await.unwrap();
+    let refused = calendar_sign_in(&db, at(CLOUD, "robin")).await;
+    // The page words its way out by who holds the name.
+    assert!(matches!(refused, Err(CalDavSignInError::Taken { name, holder: Provider::Imap, .. }) if name == ROBIN));
+}
+
+#[tokio::test]
+async fn signing_a_calendar_account_in_again_keeps_its_calendars_and_ends_needs_sign_in() {
+    let (db, _dir) = store().await;
+    let id = calendar_sign_in(&db, at(CLOUD, "robin")).await.unwrap().id;
+    db.write(move |c| {
+        let personal = Calendar { id: "personal".into(), name: "Personal".into(), ..Default::default() };
+        store_calendar::save_calendars(c, id, &[personal])?;
+        accounts::set_state(c, id, AccountState::NeedsReauth)
+    })
+    .await
+    .unwrap();
+    let again = calendar_sign_in(&db, at(CLOUD, "robin")).await.unwrap();
+    assert_eq!((again.id, again.state), (id, AccountState::Ok), "one account, not two");
+    assert_eq!(db.read(move |c| store_calendar::calendars(c, id)).await.unwrap().len(), 1, "what the copy held is still there");
+}
+
+#[tokio::test]
+async fn a_keyring_that_refuses_leaves_no_new_calendar_account_behind() {
+    let (db, _dir) = store().await;
+    let refused = caldav_signed_in(&Cloud::default(), &db, Arc::new(Refusing), at(CLOUD, "robin"), 7).await;
+    assert!(matches!(refused, Err(CalDavSignInError::Password(_))));
+    assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());
 }

@@ -1328,6 +1328,7 @@ mod tests {
         let services = AccountServices::google(gmail);
         assert_eq!(services.offers(), Offers::EVERYTHING);
         assert!(services.offers().missing().is_empty());
+        assert!(services.serves_mail());
     }
 
     #[test]

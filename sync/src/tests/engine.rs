@@ -2,15 +2,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_channel::Receiver;
+use mailrs_dav::fake::FakeDav;
 use mailrs_domain::{AccountState, ChangeEvent};
 use mailrs_gmail::GmailError;
 use mailrs_store::{Db, accounts};
 
+use super::calendar_account::{PERSONAL, calendar_only, services_on};
+use crate::calendar_copy::CalendarCopy;
 use crate::fake::{FakeGmail, fill_store, meta};
-use crate::{AccountServices, AccountSync, EngineConfig, SyncEngine, now_millis};
+use crate::{AccountServices, AccountSync, Accounts, BackendError, CalendarService, EngineConfig, SyncEngine, now_millis};
 
 struct Setup {
-    engine: SyncEngine,
+    engine: Arc<SyncEngine>,
     events: Receiver<ChangeEvent>,
     fake: Arc<FakeGmail>,
     db: Db,
@@ -31,7 +34,7 @@ async fn setup() -> Setup {
     };
     let (engine, events) = SyncEngine::new(db.clone(), config);
     Setup {
-        engine,
+        engine: Arc::new(engine),
         events,
         fake: Arc::new(FakeGmail::new()),
         db,
@@ -197,4 +200,79 @@ async fn a_check_asks_gmail_while_the_network_seems_gone() {
     wait_for(&s.events, reached(AccountState::Offline)).await;
     s.engine.poke(1);
     wait_for(&s.events, reached(AccountState::Ok)).await;
+}
+
+const NOW: i64 = 1_790_000_000_000;
+
+/// A calendar account with lunch on its server, kept by the engine, and
+/// the copy that reads it.
+async fn calendar_account() -> (Setup, Arc<FakeDav>, CalendarCopy<SyncEngine>) {
+    let s = setup().await;
+    let (dav, services) = calendar_only();
+    dav.put_resource(
+        &format!("{PERSONAL}lunch.ics"),
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:VEVENT\r\nUID:lunch\r\n\
+         DTSTART:20261006T120000Z\r\nDTEND:20261006T130000Z\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    );
+    s.engine.start_account(1, services);
+    // No mail loop ran to fail on a server with no mail.
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+    let copy = CalendarCopy::new(Arc::clone(&s.engine), s.db.clone());
+    (s, dav, copy)
+}
+
+#[tokio::test]
+async fn an_account_with_no_mail_is_kept_and_the_copy_reads_its_calendar() {
+    let (s, _, copy) = calendar_account().await;
+    assert!(s.engine.is_running(1));
+    let kept = Accounts::services(&*s.engine, 1).expect("the account's services");
+    assert!(!kept.serves_mail() && kept.calendar.is_some());
+    assert_eq!(copy.refresh_due(&[1], NOW, true).await.unwrap().events, 1);
+    let calendars = s.db.read(|c| mailrs_store::calendar::calendars(c, 1)).await.unwrap();
+    assert_eq!(calendars.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Personal"]);
+    s.engine.stop_account(1);
+    assert!(!s.engine.is_running(1));
+}
+
+#[tokio::test]
+async fn a_calendar_account_whose_login_is_refused_waits_for_the_person_to_sign_in_again() {
+    let (s, dav, copy) = calendar_account().await;
+    dav.refuse_login(true);
+    copy.refresh_due(&[1], NOW, true).await.unwrap();
+    // Nothing else would notice the refused password.
+    wait_for(&s.events, reached(AccountState::NeedsReauth)).await;
+
+    // The server takes the password again, but the account that was
+    // refused does not go on asking with the one it holds.
+    dav.refuse_login(false);
+    let later = NOW + 3_600_000;
+    assert_eq!(copy.refresh_due(&[1], later, true).await.unwrap().events, 0);
+
+    // Signing in again starts the account on new services, and it reads.
+    s.engine.start_account(1, services_on(&dav));
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+    assert_eq!(copy.refresh_due(&[1], later, true).await.unwrap().events, 1);
+}
+
+#[tokio::test]
+async fn a_refusal_met_outside_the_read_is_reported_once() {
+    let (s, dav, copy) = calendar_account().await;
+    assert_eq!(copy.refresh_due(&[1], NOW, true).await.unwrap().events, 1);
+
+    // The password stops working, and what meets the refusal first is
+    // not the periodic read but a call made for the person.
+    dav.refuse_login(true);
+    let calendar = Accounts::services(&*s.engine, 1).and_then(|services| services.calendar).expect("the calendar");
+    assert!(matches!(calendar.calendars().await, Err(BackendError::NeedsReauth)));
+
+    // The next tick comes before another read is due. It still says so.
+    copy.refresh_due(&[1], NOW + 1_000, true).await.unwrap();
+    wait_for(&s.events, reached(AccountState::NeedsReauth)).await;
+    let stored = s.db.read(|c| accounts::account(c, 1)).await.unwrap().expect("the account").state;
+    assert_eq!(stored, AccountState::NeedsReauth);
+
+    // And says it once, not at every tick after.
+    copy.refresh_due(&[1], NOW + 2_000, true).await.unwrap();
+    copy.refresh_due(&[1], NOW + 3_000, true).await.unwrap();
+    assert!(s.events.try_recv().is_err(), "the state was reported again");
 }

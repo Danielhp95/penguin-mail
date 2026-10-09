@@ -96,9 +96,10 @@ async fn an_unknown_tool_says_so() {
 
 const CALENDARS: &str = "robin@cloud.example.org";
 
-/// A calendar account beside the harness's mail account, listed and not
-/// connected to any mail.
-fn with_calendar_account(h: &super::fake::Harness) {
+/// The harness with a calendar account beside its mail account, listed
+/// and not connected to any mail.
+async fn with_calendar_account() -> Harness {
+    let h = harness().await;
     h.desk.0.borrow_mut().accounts.push(mailrs_domain::Account {
         id: 9,
         email: CALENDARS.into(),
@@ -106,12 +107,12 @@ fn with_calendar_account(h: &super::fake::Harness) {
         provider: mailrs_domain::Provider::CalDav,
         provider_name: None,
     });
+    h
 }
 
 #[tokio::test]
 async fn get_context_says_which_account_holds_calendars_alone() {
-    let h = harness().await;
-    with_calendar_account(&h);
+    let h = with_calendar_account().await;
     let context = h.ok("get_context", json!({})).await;
     assert_eq!(
         context["accounts"][1],
@@ -122,8 +123,7 @@ async fn get_context_says_which_account_holds_calendars_alone() {
 
 #[tokio::test]
 async fn a_listing_reaches_for_the_accounts_with_mail_alone() {
-    let h = harness().await;
-    with_calendar_account(&h);
+    let h = with_calendar_account().await;
     let scope = h.tools.scope();
     assert!(scope.id_of(ME).is_some());
     assert_eq!(scope.id_of(CALENDARS), None, "a search has nothing to ask an account with no mail");
@@ -131,8 +131,7 @@ async fn a_listing_reaches_for_the_accounts_with_mail_alone() {
 
 #[tokio::test]
 async fn a_mail_tool_turns_a_calendar_account_away_in_words() {
-    let h = harness().await;
-    with_calendar_account(&h);
+    let h = with_calendar_account().await;
     let refused = h
         .run("read_attachment", json!({"account": CALENDARS, "message_id": "m1", "attachment": "a.pdf"}))
         .await

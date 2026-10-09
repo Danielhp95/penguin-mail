@@ -1520,55 +1520,28 @@ mod tests {
         );
     }
 
-    fn calendar_account(id: AccountId, name: &str) -> Account {
-        Account {
-            provider: Provider::CalDav,
-            ..account(id, name)
-        }
-    }
-
     #[test]
-    fn a_calendar_account_that_needs_to_sign_in_keeps_its_calendars_and_says_so() {
-        let refused = Account {
-            state: AccountState::NeedsReauth,
-            ..calendar_account(5, "robin@cloud.example.org")
-        };
-        let rows = sidebar_accounts(
-            &[(refused, Offers::EVERYTHING, Withheld::NONE, vec![calendar("personal")])],
-            |_| None,
-        );
-        assert_eq!(rows[0].reach, CalendarReach::NeedsSignIn(vec![calendar("personal")]));
-        // What the copy holds stays on the list, to show or hide as before.
-        let unlisted = HashMap::from([(5, HashSet::from(["personal".to_string()]))]);
-        let hidden = take_off_the_list(rows, &unlisted);
-        assert_eq!(hidden[0].reach, CalendarReach::NeedsSignIn(Vec::new()));
-        assert_eq!(hidden[0].hidden, vec![calendar("personal")]);
-    }
-
-    #[test]
-    fn a_mail_account_that_needs_to_sign_in_reads_as_before() {
-        let mail = Account {
-            state: AccountState::NeedsReauth,
-            ..account(1, "dana@example.com")
-        };
-        let rows = sidebar_accounts(
-            &[(mail, Offers::EVERYTHING, Withheld::NONE, vec![calendar("primary")])],
-            |_| None,
-        );
-        assert_eq!(rows[0].reach, CalendarReach::Calendars(vec![calendar("primary")]), "the mail window asks it to sign in");
-    }
-
-    #[test]
-    fn only_a_calendar_account_carries_the_account_menu() {
+    fn a_calendar_account_carries_the_account_menu_and_says_when_it_needs_to_sign_in() {
+        let calendar_account = |id, name| Account { provider: Provider::CalDav, ..account(id, name) };
+        let refused = |account| Account { state: AccountState::NeedsReauth, ..account };
+        let row = |account, held: &str| (account, Offers::EVERYTHING, Withheld::NONE, vec![calendar(held)]);
         let rows = sidebar_accounts(
             &[
-                (account(1, "dana@example.com"), Offers::EVERYTHING, Withheld::NONE, vec![calendar("primary")]),
-                (calendar_account(5, "robin@cloud.example.org"), Offers::EVERYTHING, Withheld::NONE, vec![calendar("personal")]),
+                row(refused(account(1, "dana@example.com")), "primary"),
+                row(calendar_account(4, "dana@cloud.example.org"), "family"),
+                row(refused(calendar_account(5, "robin@cloud.example.org")), "personal"),
             ],
             |_| None,
         );
-        assert_eq!(rows.iter().map(|row| row.calendar_only).collect::<Vec<_>>(), [false, true]);
-        assert_eq!(rows[1].reach, CalendarReach::Calendars(vec![calendar("personal")]));
+        assert_eq!(rows.iter().map(|row| row.calendar_only).collect::<Vec<_>>(), [false, true, true]);
+        assert_eq!(rows[0].reach, CalendarReach::Calendars(vec![calendar("primary")]), "the mail window asks it to sign in");
+        assert_eq!(rows[1].reach, CalendarReach::Calendars(vec![calendar("family")]));
+        assert_eq!(rows[2].reach, CalendarReach::NeedsSignIn(vec![calendar("personal")]));
+        // What the copy holds stays on the list, to show or hide as before.
+        let unlisted = HashMap::from([(5, HashSet::from(["personal".to_string()]))]);
+        let hidden = take_off_the_list(rows, &unlisted);
+        assert_eq!(hidden[2].reach, CalendarReach::NeedsSignIn(Vec::new()));
+        assert_eq!(hidden[2].hidden, vec![calendar("personal")]);
     }
 
     #[test]

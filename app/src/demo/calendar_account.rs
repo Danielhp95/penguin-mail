@@ -133,65 +133,58 @@ pub fn refuse(dav: &FakeDav) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
-    use mailrs_domain::Provider;
+    use mailrs_domain::{AccountState, Provider};
     use mailrs_store::calendar as store;
     use mailrs_sync::calendar_copy::CalendarCopy;
     use mailrs_sync::now_millis;
 
+    use super::super::Seeding;
     use super::*;
 
-    /// The one account, for the calendar copy to read.
-    struct Alone(AccountId, Arc<AccountSync>);
+    const WEEK: i64 = 7 * 24 * 3_600_000;
 
-    impl mailrs_sync::Accounts for Alone {
-        fn account(&self, account_id: AccountId) -> Option<Arc<AccountSync>> {
-            (account_id == self.0).then(|| Arc::clone(&self.1))
-        }
+    /// The seeded account, its server, and a copy that reads it.
+    async fn seeded() -> (Db, AccountId, Arc<FakeDav>, CalendarCopy<Seeding>, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("demo.db")).unwrap();
+        let (id, dav, sync) = seed(&db, now_millis()).await.unwrap();
+        let alone = Seeding { syncing: HashMap::from([(id, sync)]), own_services: HashMap::new() };
+        let copy = CalendarCopy::new(Arc::new(alone), db.clone());
+        (db, id, dav, copy, dir)
     }
 
     #[tokio::test]
     async fn the_calendar_account_has_a_calendar_with_this_weeks_events_and_no_mail() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(&dir.path().join("demo.db")).unwrap();
-        let now = now_millis();
-        let (id, dav, sync) = seed(&db, now).await.unwrap();
-
+        let (db, id, dav, copy, _dir) = seeded().await;
         let account = db.read(move |c| accounts::account(c, id)).await.unwrap().expect("the account");
         assert_eq!((account.email.as_str(), account.provider), (NAME, Provider::CalDav));
         assert!(!services(&dav).serves_mail());
 
-        let copy = CalendarCopy::new(Arc::new(Alone(id, sync)), db.clone());
+        let now = now_millis();
         copy.refresh(id, now).await.unwrap();
         let calendars = db.read(move |c| store::calendars(c, id)).await.unwrap();
         assert_eq!(calendars.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Household"]);
-        let week = 7 * 24 * 3_600_000;
-        let titles: HashMap<String, usize> = db
-            .read(move |c| store::occurrences(c, &[id], now - week, now + week, store::CalendarScope::All))
+        let titles: HashSet<String> = db
+            .read(move |c| store::occurrences(c, &[id], now - WEEK, now + WEEK, store::CalendarScope::All))
             .await
             .unwrap()
             .into_iter()
-            .fold(HashMap::new(), |mut count, o| {
-                *count.entry(o.event.title.clone()).or_default() += 1;
-                count
-            });
+            .map(|occurrence| occurrence.event.title.clone())
+            .collect();
         for title in ["Piano lesson", "Recycling goes out", "Dinner at Marta's"] {
-            assert!(titles.contains_key(title), "{title} is on the calendar: {titles:?}");
+            assert!(titles.contains(title), "{title} is on the calendar: {titles:?}");
         }
     }
 
     #[tokio::test]
     async fn a_refused_server_leaves_the_account_needing_to_sign_in() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(&dir.path().join("demo.db")).unwrap();
-        let now = now_millis();
-        let (id, dav, sync) = seed(&db, now).await.unwrap();
+        let (db, id, dav, copy, _dir) = seeded().await;
         refuse(&dav);
-        let copy = CalendarCopy::new(Arc::new(Alone(id, sync)), db.clone());
         // The read fails, and what it leaves behind is the point.
-        let _ = copy.refresh(id, now).await;
+        let _ = copy.refresh(id, now_millis()).await;
         let state = db.read(move |c| accounts::account(c, id)).await.unwrap().expect("the account").state;
-        assert_eq!(state, mailrs_domain::AccountState::NeedsReauth);
+        assert_eq!(state, AccountState::NeedsReauth);
     }
 }

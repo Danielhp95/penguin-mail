@@ -117,11 +117,14 @@ pub(crate) mod checks {
         stack.set_visible_child_name("calendar");
         assert_eq!(carousel.width(), 0, "the check needs a carousel that is not laid out yet");
         let sent = Rc::new(Cell::new(0));
-        let (again, middle, count) = (carousel.clone(), holders[1].clone(), Rc::clone(&sent));
-        when_laid_out(&carousel, move || {
-            count.set(count.get() + 1);
-            again.scroll_to(&middle, false);
-        });
+        let send_to = |page: &adw::Bin| {
+            let (again, page, count) = (carousel.clone(), page.clone(), Rc::clone(&sent));
+            when_laid_out(&carousel, move || {
+                count.set(count.get() + 1);
+                again.scroll_to(&page, false);
+            });
+        };
+        send_to(&holders[1]);
         assert_eq!(sent.get(), 0, "a carousel with no width was sent to a page it cannot hold");
         spin(Duration::from_millis(500));
 
@@ -130,11 +133,7 @@ pub(crate) mod checks {
         assert_eq!(carousel.position(), 1.0);
 
         // One that is laid out already goes at once.
-        let (again, first, count) = (carousel.clone(), holders[0].clone(), Rc::clone(&sent));
-        when_laid_out(&carousel, move || {
-            count.set(count.get() + 1);
-            again.scroll_to(&first, false);
-        });
+        send_to(&holders[0]);
         assert_eq!(sent.get(), 2);
         window.destroy();
     }
