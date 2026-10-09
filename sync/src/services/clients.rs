@@ -294,7 +294,7 @@ either_client! {
         fn put(href: &str, body: &str, kind: Kind, when: Precondition) -> Result<Option<String>, DavError>;
         fn delete(href: &str, etag: Option<&str>) -> Result<(), DavError>;
         fn find_uid(collection: &str, uid: &str) -> Result<Option<Fetched>, DavError>;
-        fn auto_schedule() -> Result<bool, DavError>;
+        fn auto_schedule(at: Option<&str>) -> Result<bool, DavError>;
     }
 }
 

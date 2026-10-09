@@ -155,9 +155,16 @@ impl<D: DavApi> CalDav<D> {
     }
 
     /// Whether the server mails a guest's answer itself, remembered for
-    /// `tells_organizer`.
-    async fn server_schedules(&self) -> Result<bool, BackendError> {
-        let schedules = self.api.auto_schedule().await.map_err(|e| self.err(e))?;
+    /// `tells_organizer`. An account with mail asks at the server's
+    /// address, as it always has: where the server says nothing there the
+    /// account mails the answer itself, which works on any server. An
+    /// account with no mail has only the server to carry an answer, so it
+    /// asks at `calendar`, a calendar or the calendar home, where RFC 6638
+    /// has a server say that it schedules. Nextcloud says so there and
+    /// not at its address.
+    async fn server_schedules(&self, calendar: &str) -> Result<bool, BackendError> {
+        let at = (!self.mail.serves_mail()).then_some(calendar);
+        let schedules = self.api.auto_schedule(at).await.map_err(|e| self.err(e))?;
         *locked(&self.schedules) = Some(schedules);
         Ok(schedules)
     }
@@ -326,7 +333,7 @@ impl<D: DavApi> CalDav<D> {
     ) -> Result<Option<model::Event>, BackendError> {
         let mut who = vec![me.to_string()];
         who.extend(self.me().await?.iter().cloned());
-        let schedules = self.server_schedules().await?;
+        let schedules = self.server_schedules(calendar).await?;
         let now = crate::now_millis();
         let written = match occurrence {
             Some(original) => ical::answer_occurrence(&found.body, &who, answer, original, now, schedules),
@@ -418,7 +425,7 @@ impl<D: DavApi> CalendarService for CalDav<D> {
         // hear of it, which only an account without mail has to ask. A
         // server that does not say leaves the question open.
         if !self.mail.serves_mail() {
-            let _ = self.server_schedules().await;
+            let _ = self.server_schedules(&home).await;
         }
         let home_path = path_of(&home);
         let calendars: Vec<model::Calendar> = found

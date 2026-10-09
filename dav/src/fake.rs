@@ -27,6 +27,9 @@ pub struct FakeState {
     pub forgotten_below: u64,
     pub no_sync: bool,
     pub auto_schedule: bool,
+    /// The server says that it schedules on its calendars and not at its
+    /// own address, as Nextcloud does.
+    pub quiet_at_its_address: bool,
     pub offline: bool,
     pub refuse_login: bool,
     pub puts: usize,
@@ -314,8 +317,9 @@ impl DavApi for FakeDav {
             .map(|(href, (etag, body))| Fetched { href: href.clone(), etag: etag.clone(), body: body.clone() }))
     }
 
-    async fn auto_schedule(&self) -> Result<bool, DavError> {
-        Ok(self.open()?.auto_schedule)
+    async fn auto_schedule(&self, at: Option<&str>) -> Result<bool, DavError> {
+        let state = self.open()?;
+        Ok(state.auto_schedule && (at.is_some() || !state.quiet_at_its_address))
     }
 
     fn host(&self) -> &str {
@@ -384,8 +388,11 @@ mod tests {
     #[tokio::test]
     async fn the_server_schedules_only_when_told_to() {
         let dav = FakeDav::new();
-        assert!(!dav.auto_schedule().await.unwrap());
+        assert!(!dav.auto_schedule(None).await.unwrap());
         dav.set_auto_schedule(true);
-        assert!(dav.auto_schedule().await.unwrap());
+        assert!(dav.auto_schedule(None).await.unwrap());
+        dav.with(|s| s.quiet_at_its_address = true);
+        assert!(!dav.auto_schedule(None).await.unwrap());
+        assert!(dav.auto_schedule(Some("/cal/work/")).await.unwrap());
     }
 }

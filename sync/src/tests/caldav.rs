@@ -463,6 +463,28 @@ async fn an_answer_with_no_mail_reaches_the_organizer_only_through_a_server_that
     }
 }
 
+/// Nextcloud says that it schedules on its calendars and not at the
+/// address typed for it. An account with no mail has only the server to
+/// carry its answer, so it asks the calendar; one with mail asks as it
+/// always has and mails the answer itself, which works on any server.
+#[tokio::test]
+async fn an_account_with_no_mail_asks_the_calendar_whether_the_server_schedules() {
+    let (dav, caldav) = alone(&[ME]).await;
+    dav.with(|s| (s.auto_schedule, s.quiet_at_its_address) = (true, true));
+    caldav.calendars().await.unwrap();
+    assert!(caldav.tells_organizer(), "the server will carry the answer");
+    caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
+    let body = dav.body(&format!("{WORK}standup.ics")).unwrap();
+    assert!(!body.contains("SCHEDULE-AGENT=CLIENT"), "the server was told to stay out of it: {body}");
+    assert!(caldav.tells_organizer());
+
+    let (dav, smtp, with_mail) = adapter().await;
+    dav.with(|s| (s.auto_schedule, s.quiet_at_its_address) = (true, true));
+    dav.put_resource(&format!("{WORK}standup.ics"), &invitation_ics("invite-uid", "Standup"));
+    with_mail.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
+    assert_eq!(smtp.sent().len(), 1, "an account with mail goes on sending the answer itself");
+}
+
 #[tokio::test]
 async fn reading_the_calendar_list_settles_whether_the_organizer_will_hear() {
     let (dav, caldav) = alone(&[]).await;

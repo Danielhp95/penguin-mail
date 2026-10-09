@@ -119,10 +119,13 @@ pub trait DavApi: Send + Sync + 'static {
     fn put(&self, href: &str, body: &str, kind: Kind, when: Precondition) -> impl Future<Output = Result<Option<String>, DavError>> + Send;
     fn delete(&self, href: &str, etag: Option<&str>) -> impl Future<Output = Result<(), DavError>> + Send;
     fn find_uid(&self, collection: &str, uid: &str) -> impl Future<Output = Result<Option<Fetched>, DavError>> + Send;
-    /// Whether the server's `DAV:` header lists `calendar-auto-schedule`,
-    /// which means it mails the organizer's reply itself when a PUT
-    /// changes an attendee's PARTSTAT.
-    fn auto_schedule(&self) -> impl Future<Output = Result<bool, DavError>> + Send;
+    /// Whether the `DAV:` header answered at `at` lists
+    /// `calendar-auto-schedule`, which means the server mails the
+    /// organizer's reply itself when a PUT changes an attendee's PARTSTAT.
+    /// `None` asks at the server's own address. RFC 6638 has a server say
+    /// so on what takes part in scheduling, a calendar among them, and
+    /// Nextcloud says it there and not at its address.
+    fn auto_schedule(&self, at: Option<&str>) -> impl Future<Output = Result<bool, DavError>> + Send;
     fn host(&self) -> &str;
 }
 
@@ -502,8 +505,9 @@ impl DavApi for DavClient {
         }))
     }
 
-    async fn auto_schedule(&self) -> Result<bool, DavError> {
-        let answer = self.send("OPTIONS", &path_of(self.base.as_str()), None, None, &[]).await?;
+    async fn auto_schedule(&self, at: Option<&str>) -> Result<bool, DavError> {
+        let own = path_of(self.base.as_str());
+        let answer = self.send("OPTIONS", at.unwrap_or(&own), None, None, &[]).await?;
         Ok(answer.dav.is_some_and(|header| header.split(',').any(|token| token.trim().eq_ignore_ascii_case("calendar-auto-schedule"))))
     }
 

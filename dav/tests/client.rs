@@ -159,11 +159,22 @@ async fn the_dav_header_says_whether_the_server_schedules() {
     Mock::given(method("OPTIONS")).and(path("/"))
         .respond_with(ResponseTemplate::new(200).insert_header("DAV", "1, 3, calendar-access, calendar-auto-schedule"))
         .mount(&server).await;
-    assert!(client(&server).auto_schedule().await.unwrap());
+    assert!(client(&server).auto_schedule(None).await.unwrap());
     let plain = MockServer::start().await;
     Mock::given(method("OPTIONS"))
         .respond_with(ResponseTemplate::new(200).insert_header("DAV", "1, calendar-access")).mount(&plain).await;
-    assert!(!client(&plain).auto_schedule().await.unwrap());
+    assert!(!client(&plain).auto_schedule(None).await.unwrap());
+
+    // Nextcloud says that it schedules on its calendars, and not at the
+    // address a person types for it.
+    let nextcloud = MockServer::start().await;
+    Mock::given(method("OPTIONS")).and(path("/remote.php/dav/calendars/robin/personal/"))
+        .respond_with(ResponseTemplate::new(200).insert_header("DAV", "1, 3, calendar-access, calendar-auto-schedule"))
+        .mount(&nextcloud).await;
+    Mock::given(method("OPTIONS")).and(path("/"))
+        .respond_with(ResponseTemplate::new(200).insert_header("DAV", "1, 3, nc-paginate")).mount(&nextcloud).await;
+    assert!(!client(&nextcloud).auto_schedule(None).await.unwrap());
+    assert!(client(&nextcloud).auto_schedule(Some("/remote.php/dav/calendars/robin/personal/")).await.unwrap());
 }
 
 #[tokio::test]
@@ -198,7 +209,7 @@ fn every_future_a_trait_method_returns_is_send() {
         is_send(d.put("/a", "", Kind::Calendar, Precondition::NoneMatch));
         is_send(d.delete("/a", None));
         is_send(d.find_uid("/", "u"));
-        is_send(d.auto_schedule());
+        is_send(d.auto_schedule(None));
     }
     let _ = check::<DavClient>;
     let _ = check::<mailrs_dav::fake::FakeDav>;
