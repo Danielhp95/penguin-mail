@@ -13,7 +13,7 @@
 //! dismisses the popover. `new` closes it on Escape and on a press
 //! anywhere else in the window instead.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -121,6 +121,11 @@ pub struct EventPopover {
     answer_box: gtk::Box,
     answer_buttons: Vec<(Answer, gtk::Button)>,
     on_answer: RefCell<Option<Rc<OnAnswer>>>,
+    /// Under the answers: that the organizer will not hear this one. Only
+    /// a calendar account on a server that sends no replies shows it.
+    unheard: gtk::Label,
+    /// Whether an answer from the account on show reaches its organizer.
+    organizer_hears: Cell<bool>,
     /// "Add a note", under the answer buttons: words the organizer reads
     /// with the answer. Emptied each time the popover opens.
     note: gtk::Entry,
@@ -325,6 +330,16 @@ impl EventPopover {
             })
             .collect();
 
+        let unheard = gtk::Label::builder()
+            .label(gettext(
+                "This calendar's server sends no replies, so the organizer will not hear your answer.",
+            ))
+            .wrap(true)
+            .xalign(0.0)
+            .visible(false)
+            .css_classes(["dim-label", "caption"])
+            .build();
+
         let note = gtk::Entry::builder()
             .placeholder_text(gettext("Add a note"))
             .max_length(500)
@@ -392,6 +407,7 @@ impl EventPopover {
             rows.upcast_ref(),
             join.upcast_ref(),
             answer_box.upcast_ref(),
+            unheard.upcast_ref(),
             note.upcast_ref(),
             propose_row.upcast_ref(),
             mail_row.upcast_ref(),
@@ -453,6 +469,8 @@ impl EventPopover {
             answer_box,
             answer_buttons,
             on_answer: RefCell::new(None),
+            unheard,
+            organizer_hears: Cell::new(true),
             note,
             propose_row,
             on_propose: RefCell::new(None),
@@ -658,6 +676,13 @@ impl EventPopover {
         self.hushed.set(None);
     }
 
+    /// Says whether an answer from the account whose event shows next
+    /// reaches its organizer (`Offers::tells_organizer`), for the line
+    /// under the answers. Set before [`Self::show`].
+    pub fn set_organizer_hears(&self, hears: bool) {
+        self.organizer_hears.set(hears);
+    }
+
     /// Shows the popover for `o`, pointed at `anchor` (the block or "N
     /// more" button pressed). `on_answer` runs when a guest picks Yes,
     /// Maybe or No, with the note they wrote; the caller asks which
@@ -761,6 +786,7 @@ impl EventPopover {
 
         let guest = draft::limited(event);
         self.answer_box.set_visible(guest);
+        self.unheard.set_visible(guest && !self.organizer_hears.get());
         self.note.set_visible(guest);
         self.note.set_text("");
         self.propose_row.set_visible(guest && on_propose.is_some());
@@ -975,6 +1001,44 @@ pub(crate) mod checks {
         show_all_hands_the_focus_on_as_it_hides();
         the_block_keeps_its_tooltip_off_the_popover();
         a_closed_popover_leaves_presses_to_the_window();
+        an_answer_nobody_will_hear_says_so();
+    }
+
+    /// A calendar account on a server that leaves replies to the client
+    /// has no mail to send one with. The popover says so under the
+    /// answers, for a guest and for nobody else.
+    fn an_answer_nobody_will_hear_says_so() {
+        let window = gtk::Window::new();
+        let parent = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let anchor = gtk::Button::new();
+        parent.append(&anchor);
+        window.set_child(Some(&parent));
+        window.present();
+        let popover = EventPopover::new(&parent, &parent);
+        let me = mailrs_domain::calendar::Guest { email: "me@example.org".into(), me: true, ..Default::default() };
+        let invited = Occurrence {
+            account_id: 1,
+            event: Arc::new(Event { guests: vec![me], ..Event::default() }),
+            start: 0,
+            end: 3_600_000,
+        };
+        let mine = Occurrence { account_id: 1, event: Arc::new(Event::default()), start: 0, end: 3_600_000 };
+        let show = |o: &Occurrence| popover.show(anchor.upcast_ref(), o, &Calendar::default(), |_, _| {}, None, None, None);
+
+        show(&invited);
+        assert!(!popover.unheard.is_visible(), "an account that can tell the organizer says nothing more");
+
+        popover.set_organizer_hears(false);
+        show(&invited);
+        assert!(popover.unheard.is_visible(), "a guest is told the answer goes no further");
+        show(&mine);
+        assert!(!popover.unheard.is_visible(), "an event with no answer to give has nothing to say");
+
+        popover.set_organizer_hears(true);
+        show(&invited);
+        assert!(!popover.unheard.is_visible());
+        popover.popover.popdown();
+        window.destroy();
     }
 
     /// The gesture that closes the popover on a press outside it claims

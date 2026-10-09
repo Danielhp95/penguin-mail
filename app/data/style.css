@@ -1080,10 +1080,13 @@ button.calendar-heading { padding: 0; min-height: 0; background: none; box-shado
 button.calendar-heading:hover .calendar-chevron,
 button.calendar-heading:focus-visible .calendar-chevron,
 button.calendar-heading.folded .calendar-chevron { opacity: 0.5; }
-/* Each calendar's options, shown on hover or focus as an account's are. */
+/* Each calendar's options, shown on hover or focus as an account's are.
+   A calendar account's heading carries the same button, since the mail
+   sidebar has no heading for it. */
 .calendar-options { opacity: 0; transition: opacity 120ms ease; }
 .calendar-options > button { min-height: 22px; min-width: 22px; padding: 2px; }
 .calendar-row:hover .calendar-options,
+.calendar-account:hover .calendar-options,
 .calendar-options:focus-within,
 .calendar-options > button:checked { opacity: 1; }
 /* The menu button's own node is `menubutton`; the button inside it

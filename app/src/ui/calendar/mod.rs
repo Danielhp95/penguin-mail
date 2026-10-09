@@ -1868,6 +1868,8 @@ impl CalendarView {
                 }
             }) as Box<dyn Fn()>
         });
+        self.popover
+            .set_organizer_hears(self.offers_of(o.account_id).tells_organizer);
         self.popover.show(
             anchor,
             o,

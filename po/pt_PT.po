@@ -2096,8 +2096,8 @@ msgid "Mark as Read"
 msgstr "Marcar como lida"
 
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
-#: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
-#: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
+#: app/src/ui/calendar/popover.rs:216 app/src/ui/calendar/popover.rs:218
+#: app/src/ui/calendar/popover.rs:738 app/src/ui/calendar/scope.rs:112
 #: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:289
 #: app/src/ui/queued.rs:58 app/src/ui/templates.rs:149
 #: app/src/ui/window/arrange.rs:106 app/src/ui/window/organize.rs:204
@@ -3984,7 +3984,7 @@ msgid "Not Now"
 msgstr "Agora não"
 
 #: app/src/ui/add_account.rs:1182 app/src/ui/calendar/editor.rs:1606
-#: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
+#: app/src/ui/calendar/sidebar.rs:937 app/src/ui/contacts_prefs.rs:365
 #: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1349
 msgid "Grant Access"
@@ -4074,8 +4074,8 @@ msgid ""
 "app password for Penguin Mail."
 msgstr "Um servidor CalDAV, como o Nextcloud. Quando usa a verificação em dois passos, crie uma palavra-passe de aplicação para o Penguin Mail."
 
-#: app/src/ui/add_account.rs:1551 app/src/ui/calendar/sidebar.rs:1218
-#: app/src/ui/calendar/sidebar.rs:1226
+#: app/src/ui/add_account.rs:1551 app/src/ui/calendar/sidebar.rs:1305
+#: app/src/ui/calendar/sidebar.rs:1313
 msgid "Add Calendar"
 msgstr "Adicionar calendário"
 
@@ -4116,7 +4116,7 @@ msgstr "Não foi possível chegar a {host}"
 msgid "Your password was not sent."
 msgstr "A sua palavra-passe não foi enviada."
 
-#: app/src/ui/add_account.rs:2703
+#: app/src/ui/add_account.rs:2703 app/src/ui/calendar/sidebar.rs:1163
 msgid "Sign In Again"
 msgstr "Iniciar sessão de novo"
 
@@ -4302,8 +4302,8 @@ msgstr "Adicionar servidor"
 msgid "Use {server}"
 msgstr "Usar {server}"
 
-#: app/src/ui/assistant_mcp_prefs.rs:111 app/src/ui/calendar/popover.rs:203
-#: app/src/ui/calendar/popover.rs:205
+#: app/src/ui/assistant_mcp_prefs.rs:111 app/src/ui/calendar/popover.rs:208
+#: app/src/ui/calendar/popover.rs:210
 msgid "Edit"
 msgstr "Editar"
 
@@ -4784,7 +4784,7 @@ msgstr "Não partilhado com os convidados"
 msgid "Open {file} in the browser"
 msgstr "Abrir {file} no navegador"
 
-#: app/src/ui/calendar/attachments.rs:133 app/src/ui/calendar/popover.rs:881
+#: app/src/ui/calendar/attachments.rs:133 app/src/ui/calendar/popover.rs:907
 msgid "Open in Browser"
 msgstr "Abrir no navegador"
 
@@ -4792,7 +4792,7 @@ msgstr "Abrir no navegador"
 msgid "Waiting to be sent"
 msgstr "À espera de ser enviado"
 
-#: app/src/ui/calendar/block.rs:534 app/src/ui/calendar/popover.rs:774
+#: app/src/ui/calendar/block.rs:534 app/src/ui/calendar/popover.rs:800
 msgid "Not answered yet"
 msgstr "Ainda sem resposta"
 
@@ -4986,7 +4986,7 @@ msgid "Place"
 msgstr "Local"
 
 #. Named for the moment Show all hands it the focus.
-#: app/src/ui/calendar/editor.rs:1267 app/src/ui/calendar/popover.rs:288
+#: app/src/ui/calendar/editor.rs:1267 app/src/ui/calendar/popover.rs:293
 msgid "Guests"
 msgstr "Convidados"
 
@@ -5019,7 +5019,7 @@ msgid "Remove reminder"
 msgstr "Remover lembrete"
 
 #: app/src/ui/calendar/editor.rs:1530 app/src/ui/calendar/editor.rs:1541
-#: app/src/ui/calendar/popover.rs:266
+#: app/src/ui/calendar/popover.rs:271
 msgid "Notes"
 msgstr "Notas"
 
@@ -5093,7 +5093,7 @@ msgid "Only people who can change this calendar see the details"
 msgstr "Só quem pode alterar este calendário vê os detalhes"
 
 #: app/src/ui/calendar/editor.rs:1896 app/src/ui/calendar/manage.rs:353
-#: app/src/ui/calendar/sidebar.rs:1261 app/src/ui/sidebar.rs:1568
+#: app/src/ui/calendar/sidebar.rs:1348 app/src/ui/sidebar.rs:1568
 #: app/src/ui/sidebar.rs:1811
 msgid "Color"
 msgstr "Cor"
@@ -5106,7 +5106,7 @@ msgstr "Cor do calendário"
 msgid "Add Google Meet"
 msgstr "Adicionar Google Meet"
 
-#: app/src/ui/calendar/editor.rs:1995 app/src/ui/calendar/mod.rs:2270
+#: app/src/ui/calendar/editor.rs:1995 app/src/ui/calendar/mod.rs:2272
 #: app/src/ui/calendar/quick.rs:54
 msgid "Event"
 msgstr "Evento"
@@ -5552,7 +5552,7 @@ msgid "View"
 msgstr "Vista"
 
 #: app/src/ui/calendar/mod.rs:360 app/src/ui/calendar/mod.rs:368
-#: app/src/ui/calendar/mod.rs:2258
+#: app/src/ui/calendar/mod.rs:2260
 msgid "New Event (N)"
 msgstr "Novo evento (N)"
 
@@ -5601,47 +5601,47 @@ msgstr "Eventos de dia inteiro"
 msgid "All-day"
 msgstr "Dia inteiro"
 
-#: app/src/ui/calendar/mod.rs:1699 app/src/ui/calendar/mod.rs:2811
-#: app/src/ui/calendar/sidebar.rs:314 app/src/ui/calendar/words.rs:373
+#: app/src/ui/calendar/mod.rs:1699 app/src/ui/calendar/mod.rs:2813
+#: app/src/ui/calendar/sidebar.rs:328 app/src/ui/calendar/words.rs:373
 #: app/src/ui/preferences.rs:943 app/src/ui/preferences.rs:1104
 msgid "%a"
 msgstr "%a"
 
-#: app/src/ui/calendar/mod.rs:1998
+#: app/src/ui/calendar/mod.rs:2000
 msgid "Removed “{title}” from your calendar"
 msgstr "“{title}” removido do seu calendário"
 
-#: app/src/ui/calendar/mod.rs:1999
+#: app/src/ui/calendar/mod.rs:2001
 msgid "Deleted “{title}”"
 msgstr "“{title}” eliminado"
 
-#: app/src/ui/calendar/mod.rs:2012
+#: app/src/ui/calendar/mod.rs:2014
 msgid "Could not delete the event: {reason}"
 msgstr "Não foi possível eliminar o evento: {reason}"
 
-#: app/src/ui/calendar/mod.rs:2058 app/src/ui/composer/mod.rs:1190
+#: app/src/ui/calendar/mod.rs:2060 app/src/ui/composer/mod.rs:1190
 #: app/src/ui/window.rs:2163 app/src/ui/window/scheduled.rs:98
 #: app/src/ui/window/shortcuts.rs:458
 msgid "Undo"
 msgstr "Anular"
 
-#: app/src/ui/calendar/mod.rs:2201
+#: app/src/ui/calendar/mod.rs:2203
 msgid "Could not send your answer: {reason}"
 msgstr "Não foi possível enviar a sua resposta: {reason}"
 
-#: app/src/ui/calendar/mod.rs:2260
+#: app/src/ui/calendar/mod.rs:2262
 msgid "None of your calendars take new events"
 msgstr "Nenhum dos seus calendários aceita eventos novos"
 
-#: app/src/ui/calendar/mod.rs:2271 app/src/ui/calendar/quick.rs:55
+#: app/src/ui/calendar/mod.rs:2273 app/src/ui/calendar/quick.rs:55
 msgid "Focus Time"
 msgstr "Tempo de concentração"
 
-#: app/src/ui/calendar/mod.rs:2272 app/src/ui/calendar/quick.rs:56
+#: app/src/ui/calendar/mod.rs:2274 app/src/ui/calendar/quick.rs:56
 msgid "Out of Office"
 msgstr "Fora do escritório"
 
-#: app/src/ui/calendar/mod.rs:2571
+#: app/src/ui/calendar/mod.rs:2573
 msgid "Could not save the event: {reason}"
 msgstr "Não foi possível guardar o evento: {reason}"
 
@@ -5674,64 +5674,70 @@ msgstr "A seguir · daqui a {hours} h {minutes} min"
 msgid "{when}: {what}"
 msgstr "{when}: {what}"
 
-#: app/src/ui/calendar/popover.rs:240
+#: app/src/ui/calendar/popover.rs:245
 msgid "Open in Maps"
 msgstr "Abrir no mapa"
 
-#: app/src/ui/calendar/popover.rs:268
+#: app/src/ui/calendar/popover.rs:273
 msgid "Show more"
 msgstr "Mostrar mais"
 
-#: app/src/ui/calendar/popover.rs:274
+#: app/src/ui/calendar/popover.rs:279
 msgid "Show more of the notes"
 msgstr "Mostrar mais notas"
 
-#: app/src/ui/calendar/popover.rs:290
+#: app/src/ui/calendar/popover.rs:295
 msgid "Show all"
 msgstr "Mostrar tudo"
 
 #. The button reads "Show all"; a screen reader also hears how
 #. many are still hidden, in the same words the tooltip used
 #. to give before this list replaced it.
-#: app/src/ui/calendar/popover.rs:296 app/src/ui/calendar/popover.rs:852
+#: app/src/ui/calendar/popover.rs:301 app/src/ui/calendar/popover.rs:878
 msgid "Show all guests"
 msgstr "Mostrar todos os convidados"
 
-#: app/src/ui/calendar/popover.rs:315 app/src/ui/calendar/popover.rs:776
+#: app/src/ui/calendar/popover.rs:320 app/src/ui/calendar/popover.rs:802
 #: app/src/ui/invitation.rs:317
 msgid "Answer"
 msgstr "Resposta"
 
-#: app/src/ui/calendar/popover.rs:329 app/src/ui/invitation.rs:328
+#: app/src/ui/calendar/popover.rs:335
+msgid ""
+"This calendar's server sends no replies, so the organizer will not hear your "
+"answer."
+msgstr "O servidor deste calendário não envia respostas, por isso o organizador não saberá da sua resposta."
+
+#: app/src/ui/calendar/popover.rs:344 app/src/ui/invitation.rs:328
 msgid "Add a note"
 msgstr "Adicionar uma nota"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:332
+#: app/src/ui/calendar/popover.rs:348 app/src/ui/invitation.rs:332
 msgid "Note with your answer"
 msgstr "Nota com a sua resposta"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:332
+#: app/src/ui/calendar/popover.rs:348 app/src/ui/invitation.rs:332
 msgid "The organizer reads it with your answer"
 msgstr "O organizador lê-a com a sua resposta"
 
-#: app/src/ui/calendar/popover.rs:339 app/src/ui/calendar/popover.rs:346
+#: app/src/ui/calendar/popover.rs:354 app/src/ui/calendar/popover.rs:361
 #: app/src/ui/invitation.rs:358
 msgid "Propose New Time"
 msgstr "Propor outra hora"
 
-#: app/src/ui/calendar/popover.rs:355 app/src/ui/calendar/popover.rs:362
+#: app/src/ui/calendar/popover.rs:370 app/src/ui/calendar/popover.rs:377
 msgid "Open the invitation in Mail"
 msgstr "Abrir o convite no Correio"
 
-#: app/src/ui/calendar/popover.rs:698
+#: app/src/ui/calendar/popover.rs:723
 msgid "{when}, {zone}"
 msgstr "{when}, {zone}"
 
-#: app/src/ui/calendar/popover.rs:714
+#: app/src/ui/calendar/popover.rs:739
 msgid "Remove from My Calendar"
 msgstr "Remover do meu calendário"
 
-#: app/src/ui/calendar/popover.rs:790
+#: app/src/ui/calendar/popover.rs:816
 msgid "Your answer"
 msgstr "A sua resposta"
 
@@ -5759,7 +5765,7 @@ msgstr "Calendário: {name}"
 msgid "%A %-d"
 msgstr "%A %-d"
 
-#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:868
+#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:883
 msgid "%B %Y"
 msgstr "%B %Y"
 
@@ -5892,93 +5898,117 @@ msgstr "Semana seguinte"
 msgid "Previous Week"
 msgstr "Semana anterior"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:531
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:545
 msgid "Next Month"
 msgstr "Mês seguinte"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:530
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:544
 msgid "Previous Month"
 msgstr "Mês anterior"
 
-#: app/src/ui/calendar/sidebar.rs:620
+#: app/src/ui/calendar/sidebar.rs:634
 msgid "Waiting for your answer"
 msgstr "À espera da sua resposta"
 
-#: app/src/ui/calendar/sidebar.rs:772
+#: app/src/ui/calendar/sidebar.rs:786
 msgid "Open mail"
 msgstr "Abrir correio"
 
-#: app/src/ui/calendar/sidebar.rs:912
+#: app/src/ui/calendar/sidebar.rs:927
 msgid "Grant Access to show shared calendars"
 msgstr "Conceder acesso para mostrar os calendários partilhados"
 
-#: app/src/ui/calendar/sidebar.rs:918
+#: app/src/ui/calendar/sidebar.rs:933
 msgid "Penguin Mail cannot see this account's calendars"
 msgstr "O Penguin Mail não consegue ver os calendários desta conta"
 
-#: app/src/ui/calendar/sidebar.rs:998
+#: app/src/ui/calendar/sidebar.rs:949
+msgid "The server did not take this account's password"
+msgstr "O servidor não aceitou a palavra-passe desta conta"
+
+#: app/src/ui/calendar/sidebar.rs:1032
 msgid "Show or hide this account's calendars"
 msgstr "Mostrar ou esconder os calendários desta conta"
 
-#: app/src/ui/calendar/sidebar.rs:1065
+#: app/src/ui/calendar/sidebar.rs:1099
 msgid "Calendar options"
 msgstr "Opções do calendário"
 
-#: app/src/ui/calendar/sidebar.rs:1069
+#: app/src/ui/calendar/sidebar.rs:1103
 msgid "Options for {calendar}"
 msgstr "Opções de {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1109 app/src/ui/contacts_prefs.rs:371
+#: app/src/ui/calendar/sidebar.rs:1143 app/src/ui/contacts_prefs.rs:371
 msgid "Grant Access for {account}"
 msgstr "Conceder acesso a {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1183
+#: app/src/ui/calendar/sidebar.rs:1171
+msgid "Sign in again to {account}"
+msgstr "Iniciar sessão de novo em {account}"
+
+#: app/src/ui/calendar/sidebar.rs:1182 app/src/ui/sidebar.rs:1816
+msgid "Sign In Again…"
+msgstr "Iniciar sessão de novo…"
+
+#: app/src/ui/calendar/sidebar.rs:1183 app/src/ui/sidebar.rs:1823
+msgid "Remove Account…"
+msgstr "Remover conta…"
+
+#: app/src/ui/calendar/sidebar.rs:1197 app/src/ui/sidebar.rs:1830
+msgid "Account options"
+msgstr "Opções da conta"
+
+#: app/src/ui/calendar/sidebar.rs:1201 app/src/ui/sidebar.rs:1835
+msgid "Options for {account}"
+msgstr "Opções de {account}"
+
+#: app/src/ui/calendar/sidebar.rs:1270
 msgid "{address}. You can only read this calendar"
 msgstr "{address}. Só pode ler este calendário"
 
-#: app/src/ui/calendar/sidebar.rs:1205
+#: app/src/ui/calendar/sidebar.rs:1292
 msgid "New Calendar…"
 msgstr "Novo calendário…"
 
-#: app/src/ui/calendar/sidebar.rs:1206
+#: app/src/ui/calendar/sidebar.rs:1293
 msgid "Subscribe to Calendar…"
 msgstr "Subscrever um calendário…"
 
-#: app/src/ui/calendar/sidebar.rs:1207
+#: app/src/ui/calendar/sidebar.rs:1294
 msgid "Holiday Calendars…"
 msgstr "Calendários de feriados…"
 
-#: app/src/ui/calendar/sidebar.rs:1240
+#: app/src/ui/calendar/sidebar.rs:1327
 msgid "Hide from the List"
 msgstr "Esconder da lista"
 
-#: app/src/ui/calendar/sidebar.rs:1253
+#: app/src/ui/calendar/sidebar.rs:1340
 msgid "Original Color"
 msgstr "Cor original"
 
-#: app/src/ui/calendar/sidebar.rs:1265 app/src/ui/sidebar.rs:1557
+#: app/src/ui/calendar/sidebar.rs:1352 app/src/ui/sidebar.rs:1557
 #: app/src/ui/sidebar.rs:1801
 msgid "Rename…"
 msgstr "Mudar o nome…"
 
-#: app/src/ui/calendar/sidebar.rs:1266 app/src/ui/sidebar.rs:1467
+#: app/src/ui/calendar/sidebar.rs:1353 app/src/ui/sidebar.rs:1467
 #: app/src/ui/sidebar.rs:1583
 msgid "Delete…"
 msgstr "Eliminar…"
 
-#: app/src/ui/calendar/sidebar.rs:1267 app/src/ui/conversation.rs:572
+#: app/src/ui/calendar/sidebar.rs:1354 app/src/ui/conversation.rs:572
 msgid "Unsubscribe…"
 msgstr "Cancelar subscrição…"
 
-#: app/src/ui/calendar/sidebar.rs:1291
+#: app/src/ui/calendar/sidebar.rs:1378
 msgid "Show {calendar}"
 msgstr "Mostrar {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1307
+#: app/src/ui/calendar/sidebar.rs:1394
 msgid "Hidden Calendars"
 msgstr "Calendários escondidos"
 
-#: app/src/ui/calendar/sidebar.rs:1327
+#: app/src/ui/calendar/sidebar.rs:1414
 msgid "{count} hidden calendar"
 msgid_plural "{count} hidden calendars"
 msgstr[0] "{count} calendário escondido"
@@ -8195,25 +8225,9 @@ msgstr "Neste computador. Mostrar ou esconder as caixas desta conta"
 msgid "Show or hide this account's mailboxes"
 msgstr "Mostrar ou esconder as caixas desta conta"
 
-#: app/src/ui/sidebar.rs:1816
-msgid "Sign In Again…"
-msgstr "Iniciar sessão de novo…"
-
 #: app/src/ui/sidebar.rs:1818
 msgid "Messages That Will Not Download…"
 msgstr "Mensagens que não se transferem…"
-
-#: app/src/ui/sidebar.rs:1823
-msgid "Remove Account…"
-msgstr "Remover conta…"
-
-#: app/src/ui/sidebar.rs:1830
-msgid "Account options"
-msgstr "Opções da conta"
-
-#: app/src/ui/sidebar.rs:1835
-msgid "Options for {account}"
-msgstr "Opções de {account}"
 
 #: app/src/ui/sidebar.rs:1889
 msgid "Sign in again to keep syncing"

@@ -52,7 +52,11 @@ Penguin Mail there and type that one.
 
 The server's calendars appear in the calendar under your user name and
 the server's host, beside your other accounts' calendars. The account has
-no mail, so it is listed nowhere in the mail window.
+no mail, so it is listed nowhere in the mail window. The button beside its
+heading in the calendar's sidebar signs it in again or removes it. An
+invitation you answer there reaches its organizer when the server sends
+replies itself, as Nextcloud does; on a server that does not, the answer is
+saved on your calendar and Penguin Mail says nobody was told.
 
 Adding a Google account asks for every permission Penguin Mail uses in that one
 visit, so you never see a second consent screen for automatic replies and
