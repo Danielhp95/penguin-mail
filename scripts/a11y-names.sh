@@ -1127,12 +1127,14 @@ fi
 # personal Gmail one, which makes events alone.
 printf 'last_calendar_account = "dana@fernwood.example"\n' >"$sandbox/settings.toml"
 export MAILRS_SETTINGS="$sandbox/settings.toml"
+# The demo's calendar account shows only when asked for. The walk asks, so
+# the button on its heading in the calendar's sidebar is read with the rest.
 inside="
 $launcher --launch-immediately &
 sleep 1
 $registry &
 sleep 1
-env $webkit $app --demo >$sandbox/app.log 2>&1 &
+env $webkit MAILRS_DEMO_CALENDAR_ACCOUNT=1 $app --demo >$sandbox/app.log 2>&1 &
 window=\$!
 python3 $walk --menus
 status=\$?

@@ -31,6 +31,7 @@ use mailrs_sync::{
 };
 use rusqlite::Connection;
 
+mod calendar_account;
 pub mod folder;
 mod outlook;
 mod pop3;
@@ -745,6 +746,9 @@ enum DemoServer {
     },
     Microsoft(Arc<FakeGraph>),
     Pop3 { server: pop3::Pop3Server, db: Db },
+    /// The calendar account's CalDAV server, when the demo was asked for
+    /// one (`calendar_account::wanted`).
+    Calendar(Arc<FakeDav>),
 }
 
 impl DemoMail {
@@ -757,6 +761,7 @@ impl DemoMail {
                 AccountServices::microsoft(Arc::clone(graph), outlook::settings())
             }
             DemoServer::Pop3 { server, db } => server.services(db, account_id),
+            DemoServer::Calendar(dav) => calendar_account::services(dav),
         })
     }
 
@@ -765,7 +770,7 @@ impl DemoMail {
     fn gmail(&self, account_id: AccountId) -> Option<Arc<FakeGmail>> {
         match self.0.get(&account_id)? {
             DemoServer::Gmail(gmail) => Some(Arc::clone(gmail)),
-            DemoServer::Imap { .. } | DemoServer::Microsoft(_) | DemoServer::Pop3 { .. } => None,
+            DemoServer::Imap { .. } | DemoServer::Microsoft(_) | DemoServer::Pop3 { .. } | DemoServer::Calendar(_) => None,
         }
     }
 }
@@ -847,6 +852,16 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
     let (pop3_id, server, sync) = pop3::seed_pop3(db, now).await?;
     syncing.insert(pop3_id, sync);
     mail.insert(pop3_id, DemoServer::Pop3 { server, db: db.clone() });
+    // A calendar account, only when asked for: the screenshots and the
+    // tour were drawn with the accounts above.
+    let calendar_account = calendar_account::wanted();
+    let mut calendar_server = None;
+    if calendar_account.is_some() {
+        let (id, dav, sync) = calendar_account::seed(db, now).await?;
+        syncing.insert(id, sync);
+        mail.insert(id, DemoServer::Calendar(Arc::clone(&dav)));
+        calendar_server = Some(dav);
+    }
 
     // Reads each account's calendars into the store now, so the demo
     // opens already synced: the assistant and the invitation card's clash
@@ -856,6 +871,11 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
     let copy = CalendarCopy::new(Arc::clone(&seeding), db.clone());
     for account_id in accounts_synced {
         copy.refresh(account_id, now).await?;
+    }
+    // Refused only now, with its calendar already in the store, as an
+    // account is whose password changed after it had been in use.
+    if let (Some(calendar_account::Wanted::Refused), Some(dav)) = (calendar_account, &calendar_server) {
+        calendar_account::refuse(dav);
     }
     // The demo's cards carry no photos, so the address book writes none
     // and the photo folder is never touched.
