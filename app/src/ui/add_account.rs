@@ -54,7 +54,11 @@ pub enum Opening {
     ByHand,
     /// A provider's browser sign-in, from the first-run window.
     Browser(Browser),
-    /// The password page for an IMAP account that needs to sign in again.
+    /// The calendar page, from the first-run window's "Add a calendar
+    /// without mail".
+    Calendar,
+    /// The password page for an IMAP account that needs to sign in again,
+    /// or the calendar page for a calendar account that does.
     Again(Account),
     /// A demo stage, for screenshots: see [`preview`].
     Preview(String),
@@ -78,6 +82,10 @@ pub enum Done {
     /// An IMAP account that needed to sign in again did. The dialog is
     /// closed.
     SignedInAgain(Account),
+    /// A calendar account signed in for the first time. The dialog is
+    /// closed: its calendars show in the calendar, which says more than a
+    /// page here would.
+    CalendarAdded,
     /// Open Inbox on the last page: the window shows that account's
     /// inbox. The dialog is closed.
     OpenInbox(AccountId),
@@ -102,6 +110,8 @@ pub fn present(
         Opening::Pick | Opening::Preview(_) => "pick",
         Opening::Tile(_) | Opening::ByHand => "address",
         Opening::Browser(_) => "browser",
+        Opening::Calendar => "calendar",
+        Opening::Again(account) if !account.provider.serves_mail() => "calendar",
         Opening::Again(_) => "password",
     };
     // Every page is added, the root first, so a page popped off the stack
@@ -144,6 +154,8 @@ pub fn present(
         Opening::Tile(tile) => this.open_address(Some(tile), false),
         Opening::ByHand => this.open_address(None, true),
         Opening::Browser(browser) => this.start_browser(browser, None),
+        Opening::Calendar => this.open_calendar(),
+        Opening::Again(account) if !account.provider.serves_mail() => this.load_calendar(account),
         Opening::Again(account) => this.load_saved(account),
         Opening::Preview(stage) => preview(&this, &stage),
     }
@@ -466,6 +478,7 @@ struct PickPage {
     banded: Banded,
     tiles: Vec<(Tile, gtk::Button, gtk::Label)>,
     by_hand: adw::ActionRow,
+    calendar: adw::ActionRow,
 }
 
 /// The tiles, the line about the browser and the row to type servers:
@@ -540,10 +553,11 @@ pub fn browser_legend() -> gtk::Box {
     legend
 }
 
-/// The row under the tiles that opens the address page to type a
-/// server's settings, in the plain list that holds it. Shared by the
-/// dialog's first page and the first-run window.
-pub fn by_hand_list() -> (gtk::ListBox, adw::ActionRow) {
+/// The rows under the tiles, in the plain list that holds them: one that
+/// opens the address page to type a server's settings, and one that adds
+/// a calendar with no mail behind it. Shared by the dialog's first page
+/// and the first-run window.
+pub fn by_hand_list() -> (gtk::ListBox, adw::ActionRow, adw::ActionRow) {
     let by_hand = icon_row(
         "emblem-system-symbolic",
         &gettext("Enter server settings by hand"),
@@ -551,12 +565,20 @@ pub fn by_hand_list() -> (gtk::ListBox, adw::ActionRow) {
         true,
     );
     by_hand.add_css_class("post-by-hand");
+    let calendar = icon_row(
+        "x-office-calendar-symbolic",
+        &gettext("Add a calendar without mail"),
+        "",
+        true,
+    );
+    calendar.add_css_class("post-by-hand");
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .css_classes(["post-plain-list"])
         .build();
     list.append(&by_hand);
-    (list, by_hand)
+    list.append(&calendar);
+    (list, by_hand, calendar)
 }
 
 fn pick_page(microsoft: bool) -> PickPage {
@@ -568,7 +590,7 @@ fn pick_page(microsoft: bool) -> PickPage {
     let lede = label(&gettext("Choose where your mail lives."), &["post-lede"]);
     lede.set_xalign(0.5);
     let Tiles { grid, buttons } = tiles(136, microsoft);
-    let (list, by_hand) = by_hand_list();
+    let (list, by_hand, calendar) = by_hand_list();
     body.append(&title);
     body.append(&lede);
     body.append(&grid);
@@ -579,6 +601,7 @@ fn pick_page(microsoft: bool) -> PickPage {
         banded,
         tiles: buttons,
         by_hand,
+        calendar,
     }
 }
 
@@ -1486,6 +1509,71 @@ fn manual_step() -> ManualStep {
     }
 }
 
+/// The page that adds a calendar account: a CalDAV server's address, a
+/// user name and a password, with no mail behind them.
+struct CalendarStep {
+    page: adw::NavigationPage,
+    server: adw::EntryRow,
+    user: adw::EntryRow,
+    password: adw::PasswordEntryRow,
+    problem: gtk::Label,
+    add: gtk::Button,
+}
+
+fn calendar_step() -> CalendarStep {
+    let server = entry(&gettext("Server Address"));
+    server.set_input_purpose(gtk::InputPurpose::Url);
+    let user = entry(&gettext("User Name"));
+    let password = adw::PasswordEntryRow::builder()
+        .title(gettext("Password"))
+        .build();
+    crate::ui::name(&password, &gettext("Password"));
+    let problem = gtk::Label::builder()
+        .wrap(true)
+        .xalign(0.0)
+        .visible(false)
+        .margin_top(12)
+        .css_classes(["error"])
+        .build();
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Calendar Server"))
+        .description(gettext(
+            "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an app password for Penguin Mail.",
+        ))
+        .build();
+    group.add(&server);
+    group.add(&user);
+    group.add(&password);
+    group.add(&problem);
+    let content = adw::PreferencesPage::new();
+    content.add(&group);
+    let add = gtk::Button::builder()
+        .label(gettext("Add Calendar"))
+        .sensitive(false)
+        .css_classes(["suggested-action"])
+        .build();
+    let header = adw::HeaderBar::new();
+    header.pack_end(&add);
+    let toolbar = adw::ToolbarView::builder()
+        .content(&content)
+        .css_classes(["post-opaque"])
+        .build();
+    toolbar.add_top_bar(&header);
+    let page = adw::NavigationPage::builder()
+        .title(gettext("Add a Calendar"))
+        .tag("calendar")
+        .child(&toolbar)
+        .build();
+    CalendarStep {
+        page,
+        server,
+        user,
+        password,
+        problem,
+        add,
+    }
+}
+
 // ---- The dialog ---------------------------------------------------------------
 
 /// What the band shows for one page.
@@ -1555,6 +1643,7 @@ struct Dialog {
     closed: ClosedPage,
     finished: AddedPage,
     manual: ManualStep,
+    calendar: CalendarStep,
 }
 
 /// Whether Add Account offers Microsoft: in a build with its client, and
@@ -1621,10 +1710,11 @@ impl Dialog {
             closed: closed_page(),
             finished: added_page(),
             manual: manual_step(),
+            calendar: calendar_step(),
         })
     }
 
-    fn pages(&self) -> [(&'static str, adw::NavigationPage); 8] {
+    fn pages(&self) -> [(&'static str, adw::NavigationPage); 9] {
         [
             ("pick", self.pick.banded.page.clone()),
             ("address", self.address.banded.page.clone()),
@@ -1634,6 +1724,7 @@ impl Dialog {
             ("closed", self.closed.banded.page.clone()),
             ("added", self.finished.banded.page.clone()),
             ("servers", self.manual.page.clone()),
+            ("calendar", self.calendar.page.clone()),
         ]
     }
 
@@ -1659,6 +1750,18 @@ impl Dialog {
         }
         let by_hand = on(|this| this.open_address(None, true));
         self.pick.by_hand.connect_activated(move |_| by_hand());
+        let calendar = on(Dialog::open_calendar);
+        self.pick.calendar.connect_activated(move |_| calendar());
+        let add = on(Dialog::add_calendar);
+        self.calendar.add.connect_clicked(move |_| add());
+        let add = on(Dialog::add_calendar);
+        self.calendar.password.connect_entry_activated(move |_| add());
+        let ready = on(|this| this.update_add_calendar());
+        self.calendar.server.connect_changed(move |_| ready());
+        let ready = on(|this| this.update_add_calendar());
+        self.calendar.user.connect_changed(move |_| ready());
+        let ready = on(|this| this.update_add_calendar());
+        self.calendar.password.connect_changed(move |_| ready());
         let look = on(Dialog::look);
         self.address.look.connect_clicked(move |_| look());
         let look = on(Dialog::look);
@@ -2583,6 +2686,87 @@ impl Dialog {
         });
     }
 
+    // ---- A calendar without mail --------------------------------------------
+
+    /// The calendar page, for a CalDAV server with no mail behind it.
+    fn open_calendar(self: &Rc<Self>) {
+        self.calendar.problem.set_visible(false);
+        self.update_add_calendar();
+        self.push("calendar");
+        self.calendar.server.grab_focus();
+    }
+
+    /// The calendar page for a calendar account signing in again, with
+    /// the address and user name it kept. The password is typed again:
+    /// the one in the keyring is the one the server stopped taking.
+    fn load_calendar(self: &Rc<Self>, account: Account) {
+        self.calendar.page.set_title(&gettext("Sign In Again"));
+        self.calendar.add.set_label(&gettext("Sign In"));
+        self.update_add_calendar();
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let id = account.id;
+            let kept = this.core.read(move |c| mailrs_store::services::load(c, id)).await;
+            let server = kept
+                .ok()
+                .and_then(|kept| kept.into_iter().find(|s| s.kind == mailrs_store::services::ServiceKind::CalDav));
+            if let Some(server) = server {
+                this.calendar.server.set_text(&server.url);
+                this.calendar.user.set_text(&server.user_name);
+                this.calendar.password.grab_focus();
+            }
+        });
+    }
+
+    /// Add Calendar waits for an address, a user name and a password, and
+    /// for a sign-in on its way to end.
+    fn update_add_calendar(&self) {
+        let ready = add_account::calendar_ready(
+            &self.calendar.server.text(),
+            &self.calendar.user.text(),
+            &self.calendar.password.text(),
+        );
+        self.calendar.add.set_sensitive(ready && !self.running.is_on());
+    }
+
+    /// Signs in to the calendar server and adds the account, or says on
+    /// the page why not.
+    fn add_calendar(self: &Rc<Self>) {
+        let (server, user, password) = (
+            self.calendar.server.text().to_string(),
+            self.calendar.user.text().to_string(),
+            self.calendar.password.text().to_string(),
+        );
+        if !add_account::calendar_ready(&server, &user, &password) || !self.running.begin() {
+            return;
+        }
+        let ticket = self.asking.ask();
+        let label = self.calendar.add.label().map(|label| label.to_string()).unwrap_or_default();
+        self.calendar.problem.set_visible(false);
+        self.calendar.add.set_sensitive(false);
+        self.calendar.add.set_label(&gettext("Signing In…"));
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let signed_in = this.core.sign_in_calendar(server, user, password).await;
+            this.running.end();
+            this.calendar.add.set_label(&label);
+            this.update_add_calendar();
+            // The dialog closed while the server was asked: the account
+            // is kept, and the window finds it at its next read.
+            if !this.asking.wants(ticket) {
+                return;
+            }
+            match signed_in {
+                Ok(account) if this.again.is_some() => this.finish(Done::SignedInAgain(account)),
+                Ok(_) => this.finish(Done::CalendarAdded),
+                Err(err) => {
+                    this.calendar.problem.set_text(&add_account::calendar_problem(&err));
+                    this.calendar.problem.set_visible(true);
+                }
+            }
+        });
+    }
+
     // ---- The browser -------------------------------------------------------------
 
     /// `browser`'s sign-in in the browser, with the page that waits for
@@ -3016,6 +3200,11 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
                 field.grab_focus();
                 field.set_position(-1);
             });
+        }
+        "calendar" => {
+            this.open_calendar();
+            this.calendar.server.set_text("cloud.reyes.studio");
+            this.calendar.user.set_text("dana");
         }
         "browser" | "browser-microsoft" => {
             let browser = if stage == "browser" {

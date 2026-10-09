@@ -13,7 +13,9 @@
 # menu is in the accessible tree only while it is open, opens a
 # conversation to read its message view and invitation card, opens a
 # reply and a forward in the composer with their history shown, opens Add
-# Account on its tiles and its Other page, and walks the calendar.
+# Account on its tiles and its Other page, and walks the calendar. Then it
+# starts the demo once more, on Add Account's page for a calendar without
+# mail, and reads that.
 #
 # The hidden display needs Xvfb, dbus-run-session, at-spi2-core, python3
 # with the GObject bindings, and the XTest library to click and type:
@@ -1018,6 +1020,22 @@ def walk_add_account(keys):
 
 
 calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = 0
+if sys.argv[1:] == ["--calendar-page"]:
+    # The demo opened Add Account on its calendar page, so the walk above
+    # has read it. Said aloud when the page is not there, since a dialog
+    # that never opened has no unnamed control either.
+    def page_read():
+        return any(row[0] == "text" and row[1] == "User Name" for row in found)
+
+    # The dialog opens a moment after the window has settled.
+    waited = 0
+    while not page_read() and waited < 20:
+        time.sleep(1)
+        waited += 1
+        controls()
+    if not page_read():
+        print("Add Account did not open on its calendar page.", file=sys.stderr)
+        added_unnamed = 1
 if sys.argv[1:] == ["--menus"]:
     open_menus()
     conversation_unnamed = walk_conversation(Input())
@@ -1120,6 +1138,17 @@ python3 $walk --menus
 status=\$?
 kill \$window 2>/dev/null
 wait \$window 2>/dev/null
+# The page that adds a calendar without mail sits behind a row, and a row
+# answers no AT-SPI action. The demo opens Add Account on that page when
+# asked, as it does for the screenshots, so a second start reads it.
+if [ \$status -eq 0 ]; then
+    env $webkit MAILRS_DEMO_ADD_ACCOUNT=calendar $app --demo >$sandbox/app.log 2>&1 &
+    window=\$!
+    python3 $walk --calendar-page
+    status=\$?
+    kill \$window 2>/dev/null
+    wait \$window 2>/dev/null
+fi
 # A failed run says why the app did what it did: a crash or a warning in
 # its log is often the whole answer, and CI keeps nothing else.
 if [ \$status -ne 0 ]; then

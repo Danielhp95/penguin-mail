@@ -24,6 +24,7 @@ pub fn first_account_page(
     microsoft: bool,
     on_tile: impl Fn(Tile) + 'static,
     on_by_hand: impl Fn() + 'static,
+    on_calendar: impl Fn() + 'static,
 ) -> gtk::Widget {
     let band = PostBand::new(BAND, SCALE);
     band.show(Band::Idle, None, None);
@@ -68,8 +69,9 @@ pub fn first_account_page(
     legend.set_halign(gtk::Align::Center);
     below.append(&legend);
     below.append(&gtk::Separator::builder().css_classes(["post-rule"]).build());
-    let (list, by_hand) = by_hand_list();
+    let (list, by_hand, calendar) = by_hand_list();
     by_hand.connect_activated(move |_| on_by_hand());
+    calendar.connect_activated(move |_| on_calendar());
     below.append(&list);
     column.append(&below);
     let scroller = gtk::ScrolledWindow::builder()

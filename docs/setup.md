@@ -41,6 +41,19 @@ address yourself. A server outside your address's domain waits there for
 you to press **Use It** before your password goes to it. Where the server
 runs no rules, Penguin Mail runs them on this computer while it is open.
 
+### A calendar without mail
+
+A calendar that belongs to none of your mail accounts, such as one on a
+Nextcloud or Radicale server, is added on its own. Choose **Add Account**,
+then **Add a calendar without mail** under the tiles, and type the
+server's address, your user name and your password. The address must be
+HTTPS. Where the server uses two-step sign-in, make an app password for
+Penguin Mail there and type that one.
+
+The server's calendars appear in the calendar under your user name and
+the server's host, beside your other accounts' calendars. The account has
+no mail, so it is listed nowhere in the mail window.
+
 Adding a Google account asks for every permission Penguin Mail uses in that one
 visit, so you never see a second consent screen for automatic replies and
 Rules, contacts, the calendar and its list of calendars, Google Drive

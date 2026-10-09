@@ -1228,6 +1228,40 @@ pub fn shows_folder(provider: Provider, role: mailrs_domain::Role) -> bool {
     }
 }
 
+/// Whether the calendar page has what a sign-in needs: where the server
+/// is, who signs in, and a password. The password is taken as typed,
+/// since a space may be part of one.
+pub fn calendar_ready(server: &str, user_name: &str, password: &str) -> bool {
+    !server.trim().is_empty() && !user_name.trim().is_empty() && !password.is_empty()
+}
+
+/// What the calendar page says when its sign-in fails. A refusal the
+/// sign-in already put in words, such as an address that is not HTTPS or
+/// a name another account holds, stands as it is.
+pub fn calendar_problem(err: &anyhow::Error) -> String {
+    use mailrs_sync::sign_in::CalDavSignInError;
+    use mailrs_sync::{BackendError, SyncError};
+
+    let Some(CalDavSignInError::Server(SyncError::Backend(backend))) = err.downcast_ref::<CalDavSignInError>() else {
+        return match err.downcast_ref::<CalDavSignInError>() {
+            Some(taken @ CalDavSignInError::Taken { .. }) => taken.to_string(),
+            _ => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), err, &[]),
+        };
+    };
+    match backend {
+        BackendError::NeedsReauth => gettext(
+            "The server did not take that user name and password. Where it uses two-step \
+             sign-in, it needs an app password.",
+        ),
+        BackendError::Offline(_) => gettext(
+            "Penguin Mail could not reach that server. Check the address and your connection.",
+        ),
+        BackendError::Unsupported => gettext("No calendar was found at that address."),
+        BackendError::Refused(said) => said.clone(),
+        other => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), other, &[]),
+    }
+}
+
 /// What the added page says under its title and under the folder list,
 /// and whether the new account's first download is finished, from the
 /// store's values.
@@ -1383,6 +1417,53 @@ mod tests {
     use mailrs_store::servers::{Pop3Servers, Saved, Servers};
 
     use super::*;
+
+    use mailrs_sync::sign_in::CalDavSignInError;
+    use mailrs_sync::{BackendError, SyncError};
+
+    fn calendar_failure(backend: BackendError) -> anyhow::Error {
+        CalDavSignInError::Server(SyncError::Backend(backend)).into()
+    }
+
+    #[test]
+    fn each_way_a_calendar_sign_in_fails_has_its_own_words() {
+        let refused = calendar_problem(&calendar_failure(BackendError::NeedsReauth));
+        assert!(refused.contains("user name") && refused.contains("app password"), "{refused}");
+        let unreachable = calendar_problem(&calendar_failure(BackendError::Offline("no route".into())));
+        assert!(unreachable.contains("could not reach"), "{unreachable}");
+        let not_a_calendar = calendar_problem(&calendar_failure(BackendError::Unsupported));
+        assert!(not_a_calendar.contains("No calendar was found"), "{not_a_calendar}");
+        let https = "Penguin Mail reaches calendar and contact servers over HTTPS only.";
+        assert_eq!(calendar_problem(&calendar_failure(BackendError::Refused(https.into()))), https, "the server's own words stand");
+        let all = [refused, unreachable, not_a_calendar];
+        assert!(all.iter().all(|words| all.iter().filter(|other| *other == words).count() == 1));
+    }
+
+    #[test]
+    fn a_taken_name_says_whose_it_is() {
+        let taken: anyhow::Error = CalDavSignInError::Taken {
+            name: "robin@cloud.example.org".into(),
+            provider: "Fastmail".into(),
+        }
+        .into();
+        let words = calendar_problem(&taken);
+        assert!(words.contains("robin@cloud.example.org") && words.contains("Fastmail"), "{words}");
+    }
+
+    #[test]
+    fn anything_else_keeps_its_reason() {
+        let odd = anyhow::anyhow!("the disk is full");
+        assert!(calendar_problem(&odd).contains("the disk is full"));
+    }
+
+    #[test]
+    fn the_calendar_page_waits_for_an_address_a_user_and_a_password() {
+        assert!(calendar_ready("cloud.example.org", "robin", "secret"));
+        assert!(!calendar_ready("  ", "robin", "secret"));
+        assert!(!calendar_ready("cloud.example.org", " ", "secret"));
+        assert!(!calendar_ready("cloud.example.org", "robin", ""));
+        assert!(calendar_ready("cloud.example.org", "robin", " "), "a password may be a space");
+    }
 
     #[test]
     fn a_pop3_account_is_done_when_its_first_check_is() {

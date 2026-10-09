@@ -23,12 +23,14 @@ use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::passwords::{PasswordStore, Passwords, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
-    Browser, NewImap, NewPop3, Wanted, check_pop3, imap_signed_in, in_browser, pop3_signed_in,
+    Browser, NewCalDav, NewImap, NewPop3, Wanted, caldav_signed_in, check_pop3, imap_signed_in,
+    in_browser, pop3_signed_in,
 };
 use mailrs_sync::{
     AccountServices, AccountSettings, AccountSync, Accounts, BackendError, Clients, ContactBook,
     Connector, Failure, History, Invitations, MailAction, MailActions, Mailboxes, MovedFrom,
-    OneClick, Outbox, Outcome, SyncEngine, SyncError, Undone, connect_imap, connect_pop3,
+    OneClick, Outbox, Outcome, SyncEngine, SyncError, Undone, connect_caldav, connect_imap,
+    connect_pop3,
     now_millis, pop3_servers_for, servers_for,
 };
 
@@ -803,6 +805,32 @@ impl Core {
             };
             let account = imap_signed_in(&db, Arc::clone(&passwords), new, now_millis()).await?;
             let services = connect_imap(&db, passwords, &account, window_days).await?;
+            engine.start_account(account.id, services);
+            Ok::<_, anyhow::Error>(account)
+        })
+        .await
+    }
+
+    /// Signs in to a calendar account: tries the login on the CalDAV
+    /// server at `url`, then keeps the account, the server and the
+    /// password, and starts it, so its calendars are read at the next
+    /// tick. Nothing is kept when the login fails. An account signing in
+    /// again keeps its calendars and starts over with the new password.
+    pub async fn sign_in_calendar(&self, url: String, user_name: String, password: String) -> Result<Account> {
+        if self.demo {
+            bail!(gettext("Demo mode cannot add real accounts."));
+        }
+        let engine = self
+            .engine
+            .current()
+            .ok_or_else(|| anyhow!("sync is not running"))?;
+        let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
+        self.call(async move {
+            let new = NewCalDav { url, user_name, password };
+            // A `CalDavSignInError` the dialog reads back out of the
+            // `anyhow::Error` to word what went wrong.
+            let account = caldav_signed_in(&finding::RealProbe, &db, Arc::clone(&passwords), new, now_millis()).await?;
+            let services = connect_caldav(&db, passwords, &account).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)
         })

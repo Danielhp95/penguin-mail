@@ -671,7 +671,7 @@ impl MainWindow {
 
             let w = weak.clone();
             let microsoft = super::add_account::signs_in_to_microsoft(&app.core);
-            let by_hand = weak.clone();
+            let (by_hand, calendar_alone) = (weak.clone(), weak.clone());
             let first_page = welcome::first_account_page(
                 microsoft,
                 move |tile| {
@@ -685,6 +685,11 @@ impl MainWindow {
                 move || {
                     if let Some(win) = by_hand.upgrade() {
                         win.present_add_account(Opening::ByHand);
+                    }
+                },
+                move || {
+                    if let Some(win) = calendar_alone.upgrade() {
+                        win.present_add_account(Opening::Calendar);
                     }
                 },
             );
@@ -2751,6 +2756,7 @@ impl MainWindow {
                     win.show_mailbox(inbox);
                 }
                 Done::Grant(email) => win.grant(email),
+                Done::CalendarAdded => win.calendar_added(),
                 Done::SignedInAgain(account) => {
                     win.toast(&fill(
                         &gettext("{account} is signed in again."),
@@ -2762,9 +2768,27 @@ impl MainWindow {
         });
     }
 
+    /// A calendar account signed in. The accounts are read again, and
+    /// once they are the calendar shows and reads the new account's
+    /// calendars, rather than leaving them to the next tick.
+    fn calendar_added(self: &Rc<Self>) {
+        self.refresh_accounts(Reload::Yes);
+        let read = self.accounts_read.borrow().clone();
+        let win = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            if let Some(read) = read {
+                read.await;
+            }
+            win.show_space(crate::settings::Space::Calendar);
+            if let Some(app) = win.app.upgrade() {
+                app.refresh_calendars();
+            }
+        });
+    }
+
     /// Signs `account` in again the way it signed in first: its
-    /// provider's page in the browser, or step 2 of Another Provider with
-    /// its servers.
+    /// provider's page in the browser, step 2 of Another Provider with
+    /// its servers, or the calendar page for a calendar account.
     fn sign_in_again(self: &Rc<Self>, account: Account) {
         match Browser::of(account.provider) {
             Some(browser) => self.sign_in_in_browser(browser, Some(account.email)),
