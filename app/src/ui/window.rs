@@ -1406,7 +1406,7 @@ impl MainWindow {
 
     /// The accounts a listing may read, in sidebar order.
     fn scope(&self) -> Scope {
-        Scope::over(self.mail_accounts())
+        Scope::over(self.accounts())
     }
 
     /// The settings that change what a mailbox lists.

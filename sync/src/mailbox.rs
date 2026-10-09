@@ -432,8 +432,11 @@ impl Default for Empty {
 pub struct Scope(Vec<Account>);
 
 impl Scope {
+    /// Those of `accounts` that have mail. A calendar account has none
+    /// to list or to search, and asking it would only add a line saying
+    /// where its results come from.
     pub fn over(accounts: impl IntoIterator<Item = Account>) -> Scope {
-        Scope(accounts.into_iter().collect())
+        Scope(accounts.into_iter().filter(|account| account.provider.serves_mail()).collect())
     }
 
     /// The account with this address, ignoring case.
@@ -1010,13 +1013,7 @@ impl<A: Accounts> Mailboxes<A> {
         Reading { from, stop }: Reading<'_>,
     ) -> Result<Listing, SyncError> {
         let limit = view.limit.unwrap_or(REMOTE_LIMIT);
-        // An account with no mail has nothing to search, and asking it
-        // would only add a line saying where its results come from.
-        let targets: Vec<&Account> = scope
-            .searched(only)
-            .into_iter()
-            .filter(|account| self.accounts.account(account.id).is_none_or(|sync| sync.services().serves_mail()))
-            .collect();
+        let targets = scope.searched(only);
         let ids: Vec<AccountId> = targets.iter().map(|a| a.id).collect();
         // Read before the search goes out, so a change made while it runs
         // leaves the next listing asking again.

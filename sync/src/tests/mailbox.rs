@@ -861,9 +861,10 @@ async fn a_search_leaves_out_an_account_with_no_mail() {
     h.fake.seed(meta("only-remote", "t5", now_millis(), &["SPAM"]));
     let other = h
         .db
-        .write(|c| mailrs_store::accounts::insert_account(c, "robin@cloud.example.org", 0))
+        .write(|c| mailrs_store::accounts::insert_caldav_account(c, "robin@cloud.example.org", 0))
         .await
-        .unwrap();
+        .unwrap()
+        .expect("nobody holds the name");
     let (sender, _events) = async_channel::unbounded();
     let (_, services) = super::calendar_account::calendar_only();
     let calendar_account = Arc::new(crate::AccountSync::new(other, services, h.db.clone(), sender));

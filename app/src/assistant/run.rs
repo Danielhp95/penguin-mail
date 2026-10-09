@@ -780,10 +780,9 @@ impl<A: Accounts> Tools<A> {
         }))
     }
 
-    /// The accounts a listing may read, in sidebar order: the ones with
-    /// mail, as the window's own listings read.
+    /// The accounts a listing may read, in sidebar order.
     fn scope(&self) -> Scope {
-        Scope::over(crate::offered::mail_accounts(&self.desk.accounts()))
+        Scope::over(self.desk.accounts())
     }
 
     /// One page of each mailbox, through `Mailboxes::list`.
