@@ -397,10 +397,26 @@ mod sign_in {
         let (db, _dir) = db().await;
         db.write(|c| accounts::insert_imap_account(c, NAME, "example.org", 1)).await.unwrap();
         let refused = caldav_signed_in(&probe(URL), &db, Arc::new(MemoryPasswords::default()), new(URL, "robin", "app-password"), 7).await;
-        let Err(CalDavSignInError::Taken { name, .. }) = refused else {
+        let Err(CalDavSignInError::Taken { name, holder, .. }) = refused else {
             panic!("the name is taken: {:?}", refused.map(|a| a.email));
         };
         assert_eq!(name, NAME);
+        assert_eq!(holder, Provider::Imap, "the page words its way out by who holds the name");
+    }
+
+    #[tokio::test]
+    async fn any_scheme_but_https_is_refused_in_the_same_words_and_nothing_is_tried() {
+        let (db, _dir) = db().await;
+        let server = probe(URL);
+        for address in ["http://cloud.example.org/", "ftp://cloud.example.org/", "webcal://cloud.example.org/home.ics"] {
+            let refused = caldav_signed_in(&server, &db, Arc::new(MemoryPasswords::default()), new(address, "robin", "app-password"), 7).await;
+            let Err(CalDavSignInError::Server(SyncError::Backend(BackendError::Refused(said)))) = refused else {
+                panic!("{address} was not refused: {:?}", refused.map(|a| a.email));
+            };
+            assert_eq!(said, crate::services::finding::https_only(), "{address}");
+        }
+        assert!(server.tried.lock().unwrap().is_empty(), "the password went nowhere");
+        assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());
     }
 
     #[tokio::test]

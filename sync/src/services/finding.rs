@@ -199,14 +199,21 @@ pub async fn use_typed<P: ServiceProbe>(probe: &P, db: &Db, account_id: AccountI
     Ok(found)
 }
 
+/// What an address under any scheme but HTTPS is refused with, before
+/// anything is sent to it. A caller that words other failures itself
+/// knows this one by it and lets it stand.
+pub fn https_only() -> String {
+    mailrs_domain::translate::gettext("Penguin Mail reaches calendar and contact servers over HTTPS only.")
+}
+
 /// A CalDAV or CardDAV address as the person typed it, in the form the
 /// client takes, once the server there took the login: HTTPS only, and a
 /// bare host stands for its root. Nothing is kept; the password goes to
 /// the address the person named and nowhere else.
 pub async fn checked_url<P: ServiceProbe>(probe: &P, kind: ServiceKind, url: &str, user: &str, password: &str) -> Result<String, SyncError> {
     let url = url.trim();
-    if url.starts_with("http://") {
-        return Err(BackendError::Refused(mailrs_domain::translate::gettext("Penguin Mail reaches calendar and contact servers over HTTPS only.")).into());
+    if url.split_once("://").is_some_and(|(scheme, _)| !scheme.eq_ignore_ascii_case("https")) {
+        return Err(BackendError::Refused(https_only()).into());
     }
     let url = match url.contains("://") {
         true => url.to_string(),

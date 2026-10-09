@@ -1236,14 +1236,20 @@ pub fn calendar_ready(server: &str, user_name: &str, password: &str) -> bool {
 }
 
 /// What the calendar page says when its sign-in fails. A refusal the
-/// sign-in already put in words, such as an address that is not HTTPS or
-/// a name another account holds, stands as it is.
+/// sign-in already put in words, an address that is not HTTPS or a name
+/// another account holds, stands as it is.
 pub fn calendar_problem(err: &anyhow::Error) -> String {
     use mailrs_sync::sign_in::CalDavSignInError;
     use mailrs_sync::{BackendError, SyncError};
 
     let Some(CalDavSignInError::Server(SyncError::Backend(backend))) = err.downcast_ref::<CalDavSignInError>() else {
         return match err.downcast_ref::<CalDavSignInError>() {
+            // An IMAP or POP3 account that holds the name can take the
+            // server's calendars itself, which is the way on from here.
+            Some(taken @ CalDavSignInError::Taken { holder: Provider::Imap | Provider::Pop3, .. }) => format!(
+                "{taken} {}",
+                gettext("To see this server's calendars there, open Preferences, then Contacts & Calendar, and type its address for that account.")
+            ),
             Some(taken @ CalDavSignInError::Taken { .. }) => taken.to_string(),
             _ => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), err, &[]),
         };
@@ -1257,7 +1263,10 @@ pub fn calendar_problem(err: &anyhow::Error) -> String {
             "Penguin Mail could not reach that server. Check the address and your connection.",
         ),
         BackendError::Unsupported => gettext("No calendar was found at that address."),
-        BackendError::Refused(said) => said.clone(),
+        BackendError::Refused(said) if *said == mailrs_sync::services::finding::https_only() => said.clone(),
+        // Whatever else was refused, the server said it in the protocol's
+        // own words: a web page at the address, or no CalDAV there.
+        BackendError::Refused(_) => gettext("No calendar was found at that address."),
         other => mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), other, &[]),
     }
 }
@@ -1433,21 +1442,37 @@ mod tests {
         assert!(unreachable.contains("could not reach"), "{unreachable}");
         let not_a_calendar = calendar_problem(&calendar_failure(BackendError::Unsupported));
         assert!(not_a_calendar.contains("No calendar was found"), "{not_a_calendar}");
-        let https = "Penguin Mail reaches calendar and contact servers over HTTPS only.";
-        assert_eq!(calendar_problem(&calendar_failure(BackendError::Refused(https.into()))), https, "the server's own words stand");
+        let https = mailrs_sync::services::finding::https_only();
+        assert_eq!(calendar_problem(&calendar_failure(BackendError::Refused(https.clone()))), https, "words the sign-in chose stand");
         let all = [refused, unreachable, not_a_calendar];
         assert!(all.iter().all(|words| all.iter().filter(|other| *other == words).count() == 1));
     }
 
+    /// A web page at the address, or a server that is no CalDAV server,
+    /// answers the login try in the protocol's own words. They are not for
+    /// the page.
+    #[test]
+    fn an_address_with_no_calendar_behind_it_says_so_plainly() {
+        for raw in ["HTTP 404: Not Found", "HTTP 405: Method Not Allowed", "the server named no principal"] {
+            assert_eq!(
+                calendar_problem(&calendar_failure(BackendError::Refused(raw.into()))),
+                "No calendar was found at that address.",
+                "{raw}"
+            );
+        }
+    }
+
     #[test]
     fn a_taken_name_says_whose_it_is() {
-        let taken: anyhow::Error = CalDavSignInError::Taken {
-            name: "robin@cloud.example.org".into(),
-            provider: "Fastmail".into(),
-        }
-        .into();
-        let words = calendar_problem(&taken);
-        assert!(words.contains("robin@cloud.example.org") && words.contains("Fastmail"), "{words}");
+        let taken = |holder| -> anyhow::Error {
+            CalDavSignInError::Taken { name: "robin@example.org".into(), provider: "Fastmail".into(), holder }.into()
+        };
+        let by_mail = calendar_problem(&taken(Provider::Imap));
+        assert!(by_mail.contains("robin@example.org") && by_mail.contains("Fastmail"), "{by_mail}");
+        assert!(by_mail.contains("Preferences"), "an IMAP account can take the server itself: {by_mail}");
+        assert!(calendar_problem(&taken(Provider::Pop3)).contains("Preferences"));
+        let by_google = calendar_problem(&taken(Provider::Gmail));
+        assert!(by_google.contains("robin@example.org") && !by_google.contains("Preferences"), "{by_google}");
     }
 
     #[test]

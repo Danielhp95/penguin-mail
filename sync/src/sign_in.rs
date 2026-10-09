@@ -266,9 +266,11 @@ pub struct NewCalDav {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CalDavSignInError {
-    /// The name belongs to an account another provider serves.
+    /// The name belongs to an account another provider serves. `holder`
+    /// says which kind: an IMAP or POP3 account can take the server's
+    /// calendars itself, and the page says so.
     #[error("{}", taken(.name, .provider))]
-    Taken { name: String, provider: String },
+    Taken { name: String, provider: String, holder: Provider },
     /// The address is not one a calendar can be at, or the server there
     /// did not take the login.
     #[error(transparent)]
@@ -322,7 +324,11 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
     let before = db.read(move |c| accounts::account_by_email(c, &lookup)).await?;
     let id = match &before {
         Some(held) if held.provider != Provider::CalDav => {
-            return Err(CalDavSignInError::Taken { name, provider: held.provider_name().to_string() });
+            return Err(CalDavSignInError::Taken {
+                name,
+                provider: held.provider_name().to_string(),
+                holder: held.provider,
+            });
         }
         Some(held) => {
             save_password(Arc::clone(&passwords), held.id, password).await?;
@@ -336,15 +342,15 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
                         // Another provider's account took the name
                         // between the read and this write.
                         let held = accounts::account_by_email(c, &added_as)?;
-                        return Ok(Err(held.map(|a| a.provider_name().to_string())));
+                        return Ok(Err(held.map(|a| (a.provider_name().to_string(), a.provider))));
                     };
                     services::save(c, id, &kept)?;
                     Ok(Ok(id))
                 })
                 .await?;
-            let id = added.map_err(|provider| CalDavSignInError::Taken {
-                name: name.clone(),
-                provider: provider.unwrap_or_default(),
+            let id = added.map_err(|held| {
+                let (provider, holder) = held.unwrap_or_default();
+                CalDavSignInError::Taken { name: name.clone(), provider, holder }
             })?;
             if let Err(err) = save_password(Arc::clone(&passwords), id, password).await {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
