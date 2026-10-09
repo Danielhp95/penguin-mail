@@ -121,6 +121,15 @@ async fn get_context_says_which_account_holds_calendars_alone() {
 }
 
 #[tokio::test]
+async fn a_listing_reaches_for_the_accounts_with_mail_alone() {
+    let h = harness().await;
+    with_calendar_account(&h);
+    let scope = h.tools.scope();
+    assert!(scope.id_of(ME).is_some());
+    assert_eq!(scope.id_of(CALENDARS), None, "a search has nothing to ask an account with no mail");
+}
+
+#[tokio::test]
 async fn a_mail_tool_turns_a_calendar_account_away_in_words() {
     let h = harness().await;
     with_calendar_account(&h);

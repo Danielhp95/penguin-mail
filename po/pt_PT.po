@@ -870,40 +870,40 @@ msgid "Claude Code is not installed. Install it and sign in, then try again."
 msgstr ""
 "O Claude Code não está instalado. Instale-o, inicie sessão e tente de novo."
 
-#: app/src/assistant/run.rs:1040
+#: app/src/assistant/run.rs:1041
 msgid "Move {count} conversation to the Trash?"
 msgid_plural "Move {count} conversations to the Trash?"
 msgstr[0] "Mover {count} conversa para o lixo?"
 msgstr[1] "Mover {count} conversas para o lixo?"
 
-#: app/src/assistant/run.rs:1205
+#: app/src/assistant/run.rs:1206
 msgid ""
 "Don't Allow labels only the mail in accounts that have the label already."
 msgstr ""
 "Com «Não permitir», só o correio das contas que já têm a etiqueta a recebe."
 
-#: app/src/assistant/run.rs:1242
+#: app/src/assistant/run.rs:1243
 msgid "Block {address}? Their future mail goes straight to the Trash."
 msgstr "Bloquear {address}? O correio futuro vai direto para o lixo."
 
-#: app/src/assistant/run.rs:1324 app/src/assistant/run/calendar.rs:228
+#: app/src/assistant/run.rs:1325 app/src/assistant/run/calendar.rs:228
 #: app/src/assistant/run/calendar.rs:726
 msgid "%a %-d %b"
 msgstr "%a %-d %b"
 
-#: app/src/assistant/run.rs:1330
+#: app/src/assistant/run.rs:1331
 msgid " from {first} to {last}"
 msgstr ", de {first} a {last}"
 
-#: app/src/assistant/run.rs:1333
+#: app/src/assistant/run.rs:1334
 msgid " until {last}"
 msgstr ", até {last}"
 
-#: app/src/assistant/run.rs:1334
+#: app/src/assistant/run.rs:1335
 msgid " from {first}"
 msgstr ", a partir de {first}"
 
-#: app/src/assistant/run.rs:1340
+#: app/src/assistant/run.rs:1341
 msgid ""
 "Turn on the automatic reply for {account}{dates}?\n"
 "\n"
@@ -915,36 +915,36 @@ msgstr ""
 "“{subject}”\n"
 "{body}"
 
-#: app/src/assistant/run.rs:1351
+#: app/src/assistant/run.rs:1352
 msgid "Turn off the automatic reply for {account}?"
 msgstr "Desligar a resposta automática de {account}?"
 
-#: app/src/assistant/run.rs:1453
+#: app/src/assistant/run.rs:1454
 msgid "Create a rule for {account}: {when} → {then}?"
 msgstr "Criar uma regra para {account}: {when} → {then}?"
 
-#: app/src/assistant/run.rs:1496
+#: app/src/assistant/run.rs:1497
 msgid "Delete a rule from {account}?"
 msgstr "Eliminar uma regra de {account}?"
 
-#: app/src/assistant/run.rs:1547
+#: app/src/assistant/run.rs:1548
 msgid "Load remote images from every sender?"
 msgstr "Carregar as imagens remotas de todos os remetentes?"
 
-#: app/src/assistant/run.rs:1548 app/src/assistant/run/manage.rs:607
+#: app/src/assistant/run.rs:1549 app/src/assistant/run/manage.rs:607
 msgid "Loading a remote image tells the sender when you opened their mail."
 msgstr ""
 "Carregar uma imagem remota diz ao remetente quando abriu o correio dele."
 
-#: app/src/assistant/run.rs:1555
+#: app/src/assistant/run.rs:1556
 msgid "Change the setting {name} to {value}?"
 msgstr "Mudar a definição {name} para {value}?"
 
-#: app/src/assistant/run.rs:1577
+#: app/src/assistant/run.rs:1578
 msgid "Remove your signature for {account}?"
 msgstr "Remover a sua assinatura de {account}?"
 
-#: app/src/assistant/run.rs:1581
+#: app/src/assistant/run.rs:1582
 msgid ""
 "Change your signature for {account} to:\n"
 "\n"
@@ -954,19 +954,19 @@ msgstr ""
 "\n"
 "{text}"
 
-#: app/src/assistant/run.rs:1729 app/src/assistant/run.rs:1767
+#: app/src/assistant/run.rs:1730 app/src/assistant/run.rs:1768
 msgid "Hide My Email works with Gmail accounts."
 msgstr "O Ocultar o meu e-mail funciona com contas Gmail."
 
-#: app/src/assistant/run.rs:1772
+#: app/src/assistant/run.rs:1773
 msgid "Turn off {address}? Mail sent to it will go to the Trash."
 msgstr "Desativar {address}? O correio enviado para lá passa a ir para o lixo."
 
-#: app/src/assistant/run.rs:1776
+#: app/src/assistant/run.rs:1777
 msgid "Turn {address} back on? Mail sent to it will arrive again."
 msgstr "Reativar {address}? O correio enviado para lá volta a chegar."
 
-#: app/src/assistant/run.rs:1885
+#: app/src/assistant/run.rs:1886
 msgid ""
 "Move mail from {sender} to {category} in {account}, and send their future "
 "mail there too?"
@@ -974,7 +974,7 @@ msgstr ""
 "Mover o correio de {sender} para {category} em {account} e enviar também "
 "para lá o correio futuro?"
 
-#: app/src/assistant/run.rs:1897
+#: app/src/assistant/run.rs:1898
 msgid ""
 "Move mail from {sender} to {category} in {account}, and add a {provider} "
 "rule for their future mail?"

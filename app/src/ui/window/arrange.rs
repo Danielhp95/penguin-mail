@@ -76,7 +76,7 @@ impl MainWindow {
         let existing = id.and_then(|id| {
             self.settings_with(|s| s.smart_mailboxes.iter().find(|m| m.id == id).cloned())
         });
-        let accounts: Vec<String> = self.accounts().into_iter().map(|a| a.email).collect();
+        let accounts: Vec<String> = self.mail_accounts().into_iter().map(|a| a.email).collect();
         let weak = Rc::downgrade(self);
         super::super::smart_editor::present(&self.window, existing, accounts, move |mailbox| {
             let (Some(win), Some(app)) =
