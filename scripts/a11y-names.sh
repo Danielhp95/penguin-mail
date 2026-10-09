@@ -1021,21 +1021,15 @@ def walk_add_account(keys):
 
 calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = 0
 if sys.argv[1:] == ["--calendar-page"]:
-    # The demo opened Add Account on its calendar page, so the walk above
-    # has read it. Said aloud when the page is not there, since a dialog
-    # that never opened has no unnamed control either.
+    # The demo opens Add Account on its calendar page a moment after the
+    # window has settled. A dialog that never opened has no unnamed
+    # control either, so the walk fails aloud when the page is not there.
     def page_read():
+        controls()
         return any(row[0] == "text" and row[1] == "User Name" for row in found)
 
-    # The dialog opens a moment after the window has settled.
-    waited = 0
-    while not page_read() and waited < 20:
-        time.sleep(1)
-        waited += 1
-        controls()
-    if not page_read():
-        print("Add Account did not open on its calendar page.", file=sys.stderr)
-        added_unnamed = 1
+    if not wait_until(page_read, 20):
+        sys.exit("Add Account did not open on its calendar page.")
 if sys.argv[1:] == ["--menus"]:
     open_menus()
     conversation_unnamed = walk_conversation(Input())
@@ -1127,30 +1121,28 @@ fi
 # personal Gmail one, which makes events alone.
 printf 'last_calendar_account = "dana@fernwood.example"\n' >"$sandbox/settings.toml"
 export MAILRS_SETTINGS="$sandbox/settings.toml"
-# The demo's calendar account shows only when asked for. The walk asks, so
-# the button on its heading in the calendar's sidebar is read with the rest.
 inside="
 $launcher --launch-immediately &
 sleep 1
 $registry &
 sleep 1
-env $webkit MAILRS_DEMO_CALENDAR_ACCOUNT=1 $app --demo >$sandbox/app.log 2>&1 &
-window=\$!
-python3 $walk --menus
-status=\$?
-kill \$window 2>/dev/null
-wait \$window 2>/dev/null
-# The page that adds a calendar without mail sits behind a row, and a row
-# answers no AT-SPI action. The demo opens Add Account on that page when
-# asked, as it does for the screenshots, so a second start reads it.
-if [ \$status -eq 0 ]; then
-    env $webkit MAILRS_DEMO_ADD_ACCOUNT=calendar $app --demo >$sandbox/app.log 2>&1 &
+# Starts the demo with \$1 in its environment and walks it as \$2 says.
+walk_demo() {
+    env $webkit \$1 $app --demo >$sandbox/app.log 2>&1 &
     window=\$!
-    python3 $walk --calendar-page
+    python3 $walk \$2
     status=\$?
     kill \$window 2>/dev/null
     wait \$window 2>/dev/null
-fi
+    return \$status
+}
+# The demo's calendar account shows only when asked for. The walk asks, so
+# the button on its heading in the calendar's sidebar is read with the
+# rest. The page that adds a calendar without mail sits behind a row, and
+# a row answers no AT-SPI action; the demo opens Add Account on that page
+# when asked, as it does for the screenshots, so a second start reads it.
+walk_demo MAILRS_DEMO_CALENDAR_ACCOUNT=1 --menus && walk_demo MAILRS_DEMO_ADD_ACCOUNT=calendar --calendar-page
+status=\$?
 # A failed run says why the app did what it did: a crash or a warning in
 # its log is often the whole answer, and CI keeps nothing else.
 if [ \$status -ne 0 ]; then
