@@ -1,6 +1,8 @@
 //! The CalDAV adapter over the real client against Radicale: the calendar
 //! list, a first read, an edit that keeps the lines it did not touch, a
-//! read after a token, and one occurrence of a series cancelled.
+//! read after a token, and one occurrence of a series cancelled. Then the
+//! same server as a calendar account has it: no mail behind it and no
+//! address handed in.
 //!
 //! One test, because it points `SSL_CERT_FILE` at a root made for the
 //! run, and the environment belongs to the whole process.
@@ -9,13 +11,31 @@ use std::sync::Arc;
 
 use mailrs_dav::{DavApi, DavClient, Login};
 use mailrs_discover::{Security, Server, UserName};
-use mailrs_domain::calendar::{Notify, occurrence_id};
+use mailrs_domain::calendar::{Event, Notify, occurrence_id};
+use mailrs_domain::{AccountId, Provider};
 use mailrs_imap::{ImapClient, SmtpClient};
+use mailrs_store::Db;
+use mailrs_sync::calendar_copy::CalendarCopy;
+use mailrs_sync::passwords::MemoryPasswords;
 use mailrs_sync::services::CalDav;
-use mailrs_sync::{AccountServices, CalendarService, ImapSettings};
+use mailrs_sync::services::finding::RealProbe;
+use mailrs_sync::sign_in::{CalDavSignInError, NewCalDav, caldav_signed_in};
+use mailrs_sync::{
+    AccountServices, AccountSync, Accounts, AnyMail, BackendError, CalendarService, ImapSettings, NoMail, SyncError,
+    connect_caldav,
+};
 use mailrs_testmail::{Certs, Radicale};
 
 const USER: &str = "me@example.test";
+
+/// The one account, for the calendar copy to read.
+struct One(AccountId, Arc<AccountSync>);
+
+impl Accounts for One {
+    fn account(&self, account_id: AccountId) -> Option<Arc<AccountSync>> {
+        (account_id == self.0).then(|| Arc::clone(&self.1))
+    }
+}
 
 fn series(title: &str) -> String {
     format!(
@@ -79,5 +99,62 @@ fn the_caldav_adapter_reads_and_writes_radicale() {
         let body = client.get(&href).await.expect("the resource").body;
         assert!(body.contains("EXDATE") && body.contains("20261012T093000"), "{body}");
         assert!(body.contains("X-KEEP:yes"), "{body}");
+
+        // A calendar account on the same server. Radicale names no address
+        // for its principal and schedules nothing, so the account is
+        // nobody's guest, and an answer from it would reach no organizer.
+        let alone = CalDav::new(Arc::clone(&client), AnyMail::NoMail(NoMail), Vec::new());
+        let listed = alone.calendars().await.expect("the calendars, with no mail");
+        assert!(listed.iter().any(|c| c.id == work), "{listed:?}");
+        assert!(!alone.tells_organizer(), "no mail and no scheduling leave nobody to tell");
+        let read = alone.event_changes(&work, None, None, 0).await.expect("a read with no mail");
+        assert!(read.events.iter().any(|e| e.title == "Standup (short)"), "{read:?}");
+        assert!(read.events.iter().all(|e| e.guests.iter().all(|g| !g.me)), "nobody is the account");
+        let lunch = Event {
+            calendar: work.clone(),
+            id: "pm0123456789abcdefghijklmnopqrstuv".into(),
+            start: 1_791_300_000_000,
+            end: 1_791_303_600_000,
+            zone: "UTC".into(),
+            title: "Lunch".into(),
+            busy: true,
+            ..Event::default()
+        };
+        let made = alone.put_event(&lunch, None, true, Notify::Nobody).await.expect("an event of its own");
+        assert_eq!(made.title, "Lunch");
+
+        // The whole way in, as Add Account goes: the login is tried at the
+        // address, the account is kept under its user and host, connecting
+        // builds its services, and the calendar copy reads them into the
+        // store.
+        let dir = tempfile::tempdir().expect("a folder for the store");
+        let db = Db::open(&dir.path().join("mail.db")).expect("a store");
+        let passwords = Arc::new(MemoryPasswords::default());
+        let new = NewCalDav { url: radicale.url(), user_name: USER.into(), password: password.clone() };
+        let account = caldav_signed_in(&RealProbe, &db, Arc::clone(&passwords), new, 7).await.expect("the sign-in");
+        let host = mailrs_dav::host_of(&radicale.url()).expect("the server's host");
+        assert_eq!((account.email.as_str(), account.provider), (format!("{USER}@{host}").as_str(), Provider::CalDav));
+        let wrong = NewCalDav { url: radicale.url(), user_name: USER.into(), password: "not the password".into() };
+        let refused = caldav_signed_in(&RealProbe, &db, Arc::clone(&passwords), wrong, 8).await;
+        assert!(
+            matches!(refused, Err(CalDavSignInError::Server(SyncError::Backend(BackendError::NeedsReauth)))),
+            "a wrong password is a refused login: {:?}",
+            refused.map(|a| a.email)
+        );
+
+        let services = connect_caldav(&db, passwords, &account).await.expect("the services");
+        assert!(!services.serves_mail());
+        let (events, _listening) = async_channel::unbounded();
+        let sync = Arc::new(AccountSync::new(account.id, services, db.clone(), events));
+        let copy = CalendarCopy::new(Arc::new(One(account.id, sync)), db.clone());
+        copy.refresh(account.id, mailrs_sync::now_millis()).await.expect("a first read into the store");
+        let id = account.id;
+        let kept = db.read(move |c| mailrs_store::calendar::calendars(c, id)).await.expect("the stored calendars");
+        assert!(kept.iter().any(|c| c.id == work), "{kept:?}");
+        let held = db
+            .read(move |c| mailrs_store::calendar::event(c, id, &work, "pm0123456789abcdefghijklmnopqrstuv"))
+            .await
+            .expect("the store");
+        assert_eq!(held.map(|e| e.title).as_deref(), Some("Lunch"));
     });
 }
