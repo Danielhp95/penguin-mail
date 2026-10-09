@@ -215,10 +215,12 @@ async fn calendar_account() -> (Setup, Arc<FakeDav>, CalendarCopy<SyncEngine>) {
          DTSTART:20261006T120000Z\r\nDTEND:20261006T130000Z\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
     );
     s.engine.start_account(1, services);
-    // No mail loop ran to fail on a server with no mail.
-    wait_for(&s.events, reached(AccountState::Ok)).await;
     let copy = CalendarCopy::new(Arc::clone(&s.engine), s.db.clone());
     (s, dav, copy)
+}
+
+async fn stored_state(s: &Setup) -> AccountState {
+    s.db.read(|c| accounts::account(c, 1)).await.unwrap().expect("the account").state
 }
 
 #[tokio::test]
@@ -230,6 +232,8 @@ async fn an_account_with_no_mail_is_kept_and_the_copy_reads_its_calendar() {
     assert_eq!(copy.refresh_due(&[1], NOW, true).await.unwrap().events, 1);
     let calendars = s.db.read(|c| mailrs_store::calendar::calendars(c, 1)).await.unwrap();
     assert_eq!(calendars.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Personal"]);
+    // No mail loop ran to say so: the read that went through did.
+    wait_for(&s.events, reached(AccountState::Ok)).await;
     s.engine.stop_account(1);
     assert!(!s.engine.is_running(1));
 }
@@ -250,14 +254,26 @@ async fn a_calendar_account_whose_login_is_refused_waits_for_the_person_to_sign_
 
     // Signing in again starts the account on new services, and it reads.
     s.engine.start_account(1, AccountServices::calendar_only(Arc::clone(&dav)));
-    wait_for(&s.events, reached(AccountState::Ok)).await;
     assert_eq!(copy.refresh_due(&[1], later, true).await.unwrap().events, 1);
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+}
+
+#[tokio::test]
+async fn a_calendar_account_still_refused_when_it_starts_is_not_said_to_work() {
+    let (s, dav, copy) = calendar_account().await;
+    s.db.write(|c| accounts::set_state(c, 1, AccountState::NeedsReauth)).await.unwrap();
+    dav.refuse_login(true);
+    copy.refresh_due(&[1], NOW, true).await.unwrap();
+    assert_eq!(stored_state(&s).await, AccountState::NeedsReauth);
+    let said: Vec<ChangeEvent> = std::iter::from_fn(|| s.events.try_recv().ok()).collect();
+    assert!(!said.iter().any(reached(AccountState::Ok)), "nothing spoke to the server and heard yes: {said:?}");
 }
 
 #[tokio::test]
 async fn a_refusal_met_outside_the_read_is_reported_once() {
     let (s, dav, copy) = calendar_account().await;
     assert_eq!(copy.refresh_due(&[1], NOW, true).await.unwrap().events, 1);
+    wait_for(&s.events, reached(AccountState::Ok)).await;
 
     // The password stops working, and what meets the refusal first is
     // not the periodic read but a call made for the person.
@@ -268,8 +284,7 @@ async fn a_refusal_met_outside_the_read_is_reported_once() {
     // The next tick comes before another read is due. It still says so.
     copy.refresh_due(&[1], NOW + 1_000, true).await.unwrap();
     wait_for(&s.events, reached(AccountState::NeedsReauth)).await;
-    let stored = s.db.read(|c| accounts::account(c, 1)).await.unwrap().expect("the account").state;
-    assert_eq!(stored, AccountState::NeedsReauth);
+    assert_eq!(stored_state(&s).await, AccountState::NeedsReauth);
 
     // And says it once, not at every tick after.
     copy.refresh_due(&[1], NOW + 2_000, true).await.unwrap();

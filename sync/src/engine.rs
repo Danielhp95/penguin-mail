@@ -94,15 +94,12 @@ impl SyncEngine {
     /// Starts the account's loop, replacing one that is already running.
     /// Call it from inside a tokio runtime.
     ///
-    /// An account with no mail gets no loop: there is no change feed to
-    /// follow and nothing to backfill. It is kept all the same, so its
-    /// services answer for it, and the calendar copy reads its calendars
-    /// on the app's own timer.
+    /// An account with no mail gets no loop and is kept all the same, so
+    /// its services answer for it.
     pub fn start_account(&self, account_id: AccountId, services: AccountServices) {
         services
             .mail
             .set_window_open(self.window_open.load(Ordering::SeqCst));
-        let serves_mail = services.serves_mail();
         let sync = Arc::new(
             AccountSync::new(account_id, services, self.db.clone(), self.events.clone())
                 .with_limits(self.config.window_days, self.config.body_cache_bytes),
@@ -123,16 +120,12 @@ impl SyncEngine {
             Arc::clone(&self.network),
             self.config.clone(),
         );
-        let kept = Arc::clone(&sync);
         let task = tokio::spawn(async move {
             if let Some(previous) = previous {
                 // Cancelled is the expected end; anything else ended it first.
                 let _ = previous.await;
             }
-            match serves_mail {
-                true => loop_.await,
-                false => keep(kept).await,
-            }
+            loop_.await;
         });
         running.insert(account_id, Running { sync, poke, task });
     }
@@ -248,6 +241,13 @@ async fn supervise(
     network: Arc<AtomicBool>,
     config: EngineConfig,
 ) {
+    // An account with no mail has no change feed to follow and nothing to
+    // backfill. Its calendar is read on the app's own timer, and the
+    // calendar copy, which alone talks to its server, says how it is
+    // doing. Here it waits to be stopped.
+    if !sync.services().serves_mail() {
+        return std::future::pending().await;
+    }
     let mut crashed = false;
     loop {
         let run = run_account(
@@ -453,15 +453,6 @@ fn until_check(
         return Duration::ZERO;
     }
     PRUNE_INTERVAL.saturating_sub(Duration::from_millis(since as u64))
-}
-
-/// What runs in place of the loop for an account with no mail: it says
-/// the account is working, which a mail account's first sync says, and
-/// waits to be stopped. A refused password is the calendar copy's to
-/// notice, since nothing here talks to a server.
-async fn keep(sync: Arc<AccountSync>) {
-    report(&sync, AccountState::Ok).await;
-    std::future::pending::<()>().await;
 }
 
 async fn report(sync: &AccountSync, state: AccountState) {

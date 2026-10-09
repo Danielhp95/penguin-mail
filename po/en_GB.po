@@ -9359,18 +9359,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} will get a new label."
 msgstr[1] "{accounts} will get new labels."
 
-#: sync/src/calendar_copy.rs:947 sync/src/calendar_copy.rs:1016
-#: sync/src/calendar_copy.rs:1061
+#: sync/src/calendar_copy.rs:946 sync/src/calendar_copy.rs:1015
+#: sync/src/calendar_copy.rs:1060
 msgid "deleted elsewhere"
 msgstr "deleted elsewhere"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:952
+#: sync/src/calendar_copy.rs:951
 msgid "the calendar is gone"
 msgstr "the calendar is gone"
 
-#: sync/src/calendar_copy.rs:1713
+#: sync/src/calendar_copy.rs:1712
 msgid "Google Calendar offers out of office and focus time only on some work and school accounts ({reason})"
 msgstr "Google Calendar offers out of office and focus time only on some work and school accounts ({reason})"
 
