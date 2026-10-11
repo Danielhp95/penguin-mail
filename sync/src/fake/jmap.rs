@@ -106,6 +106,7 @@ pub struct JmapState {
     forgotten: u64,
     next: u64,
     push: bool,
+    push_ends: bool,
 }
 
 impl JmapState {
@@ -374,6 +375,7 @@ impl FakeJmap {
             forgotten: 0,
             next: 0,
             push: true,
+            push_ends: false,
         };
         for (name, role) in [("Inbox", "inbox"), ("Drafts", "drafts"), ("Sent", "sent"), ("Trash", "trash"), ("Junk Mail", "junk"), ("Archive", "archive")] {
             let id = format!("mb-{role}");
@@ -418,6 +420,17 @@ impl FakeJmap {
     pub fn refusing_submissions(self, kind: &str) -> FakeJmap {
         self.with(|s| s.submission_refusal = Some(kind.to_string()));
         self
+    }
+
+    /// A server whose event stream closes as soon as it opens.
+    pub fn with_push_that_ends_at_once(self) -> FakeJmap {
+        self.with(|s| s.push_ends = true);
+        self
+    }
+
+    /// How many times the event stream was opened.
+    pub fn push_opens(&self) -> usize {
+        self.with(|s| s.calls.iter().filter(|c| *c == "push").count())
     }
 
     pub fn without_push(self) -> FakeJmap {
@@ -880,6 +893,10 @@ impl JmapApi for FakeJmap {
     }
 
     async fn push(&self) -> Answer<Pushed> {
+        self.called("push");
+        if self.with(|s| s.push_ends) {
+            return Err(JmapError::Network("the stream ended".into()));
+        }
         if !self.with(|s| s.push) {
             return Ok(Pushed::NoPush);
         }

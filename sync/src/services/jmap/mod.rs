@@ -77,7 +77,6 @@ pub struct JmapSettings {
 
 /// What the adapter learned from its last listing. Its size follows the
 /// account's mailboxes and identities, never its mail.
-#[allow(dead_code)] // Read by the tasks that fill the stubs.
 #[derive(Debug, Default)]
 pub(super) struct Known {
     pub roles: BTreeMap<Role, String>,
