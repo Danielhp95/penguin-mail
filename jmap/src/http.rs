@@ -101,7 +101,9 @@ impl JmapClient {
     /// A client for the session at `session_url`, which must be HTTPS, or
     /// HTTP on this computer. Nothing goes out until the first call.
     pub fn new(session_url: &str, auth: Auth) -> Result<JmapClient, JmapError> {
-        let url = Url::parse(session_url).map_err(|_| JmapError::BadUrl(session_url.to_string()))?;
+        // A URL that does not parse could still hold a password or an
+        // address, so the error names which URL it was and none of it.
+        let url = Url::parse(session_url).map_err(|_| JmapError::BadUrl("the session URL".into()))?;
         let url = without_userinfo(url)?;
         let usable = url.scheme() == "https" || (url.scheme() == "http" && is_loopback(&url));
         if !usable || url.host().is_none() {
@@ -236,7 +238,7 @@ impl JmapClient {
     /// `url`, a URL the session named, when the credentials may go there:
     /// HTTPS, or HTTP when the session itself is on this computer.
     pub(crate) fn endpoint(&self, url: &str) -> Result<Url, JmapError> {
-        let parsed = Url::parse(url).map_err(|_| JmapError::BadUrl(url.to_string()))?;
+        let parsed = Url::parse(url).map_err(|_| JmapError::BadUrl("a URL the session names".into()))?;
         let parsed = without_userinfo(parsed)?;
         let session_is_local = self.inner.session_url.scheme() == "http";
         let fine = match parsed.scheme() {

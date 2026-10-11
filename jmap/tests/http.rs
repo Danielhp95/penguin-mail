@@ -255,3 +255,25 @@ async fn a_session_naming_a_url_with_a_password_is_refused() {
     assert!(matches!(refused, JmapError::BadUrl(_)), "{refused:?}");
     assert!(!refused.to_string().contains("hunter2"), "{refused}");
 }
+
+#[test]
+fn a_session_url_that_does_not_parse_is_not_repeated() {
+    let refused = JmapClient::new("https://me:hunter2@exa mple.org/jmap", Auth::Bearer("t".into())).unwrap_err();
+    assert!(matches!(refused, JmapError::BadUrl(_)), "{refused:?}");
+    let said = refused.to_string();
+    assert!(!said.contains("hunter2") && !said.contains("me:"), "{said}");
+}
+
+#[tokio::test]
+async fn a_session_naming_a_url_that_does_not_parse_is_not_repeated() {
+    let server = MockServer::start().await;
+    let mut session = session_on(&server.uri(), json!({}));
+    session["apiUrl"] = json!("https://me:hunter2@mail example.org/api/");
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session))
+        .mount(&server)
+        .await;
+    let refused = client(&server).session().await.unwrap_err();
+    assert!(matches!(refused, JmapError::BadUrl(_)), "{refused:?}");
+    assert!(!refused.to_string().contains("hunter2"), "{refused}");
+}
