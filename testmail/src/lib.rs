@@ -372,18 +372,34 @@ impl Container {
 
     /// Fails the test when a server that stopped answering has exited,
     /// which means its configuration is wrong; skips when it runs but is
-    /// slow, which is the computer's trouble.
-    pub(crate) async fn not_ready<T>(&self, require: &'static str, what: &str) -> Option<T> {
+    /// slow, which is the computer's trouble. `waited` is how long the
+    /// caller gave it.
+    pub(crate) async fn not_ready<T>(
+        &self,
+        require: &'static str,
+        what: &str,
+        waited: Duration,
+    ) -> Option<T> {
         if !self.running().await {
             panic!("{what} exited as it started:\n{}", self.logs().await);
         }
         unavailable_under(
             require,
             &format!(
-                "{what} did not answer within {READY_WITHIN:?}:\n{}",
+                "{what} did not answer within {waited:?}:\n{}",
                 self.logs().await
             ),
         )
+    }
+
+    /// Stops and starts the container, keeping its files and its ports.
+    pub(crate) async fn restart(&self) {
+        let restarted = docker_output(&["restart".into(), self.id.clone()]).await;
+        assert!(
+            restarted.status.success(),
+            "docker restart failed: {}",
+            String::from_utf8_lossy(&restarted.stderr)
+        );
     }
 
     pub(crate) async fn exec(&self, args: &[&str], stdin: Option<&[u8]>) -> Output {
@@ -562,7 +578,7 @@ impl Dovecot {
         let imap = container.port(DOVECOT_IMAP).await;
         let imaps = container.port(DOVECOT_IMAPS).await;
         if !greets(imap).await {
-            return container.not_ready(REQUIRE, "Dovecot").await;
+            return container.not_ready(REQUIRE, "Dovecot", READY_WITHIN).await;
         }
         let sieve = match profile {
             Profile::Sieve => Some(container.port(DOVECOT_SIEVE).await),
@@ -875,7 +891,10 @@ impl Mailpit {
             http: reqwest::Client::new(),
         };
         if !mailpit.answers().await {
-            return mailpit.container.not_ready(REQUIRE, "Mailpit").await;
+            return mailpit
+                .container
+                .not_ready(REQUIRE, "Mailpit", READY_WITHIN)
+                .await;
         }
         Some(mailpit)
     }
@@ -1002,7 +1021,10 @@ impl Radicale {
             http: reqwest::Client::new(),
         };
         if !radicale.answers().await {
-            return radicale.container.not_ready(REQUIRE, "Radicale").await;
+            return radicale
+                .container
+                .not_ready(REQUIRE, "Radicale", READY_WITHIN)
+                .await;
         }
         Some(radicale)
     }

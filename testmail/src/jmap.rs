@@ -18,12 +18,16 @@ use crate::{Container, REQUIRE_JMAP};
 pub const CYRUS_IMAGE: &str = "ghcr.io/cyrusimap/cyrus-docker-test-server:bookworm@sha256:035aa4ffdb84df95a1057645d05c9a156dde74e5787ef1a11f7d9c244a38b2c0";
 
 /// Stalwart 0.16.25: HTTP on 8080, an administrator from
-/// `STALWART_RECOVERY_ADMIN`.
+/// `STALWART_RECOVERY_ADMIN`, bootstrap mode on first start.
 pub const STALWART_IMAGE: &str = "stalwartlabs/stalwart:v0.16.25@sha256:74e5a7d55303ba525d939c6bf97ed4e010df7521f52d80afc22a815b66bd53f3";
 
 /// Apache James 3.9.1 on its in-memory store: JMAP on 80, a domain from
 /// `DOMAIN`, users from `james-cli`.
 pub const JAMES_IMAGE: &str = "apache/james:memory-3.9.1@sha256:093b35e8e11ab63b379799d42cf4a1b095ba43f49da28de5c729c9e848b52e8e";
+
+/// Stalwart's recovery administrator, and the domain its bootstrap makes.
+const STALWART_ADMIN: &str = "admin";
+const STALWART_DOMAIN: &str = "stalwart.test";
 
 /// James starts a JVM and takes longer than the others.
 const READY_WITHIN: Duration = Duration::from_secs(120);
@@ -171,7 +175,9 @@ impl JmapServer {
         // there.
         let session_url = format!("{base}/jmap");
         if !answers(&session_url, Some(("user1", password))).await {
-            return container.not_ready(REQUIRE_JMAP, "Cyrus").await;
+            return container
+                .not_ready(REQUIRE_JMAP, "Cyrus", READY_WITHIN)
+                .await;
         }
         Some(JmapServer {
             container,
@@ -182,14 +188,102 @@ impl JmapServer {
         })
     }
 
-    /// Stalwart 0.16.25 starts in bootstrap mode when it has no
-    /// configuration file, and then refuses to make a domain or a user
-    /// until its setup runs, so no test user exists.
-    async fn stalwart(_password: &str) -> Option<JmapServer> {
-        crate::unavailable_under(
-            REQUIRE_JMAP,
-            "Stalwart 0.16.25 needs its setup wizard first",
+    /// Stalwart 0.16.25 has no configuration file, so it starts in
+    /// bootstrap mode, where it refuses to make a domain or a user. The
+    /// starter finishes the bootstrap as the recovery administrator,
+    /// restarts the container to leave that mode, and then makes the user
+    /// in the domain the bootstrap made.
+    async fn stalwart(password: &str) -> Option<JmapServer> {
+        let port = free_port();
+        let base = format!("http://localhost:{port}");
+        let session_url = format!("{base}/jmap/session");
+        let options = vec![
+            "-p".to_string(),
+            format!("127.0.0.1:{port}:8080"),
+            "-e".into(),
+            format!("STALWART_RECOVERY_ADMIN={STALWART_ADMIN}:{password}"),
+            "-e".into(),
+            format!("STALWART_PUBLIC_URL={base}"),
+        ];
+        let container = Container::start(REQUIRE_JMAP, &options, STALWART_IMAGE, &[], &[]).await?;
+        if !answers(&session_url, Some((STALWART_ADMIN, password))).await {
+            return container
+                .not_ready(REQUIRE_JMAP, "Stalwart", READY_WITHIN)
+                .await;
+        }
+        let server = JmapServer {
+            container,
+            kind: JmapKind::Stalwart,
+            session_url,
+            user: format!("me@{STALWART_DOMAIN}"),
+            address: format!("me@{STALWART_DOMAIN}"),
+        };
+        // It refuses the container's hex hostname, so the bootstrap names
+        // one. No certificate or DKIM key: the test serves plain HTTP and
+        // sends no mail.
+        let booted = server
+            .stalwart_admin(
+                password,
+                json!([["x:Bootstrap/set", {"update": {"singleton": {
+                    "serverHostname": format!("mail.{STALWART_DOMAIN}"),
+                    "defaultDomain": STALWART_DOMAIN,
+                    "requestTlsCertificate": false,
+                    "generateDkimKeys": false
+                }}}, "0"]]),
+            )
+            .await;
+        assert!(
+            booted["methodResponses"][0][1]["updated"]["singleton"].is_object(),
+            "Stalwart did not finish its bootstrap: {booted}"
+        );
+        server.container.restart().await;
+        if !answers(&server.session_url, Some((STALWART_ADMIN, password))).await {
+            return server
+                .container
+                .not_ready(REQUIRE_JMAP, "Stalwart after its restart", READY_WITHIN)
+                .await;
+        }
+        let domains = server
+            .stalwart_admin(password, json!([["x:Domain/get", {"ids": null}, "0"]]))
+            .await;
+        let domain = domains["methodResponses"][0][1]["list"]
+            .as_array()
+            .and_then(|list| list.iter().find(|domain| domain["name"] == STALWART_DOMAIN))
+            .and_then(|domain| domain["id"].as_str())
+            .unwrap_or_else(|| panic!("Stalwart's bootstrap made no {STALWART_DOMAIN}: {domains}"))
+            .to_string();
+        let made = server
+            .stalwart_admin(
+                password,
+                json!([["x:Account/set", {"create": {"u": {
+                    "@type": "User", "name": "me", "domainId": domain,
+                    "credentials": {"0": {"@type": "Password", "secret": password}}
+                }}}, "0"]]),
+            )
+            .await;
+        assert!(
+            made["methodResponses"][0][1]["created"]["u"].is_object(),
+            "Stalwart did not make the test user: {made}"
+        );
+        if !answers(&server.session_url, Some((&server.user, password))).await {
+            return server
+                .container
+                .not_ready(REQUIRE_JMAP, "Stalwart's test user", READY_WITHIN)
+                .await;
+        }
+        Some(server)
+    }
+
+    /// Calls on Stalwart's management capability as the recovery
+    /// administrator.
+    async fn stalwart_admin(&self, password: &str, calls: Value) -> Value {
+        self.call_as(
+            STALWART_ADMIN,
+            password,
+            &["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
+            calls,
         )
+        .await
     }
 
     async fn james(password: &str) -> Option<JmapServer> {
@@ -218,7 +312,9 @@ impl JmapServer {
         ];
         let container = Container::start(REQUIRE_JMAP, &options, JAMES_IMAGE, &[], &files).await?;
         if !answers(&format!("{base}/.well-known/jmap"), None).await {
-            return container.not_ready(REQUIRE_JMAP, "Apache James").await;
+            return container
+                .not_ready(REQUIRE_JMAP, "Apache James", READY_WITHIN)
+                .await;
         }
         let added = container
             .exec(&["james-cli", "AddUser", "me@james.test", password], None)
@@ -249,7 +345,10 @@ impl JmapServer {
             .json()
             .await
             .expect("the session's JSON");
-        let api = session["apiUrl"].as_str().expect("an apiUrl").to_string();
+        // Stalwart in bootstrap mode names a relative apiUrl.
+        let api = reqwest::Url::parse(&self.session_url)
+            .and_then(|url| url.join(session["apiUrl"].as_str().expect("an apiUrl")))
+            .expect("an apiUrl that resolves against the session URL");
         http.post(api)
             .basic_auth(user, Some(password))
             .json(&json!({ "using": using, "methodCalls": calls }))
