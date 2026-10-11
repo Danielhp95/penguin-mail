@@ -10493,9 +10493,73 @@ msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr ""
 "Penguin Mail ne joint les serveurs d’agenda et de contacts que via HTTPS."
 
-#: sync/src/services/imap/outgoing.rs:86
+#: sync/src/services/imap/outgoing.rs:85
 msgid "The message names nobody to send it to."
 msgstr "Le message n’indique aucun destinataire."
+
+#: sync/src/services/jmap/mod.rs:230
+msgid "This server keeps no colors for its mailboxes."
+msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
+
+#: sync/src/services/jmap/mod.rs:303
+msgid "This server files sent mail itself."
+msgstr "Ce serveur classe lui-même le courrier envoyé."
+
+#: sync/src/services/jmap/outgoing.rs:45
+msgid "The server does not let this account send from {address}."
+msgstr "Le serveur n’autorise pas ce compte à envoyer depuis {address}."
+
+#: sync/src/services/jmap/outgoing.rs:46
+msgid "The server does not let this account send mail now."
+msgstr "Le serveur n’autorise pas ce compte à envoyer du courrier pour le moment."
+
+#: sync/src/services/jmap/outgoing.rs:47
+msgid "The message names more recipients than the server sends to at once."
+msgstr "Le message compte plus de destinataires que le serveur n’en accepte en un seul envoi."
+
+#: sync/src/services/jmap/outgoing.rs:48
+msgid "The server could not send to one of the recipients."
+msgstr "Le serveur n’a pas pu envoyer le message à l’un des destinataires."
+
+#: sync/src/services/jmap/outgoing.rs:49
+msgid "The message is larger than the server sends."
+msgstr "Le message dépasse la taille que le serveur envoie."
+
+#: sync/src/services/jmap/outgoing.rs:50
+msgid "The server could not read the message to send it."
+msgstr "Le serveur n’a pas pu lire le message pour l’envoyer."
+
+#: sync/src/services/jmap/outgoing.rs:62
+msgid ""
+"This account can read mail but not send it: its sign-in has no access to "
+"sending."
+msgstr "Ce compte peut lire le courrier mais pas en envoyer : sa connexion n’a pas accès à l’envoi."
+
+#: sync/src/services/jmap/outgoing.rs:77
+msgid "This account has no address the server lets it send from."
+msgstr "Ce compte n’a aucune adresse depuis laquelle le serveur l’autorise à envoyer."
+
+#: sync/src/services/jmap/outgoing.rs:97
+msgid ""
+"The server has neither a Drafts nor a Sent mailbox to keep the message in."
+msgstr "Le serveur n’a ni boîte Brouillons ni boîte Envoyés où conserver le message."
+
+#: sync/src/services/jmap/outgoing.rs:116
+msgid "The server has no Drafts mailbox."
+msgstr "Le serveur n’a pas de boîte Brouillons."
+
+#: sync/src/services/jmap/writes.rs:95
+msgid "The server has no mailbox for this."
+msgstr "Le serveur n’a pas de boîte aux lettres pour cela."
+
+#: sync/src/services/jmap/writes.rs:122
+msgid "This server does not sort mail into categories."
+msgstr "Ce serveur ne trie pas le courrier en catégories."
+
+#: sync/src/services/jmap/writes.rs:147
+msgid ""
+"A message must stay in at least one mailbox, and this server has no Archive."
+msgstr "Un message doit rester dans au moins une boîte aux lettres, et ce serveur n’a pas de boîte Archives."
 
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."

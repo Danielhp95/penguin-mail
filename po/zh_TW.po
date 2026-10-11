@@ -95,11 +95,11 @@ msgstr "助理可使用本機模型或 Claude，選擇模型後才會啟用"
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:33
 msgid ""
 "Every control named for screen readers and reachable from the keyboard, in "
-"American English, British English, French, German, Spanish, European "
-"Portuguese and Traditional Chinese (Taiwan)"
+"American English, British English, European Portuguese and Traditional "
+"Chinese (Taiwan)"
 msgstr ""
-"每個控制項都為螢幕閱讀器命名，並可用鍵盤操作，提供美式英文、英式英文、法文、"
-"德文、西班牙文、歐洲葡萄牙文與正體中文（台灣）"
+"所有控制項都有螢幕閱讀器可讀取的名稱，也能以鍵盤操作；介面提供美式英文、英式"
+"英文、歐洲葡萄牙文與正體中文（台灣）。"
 
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:35
 msgid ""
@@ -3372,9 +3372,7 @@ msgstr "5 年"
 msgid ""
 "Every message stays on this computer. A large account takes a lot of disk "
 "space and memory, and its older mail downloads in the background."
-msgstr ""
-"所有郵件都會保存在此電腦上。大型帳號會佔用大量磁碟空間和記憶體，較舊的郵件會"
-"在背景下載。"
+msgstr "每封郵件都會保留在此電腦上。大型帳號會占用大量磁碟空間和記憶體，較舊的郵件會在背景下載。"
 
 #: app/src/settings/mod.rs:776
 msgid "Everything in your inbox stays too, and older mail remains searchable"
@@ -3914,7 +3912,7 @@ msgstr "登入"
 
 #: app/src/ui/add_account.rs:1460
 msgid "Leave the user names empty to sign in with your address."
-msgstr "留空使用者名稱以使用電子郵件地址登入。"
+msgstr "使用者名稱留空即以電子郵件地址登入。"
 
 #: app/src/ui/add_account.rs:1472
 msgid "Use These Settings"
@@ -3982,9 +3980,7 @@ msgstr ""
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
-msgstr ""
-"正在使用自訂的 Google 用戶端登入。Google 的登入頁面已在瀏覽器中開啟。在該頁面"
-"完成後，此視窗會繼續。"
+msgstr "正在使用自己的 Google 用戶端登入。Google 登入頁面已在瀏覽器中開啟，在該處完成後，此視窗會繼續下一步。"
 
 #: app/src/ui/add_account.rs:2841
 msgid "Link copied"
@@ -10007,85 +10003,67 @@ msgstr "郵件未指定收件者。"
 
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
-msgstr ""
+msgstr "此伺服器不會儲存信箱的顏色。"
 
 #: sync/src/services/jmap/mod.rs:303
-#, fuzzy
-#| msgid "The server does not answer"
 msgid "This server files sent mail itself."
-msgstr "伺服器未回應"
+msgstr "此伺服器會自行歸檔寄出的郵件。"
 
 #: sync/src/services/jmap/outgoing.rs:45
-#, fuzzy
-#| msgid "The server does not answer"
 msgid "The server does not let this account send from {address}."
-msgstr "伺服器未回應"
+msgstr "伺服器不允許此帳號以 {address} 寄件。"
 
 #: sync/src/services/jmap/outgoing.rs:46
-#, fuzzy
-#| msgid "The server does not answer"
 msgid "The server does not let this account send mail now."
-msgstr "伺服器未回應"
+msgstr "伺服器目前不允許此帳號寄送郵件。"
 
 #: sync/src/services/jmap/outgoing.rs:47
-#, fuzzy
-#| msgid "The message names nobody to send it to."
 msgid "The message names more recipients than the server sends to at once."
-msgstr "郵件未指定收件者。"
+msgstr "郵件的收件者數量超過伺服器單次寄送的上限。"
 
 #: sync/src/services/jmap/outgoing.rs:48
-#, fuzzy
-#| msgid "The server would not hand it over."
 msgid "The server could not send to one of the recipients."
-msgstr "伺服器拒絕提供郵件。"
+msgstr "伺服器無法寄送給其中一位收件者。"
 
 #: sync/src/services/jmap/outgoing.rs:49
-#, fuzzy
-#| msgid "The message is larger than Penguin Mail downloads."
 msgid "The message is larger than the server sends."
-msgstr "郵件超過 Penguin Mail 的下載大小上限。"
+msgstr "郵件超過伺服器的寄送大小上限。"
 
 #: sync/src/services/jmap/outgoing.rs:50
-#, fuzzy
-#| msgid "The server would not hand it over."
 msgid "The server could not read the message to send it."
-msgstr "伺服器拒絕提供郵件。"
+msgstr "伺服器無法讀取要寄送的郵件。"
 
 #: sync/src/services/jmap/outgoing.rs:62
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
-msgstr ""
+msgstr "此帳號可以讀取郵件，但無法寄件：其登入未取得寄件權限。"
 
 #: sync/src/services/jmap/outgoing.rs:77
-#, fuzzy
-#| msgid "This account has no tags yet. Make one in Outlook."
 msgid "This account has no address the server lets it send from."
-msgstr "此帳號尚無標記。請在 Outlook 中建立。"
+msgstr "此帳號沒有伺服器允許用來寄件的地址。"
 
 #: sync/src/services/jmap/outgoing.rs:97
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
-msgstr ""
+msgstr "伺服器沒有 [草稿] 或 [寄件備份] 信箱可存放此郵件。"
 
 #: sync/src/services/jmap/outgoing.rs:116
-#, fuzzy
-#| msgid "The server does not answer"
 msgid "The server has no Drafts mailbox."
-msgstr "伺服器未回應"
+msgstr "伺服器沒有 [草稿] 信箱。"
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
-msgstr ""
+msgstr "伺服器沒有可用於此操作的信箱。"
 
 #: sync/src/services/jmap/writes.rs:122
 msgid "This server does not sort mail into categories."
-msgstr ""
+msgstr "此伺服器不會將郵件分成類別。"
 
 #: sync/src/services/jmap/writes.rs:147
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
-msgstr ""
+msgstr "郵件必須至少留在一個信箱中，而此伺服器沒有 [封存] 信箱。"
 
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."
@@ -10237,9 +10215,7 @@ msgstr "Penguin Mail 需要郵件存取權才能運作。請重新登入並允�
 msgid ""
 "{set} is set but {missing} is not. Set both to sign in with your own Google "
 "client, or neither to use Penguin Mail's."
-msgstr ""
-"已設定 {set}，但尚未設定 {missing}。請兩者都設定以使用自訂的 Google 用戶端登"
-"入，或兩者都不設定以使用 Penguin Mail 內建的。"
+msgstr "已設定 {set}，但未設定 {missing}。兩者都設定即可使用自己的 Google 用戶端登入，兩者都不設定則使用 Penguin Mail 的用戶端。"
 
 #: sync/src/triage.rs:53
 msgid "Mark read"
