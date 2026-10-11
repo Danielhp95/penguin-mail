@@ -115,7 +115,17 @@ impl<J: JmapApi> Jmap<J> {
             .cloned()
             .ok_or_else(|| BackendError::Refused(gettext("The server has no Drafts mailbox.")))?;
         let blob = self.api().upload(raw.to_vec()).await.map_err(backend)?;
-        let saved = self.api().import(&blob, &[drafts], &["$draft", "$seen"], draft_id).await.map_err(backend)?;
+        let saved = match self.api().import(&blob, &[drafts], &["$draft", "$seen"], draft_id).await {
+            Ok(saved) => saved,
+            // The server keeps one copy of the same bytes, and a message that
+            // is no draft already holds these.
+            Err(JmapError::Method { kind, .. }) if kind == "alreadyExists" => {
+                return Err(BackendError::Refused(gettext(
+                    "The server already keeps this exact message outside Drafts, so it cannot also keep it as a draft.",
+                )));
+            }
+            Err(err) => return Err(backend(err)),
+        };
         // The new draft is saved either way. An old one the server would
         // not destroy gets one more try, so the person does not find two.
         if let (Some(old), Some(leftover)) = (draft_id, saved.leftover)

@@ -288,15 +288,15 @@ async fn saving_an_unchanged_draft_keeps_the_copy_the_server_has() {
     answering_in_turn(&server, vec![
         already_there("OLD"),
         json!({"sessionState": "s1", "methodResponses": [
-            ["Email/set", {"accountId": "A1", "updated": {"OLD": null}}, "c0"],
-            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "OLD", "threadId": "T1"}]}, "c1"]]}),
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "OLD", "threadId": "T1", "keywords": {"$draft": true}}]}, "c0"]]}),
+        json!({"sessionState": "s1", "methodResponses": [["Email/set", {"accountId": "A1", "updated": {"OLD": null}}, "c0"]]}),
     ]).await;
     let saved = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap();
     assert_eq!((saved.email.id.as_str(), saved.email.thread_id.as_str()), ("OLD", "T1"));
     assert_eq!(saved.leftover, None);
     let sent = posts(&server).await;
-    assert_eq!(sent.len(), 2, "the copy is kept, not destroyed");
-    let update = &sent[1]["methodCalls"][0][1]["update"]["OLD"];
+    assert_eq!(sent.len(), 3, "the copy is read and kept, not destroyed");
+    let update = &sent[2]["methodCalls"][0][1]["update"]["OLD"];
     assert_eq!((&update["mailboxIds/drafts"], &update["keywords/$draft"]), (&json!(true), &json!(true)));
 }
 
@@ -336,4 +336,60 @@ async fn a_refused_submission_of_the_server_s_copy_leaves_that_copy() {
     let refused = client(&server).submit(&a_submission()).await.unwrap_err();
     assert_eq!(refused, mailrs_jmap::JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
     assert_eq!(posts(&server).await.len(), 2, "no destroy of a message the send did not make");
+}
+
+#[tokio::test]
+async fn a_server_that_submits_its_own_copy_at_once_sends_it_once() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "updated": {"D1": null}}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c1"]]}),
+    ]).await;
+    let imported = client(&server).submit(&a_submission()).await.unwrap();
+    assert_eq!((imported.id.as_str(), imported.thread_id.as_str()), ("D1", "T1"));
+    let sent = posts(&server).await;
+    let submissions = sent.iter().flat_map(|p| p["methodCalls"].as_array().unwrap().clone()).filter(|c| c[0] == "EmailSubmission/set").count();
+    assert_eq!(submissions, 1, "the message went out once");
+    assert_eq!(sent[1]["methodCalls"][0][1]["update"]["D1"]["keywords/$draft"], Value::Null);
+    assert_eq!(sent[1]["methodCalls"][0][1]["update"]["D1"]["mailboxIds/sent"], true);
+}
+
+#[tokio::test]
+async fn the_server_s_copy_sent_without_a_sent_mailbox_stops_being_a_draft() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"]]}),
+    ]).await;
+    // As the adapter asks with Drafts but no Sent or Archive: the copy is
+    // filed in Drafts, without `$draft`.
+    let submission = Submission { drafts: None, sent: Some("drafts".into()), ..a_submission() };
+    client(&server).submit(&submission).await.unwrap();
+    let sent = posts(&server).await;
+    let moved = &sent[1]["methodCalls"][1][1]["onSuccessUpdateEmail"]["#s"];
+    assert_eq!(moved["keywords/$draft"], Value::Null);
+    assert!(moved.as_object().unwrap().contains_key("keywords/$draft"));
+    assert_eq!(moved["mailboxIds/drafts"], true);
+}
+
+#[tokio::test]
+async fn saving_bytes_another_message_holds_is_refused_and_leaves_it_alone() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        already_there("INBOX1"),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "INBOX1", "threadId": "T1", "keywords": {"$seen": true}}]}, "c0"]]}),
+    ]).await;
+    let refused = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap_err();
+    assert!(matches!(&refused, mailrs_jmap::JmapError::Method { kind, .. } if kind == "alreadyExists"), "{refused:?}");
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2, "no patch and no destroy");
 }

@@ -45,9 +45,10 @@ impl JmapKind {
 
 pub struct JmapServer {
     container: Container,
-    /// One pool for every call the test makes as the other client. Cyrus's
-    /// httpd takes no new connection while an EventSource stream is open,
-    /// so the witness keeps reusing the connection it already has.
+    /// One pool for every call the test makes as the other client. It does
+    /// not get past Cyrus 3.13 while an EventSource stream is open: Cyrus
+    /// then answers no request on any connection, new or kept alive, until
+    /// the stream closes.
     http: reqwest::Client,
     pub kind: JmapKind,
     pub session_url: String,
@@ -158,6 +159,49 @@ fn endpoint(session_url: &str, template: &str, account: &str) -> reqwest::Url {
         .unwrap_or_else(|_| panic!("{template} does not resolve against {session_url}"))
 }
 
+/// Whether Cyrus's start script has made its users. It answers before the
+/// script is done, then deletes and remakes `user1` to `user5` and grants
+/// each its rights mailbox by mailbox, so an early write can land in a
+/// mailbox about to go or be refused as `invalidProperties`. `user5` comes
+/// last: once every one of its mailboxes takes mail, every user is ready.
+async fn cyrus_users_made(session_url: &str, password: &str) -> bool {
+    let http = reqwest::Client::new();
+    let deadline = Instant::now() + READY_WITHIN;
+    while Instant::now() < deadline {
+        if every_mailbox_takes_mail(&http, session_url, "user5", password).await {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
+async fn every_mailbox_takes_mail(http: &reqwest::Client, session_url: &str, user: &str, password: &str) -> bool {
+    let session: Option<Value> = match http.get(session_url).basic_auth(user, Some(password)).send().await {
+        Ok(response) if response.status().is_success() => response.json().await.ok(),
+        _ => None,
+    };
+    let Some(session) = session else { return false };
+    let (Some(account), Some(api)) = (
+        session["primaryAccounts"]["urn:ietf:params:jmap:mail"].as_str(),
+        session["apiUrl"].as_str(),
+    ) else {
+        return false;
+    };
+    let calls = json!({
+        "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+        "methodCalls": [["Mailbox/get", {"accountId": account, "ids": null, "properties": ["role", "myRights"]}, "0"]]
+    });
+    let answer: Option<Value> = match http.post(endpoint(session_url, api, "")).basic_auth(user, Some(password)).json(&calls).send().await {
+        Ok(response) if response.status().is_success() => response.json().await.ok(),
+        _ => None,
+    };
+    let Some(list) = answer.as_ref().and_then(|a| a["methodResponses"][0][1]["list"].as_array()) else {
+        return false;
+    };
+    list.iter().any(|m| m["role"] == "inbox") && list.iter().all(|m| m["myRights"]["mayAddItems"] == true)
+}
+
 impl JmapServer {
     pub async fn start(kind: JmapKind, password: &str) -> Option<JmapServer> {
         match kind {
@@ -186,7 +230,9 @@ impl JmapServer {
         // Cyrus serves the session at /jmap; /.well-known/jmap redirects
         // there.
         let session_url = format!("{base}/jmap");
-        if !answers(&session_url, Some(("user1", password))).await {
+        if !answers(&session_url, Some(("user1", password))).await
+            || !cyrus_users_made(&session_url, password).await
+        {
             return container
                 .not_ready(REQUIRE_JMAP, "Cyrus", READY_WITHIN)
                 .await;

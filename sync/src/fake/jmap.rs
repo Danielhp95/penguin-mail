@@ -90,8 +90,9 @@ pub struct JmapState {
     /// The most hits one `Email/query` answers, whatever limit it was given:
     /// RFC 8620 5.5 lets a server return fewer than asked.
     pub query_clamp: Option<usize>,
-    /// Refuses `inMailbox` under an `OR` or a `NOT`, as Apache James 3.9
-    /// does ("Nested inMailbox filters are not supported").
+    /// Refuses `inMailbox` under an `OR` or a `NOT`, and a second
+    /// `inMailbox` in one filter, as Apache James 3.9 does ("Nested
+    /// inMailbox filters are not supported").
     pub flat_mailbox_filters: bool,
     /// Messages the server refuses to change or destroy, as `forbidden`.
     pub refused: BTreeSet<String>,
@@ -400,9 +401,9 @@ impl FakeJmap {
         self.with(|s| s.calls.push(name.to_string()));
     }
 
-    /// A server that refuses a mailbox condition under `OR` or `NOT`, as
-    /// Apache James does.
-    pub fn refusing_mailboxes_under_or(self) -> FakeJmap {
+    /// A server that takes one mailbox condition a filter, never under
+    /// `OR` or `NOT`, as Apache James does.
+    pub fn one_mailbox_per_filter(self) -> FakeJmap {
         self.with(|s| s.flat_mailbox_filters = true);
         self
     }
@@ -624,15 +625,23 @@ impl FakeJmap {
     }
 }
 
-/// Whether `filter` holds a mailbox condition under an `OR` or a `NOT`.
-fn mailbox_under_or(filter: &Value, under: bool) -> bool {
-    match filter.get("operator").and_then(Value::as_str) {
-        Some(op) => {
-            let under = under || op != "AND";
-            filter["conditions"].as_array().is_some_and(|c| c.iter().any(|c| mailbox_under_or(c, under)))
+/// Whether `filter` holds a mailbox condition under an `OR` or a `NOT`,
+/// or more than one `inMailbox`: Apache James refuses both.
+fn mailbox_filter_james_refuses(filter: &Value) -> bool {
+    fn walk(filter: &Value, under: bool, seen: &mut usize) -> bool {
+        match filter.get("operator").and_then(Value::as_str) {
+            Some(op) => {
+                let under = under || op != "AND";
+                filter["conditions"].as_array().is_some_and(|c| c.iter().any(|c| walk(c, under, seen)))
+            }
+            None => {
+                *seen += usize::from(filter.get("inMailbox").is_some());
+                let mailbox = filter.get("inMailbox").is_some() || filter.get("inMailboxOtherThan").is_some();
+                (under && mailbox) || *seen > 1
+            }
         }
-        None => under && (filter.get("inMailbox").is_some() || filter.get("inMailboxOtherThan").is_some()),
     }
+    walk(filter, false, &mut 0)
 }
 
 impl JmapApi for FakeJmap {
@@ -684,7 +693,7 @@ impl JmapApi for FakeJmap {
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         self.called("Email/query");
         self.with(|s| {
-            if s.flat_mailbox_filters && query.filter.as_ref().is_some_and(|f| mailbox_under_or(f, false)) {
+            if s.flat_mailbox_filters && query.filter.as_ref().is_some_and(mailbox_filter_james_refuses) {
                 return Err(JmapError::Method {
                     kind: "unsupportedFilter".into(),
                     description: "Nested inMailbox filters are not supported".into(),
@@ -872,6 +881,16 @@ impl JmapApi for FakeJmap {
     async fn import(&self, blob_id: &str, mailbox_ids: &[String], keywords: &[&str], destroy: Option<&str>) -> Answer<Saved> {
         self.called("Email/import");
         self.with(|s| {
+            // As the client does: the same bytes held by a message that is
+            // no draft, and not the one being replaced, are not taken over.
+            let raw = s.blobs.get(blob_id);
+            let taken = s.emails.iter().find(|(_, e)| s.one_copy && Some(&e.raw) == raw);
+            if let Some((id, email)) = taken
+                && destroy != Some(id.as_str())
+                && !email.keywords.contains("$draft")
+            {
+                return Err(JmapError::Method { kind: "alreadyExists".into(), description: String::new() });
+            }
             let made = FakeJmap::import_now(s, blob_id, mailbox_ids, keywords)?;
             // As the client does: the old draft goes in a second request,
             // and a refusal there comes back beside the new message.

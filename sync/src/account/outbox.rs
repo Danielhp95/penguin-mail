@@ -23,7 +23,7 @@ impl AccountSync {
         draft_id: Option<String>,
     ) -> Result<String, SyncError> {
         let sent = self.services.mail.send(&raw, thread_id.as_deref()).await?;
-        let message_id = self.file_sent(&raw).await.unwrap_or(sent);
+        let message_id = self.file_sent(&raw).await.unwrap_or_else(|| sent.clone());
         if let Some(draft_id) = draft_id {
             // The message has gone out, so nothing after this may fail the
             // send: the outbox would send it again.
@@ -34,7 +34,11 @@ impl AccountSync {
                     draft_id.clone()
                 }
             };
-            if let Err(err) = self.services.mail.delete_draft(&name).await
+            // A server that keeps one copy of the same bytes sent the draft
+            // itself and filed it in Sent: deleting it would delete the sent
+            // message.
+            if name != sent
+                && let Err(err) = self.services.mail.delete_draft(&name).await
                 && !matches!(err, BackendError::NotFound)
             {
                 tracing::warn!(account = self.account_id, error = %err, "sent, but could not delete the draft");

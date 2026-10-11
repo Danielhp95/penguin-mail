@@ -10831,6 +10831,12 @@ msgstr ""
 msgid "The server has no Drafts mailbox."
 msgstr "Der Server hat kein Postfach für Entwürfe."
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid ""
+"The server already keeps this exact message outside Drafts, so it cannot "
+"also keep it as a draft."
+msgstr "Der Server bewahrt genau diese Nachricht bereits außerhalb der Entwürfe auf und kann sie deshalb nicht zusätzlich als Entwurf speichern."
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "Der Server hat dafür kein Postfach."

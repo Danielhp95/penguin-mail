@@ -10790,6 +10790,12 @@ msgstr ""
 msgid "The server has no Drafts mailbox."
 msgstr "Le serveur n’a pas de boîte Brouillons."
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid ""
+"The server already keeps this exact message outside Drafts, so it cannot "
+"also keep it as a draft."
+msgstr "Le serveur conserve déjà ce même message hors des Brouillons ; il ne peut donc pas le garder aussi comme brouillon."
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "Le serveur n’a pas de boîte aux lettres pour cela."

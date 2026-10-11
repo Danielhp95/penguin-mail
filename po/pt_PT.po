@@ -10713,6 +10713,12 @@ msgstr ""
 msgid "The server has no Drafts mailbox."
 msgstr "O servidor não tem caixa de Rascunhos."
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid ""
+"The server already keeps this exact message outside Drafts, so it cannot "
+"also keep it as a draft."
+msgstr "O servidor já guarda esta mesma mensagem fora dos Rascunhos, por isso não a pode guardar também como rascunho."
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "O servidor não tem uma caixa de correio para isto."

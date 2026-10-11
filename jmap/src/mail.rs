@@ -527,7 +527,7 @@ impl JmapClient {
         }));
         let email = match self.send(&request).await?.take::<ImportAnswer>(&import, "Email/import")?.one("m")? {
             Outcome::Made(email) => email,
-            Outcome::Exists(existing) => self.file_existing(&account, &existing, mailbox_ids, keywords).await?,
+            Outcome::Exists(existing) => self.file_existing(&account, &existing, mailbox_ids, keywords, destroy).await?,
         };
         // The server's copy of unchanged bytes is the old draft itself.
         let leftover = match destroy.filter(|old| *old != email.id) {
@@ -539,8 +539,25 @@ impl JmapClient {
 
     /// Adds `mailbox_ids` and `keywords` to the copy the server already
     /// has, as an import of the same bytes would have set them, and answers
-    /// it with its thread.
-    async fn file_existing(&self, account: &str, id: &str, mailbox_ids: &[String], keywords: &[&str]) -> Result<Imported, JmapError> {
+    /// it with its thread. Only a draft is taken over this way: the draft
+    /// being replaced, or another draft. Any other message that holds the
+    /// same bytes is refused as `alreadyExists` and left as it is.
+    async fn file_existing(
+        &self,
+        account: &str,
+        id: &str,
+        mailbox_ids: &[String],
+        keywords: &[&str],
+        replacing: Option<&str>,
+    ) -> Result<Imported, JmapError> {
+        let mut request = Request::new();
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId", "keywords"] }));
+        let found: Got<Email> = self.send(&request).await?.take(&got, "Email/get")?;
+        let email = found.list.into_iter().next().ok_or(JmapError::NotFound)?;
+        let draft = email.keywords.get("$draft").copied().unwrap_or(false);
+        if replacing != Some(id) && !draft {
+            return Err(JmapError::Method { kind: "alreadyExists".into(), description: String::new() });
+        }
         let mut patch = Map::new();
         for mailbox in mailbox_ids {
             patch.insert(format!("mailboxIds/{}", pointer(mailbox)), json!(true));
@@ -548,15 +565,40 @@ impl JmapClient {
         for keyword in keywords {
             patch.insert(format!("keywords/{}", pointer(keyword)), json!(true));
         }
-        let mut request = Request::new();
-        let set = request.call(MAIL, "Email/set", json!({ "accountId": account, "update": { id: patch } }));
-        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
-        let mut answer = self.send(&request).await?;
-        let set: SetResponse = answer.take(&set, "Email/set")?;
+        let mut update = Map::new();
+        update.insert(id.to_string(), Value::Object(patch));
+        let set = self.set_emails(&update, &[]).await?;
         if let Some(refused) = set.refusal(id) {
             return Err(refused.error());
         }
-        self.found_copy(answer.take(&got, "Email/get")?)
+        Ok(Imported { id: email.id, thread_id: email.thread_id })
+    }
+
+    /// The patch that files a sent copy: out of Drafts and into Sent when
+    /// the submission names both, into `sent` alone otherwise, and never a
+    /// draft again.
+    fn filed(submission: &Submission) -> Map<String, Value> {
+        let mut moved = Map::new();
+        if let (Some(drafts), Some(sent)) = (&submission.drafts, &submission.sent)
+            && drafts != sent
+        {
+            moved.insert(format!("mailboxIds/{}", pointer(drafts)), Value::Null);
+        }
+        if let Some(sent) = &submission.sent {
+            moved.insert(format!("mailboxIds/{}", pointer(sent)), json!(true));
+        }
+        moved.insert("keywords/$draft".into(), Value::Null);
+        moved
+    }
+
+    /// The copy the server already has as `id`, filed as sent, with its
+    /// thread: for a server that took a submission of it at once.
+    async fn file_sent_copy(&self, account: &str, id: &str, submission: &Submission) -> Result<Imported, JmapError> {
+        let mut request = Request::new();
+        request.call(MAIL, "Email/set", json!({ "accountId": account, "update": { id: Self::filed(submission) } }));
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
+        // The message went out; a filing the server refuses does not undo that.
+        self.found_copy(self.send(&request).await?.take(&got, "Email/get")?)
     }
 
     /// The one message an `Email/get` of an existing copy answers.
@@ -622,7 +664,16 @@ impl JmapClient {
             // The submission named a copy that was never made, so nothing
             // went out. Send the server's own copy instead, and leave it be
             // if that is refused: this send did not make it.
-            Outcome::Exists(existing) => return self.submit_existing(&account, &existing, args).await,
+            Outcome::Exists(existing) => {
+                // A server may resolve `#m` to the copy it has and send it
+                // at once; only a submission it did not make is sent again.
+                let first = answer.take::<SetResponse>(&submitted, "EmailSubmission/set");
+                let made = first.is_ok_and(|set| set.created.is_some_and(|c| c.contains_key("s")));
+                return match made {
+                    true => self.file_sent_copy(&account, &existing, submission).await,
+                    false => self.submit_existing(&account, &existing, args, submission).await,
+                };
+            }
         };
         let refused = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
             Ok(set) => set.not_created.as_ref().and_then(|n| n.get("s")).map(SetError::error),
@@ -641,9 +692,10 @@ impl JmapClient {
     }
 
     /// Submits the message the server already has as `id`, with the same
-    /// envelope and filing as `args` asked for a new copy.
-    async fn submit_existing(&self, account: &str, id: &str, mut args: Value) -> Result<Imported, JmapError> {
+    /// envelope as `args` asked for a new copy, and files it as sent.
+    async fn submit_existing(&self, account: &str, id: &str, mut args: Value, submission: &Submission) -> Result<Imported, JmapError> {
         args["create"]["s"]["emailId"] = json!(id);
+        args["onSuccessUpdateEmail"] = json!({ "#s": Self::filed(submission) });
         let mut request = Request::new();
         let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
         let submitted = request.call(SUBMISSION, "EmailSubmission/set", args);

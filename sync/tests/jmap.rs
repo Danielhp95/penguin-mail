@@ -168,7 +168,7 @@ impl<'a> Run<'a> {
         self.a_send_lands_in_sent().await;
         self.a_draft_saves_replaces_and_sends().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
-        self.a_delivery_wakes_the_watch_or_the_poll_finds_it().await;
+        self.a_delivery_during_a_watch_reaches_the_store().await;
     }
 
     async fn mail_arrives_and_lands_in_the_store(&self) {
@@ -231,8 +231,12 @@ impl<'a> Run<'a> {
         let id = self.mail().send(raw.as_bytes(), None).await.expect("a send");
         let (mailboxes, keywords) = self.on_server(&id).await.expect("the sent copy");
         let sent = self.sent_mailbox().await;
-        assert_eq!(mailboxes.into_keys().collect::<Vec<_>>(), [sent], "{:?}: the copy sits in Sent", self.kind());
+        assert_eq!(mailboxes.into_keys().collect::<Vec<_>>(), std::slice::from_ref(&sent), "{:?}: the copy sits in Sent", self.kind());
         assert!(!keywords.contains_key("$draft"), "{:?}: {keywords:?}", self.kind());
+        // A mailbox's share of the window, as the relist after a lost state
+        // asks for it.
+        let listed = self.mail().window_ids(WINDOW_DAYS, Some(&sent)).await.expect("Sent's window");
+        assert!(listed.iter().any(|r| r.id == id), "{:?}: {listed:?}", self.kind());
     }
 
     /// A draft edited, then saved again unchanged, keeps one copy on the
@@ -272,7 +276,7 @@ impl<'a> Run<'a> {
     /// over: Cyrus 3.13 answers no other request, on any connection, while
     /// an EventSource stream is open, so there the delivery waits until the
     /// watch gives up and its stream closes.
-    async fn a_delivery_wakes_the_watch_or_the_poll_finds_it(&self) {
+    async fn a_delivery_during_a_watch_reaches_the_store(&self) {
         let watcher = services(self.server, self.password, &self.db, self.account_id).mail;
         let mut watching = tokio::spawn({
             let watcher = watcher.clone();

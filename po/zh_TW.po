@@ -10266,6 +10266,12 @@ msgstr "伺服器沒有 [草稿] 或 [寄件備份] 信箱可存放此郵件。"
 msgid "The server has no Drafts mailbox."
 msgstr "伺服器沒有 [草稿] 信箱。"
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid ""
+"The server already keeps this exact message outside Drafts, so it cannot "
+"also keep it as a draft."
+msgstr "伺服器已在草稿以外保存了這封完全相同的郵件，因此無法再將它保存為草稿。"
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "伺服器沒有可用於此操作的信箱。"

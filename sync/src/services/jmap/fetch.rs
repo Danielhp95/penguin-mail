@@ -38,15 +38,19 @@ pub(super) fn received_millis(email: &Email) -> i64 {
 /// stays newest first. A window of `mailrs_sync::ALL_MAIL` (0 days) takes
 /// every message, which no filter says best.
 pub(super) fn window_filters(days: i64, inbox: Option<&str>) -> Vec<Option<Value>> {
-    if days <= 0 {
+    let Some(after) = window_start(days) else {
         return vec![None];
-    }
-    let after = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    };
     let mut filters = vec![Some(json!({ "after": after }))];
     if let Some(inbox) = inbox {
         filters.push(Some(json!({ "inMailbox": inbox, "before": after })));
     }
     filters
+}
+
+/// When a window of `days` days starts, or `None` for every message.
+fn window_start(days: i64) -> Option<String> {
+    (days > 0).then(|| (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 /// A backfill cursor: which of the window's filters, and the position in
@@ -138,19 +142,19 @@ impl<J: JmapApi> Jmap<J> {
         Ok(Backfill { refs, next: None })
     }
 
-    /// Every id `filter` matches, up to `MOST_IDS`, `IDS_PER_CALL` a call.
-    async fn every_id(&self, filter: Option<Value>) -> Result<Vec<RemoteRef>, BackendError> {
+    /// Every id `filter` matches, up to `most`, `IDS_PER_CALL` a call.
+    async fn every_id(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, BackendError> {
         let mut out = Vec::new();
-        loop {
-            let query = EmailQuery { filter: filter.clone(), position: out.len() as u64, limit: IDS_PER_CALL, total: false };
+        while out.len() < most {
+            let limit = IDS_PER_CALL.min(most - out.len());
+            let query = EmailQuery { filter: filter.clone(), position: out.len() as u64, limit, total: false };
             let found = self.api().query(&query).await.map_err(backend)?;
-            let got = found.hits.len();
-            out.extend(found.hits.into_iter().map(remote_ref));
-            if got == 0 || out.len() >= MOST_IDS {
-                out.truncate(MOST_IDS);
-                return Ok(out);
+            if found.hits.is_empty() {
+                break;
             }
+            out.extend(found.hits.into_iter().take(most - out.len()).map(remote_ref));
         }
+        Ok(out)
     }
 
     /// The ids the window holds, in `mailbox` when given. The Inbox is held
@@ -158,30 +162,38 @@ impl<J: JmapApi> Jmap<J> {
     pub(super) async fn ids_in(&self, days: Option<i64>, mailbox: Option<&str>) -> Result<Vec<RemoteRef>, BackendError> {
         self.listed().await?;
         let inbox = self.inbox_id();
-        let only = |mailbox: &str| json!({ "inMailbox": mailbox });
-        // A mailbox other than the Inbox lists what the window holds, which
-        // includes the whole Inbox: a message there is stored whatever its age.
-        let filters = match (mailbox, days) {
-            (Some(mailbox), _) if Some(mailbox) == inbox.as_deref() => vec![Some(only(mailbox))],
-            (Some(mailbox), Some(days)) => window_filters(days, inbox.as_deref())
-                .into_iter()
-                .map(|window| match window {
-                    Some(window) => Some(json!({ "operator": "AND", "conditions": [only(mailbox), window] })),
-                    None => Some(only(mailbox)),
-                })
-                .collect(),
-            (Some(mailbox), None) => vec![Some(only(mailbox))],
-            (None, Some(days)) => window_filters(days, inbox.as_deref()),
-            (None, None) => vec![None],
-        };
-        let mut out = Vec::new();
-        for filter in filters {
-            out.extend(self.every_id(filter).await?);
-            if out.len() >= MOST_IDS {
-                out.truncate(MOST_IDS);
-                break;
+        let start = days.and_then(window_start);
+        let (mailbox, start) = match (mailbox, start) {
+            (Some(mailbox), Some(start)) if Some(mailbox) != inbox.as_deref() => (mailbox, start),
+            (Some(mailbox), _) => return self.every_id(Some(json!({ "inMailbox": mailbox })), MOST_IDS).await,
+            (None, _) => {
+                let mut out = Vec::new();
+                for filter in days.map_or_else(|| vec![None], |days| window_filters(days, inbox.as_deref())) {
+                    let left = MOST_IDS - out.len();
+                    if left == 0 {
+                        break;
+                    }
+                    out.extend(self.every_id(filter, left).await?);
+                }
+                return Ok(out);
             }
-        }
+        };
+        // A mailbox other than the Inbox lists what the window holds of it:
+        // its recent mail, and its older mail that is also in the Inbox,
+        // which is stored whatever its age. Apache James takes one mailbox
+        // condition a filter, so the older part lists the Inbox's older mail
+        // and keeps what also sits in `mailbox`.
+        let mut out = self.every_id(Some(json!({ "inMailbox": mailbox, "after": start })), MOST_IDS).await?;
+        let Some(inbox) = inbox else {
+            return Ok(out);
+        };
+        let left = MOST_IDS - out.len();
+        let older = self.every_id(Some(json!({ "inMailbox": inbox, "before": start })), left).await?;
+        let ids: Vec<String> = older.iter().map(|r| r.id.clone()).collect();
+        let got = self.api().emails(&ids, &["id", "mailboxIds"]).await.map_err(backend)?;
+        let held: std::collections::HashSet<String> =
+            got.list.into_iter().filter(|e| e.mailbox_ids.get(mailbox).copied().unwrap_or(false)).map(|e| e.id).collect();
+        out.extend(older.into_iter().filter(|r| held.contains(&r.id)));
         Ok(out)
     }
 
@@ -194,7 +206,7 @@ impl<J: JmapApi> Jmap<J> {
         if usize::try_from(total).unwrap_or(usize::MAX) > MOST_IDS {
             return Err(BackendError::Unsupported);
         }
-        self.every_id(Some(json!({ "inMailbox": inbox }))).await
+        self.every_id(Some(json!({ "inMailbox": inbox })), MOST_IDS).await
     }
 
     pub(super) async fn fetch_metas(&self, wants: Vec<Want>) -> Result<Found, BackendError> {

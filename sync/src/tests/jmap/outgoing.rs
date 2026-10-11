@@ -96,6 +96,30 @@ async fn an_unchanged_draft_sends_as_the_server_s_own_copy_and_stays_in_sent() {
 }
 
 #[tokio::test]
+async fn saving_a_draft_with_the_bytes_of_another_message_is_refused_in_words() {
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    let raw = letter("me@example.com", "");
+    let kept = h.fake.deliver("inbox", &raw, 0);
+    let refused = h.mail().save_draft(None, &raw, None).await;
+    assert!(matches!(&refused, Err(BackendError::Refused(said)) if !said.contains("alreadyExists")), "{refused:?}");
+    let (mailboxes, keywords) = h.fake.with(|s| (s.emails[&kept].mailbox_ids.clone(), s.emails[&kept].keywords.clone()));
+    assert_eq!(mailboxes.into_iter().collect::<Vec<_>>(), [h.fake.mailbox("inbox")]);
+    assert!(!keywords.contains("$draft"));
+}
+
+#[tokio::test]
+async fn sending_from_an_unchanged_draft_keeps_the_sent_copy() {
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    h.sync.refresh_labels().await.unwrap();
+    let raw = letter("me@example.com", "");
+    let draft = h.sync.save_draft(raw.clone(), None, None).await.unwrap();
+    let sent = h.sync.send(raw, None, Some(draft.draft_id.clone())).await.unwrap();
+    let (mailboxes, keywords) = h.fake.with(|s| (s.emails[&sent].mailbox_ids.clone(), s.emails[&sent].keywords.clone()));
+    assert_eq!(mailboxes.into_iter().collect::<Vec<_>>(), [h.fake.mailbox("sent")]);
+    assert!(!keywords.contains("$draft"));
+}
+
+#[tokio::test]
 async fn a_draft_whose_old_copy_stays_still_saves_and_tries_the_old_one_again() {
     let h = fastmail().await;
     let first = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();

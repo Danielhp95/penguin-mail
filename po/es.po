@@ -10744,6 +10744,12 @@ msgstr ""
 msgid "The server has no Drafts mailbox."
 msgstr "El servidor no tiene buzón de borradores."
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid ""
+"The server already keeps this exact message outside Drafts, so it cannot "
+"also keep it as a draft."
+msgstr "El servidor ya guarda este mismo mensaje fuera de Borradores, así que no puede guardarlo también como borrador."
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "El servidor no tiene ningún buzón para esto."

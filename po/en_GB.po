@@ -9906,6 +9906,10 @@ msgstr "The server has neither a Drafts nor a Sent mailbox to keep the message i
 msgid "The server has no Drafts mailbox."
 msgstr "The server has no Drafts mailbox."
 
+#: sync/src/services/jmap/outgoing.rs:124
+msgid "The server already keeps this exact message outside Drafts, so it cannot also keep it as a draft."
+msgstr "The server already keeps this exact message outside Drafts, so it cannot also keep it as a draft."
+
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "The server has no mailbox for this."
