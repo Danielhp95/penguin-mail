@@ -13,6 +13,7 @@ pub mod error;
 pub mod http;
 pub mod identity;
 pub mod mail;
+pub mod push;
 pub mod session;
 
 pub use auth::{Auth, AuthKind};
@@ -21,6 +22,7 @@ pub use check::{Checked, Offered, check};
 pub use error::JmapError;
 pub use http::JmapClient;
 pub use identity::{EmailAddress, Identity};
+pub use push::{Pushed, StateChange};
 pub use request::{CallId, Request, Response};
 pub use session::{
     CALENDARS, CONTACTS, CORE, Limits, MAIL, MASKED_EMAIL, MOST_AT_ONCE, SIEVE, SUBMISSION, Session, SessionAccount,

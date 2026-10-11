@@ -49,6 +49,8 @@ struct Inner {
     permits: Semaphore,
     /// Set once the permits shrank to the session's own limit.
     sized: AtomicBool,
+    /// The open push stream. It takes no permit: it lives for hours.
+    events: tokio::sync::Mutex<Option<crate::push::EventStream>>,
 }
 
 #[derive(Default)]
@@ -125,6 +127,7 @@ impl JmapClient {
                 reading: tokio::sync::Mutex::new(()),
                 permits: Semaphore::new(MOST_AT_ONCE),
                 sized: AtomicBool::new(false),
+                events: tokio::sync::Mutex::new(None),
             }),
         })
     }
@@ -256,6 +259,10 @@ impl JmapClient {
     pub(crate) async fn authorized(&self, method: reqwest::Method, url: Url) -> Result<reqwest::RequestBuilder, JmapError> {
         let header = self.inner.auth.header(false).await?;
         Ok(self.inner.http.request(method, url).header(AUTHORIZATION, header))
+    }
+
+    pub(crate) fn events(&self) -> &tokio::sync::Mutex<Option<crate::push::EventStream>> {
+        &self.inner.events
     }
 
     /// One of the account's slots for a request in flight.
