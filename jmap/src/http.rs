@@ -30,6 +30,11 @@ const ERROR_LIMIT: usize = 64 << 10;
 /// transfers set their own.
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a call may wait for the head of its answer while a push
+/// stream is open before the stream counts as what holds it up. Cyrus
+/// answers no other request of the account while a stream is open.
+const STALL_LIMIT: Duration = Duration::from_secs(20);
+
 /// How many same-host redirects the session fetch follows.
 const MOST_REDIRECTS: usize = 5;
 
@@ -51,6 +56,13 @@ struct Inner {
     sized: AtomicBool,
     /// The open push stream. It takes no permit: it lives for hours.
     events: tokio::sync::Mutex<Option<crate::push::EventStream>>,
+    /// Set while a push stream is open.
+    streaming: AtomicBool,
+    /// Set once a stream was found to hold up the account's other calls;
+    /// the account then polls instead.
+    push_off: AtomicBool,
+    /// Tells a waiting watch to drop its stream.
+    drop_stream: tokio::sync::Notify,
 }
 
 #[derive(Default)]
@@ -128,6 +140,9 @@ impl JmapClient {
                 permits: Semaphore::new(MOST_AT_ONCE),
                 sized: AtomicBool::new(false),
                 events: tokio::sync::Mutex::new(None),
+                streaming: AtomicBool::new(false),
+                push_off: AtomicBool::new(false),
+                drop_stream: tokio::sync::Notify::new(),
             }),
         })
     }
@@ -265,6 +280,50 @@ impl JmapClient {
         &self.inner.events
     }
 
+    pub(crate) fn set_streaming(&self, open: bool) {
+        self.inner.streaming.store(open, Ordering::SeqCst);
+    }
+
+    pub(crate) fn push_off(&self) -> bool {
+        self.inner.push_off.load(Ordering::SeqCst)
+    }
+
+    /// Waits until a stalled call asks the watch to drop its stream.
+    pub(crate) async fn stream_unwanted(&self) {
+        self.inner.drop_stream.notified().await
+    }
+
+    /// Turns push off and closes the stream: dropped here when no watch
+    /// holds it, by the watch itself when one does.
+    pub(crate) fn stop_pushing(&self) {
+        self.inner.push_off.store(true, Ordering::SeqCst);
+        self.inner.drop_stream.notify_one();
+        if let Ok(mut held) = self.inner.events.try_lock() {
+            *held = None;
+            self.set_streaming(false);
+        }
+    }
+
+    /// Sends `request` and waits for the head of its answer. While a push
+    /// stream is open, a head that takes past the stall limit turns push
+    /// off and drops the stream, and the wait goes on: the call may be a
+    /// write, and giving up on it could let it run later unseen. Only the
+    /// head is timed, so a slow body is never taken for a stall.
+    pub(crate) async fn sent(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, JmapError> {
+        let answer = request.send();
+        tokio::pin!(answer);
+        if self.inner.streaming.load(Ordering::SeqCst) && !self.push_off() {
+            tokio::select! {
+                got = &mut answer => return got.map_err(network),
+                _ = tokio::time::sleep(STALL_LIMIT) => {
+                    tracing::warn!("a call stalled while the push stream was open; turning push off");
+                    self.stop_pushing();
+                }
+            }
+        }
+        answer.await.map_err(network)
+    }
+
     /// One of the account's slots for a request in flight.
     pub(crate) async fn permit(&self) -> SemaphorePermit<'_> {
         // The semaphore is never closed, so acquiring cannot fail.
@@ -289,15 +348,13 @@ impl JmapClient {
         }
         let url = self.endpoint(&session.api_url)?;
         let _permit = self.permit().await;
-        let response = self
+        let request = self
             .authorized(reqwest::Method::POST, url)
             .await?
             .header(CONTENT_TYPE, "application/json")
             .timeout(CALL_TIMEOUT)
-            .body(body)
-            .send()
-            .await
-            .map_err(network)?;
+            .body(body);
+        let response = self.sent(request).await?;
         if !response.status().is_success() {
             return Err(failure(response).await);
         }

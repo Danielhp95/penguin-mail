@@ -24,13 +24,13 @@ const WATCH_RETRY: Duration = Duration::from_secs(60);
 /// pace.
 const WATCH_RETRY_CAP: Duration = Duration::from_secs(15 * 60);
 
-/// The wait before reopening the stream after `failures` failures in a
-/// row before this one.
 /// How long a stream stays open before it counts as healthy: three pings,
 /// one more than the silence limit, so a stream that dies of silence never
 /// reaches it.
 const STREAM_HELD: Duration = Duration::from_secs(3 * PING_SECONDS as u64);
 
+/// The wait before reopening the stream after `failures` failures in a
+/// row before this one.
 fn watch_retry(failures: u32) -> Duration {
     WATCH_RETRY.saturating_mul(1u32 << failures.min(8)).min(WATCH_RETRY_CAP)
 }

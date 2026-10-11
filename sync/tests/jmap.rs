@@ -22,6 +22,9 @@ const WINDOW_DAYS: i64 = 30;
 /// How long the push step waits for the server to report a delivery.
 const PUSH_WAIT: Duration = Duration::from_secs(10);
 
+/// How long a write may take while the same adapter watches.
+const WRITE_WAIT: Duration = Duration::from_secs(15);
+
 /// How often an account looks when push does not work.
 const NO_PUSH_POLL: Duration = Duration::from_secs(60);
 
@@ -169,6 +172,7 @@ impl<'a> Run<'a> {
         self.a_draft_saves_replaces_and_sends().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
+        self.a_write_during_a_watch_completes().await;
     }
 
     async fn mail_arrives_and_lands_in_the_store(&self) {
@@ -275,7 +279,7 @@ impl<'a> Run<'a> {
     /// The watch runs on an adapter of its own, dropped once the wait is
     /// over: Cyrus 3.13 answers no other request, on any connection, while
     /// an EventSource stream is open, so there the delivery waits until the
-    /// watch gives up and its stream closes.
+    /// adapter's probe finds the server holding calls and drops the stream.
     async fn a_delivery_during_a_watch_reaches_the_store(&self) {
         let watcher = services(self.server, self.password, &self.db, self.account_id).mail;
         let mut watching = tokio::spawn({
@@ -306,5 +310,24 @@ impl<'a> Run<'a> {
         eprintln!("{:?}: {said}; the delivery took {:?}", self.kind(), started.elapsed());
         self.sync.incremental().await.expect("a look");
         assert!(self.stored(&self.id("pushed")).await.is_some(), "{:?}: the pushed message", self.kind());
+    }
+
+    /// A write on the adapter whose watch holds the stream open goes
+    /// through in seconds. On Cyrus, which answers nothing else while a
+    /// stream is open, the adapter drops the stream and polls instead.
+    async fn a_write_during_a_watch_completes(&self) {
+        let mail = self.mail().clone();
+        let watching = tokio::spawn(async move { mail.watch().await });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let (_, thread) = self.stored(&self.id("welcome")).await.expect("stored");
+        let started = std::time::Instant::now();
+        let written = tokio::time::timeout(
+            WRITE_WAIT,
+            self.sync.triage_all(&[Target::thread(self.account_id, thread)], &TriageAction::Unstar, None),
+        )
+        .await;
+        watching.abort();
+        eprintln!("{:?}: a write during a watch took {:?}", self.kind(), started.elapsed());
+        written.unwrap_or_else(|_| panic!("{:?}: the write waited past {WRITE_WAIT:?}", self.kind())).expect("an unstar");
     }
 }

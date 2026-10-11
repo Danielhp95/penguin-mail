@@ -4,6 +4,12 @@
 //! reader caps one event at a megabyte and gives up on a stream that says
 //! nothing for the idle limit the caller sets, twice the ping interval.
 //!
+//! Cyrus answers no other request of the account while a stream is open.
+//! So a new stream is followed by one `Core/echo`, which every server
+//! answers; when no answer comes within the probe limit the stream is
+//! dropped and push stays off for the client's life. A call that stalls
+//! later while a stream is open does the same (see `JmapClient::sent`).
+//!
 //! The open stream holds no request permit. A permit lasts one call, and
 //! a stream lives for hours: holding one of the four would starve the
 //! account's normal calls.
@@ -15,7 +21,8 @@ use serde::Deserialize;
 
 use crate::blob::expand;
 use crate::http::{failure, network};
-use crate::session::MAIL;
+use crate::request::Request;
+use crate::session::{CORE, MAIL};
 use crate::{JmapClient, JmapError};
 
 /// How often the server is asked to ping, in seconds.
@@ -25,6 +32,10 @@ pub const PING_SECONDS: u32 = 60;
 pub const MOST_EVENT_BYTES: usize = 1 << 20;
 
 const TYPES: &str = "Email,Mailbox,EmailDelivery";
+
+/// How long the echo sent beside a new stream may take before the server
+/// counts as one that holds calls while a stream is open.
+const PROBE_LIMIT: Duration = Duration::from_secs(10);
 
 /// The longest event name kept. Real names are `state` and `ping`.
 const MOST_NAME_BYTES: usize = 64;
@@ -174,24 +185,67 @@ impl JmapClient {
     /// caller must back off before calling again, or a server that closes
     /// at once makes a tight reconnect loop.
     pub async fn push(&self, idle: Duration) -> Result<Pushed, JmapError> {
+        if self.push_off() {
+            return Ok(Pushed::NoPush);
+        }
         let session = self.session().await?;
         let Some(template) = session.event_source_url.clone() else {
             return Ok(Pushed::NoPush);
         };
         let account = session.account_for(MAIL).ok_or_else(|| JmapError::UnknownCapability(MAIL.into()))?.to_string();
         let mut held = self.events().lock().await;
+        let close = |held: &mut Option<EventStream>| {
+            *held = None;
+            self.set_streaming(false);
+        };
         loop {
-            let stream = match held.as_mut() {
-                Some(stream) => stream,
-                None => held.insert(self.open_events(&template, idle).await?),
+            if self.push_off() {
+                close(&mut held);
+                return Ok(Pushed::NoPush);
+            }
+            if held.is_none() {
+                *held = Some(self.open_events(&template, idle).await?);
+                self.set_streaming(true);
+                match self.answers_beside_a_stream().await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        tracing::info!("the server holds calls while a push stream is open; polling instead");
+                        self.stop_pushing();
+                        close(&mut held);
+                        return Ok(Pushed::NoPush);
+                    }
+                    Err(err) => {
+                        close(&mut held);
+                        return Err(err);
+                    }
+                }
+            }
+            let Some(stream) = held.as_mut() else { continue };
+            let next = tokio::select! {
+                next = stream.next(idle) => next,
+                () = self.stream_unwanted() => continue,
             };
-            match stream.next(idle).await {
+            match next {
                 Ok(change) if change.touches(&account, &["Email", "Mailbox", "EmailDelivery"]) => return Ok(Pushed::Changed),
                 Ok(_) => {}
                 Err(err) => {
-                    *held = None;
+                    close(&mut held);
                     return Err(err);
                 }
+            }
+        }
+    }
+
+    /// Whether the server answers a `Core/echo` within the probe limit
+    /// while the new stream is open.
+    async fn answers_beside_a_stream(&self) -> Result<bool, JmapError> {
+        let mut request = Request::new();
+        let call = request.call(CORE, "Core/echo", serde_json::json!({}));
+        match tokio::time::timeout(PROBE_LIMIT, self.send(&request)).await {
+            Err(_) => Ok(false),
+            Ok(answer) => {
+                answer?.take::<serde_json::Value>(&call, "Core/echo")?;
+                Ok(true)
             }
         }
     }
