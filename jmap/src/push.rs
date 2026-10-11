@@ -117,6 +117,10 @@ impl EventStream {
                     return Ok(change);
                 }
             }
+            // A burst near the cap must not stay allocated for hours.
+            if self.pending.is_empty() && self.pending.capacity() > 64 << 10 {
+                self.pending.shrink_to(64 << 10);
+            }
             // Only a line still waiting for its end counts against the cap.
             if self.pending.len() > MOST_EVENT_BYTES {
                 return Err(JmapError::AnswerTooLarge { limit: MOST_EVENT_BYTES });
@@ -164,6 +168,11 @@ impl JmapClient {
     /// Waits until the server says the mail account changed. The stream
     /// stays open between calls; one that fails is dropped and opened
     /// again by the next call.
+    ///
+    /// One task drives this: a second concurrent caller waits on the
+    /// stream's lock. After `Network` (the stream ended or went quiet) the
+    /// caller must back off before calling again, or a server that closes
+    /// at once makes a tight reconnect loop.
     pub async fn push(&self, idle: Duration) -> Result<Pushed, JmapError> {
         let session = self.session().await?;
         let Some(template) = session.event_source_url.clone() else {
