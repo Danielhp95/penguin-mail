@@ -897,6 +897,50 @@ async fn unopened_imap_folder_counts_refresh_without_local_mail_changes() {
     assert_eq!(counted_after_server(&service, sidebar, &folder).await.mailboxes[&folder], 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn cached_counts_do_not_start_or_repeat_server_polls() {
+    use std::time::Duration;
+
+    let h = super::imap_harness().await;
+    h.imap.add_mailbox("INBOX/Lists", None);
+    h.imap.deliver("INBOX/Lists", b"Subject: First\r\n\r\nHi".to_vec(), now_millis());
+    h.sync.refresh_labels().await.unwrap();
+    let service = Mailboxes::new(
+        Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))),
+        h.db.clone(),
+    );
+    let folder = Mailbox::Label {
+        account_id: h.account_id,
+        label_id: "INBOX/Lists".into(),
+        name: "Lists".into(),
+    };
+    let inbox = Mailbox::Unified(Standard::Inbox);
+    let sidebar = [folder.clone(), inbox.clone()];
+    let calls = h.imap.with(|s| s.calls.clone());
+    assert_eq!(service.cached_counts(&sidebar, &inbox, &view()).await.unwrap().mailboxes[&folder], 0);
+    assert_eq!(h.imap.with(|s| s.calls.clone()), calls, "an empty cache starts no request");
+    assert_eq!(counted_after_server(&service, &sidebar, &inbox).await.mailboxes[&folder], 1);
+
+    h.imap.deliver("INBOX/Lists", b"Subject: Second\r\n\r\nHi".to_vec(), now_millis());
+    let calls = h.imap.with(|s| s.calls.clone());
+    let mut changed = service.counts_changed();
+    tokio::time::advance(Duration::from_secs(61)).await;
+    changed.changed().await.unwrap();
+    assert_eq!(service.cached_counts(&sidebar, &inbox, &view()).await.unwrap().mailboxes[&folder], 1);
+    tokio::time::advance(Duration::from_secs(61)).await;
+    assert!(!changed.has_changed().unwrap(), "reading the cache does not arm another timer");
+    assert_eq!(h.imap.with(|s| s.calls.clone()), calls, "an expired cache starts no request");
+
+    h.imap.deliver("INBOX", b"Subject: New mail\r\n\r\nHi".to_vec(), now_millis());
+    h.bootstrap().await;
+    let calls = h.imap.with(|s| s.calls.clone());
+    let local = service.cached_counts(&sidebar, &inbox, &view()).await.unwrap();
+    assert_eq!(local.mailboxes[&folder], 0, "mail changes invalidate old server answers");
+    assert_eq!(local.mailboxes[&inbox], 1, "local mail still updates without a server count");
+    assert_eq!(h.imap.with(|s| s.calls.clone()), calls);
+    assert_eq!(counted_after_server(&service, &sidebar, &inbox).await.mailboxes[&folder], 2);
+}
+
 #[tokio::test]
 async fn imap_counts_include_unopened_folders_and_mail_before_the_local_window() {
     let h = super::imap_harness().await;
