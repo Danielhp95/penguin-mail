@@ -1,0 +1,14 @@
+# Run with scripts/drive-macos.sh scripts/check-dock-macos.txt.
+# All Inboxes combines the demo accounts; unread mail outside Inbox is excluded.
+wait 4000
+check-dock 17
+action win.select-all
+action win.toggle-read
+wait 2000
+check-dock 0
+# Mark those messages unread again, then close the window before the recount.
+action win.toggle-read
+action window.close
+wait 2000
+check-dock 32
+quit

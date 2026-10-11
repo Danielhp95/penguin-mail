@@ -11,6 +11,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Give the outgoing server a password of its own in Server Settings, for an IMAP or POP3 account whose SMTP password differs from its incoming one.
 - The tray icon shows how many messages are unread in an orange badge, and "99+" past 99.
 - Keep 2 years, 5 years or all of your mail on this computer. Older mail downloads in the background while new mail keeps arriving, and a shorter choice frees the space at once.
+- Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
 
 ## 1.0.7 (2026-10-10)
 

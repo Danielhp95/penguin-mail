@@ -735,7 +735,7 @@ msgstr "{provider} 透過瀏覽器登入"
 msgid "Continue opens {provider}'s sign-in page in your browser."
 msgstr "選擇 [繼續] 會在瀏覽器中開啟 {provider} 的登入頁面。"
 
-#: app/src/app.rs:385
+#: app/src/app.rs:389
 msgid ""
 "Your preferences could not be read, so Penguin Mail started from the "
 "defaults. The old file is kept as {file}."
@@ -9930,58 +9930,58 @@ msgstr "所有郵件"
 msgid "This smart mailbox has no conditions"
 msgstr "此智慧信箱沒有條件"
 
-#: sync/src/mailbox.rs:1262
+#: sync/src/mailbox.rs:1286
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr "{account} 的結果僅來自此電腦上的郵件"
 
-#: sync/src/mailbox.rs:1274
+#: sync/src/mailbox.rs:1298
 msgid "Could not load mail for {account}: {reason}"
 msgstr "無法載入 {account} 的郵件：{reason}"
 
-#: sync/src/mailbox.rs:1395
+#: sync/src/mailbox.rs:1419
 msgid "Returns {when}"
 msgstr "於 {when} 移回"
 
-#: sync/src/mailbox.rs:1438 sync/src/mailbox.rs:1520
+#: sync/src/mailbox.rs:1462 sync/src/mailbox.rs:1544
 msgid "No recipients"
 msgstr "沒有收件者"
 
-#: sync/src/mailbox.rs:1441 sync/src/mailbox.rs:1523
+#: sync/src/mailbox.rs:1465 sync/src/mailbox.rs:1547
 msgid "To {recipients}"
 msgstr "收件者：{recipients}"
 
-#: sync/src/mailbox.rs:1483
+#: sync/src/mailbox.rs:1507
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} 封未讀 · {category}"
 
-#: sync/src/mailbox.rs:1488
+#: sync/src/mailbox.rs:1512
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} 封未讀"
 
-#: sync/src/mailbox.rs:1495
+#: sync/src/mailbox.rs:1519
 msgid "Sent yesterday, no reply yet"
 msgstr "昨天傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1497
+#: sync/src/mailbox.rs:1521
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1535
+#: sync/src/mailbox.rs:1559
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1539
+#: sync/src/mailbox.rs:1563
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1546
+#: sync/src/mailbox.rs:1570
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1553
+#: sync/src/mailbox.rs:1577
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 

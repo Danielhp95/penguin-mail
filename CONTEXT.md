@@ -4,6 +4,8 @@ Terms the code and its docs use for Gmail mail. The `domain` crate holds the cod
 
 ## Glossary
 
+**Dock badge**: the unread All Inboxes count on the macOS app icon, updated while the app runs even when its main window is closed. It disappears at zero. `mailrs::app::dock_badge` reads the same local and server counts as the sidebar. It counts at startup, publishes each completed count during sync, and reads cached answers on server-count expiry so it adds no polling loop in the background.
+
 **System label**: a label Gmail defines, with the same id in every account, such as `INBOX`, `SPAM`, `UNREAD`, and the category labels. `mailrs_gmail::labels` names them and maps each to a role, a keyword or a category; only the Google adapter and the Gmail fake read them. _Avoid_: system folder.
 
 **User label**: a label the account owner made, with an id like `Label_12` that only that account knows. _Avoid_: custom label, tag.

@@ -811,7 +811,7 @@ impl<A: Accounts> Mailboxes<A> {
         self.unread_changed.subscribe()
     }
 
-    fn server_counts(&self, sidebar: &[Mailbox]) -> HashMap<AccountId, HashMap<MailSet, i64>> {
+    fn server_counts(&self, sidebar: &[Mailbox], refresh: bool) -> HashMap<AccountId, HashMap<MailSet, i64>> {
         let ids: std::collections::BTreeSet<_> =
             sidebar.iter().filter_map(Mailbox::account).collect();
         let mut cached = self.unread.lock().expect("unread counts poisoned");
@@ -830,6 +830,9 @@ impl<A: Accounts> Mailboxes<A> {
                 if kept.changes == changes && (kept.pending || kept.at.elapsed() < REMOTE_FRESH) {
                     continue;
                 }
+            }
+            if !refresh {
+                continue;
             }
             let request = self.unread_request.fetch_add(1, Ordering::Relaxed);
             let state = Arc::downgrade(&self.unread);
@@ -887,8 +890,29 @@ impl<A: Accounts> Mailboxes<A> {
         shown: &Mailbox,
         view: &View,
     ) -> Result<Counts, SyncError> {
+        self.counts_with(sidebar, shown, view, true).await
+    }
+
+    /// Reads local mail and cached server counts without starting network work.
+    /// Expired answers remain useful until mail changes invalidate them.
+    pub async fn cached_counts(
+        &self,
+        sidebar: &[Mailbox],
+        shown: &Mailbox,
+        view: &View,
+    ) -> Result<Counts, SyncError> {
+        self.counts_with(sidebar, shown, view, false).await
+    }
+
+    async fn counts_with(
+        &self,
+        sidebar: &[Mailbox],
+        shown: &Mailbox,
+        view: &View,
+        refresh: bool,
+    ) -> Result<Counts, SyncError> {
         let sidebar = sidebar.to_vec();
-        let remote_counts = self.server_counts(&sidebar);
+        let remote_counts = self.server_counts(&sidebar, refresh);
         let category_base = view
             .category
             .is_some()
