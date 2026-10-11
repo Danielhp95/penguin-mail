@@ -1,4 +1,5 @@
 # The languages po/ holds, one per line. update-po.sh writes this.
+de
 en_GB
 fr
 pt_PT
