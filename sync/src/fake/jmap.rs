@@ -240,13 +240,22 @@ impl JmapState {
         })
     }
 
-    fn matches(&self, email: &FakeEmail, filter: &Value) -> bool {
+    /// Whether `email` meets `filter`. Like a server, it refuses an
+    /// operator or a condition it does not know (`unsupportedFilter`,
+    /// RFC 8620 5.5) rather than matching everything.
+    fn matches(&self, email: &FakeEmail, filter: &Value) -> Answer<bool> {
+        let unsupported = |what: &str| JmapError::Method { kind: "unsupportedFilter".into(), description: format!("no {what}") };
         if let Some(op) = filter.get("operator").and_then(Value::as_str) {
             let conditions: Vec<&Value> = filter["conditions"].as_array().map(|c| c.iter().collect()).unwrap_or_default();
+            let mut each = Vec::with_capacity(conditions.len());
+            for c in conditions {
+                each.push(self.matches(email, c)?);
+            }
             return match op {
-                "AND" => conditions.iter().all(|c| self.matches(email, c)),
-                "OR" => conditions.iter().any(|c| self.matches(email, c)),
-                _ => !conditions.iter().any(|c| self.matches(email, c)),
+                "AND" => Ok(each.iter().all(|m| *m)),
+                "OR" => Ok(each.iter().any(|m| *m)),
+                "NOT" => Ok(!each.iter().any(|m| *m)),
+                _ => Err(unsupported("such operator")),
             };
         }
         let text = String::from_utf8_lossy(&email.raw).to_lowercase();
@@ -255,8 +264,11 @@ impl JmapState {
             needle.as_str().is_none_or(|n| parts.header(name).is_some_and(|v| v.to_lowercase().contains(&n.to_lowercase())))
         };
         let millis = |v: &Value| v.as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp_millis());
-        filter.as_object().is_none_or(|conditions| {
-            conditions.iter().all(|(key, value)| match key.as_str() {
+        let Some(conditions) = filter.as_object() else {
+            return Err(unsupported("filter object"));
+        };
+        for (key, value) in conditions {
+            let holds = match key.as_str() {
                 "inMailbox" => value.as_str().is_some_and(|m| email.mailbox_ids.contains(m)),
                 "inMailboxOtherThan" => value.as_array().is_some_and(|ms| email.mailbox_ids.iter().any(|m| !ms.iter().any(|x| x == m))),
                 "after" => millis(value).is_some_and(|at| email.received_at >= at),
@@ -265,10 +277,13 @@ impl JmapState {
                 "notKeyword" => value.as_str().is_some_and(|k| !email.keywords.contains(k)),
                 "from" => header_has("From", value),
                 "to" => header_has("To", value),
+                "cc" => header_has("Cc", value),
+                "bcc" => header_has("Bcc", value),
                 "subject" => header_has("Subject", value),
                 "text" | "body" => value.as_str().is_some_and(|t| text.contains(&t.to_lowercase())),
-                "hasAttachment" => value.as_bool() == Some(false),
+                "hasAttachment" => value.as_bool() == Some(has_file(&parts.root)),
                 "minSize" => value.as_u64().is_some_and(|n| email.raw.len() as u64 >= n),
+                "maxSize" => value.as_u64().is_some_and(|n| (email.raw.len() as u64) < n),
                 "header" => {
                     let pair: Vec<&str> = value.as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
                     match pair.as_slice() {
@@ -277,9 +292,13 @@ impl JmapState {
                         _ => false,
                     }
                 }
-                _ => true,
-            })
-        })
+                _ => return Err(unsupported("such condition")),
+            };
+            if !holds {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -581,12 +600,13 @@ impl JmapApi for FakeJmap {
 
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         self.called("Email/query");
-        Ok(self.with(|s| {
-            let mut found: Vec<(&String, &FakeEmail)> = s
-                .emails
-                .iter()
-                .filter(|(_, e)| query.filter.as_ref().is_none_or(|f| s.matches(e, f)))
-                .collect();
+        self.with(|s| {
+            let mut found: Vec<(&String, &FakeEmail)> = Vec::new();
+            for (id, e) in &s.emails {
+                if query.filter.as_ref().map_or(Ok(true), |f| s.matches(e, f))? {
+                    found.push((id, e));
+                }
+            }
             found.sort_by(|a, b| b.1.received_at.cmp(&a.1.received_at).then(b.0.cmp(a.0)));
             let total = found.len() as u64;
             let hits = found
@@ -595,8 +615,8 @@ impl JmapApi for FakeJmap {
                 .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
                 .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
                 .collect();
-            Queried { hits, position: query.position, total: query.total.then_some(total) }
-        }))
+            Ok(Queried { hits, position: query.position, total: query.total.then_some(total) })
+        })
     }
 
     async fn emails(&self, ids: &[String], properties: &[&str]) -> Answer<Got<Email>> {
@@ -869,6 +889,16 @@ mod tests {
         assert_eq!(only.hits.len(), 1);
         let got = fake.emails(&[old], PLACES).await.unwrap();
         assert!(got.list[0].mailbox_ids.contains_key(&fake.mailbox("inbox")));
+    }
+
+    #[tokio::test]
+    async fn an_unknown_filter_key_or_operator_is_unsupported_like_a_server_says() {
+        let fake = FakeJmap::new();
+        fake.deliver("inbox", RAW, 1_000);
+        for filter in [json!({ "colour": "red" }), json!({ "operator": "XOR", "conditions": [] })] {
+            let asked = fake.query(&EmailQuery { filter: Some(filter), position: 0, limit: 10, total: false }).await;
+            assert!(matches!(asked, Err(JmapError::Method { kind, .. }) if kind == "unsupportedFilter"));
+        }
     }
 
     #[tokio::test]
