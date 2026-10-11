@@ -61,11 +61,17 @@ pub async fn find_jmap<N: Net>(net: &N, address: &str) -> Option<JmapFound> {
     }
     let url = format!("https://{domain}/.well-known/jmap");
     let target = tokio::time::timeout(STEP_LIMIT, net.locate(&url)).await.ok().flatten()?;
-    let confirm = url::Url::parse(&target)
+    let confirm = leaves_domain(&target, &domain);
+    Some(JmapFound { session_url: target, source: Source::WellKnown, confirm, provider: None })
+}
+
+/// Whether `url` names a host outside `domain`. An unparseable URL counts
+/// as outside, so the person is asked.
+fn leaves_domain(url: &str, domain: &str) -> bool {
+    url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
-        .is_none_or(|h| !is_within(&h, &domain));
-    Some(JmapFound { session_url: target, source: Source::WellKnown, confirm, provider: None })
+        .is_none_or(|h| !is_within(&h, domain))
 }
 
 async fn from_srv<N: Net>(net: &N, mut records: Vec<SrvRecord>, domain: &str) -> Option<JmapFound> {
@@ -77,7 +83,8 @@ async fn from_srv<N: Net>(net: &N, mut records: Vec<SrvRecord>, domain: &str) ->
     // The session lives where the well-known URL leads; when it answers
     // nothing now, the sign-in tries the well-known URL itself.
     let session_url = tokio::time::timeout(STEP_LIMIT, net.locate(&well_known)).await.ok().flatten().unwrap_or(well_known);
-    Some(JmapFound { session_url, source: Source::Srv, confirm: !is_within(&target, domain), provider: None })
+    let confirm = !is_within(&target, domain) || leaves_domain(&session_url, domain);
+    Some(JmapFound { session_url, source: Source::Srv, confirm, provider: None })
 }
 
 #[cfg(test)]
@@ -132,6 +139,19 @@ mod tests {
         );
         let found = find_jmap(&net, "me@example.org").await.unwrap();
         assert_eq!(found.session_url, "https://jmap.hoster.net:8443/.well-known/jmap");
+        assert!(found.confirm);
+    }
+
+    #[tokio::test]
+    async fn an_in_domain_srv_target_that_redirects_off_domain_needs_a_yes() {
+        let net = FakeNet::default()
+            .answer_srv(
+                "_jmap._tcp.example.org",
+                vec![SrvRecord { priority: 0, weight: 1, port: 443, target: "mail.example.org.".into() }],
+            )
+            .locate_at("https://mail.example.org/.well-known/jmap", "https://other.net/session");
+        let found = find_jmap(&net, "me@example.org").await.unwrap();
+        assert_eq!(found.session_url, "https://other.net/session");
         assert!(found.confirm);
     }
 
