@@ -17,6 +17,8 @@ Mail and calendar for Linux and macOS, written in Rust.
 
 [Website](https://penguin-mail.com) · [Watch the tour](https://youtu.be/0PyJCsw1FSE) · [Install](#install) · [Features](#features) · [Screenshots](#screenshots) · [Changelog](CHANGELOG.md)
 
+[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/penguin-mail)
+
 [![Penguin Mail | AlternativeTo](https://alternativeto.net/static/badges/badge-wide-dark.svg)](https://alternativeto.net/software/penguin-mail/about/?utm_source=badge&utm_medium=referral)
 
 </div>
