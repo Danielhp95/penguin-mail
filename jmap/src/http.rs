@@ -43,6 +43,9 @@ struct Inner {
     auth: Auth,
     session_url: Url,
     held: Mutex<Held>,
+    /// Held while the session is read, so callers that find it missing or
+    /// stale wait for one read instead of each starting their own.
+    reading: tokio::sync::Mutex<()>,
     permits: Semaphore,
     /// Set once the permits shrank to the session's own limit.
     sized: AtomicBool,
@@ -74,8 +77,24 @@ fn same_origin(a: &Url, b: &Url) -> bool {
     a.scheme() == b.scheme() && a.host_str() == b.host_str() && a.port_or_known_default() == b.port_or_known_default()
 }
 
+/// reqwest's message names the URL, and a download URL can carry the
+/// account's address, so the URL stays out of the error.
 pub(crate) fn network(err: reqwest::Error) -> JmapError {
-    JmapError::Network(err.to_string())
+    JmapError::Network(err.without_url().to_string())
+}
+
+/// `url` when it carries no user name or password. Credentials in a URL
+/// would go out as a second `Authorization` header and show in the log,
+/// so the refusal names the URL without them.
+fn without_userinfo(mut url: Url) -> Result<Url, JmapError> {
+    if url.username().is_empty() && url.password().is_none() {
+        return Ok(url);
+    }
+    // Both setters fail only on a URL that cannot have a host, and a URL
+    // with a user name has one.
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    Err(JmapError::BadUrl(url.to_string()))
 }
 
 impl JmapClient {
@@ -83,6 +102,7 @@ impl JmapClient {
     /// HTTP on this computer. Nothing goes out until the first call.
     pub fn new(session_url: &str, auth: Auth) -> Result<JmapClient, JmapError> {
         let url = Url::parse(session_url).map_err(|_| JmapError::BadUrl(session_url.to_string()))?;
+        let url = without_userinfo(url)?;
         let usable = url.scheme() == "https" || (url.scheme() == "http" && is_loopback(&url));
         if !usable || url.host().is_none() {
             return Err(JmapError::BadUrl(session_url.to_string()));
@@ -100,6 +120,7 @@ impl JmapClient {
                 auth,
                 session_url: url,
                 held: Mutex::new(Held::default()),
+                reading: tokio::sync::Mutex::new(()),
                 permits: Semaphore::new(MOST_AT_ONCE),
                 sized: AtomicBool::new(false),
             }),
@@ -118,20 +139,49 @@ impl JmapClient {
         self.inner.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn cached(&self) -> Option<Arc<Session>> {
+        let held = self.held();
+        held.session.as_ref().filter(|_| !held.stale).map(Arc::clone)
+    }
+
     /// The session, fetched the first time and again after a call said it
-    /// moved on.
+    /// moved on. Callers that arrive during a read wait for its result.
     pub async fn session(&self) -> Result<Arc<Session>, JmapError> {
-        {
-            let held = self.held();
-            if let (Some(session), false) = (&held.session, held.stale) {
-                return Ok(Arc::clone(session));
-            }
+        if let Some(session) = self.cached() {
+            return Ok(session);
         }
-        self.refresh_session().await
+        let _reading = self.inner.reading.lock().await;
+        if let Some(session) = self.cached() {
+            return Ok(session);
+        }
+        self.read_and_keep().await
     }
 
     /// The session, fetched now.
     pub async fn refresh_session(&self) -> Result<Arc<Session>, JmapError> {
+        let _reading = self.inner.reading.lock().await;
+        self.read_and_keep().await
+    }
+
+    /// Reads the session under a permit and keeps it. The caller holds
+    /// `reading`.
+    async fn read_and_keep(&self) -> Result<Arc<Session>, JmapError> {
+        let session = {
+            let _permit = self.permit().await;
+            Arc::new(self.read_session().await?)
+        };
+        // The permit is back by now, and no call holds one before the
+        // first session exists, so every permit is free to forget.
+        self.size_permits(&session);
+        let mut held = self.held();
+        held.session = Some(Arc::clone(&session));
+        held.stale = false;
+        Ok(session)
+    }
+
+    /// The session document, following redirects on the same origin, with
+    /// every URL it names checked.
+    async fn read_session(&self) -> Result<Session, JmapError> {
         let mut url = self.inner.session_url.clone();
         for _ in 0..=MOST_REDIRECTS {
             let response = self
@@ -144,17 +194,13 @@ impl JmapClient {
             match response.status().as_u16() {
                 200..=299 => {
                     let bytes = read_capped(response, JSON_LIMIT).await?;
-                    let session = Arc::new(Session::parse(&bytes)?);
+                    let session = Session::parse(&bytes)?;
                     for named in [&session.api_url, &session.upload_url, &session.download_url] {
                         self.endpoint(named)?;
                     }
                     if let Some(events) = &session.event_source_url {
                         self.endpoint(events)?;
                     }
-                    self.size_permits(&session);
-                    let mut held = self.held();
-                    held.session = Some(Arc::clone(&session));
-                    held.stale = false;
                     return Ok(session);
                 }
                 301 | 302 | 303 | 307 | 308 => {
@@ -191,6 +237,7 @@ impl JmapClient {
     /// HTTPS, or HTTP when the session itself is on this computer.
     pub(crate) fn endpoint(&self, url: &str) -> Result<Url, JmapError> {
         let parsed = Url::parse(url).map_err(|_| JmapError::BadUrl(url.to_string()))?;
+        let parsed = without_userinfo(parsed)?;
         let session_is_local = self.inner.session_url.scheme() == "http";
         let fine = match parsed.scheme() {
             "https" => true,
@@ -323,6 +370,37 @@ mod tests {
     #[tokio::test]
     async fn the_permits_shrink_to_the_sessions_limit() {
         assert_eq!(client_with_concurrency(2).await.inner.permits.available_permits(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_server_allowing_one_request_leaves_one_permit() {
+        assert_eq!(client_with_concurrency(1).await.inner.permits.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_session_read_waits_for_a_free_permit() {
+        let client = client_with_concurrency(50).await;
+        let held: Vec<_> = every_permit(&client).await;
+        let waited = tokio::time::timeout(Duration::from_millis(100), client.refresh_session()).await;
+        assert!(waited.is_err(), "the session read went out with every permit taken");
+        drop(held);
+        client.refresh_session().await.unwrap();
+    }
+
+    async fn every_permit(client: &JmapClient) -> Vec<SemaphorePermit<'_>> {
+        let mut held = Vec::new();
+        for _ in 0..MOST_AT_ONCE {
+            held.push(client.permit().await);
+        }
+        held
+    }
+
+    #[tokio::test]
+    async fn a_network_error_does_not_repeat_the_url() {
+        let url = "http://127.0.0.1:1/download/me@example.org/b1/x";
+        let err = reqwest::Client::new().get(url).send().await.unwrap_err();
+        let said = network(err).to_string();
+        assert!(!said.contains("me@example.org"), "{said}");
     }
 
     #[tokio::test]
