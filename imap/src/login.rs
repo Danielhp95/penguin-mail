@@ -43,7 +43,7 @@ impl Login {
                 text = text.replace(secret.as_str(), HIDDEN);
             }
         }
-        if clipped {
+        if !cut_inside_a_character(&mut text, &secrets) && clipped {
             cut_partial(&mut text, &secrets);
         }
         text
@@ -91,6 +91,35 @@ fn cut_partial(text: &mut String, secrets: &[String]) {
     }
 }
 
+/// Takes off the end of `text` when it is the start of one of `secrets`
+/// cut partway through a character: one character or more of the secret,
+/// then the U+FFFD that lossy decoding left for the bytes of the next,
+/// which is not ASCII. imap-proto decodes 8-bit server text lossily, so a
+/// server that clips its own line inside the password ends it this way at
+/// any length. The longest such start goes. Answers whether it cut.
+fn cut_inside_a_character(text: &mut String, secrets: &[String]) -> bool {
+    let before = text.trim_end_matches(char::REPLACEMENT_CHARACTER);
+    if before.len() == text.len() {
+        return false;
+    }
+    let cut = secrets
+        .iter()
+        .flat_map(|secret| {
+            secret
+                .char_indices()
+                .skip(1)
+                .filter(|&(at, next)| !next.is_ascii() && before.ends_with(&secret[..at]))
+                .map(|(at, _)| at)
+        })
+        .max();
+    let Some(at) = cut else {
+        return false;
+    };
+    text.truncate(before.len() - at);
+    text.push_str(HIDDEN);
+    true
+}
+
 impl fmt::Debug for Login {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Login")
@@ -133,6 +162,15 @@ mod tests {
         let head = "x".repeat(MAX_ERROR_TEXT - 6);
         let hidden = login.hide(&format!("{head}ab\\\"ab"));
         assert_eq!(hidden, format!("{head}<hidden>"));
+    }
+
+    /// A server that cuts its own line partway through a character of the
+    /// password leaves bytes that decode to U+FFFD, at any length.
+    #[test]
+    fn a_text_cut_inside_a_character_of_the_password_loses_that_part() {
+        let login = Login::new("ann", "secretä-word");
+        let hidden = login.hide("NO login failed for \"secret\u{FFFD}");
+        assert_eq!(hidden, "NO login failed for \"<hidden>");
     }
 
     #[test]
