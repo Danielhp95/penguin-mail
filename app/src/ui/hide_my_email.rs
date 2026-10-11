@@ -210,8 +210,10 @@ impl Dialog {
         );
         let address = hidden.address.clone();
         let weak = Rc::downgrade(self);
+        let copied = crate::ui::copied::Copied::new(&copy_button);
         copy_button.connect_clicked(move |b| {
             copy(b, &address);
+            copied.show();
             if let Some(this) = weak.upgrade() {
                 this.toast(&gettext("Address copied"));
             }
@@ -445,8 +447,10 @@ impl Dialog {
             .css_classes(["pill"])
             .build();
         let (address, weak) = (hidden.address.clone(), Rc::downgrade(self));
+        let copied = crate::ui::copied::Copied::new(&copy_button);
         copy_button.connect_clicked(move |b| {
             copy(b, &address);
+            copied.show();
             if let Some(this) = weak.upgrade() {
                 this.toast(&gettext("Address copied"));
             }

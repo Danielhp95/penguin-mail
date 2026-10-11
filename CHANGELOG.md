@@ -16,6 +16,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
+- Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
 - A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
 - On IMAP, mail another device marks as deleted leaves the list at the next check, and comes back if that device restores it. On Outlook, Check for Mail now refreshes every folder at once; until now folders other than the Inbox waited for their regular check, every five minutes while the window is open ([#35](https://github.com/c9dev/penguin-mail/issues/35)).
 

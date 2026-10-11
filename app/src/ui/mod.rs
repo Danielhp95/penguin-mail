@@ -14,6 +14,7 @@ pub mod autocomplete;
 pub mod calendar;
 pub mod card_place;
 pub mod combo_value;
+pub mod copied;
 pub mod composer;
 pub mod confirm;
 pub mod contact_card;
