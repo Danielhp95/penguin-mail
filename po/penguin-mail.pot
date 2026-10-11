@@ -9947,6 +9947,19 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr ""
 
+#: sync/src/services/jmap/writes.rs:68
+msgid "The server has no mailbox for this."
+msgstr ""
+
+#: sync/src/services/jmap/writes.rs:95
+msgid "This server does not sort mail into categories."
+msgstr ""
+
+#: sync/src/services/jmap/writes.rs:123
+msgid ""
+"A message must stay in at least one mailbox, and this server has no Archive."
+msgstr ""
+
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."
 msgstr ""
