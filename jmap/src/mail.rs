@@ -261,6 +261,14 @@ pub struct Imported {
     pub thread_id: String,
 }
 
+/// A saved message. `leftover` is why the older draft it replaces could not
+/// be destroyed, when that failed; the old draft is then still on the server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Saved {
+    pub email: Imported,
+    pub leftover: Option<JmapError>,
+}
+
 /// A message to send: its blob, who it goes from and to, and where its
 /// copy waits and is filed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -469,15 +477,19 @@ impl JmapClient {
         }
     }
 
-    /// Imports a blob as a message in `mailbox_ids` with `keywords`, and
-    /// destroys `destroy` in the same request: a draft's save.
+    /// Imports a blob as a message in `mailbox_ids` with `keywords`. When
+    /// `destroy` names an older draft, it is destroyed in a second request,
+    /// only after the import is known to have created the new message, so a
+    /// refused import never costs the old draft. A destroy the server
+    /// refuses leaves the old draft in place; the new message is still
+    /// returned and the refusal is in `Saved::leftover`.
     pub async fn import(
         &self,
         blob_id: &str,
         mailbox_ids: &[String],
         keywords: &[&str],
         destroy: Option<&str>,
-    ) -> Result<Imported, JmapError> {
+    ) -> Result<Saved, JmapError> {
         let account = self.mail_account().await?;
         let mailboxes: Map<String, Value> = mailbox_ids.iter().map(|m| (m.clone(), json!(true))).collect();
         let marks: Map<String, Value> = keywords.iter().map(|k| (k.to_string(), json!(true))).collect();
@@ -485,16 +497,29 @@ impl JmapClient {
         let import = request.call(MAIL, "Email/import", json!({
             "accountId": account, "emails": { "m": { "blobId": blob_id, "mailboxIds": mailboxes, "keywords": marks } }
         }));
-        if let Some(old) = destroy {
-            request.call(MAIL, "Email/set", json!({ "accountId": account, "destroy": [old] }));
+        let email = self.send(&request).await?.take::<ImportAnswer>(&import, "Email/import")?.one("m")?;
+        let leftover = match destroy {
+            Some(old) => self.destroy_email(old).await.err(),
+            None => None,
+        };
+        Ok(Saved { email, leftover })
+    }
+
+    /// Destroys one message, and says why when the server refuses.
+    async fn destroy_email(&self, id: &str) -> Result<(), JmapError> {
+        let set = self.set_emails(&Map::new(), &[id.to_string()]).await?;
+        match set.refusal(id) {
+            Some(refused) => Err(refused.error()),
+            None => Ok(()),
         }
-        let mut answer = self.send(&request).await?;
-        answer.take::<ImportAnswer>(&import, "Email/import")?.one("m")
     }
 
     /// Imports the message, submits it, and moves the copy from Drafts to
     /// Sent without `$draft` once the submission is made, in one request
-    /// (RFC 8621 section 7.5). A refused submission destroys the copy.
+    /// (RFC 8621 section 7.5). When the submission is refused, by a `notCreated`
+    /// entry or a method-level error, the imported copy is destroyed in a
+    /// second request and the submission's error is returned; if that
+    /// destroy fails too, the copy stays in Drafts and the error is the same.
     pub async fn submit(&self, submission: &Submission) -> Result<Imported, JmapError> {
         let session = self.session().await?;
         let account = account(&session)?;
@@ -533,11 +558,17 @@ impl JmapClient {
         let submitted = request.call(SUBMISSION, "EmailSubmission/set", args);
         let mut answer = self.send(&request).await?;
         let email = answer.take::<ImportAnswer>(&import, "Email/import")?.one("m")?;
-        let set: SetResponse = answer.take(&submitted, "EmailSubmission/set")?;
-        if let Some(refused) = set.not_created.as_ref().and_then(|n| n.get("s")) {
-            let error = refused.error();
-            // Nothing went out, and the copy would wait in Drafts.
-            let _ = self.set_emails(&Map::new(), std::slice::from_ref(&email.id)).await;
+        let refused = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
+            Ok(set) => set.not_created.as_ref().and_then(|n| n.get("s")).map(SetError::error),
+            Err(error) => Some(error),
+        };
+        if let Some(error) = refused {
+            // Nothing went out, and the copy would wait in Drafts. If this
+            // cleanup fails too, the submission's error still wins and the
+            // copy stays; the log says so without naming it.
+            if self.destroy_email(&email.id).await.is_err() {
+                tracing::warn!("a refused submission left its imported copy on the server");
+            }
             return Err(error);
         }
         Ok(email)

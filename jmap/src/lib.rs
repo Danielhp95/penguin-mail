@@ -28,5 +28,5 @@ pub use session::{
 };
 pub use mail::{
     BODY, BodyPart, ChangesResponse, Email, EmailQuery, Got, Header, Hit, Imported, Listed, META, MailChanges, Mailbox,
-    MailboxWrite, PLACES, Queried, SetError, SetResponse, Submission, Thread, Threads, pointer,
+    MailboxWrite, PLACES, Queried, Saved, SetError, SetResponse, Submission, Thread, Threads, pointer,
 };

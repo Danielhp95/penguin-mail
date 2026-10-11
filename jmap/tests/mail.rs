@@ -142,3 +142,134 @@ async fn a_mailbox_rename_sends_its_new_parent() {
 fn a_patch_path_escapes_slashes_and_tildes() {
     assert_eq!(mailrs_jmap::pointer("a/b~c"), "a~1b~0c");
 }
+
+/// Answers the session, then each POST to the API with the next answer.
+async fn answering_in_turn(server: &MockServer, answers: Vec<Value>) {
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxCallsInRequest": 8}))))
+        .mount(server)
+        .await;
+    for answer in answers {
+        Mock::given(method("POST"))
+            .and(path("/api/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(answer))
+            .up_to_n_times(1)
+            .mount(server)
+            .await;
+    }
+}
+
+async fn posts(server: &MockServer) -> Vec<Value> {
+    let all = server.received_requests().await.unwrap();
+    all.into_iter().filter(|r| r.method.as_str() == "POST").map(|r| serde_json::from_slice(&r.body).unwrap()).collect()
+}
+
+fn created_import() -> Value {
+    json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "blobId": "G1", "threadId": "T9", "size": 10}}}, "c0"]
+    ]})
+}
+
+fn a_submission() -> Submission {
+    Submission {
+        blob_id: "G1".into(), identity_id: "I1".into(), mail_from: "x@example.org".into(),
+        rcpt_to: vec!["a@example.org".into()], drafts: Some("drafts".into()), sent: Some("sent".into()),
+    }
+}
+
+#[tokio::test]
+async fn a_refused_import_leaves_the_old_draft_alone() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "overQuota", "description": "full"}}}, "c0"]
+    ]})]).await;
+    let refused = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap_err();
+    assert_eq!(refused, mailrs_jmap::JmapError::Method { kind: "overQuota".into(), description: "full".into() });
+    assert_eq!(posts(&server).await.len(), 1, "no destroy followed the refused import");
+}
+
+#[tokio::test]
+async fn a_saved_draft_destroys_the_old_one_after_the_import() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        created_import(),
+        json!({"sessionState": "s1", "methodResponses": [["Email/set", {"accountId": "A1", "destroyed": ["OLD"]}, "c0"]]}),
+    ]).await;
+    let saved = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap();
+    assert_eq!(saved.email.id, "M9");
+    assert_eq!(saved.leftover, None);
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1]["methodCalls"][0][1]["destroy"], json!(["OLD"]));
+}
+
+#[tokio::test]
+async fn a_refused_destroy_is_reported_beside_the_new_message() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        created_import(),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "notDestroyed": {"OLD": {"type": "notFound"}}}, "c0"]]}),
+    ]).await;
+    let saved = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap();
+    assert_eq!(saved.email.id, "M9");
+    assert_eq!(saved.leftover, Some(mailrs_jmap::JmapError::NotFound));
+}
+
+#[tokio::test]
+async fn a_refused_submission_destroys_the_imported_copy() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "blobId": "G1", "threadId": "T9", "size": 10}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "forbiddenFrom"}}}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [["Email/set", {"accountId": "A1", "destroyed": ["M9"]}, "c0"]]}),
+    ]).await;
+    client(&server).submit(&a_submission()).await.unwrap_err();
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1]["methodCalls"][0][1]["destroy"], json!(["M9"]));
+}
+
+#[tokio::test]
+async fn a_submission_method_error_destroys_the_imported_copy_and_is_returned() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "blobId": "G1", "threadId": "T9", "size": 10}}}, "c0"],
+            ["error", {"type": "forbidden"}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [["Email/set", {"accountId": "A1", "destroyed": ["M9"]}, "c0"]]}),
+    ]).await;
+    let refused = client(&server).submit(&a_submission()).await.unwrap_err();
+    assert_eq!(refused, mailrs_jmap::JmapError::Forbidden(String::new()));
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1]["methodCalls"][0][1]["destroy"], json!(["M9"]));
+}
+
+#[tokio::test]
+async fn emails_are_fetched_in_chunks_of_the_servers_get_limit() {
+    let server = MockServer::start().await;
+    let page = |ids: &[&str]| {
+        let list: Vec<Value> = ids.iter().map(|i| json!({"id": i})).collect();
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": list}, "c0"]]})
+    };
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxObjectsInGet": 2}))))
+        .mount(&server)
+        .await;
+    for answer in [page(&["a", "b"]), page(&["c"])] {
+        Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(200).set_body_json(answer))
+            .up_to_n_times(1).mount(&server).await;
+    }
+    let ids: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+    let got = client(&server).emails(&ids, mailrs_jmap::PLACES).await.unwrap();
+    assert_eq!(got.list.len(), 3);
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0]["methodCalls"][0][1]["ids"], json!(["a", "b"]));
+    assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
+}
