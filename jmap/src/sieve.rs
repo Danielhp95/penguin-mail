@@ -50,34 +50,69 @@ impl JmapClient {
     }
 
     /// Writes `text` as the script `name`, over `existing` when it has an
-    /// id, and answers the script's id.
+    /// id, and answers the script's id. The active script stays as it was.
     pub async fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> Result<String, JmapError> {
+        self.write_sieve(name, existing, text, false).await
+    }
+
+    /// Like `put_sieve`, and makes the script the active one in the same
+    /// call, which servers honour more reliably than a call of its own.
+    pub async fn put_sieve_active(&self, name: &str, existing: Option<&str>, text: &str) -> Result<String, JmapError> {
+        self.write_sieve(name, existing, text, true).await
+    }
+
+    async fn write_sieve(&self, name: &str, existing: Option<&str>, text: &str, activate: bool) -> Result<String, JmapError> {
         let account = self.sieve_account().await?;
         let blob = self.upload(&account, "application/sieve", text.as_bytes().to_vec()).await?.blob_id;
-        let (args, key) = match existing {
+        let (mut args, key) = match existing {
             Some(id) => (json!({ "accountId": account, "update": { id: { "blobId": blob } } }), id.to_string()),
             None => (json!({ "accountId": account, "create": { "s": { "name": name, "blobId": blob } } }), "s".to_string()),
         };
+        if activate {
+            args["onSuccessActivateScript"] = json!(if existing.is_some() { key.clone() } else { "#s".to_string() });
+        }
         let mut request = Request::new();
         let call = request.call(SIEVE, "SieveScript/set", args);
-        let set: SetResponse = self.send(&request).await?.take(&call, "SieveScript/set")?;
+        let mut answer = self.send(&request).await?;
+        let set: SetResponse = answer.take(&call, "SieveScript/set")?;
         if let Some(refused) = set.not_created.as_ref().and_then(|n| n.get(&key)).or_else(|| set.refusal(&key)) {
             return Err(refused.error());
         }
-        match existing {
-            Some(id) => Ok(id.to_string()),
+        let id = match existing {
+            Some(id) if set.updated.as_ref().is_some_and(|u| u.contains_key(id)) => id.to_string(),
+            Some(_) => return Err(JmapError::Decode("the script was not updated".into())),
             None => set
                 .created
                 .and_then(|c| c.get("s").and_then(|s| s["id"].as_str()).map(str::to_string))
-                .ok_or_else(|| JmapError::Decode("the script came back without an id".into())),
+                .ok_or_else(|| JmapError::Decode("the script came back without an id".into()))?,
+        };
+        if activate {
+            Self::activated(&mut answer, &call, &id)?;
         }
+        Ok(id)
     }
 
+    /// Makes script `id` the active one.
     pub async fn activate_sieve(&self, id: &str) -> Result<(), JmapError> {
         let account = self.sieve_account().await?;
         let mut request = Request::new();
         let call = request.call(SIEVE, "SieveScript/set", json!({ "accountId": account, "onSuccessActivateScript": id }));
-        let _: SetResponse = self.send(&request).await?.take(&call, "SieveScript/set")?;
-        Ok(())
+        let mut answer = self.send(&request).await?;
+        let _: SetResponse = answer.take(&call, "SieveScript/set")?;
+        Self::activated(&mut answer, &call, id)
+    }
+
+    /// The implicit `SieveScript/set` answer that follows
+    /// `onSuccessActivateScript`, under the same call id: it must say the
+    /// script was updated.
+    fn activated(answer: &mut crate::Response, call: &crate::CallId, id: &str) -> Result<(), JmapError> {
+        let set: SetResponse = answer.take(call, "SieveScript/set")?;
+        if let Some(refused) = set.refusal(id) {
+            return Err(refused.error());
+        }
+        match set.updated.as_ref().is_some_and(|u| u.contains_key(id)) {
+            true => Ok(()),
+            false => Err(JmapError::Decode("the script was not activated".into())),
+        }
     }
 }

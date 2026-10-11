@@ -2,7 +2,7 @@
 
 mod common;
 
-use mailrs_jmap::{CardWrite, VacationResponse};
+use mailrs_jmap::{CardWrite, JmapError, MaskedState, VacationResponse};
 use serde_json::{Map, Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -88,19 +88,154 @@ async fn a_new_card_is_read_back_by_its_creation_id() {
     assert_eq!(sent(&server).await["methodCalls"][1][1]["ids"], json!(["#k"]));
 }
 
-#[tokio::test]
-async fn a_sieve_script_is_uploaded_then_set_and_activated() {
-    let server = MockServer::start().await;
+async fn with_upload(server: &MockServer) {
     Mock::given(method("POST")).and(path("/upload/A1/")).respond_with(ResponseTemplate::new(201).set_body_json(json!({
         "accountId": "A1", "blobId": "SB1", "type": "application/sieve", "size": 10
-    }))).mount(&server).await;
+    }))).mount(server).await;
+}
+
+#[tokio::test]
+async fn a_sieve_script_is_uploaded_and_set() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
     serving(&server, json!({"sessionState": "s1", "methodResponses": [["SieveScript/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c0"]]})).await;
     let client = client(&server);
     let id = client.put_sieve("penguin-mail", None, "require \"fileinto\";").await.unwrap();
     assert_eq!(id, "S1");
     let set = &sent(&server).await["methodCalls"][0][1];
     assert_eq!(set["create"]["s"], json!({"name": "penguin-mail", "blobId": "SB1"}));
+    assert!(set.get("onSuccessActivateScript").is_none());
     assert_eq!(client.sieve_extensions().await.unwrap(), ["fileinto", "vacation", "include"]);
+}
+
+#[tokio::test]
+async fn a_new_script_is_activated_in_the_same_call() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c0"],
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S1": null}}, "c0"]
+    ]})).await;
+    let id = client(&server).put_sieve_active("penguin-mail", None, "keep;").await.unwrap();
+    assert_eq!(id, "S1");
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["onSuccessActivateScript"], "#s");
+}
+
+#[tokio::test]
+async fn an_existing_script_is_updated_and_activated_by_its_id() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S1": null}}, "c0"],
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S1": null}}, "c0"]
+    ]})).await;
+    let id = client(&server).put_sieve_active("penguin-mail", Some("S1"), "keep;").await.unwrap();
+    assert_eq!(id, "S1");
+    let set = &sent(&server).await["methodCalls"][0][1];
+    assert_eq!(set["onSuccessActivateScript"], "S1");
+    assert_eq!(set["update"]["S1"], json!({"blobId": "SB1"}));
+}
+
+#[tokio::test]
+async fn an_update_the_server_did_not_apply_is_an_error() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [["SieveScript/set", {"accountId": "A1", "updated": null}, "c0"]]})).await;
+    assert!(client(&server).put_sieve("penguin-mail", Some("S1"), "keep;").await.is_err());
+}
+
+#[tokio::test]
+async fn activating_a_script_reads_the_answer_to_the_activation() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1"}, "c0"],
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S1": null}}, "c0"]
+    ]})).await;
+    client(&server).activate_sieve("S1").await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["onSuccessActivateScript"], "S1");
+}
+
+#[tokio::test]
+async fn a_refused_activation_is_an_error() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1"}, "c0"],
+        ["SieveScript/set", {"accountId": "A1", "notUpdated": {"S1": {"type": "notFound"}}}, "c0"]
+    ]})).await;
+    assert_eq!(client(&server).activate_sieve("S1").await, Err(JmapError::NotFound));
+}
+
+#[tokio::test]
+async fn an_activation_that_goes_unanswered_is_an_error() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [["SieveScript/set", {"accountId": "A1"}, "c0"]]})).await;
+    assert!(client(&server).activate_sieve("S1").await.is_err());
+}
+
+#[tokio::test]
+async fn card_pages_stay_under_the_servers_get_limit() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["ContactCard/query", {"accountId": "C1", "queryState": "q", "ids": [], "position": 0}, "c0"],
+        ["ContactCard/get", {"accountId": "C1", "state": "k", "notFound": [], "list": []}, "c1"]
+    ]})).await;
+    let client = client(&server);
+    client.cards_page(0, 100_000).await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["limit"], 50, "the session says 50");
+    client.cards_page(0, 0).await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["limit"], 1, "zero becomes one");
+}
+
+#[tokio::test]
+async fn card_changes_fetch_the_created_and_the_updated_cards() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["ContactCard/changes", {"accountId": "C1", "oldState": "k1", "newState": "k2", "hasMoreChanges": false, "created": ["K1"], "updated": ["K2"], "destroyed": ["K3"]}, "c0"],
+        ["ContactCard/get", {"accountId": "C1", "state": "k2", "notFound": [], "list": [{"id": "K1"}]}, "c1"],
+        ["ContactCard/get", {"accountId": "C1", "state": "k2", "notFound": [], "list": [{"id": "K2"}]}, "c2"]
+    ]})).await;
+    let changed = client(&server).card_changes("k1", 100_000).await.unwrap();
+    assert_eq!(changed.changes.new_state, "k2");
+    assert_eq!(changed.changes.destroyed, ["K3"]);
+    assert_eq!(changed.cards.iter().map(|c| c["id"].as_str().unwrap()).collect::<Vec<_>>(), ["K1", "K2"]);
+    let body = sent(&server).await;
+    assert_eq!(body["methodCalls"][0][1]["maxChanges"], 50);
+    assert_eq!(body["methodCalls"][2][1]["#ids"]["path"], "/updated");
+}
+
+#[tokio::test]
+async fn a_card_edit_sends_the_patch_and_reads_the_card_back() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["ContactCard/set", {"accountId": "C1", "updated": {"K1": null}}, "c0"],
+        ["ContactCard/get", {"accountId": "C1", "state": "k9", "notFound": [], "list": [{"id": "K1", "name": {"full": "Ada L."}}]}, "c1"]
+    ]})).await;
+    let mut patch = Map::new();
+    patch.insert("name/full".into(), json!("Ada L."));
+    let card = client(&server).set_card(&CardWrite::Update { id: "K1".into(), patch }).await.unwrap();
+    assert_eq!(card["name"]["full"], "Ada L.");
+    let body = sent(&server).await;
+    assert_eq!(body["methodCalls"][0][1]["update"]["K1"]["name/full"], "Ada L.");
+    assert_eq!(body["methodCalls"][1][1]["ids"], json!(["K1"]));
+}
+
+#[tokio::test]
+async fn a_refused_card_edit_is_an_error() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["ContactCard/set", {"accountId": "C1", "notUpdated": {"K1": {"type": "notFound"}}}, "c0"],
+        ["ContactCard/get", {"accountId": "C1", "state": "k9", "notFound": ["K1"], "list": []}, "c1"]
+    ]})).await;
+    let write = CardWrite::Update { id: "K1".into(), patch: Map::new() };
+    assert_eq!(client(&server).set_card(&write).await, Err(JmapError::NotFound));
+}
+
+#[tokio::test]
+async fn a_masked_address_is_switched_off_by_a_typed_state() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [["MaskedEmail/set", {"accountId": "A1", "updated": {"ME1": null}}, "c0"]]})).await;
+    client(&server).set_masked_state("ME1", MaskedState::Disabled).await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["update"]["ME1"]["state"], "disabled");
 }
 
 #[tokio::test]

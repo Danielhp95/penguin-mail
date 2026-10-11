@@ -37,6 +37,6 @@ pub use mail::{
     MailboxWrite, PLACES, Queried, Saved, SetError, SetResponse, Submission, Thread, Threads, pointer,
 };
 pub use contacts::{AddressBook, CardChanges, CardWrite, CardsPage};
-pub use masked::MaskedEmail;
+pub use masked::{MaskedEmail, MaskedState};
 pub use sieve::{MOST_SIEVE_BYTES, SieveScript};
 pub use vacation::VacationResponse;

@@ -27,6 +27,24 @@ pub struct MaskedEmail {
     pub last_message_at: Option<String>,
 }
 
+/// The states a person can set; `pending` is the server's alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaskedState {
+    Enabled,
+    Disabled,
+    Deleted,
+}
+
+impl MaskedState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MaskedState::Enabled => "enabled",
+            MaskedState::Disabled => "disabled",
+            MaskedState::Deleted => "deleted",
+        }
+    }
+}
+
 impl JmapClient {
     async fn masked_account(&self) -> Result<String, JmapError> {
         let session = self.session().await?;
@@ -53,7 +71,7 @@ impl JmapClient {
             return Err(refused.error());
         }
         let made = set.created.and_then(|mut c| c.remove("m")).ok_or_else(|| JmapError::Decode("no masked address came back".into()))?;
-        let mut masked: MaskedEmail = serde_json::from_value(made).map_err(|e| JmapError::Decode(e.to_string()))?;
+        let mut masked: MaskedEmail = serde_json::from_value(made).map_err(|e| crate::error::decode("MaskedEmail/set", &e))?;
         if masked.for_domain.is_empty() {
             masked.for_domain = for_domain.to_string();
         }
@@ -65,10 +83,10 @@ impl JmapClient {
 
     /// Turns an address on (`enabled`), off (`disabled`) or away
     /// (`deleted`).
-    pub async fn set_masked_state(&self, id: &str, state: &str) -> Result<(), JmapError> {
+    pub async fn set_masked_state(&self, id: &str, state: MaskedState) -> Result<(), JmapError> {
         let account = self.masked_account().await?;
         let mut request = Request::new();
-        let call = request.call(MASKED_EMAIL, "MaskedEmail/set", json!({ "accountId": account, "update": { id: { "state": state } } }));
+        let call = request.call(MASKED_EMAIL, "MaskedEmail/set", json!({ "accountId": account, "update": { id: { "state": state.as_str() } } }));
         let set: SetResponse = self.send(&request).await?.take(&call, "MaskedEmail/set")?;
         match set.refusal(id) {
             Some(refused) => Err(refused.error()),

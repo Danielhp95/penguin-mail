@@ -49,13 +49,16 @@ struct CardQuery {
 }
 
 impl JmapClient {
-    async fn contacts_account(&self) -> Result<String, JmapError> {
+    /// The contacts account, and `wanted` cut to what one `/get` may take
+    /// (the session's `maxObjectsInGet`, at most 500, at least 1).
+    async fn contacts_account(&self, wanted: usize) -> Result<(String, usize), JmapError> {
         let session = self.session().await?;
-        session.account_for(CONTACTS).map(str::to_string).ok_or_else(|| JmapError::UnknownCapability(CONTACTS.into()))
+        let account = session.account_for(CONTACTS).ok_or_else(|| JmapError::UnknownCapability(CONTACTS.into()))?;
+        Ok((account.to_string(), wanted.clamp(1, session.limits().max_objects_in_get.clamp(1, 500))))
     }
 
     pub async fn address_books(&self) -> Result<Vec<AddressBook>, JmapError> {
-        let account = self.contacts_account().await?;
+        let (account, _) = self.contacts_account(1).await?;
         let mut request = Request::new();
         let id = request.call(CONTACTS, "AddressBook/get", json!({ "accountId": account, "ids": null }));
         Ok(self.send(&request).await?.take::<Got<AddressBook>>(&id, "AddressBook/get")?.list)
@@ -63,7 +66,7 @@ impl JmapClient {
 
     /// One page of every card, and the ContactCard state the page read.
     pub async fn cards_page(&self, position: u64, limit: usize) -> Result<CardsPage, JmapError> {
-        let account = self.contacts_account().await?;
+        let (account, limit) = self.contacts_account(limit).await?;
         let mut request = Request::new();
         let query = request.call(CONTACTS, "ContactCard/query", json!({
             "accountId": account, "position": position, "limit": limit, "calculateTotal": true
@@ -80,7 +83,7 @@ impl JmapClient {
     /// The cards changed since `since`, at most `max`, fetched in the same
     /// request.
     pub async fn card_changes(&self, since: &str, max: usize) -> Result<CardChanges, JmapError> {
-        let account = self.contacts_account().await?;
+        let (account, max) = self.contacts_account(max).await?;
         let mut request = Request::new();
         let changes = request.call(CONTACTS, "ContactCard/changes", json!({ "accountId": account, "sinceState": since, "maxChanges": max }));
         let created = request.call(CONTACTS, "ContactCard/get", json!({
@@ -98,7 +101,7 @@ impl JmapClient {
 
     /// Makes or changes a card, and answers it as the server now holds it.
     pub async fn set_card(&self, write: &CardWrite) -> Result<Value, JmapError> {
-        let account = self.contacts_account().await?;
+        let (account, _) = self.contacts_account(1).await?;
         let (args, key, read) = match write {
             CardWrite::Create(card) => (json!({ "accountId": account, "create": { "k": card } }), "k".to_string(), "#k".to_string()),
             CardWrite::Update { id, patch } => (json!({ "accountId": account, "update": { id.clone(): patch } }), id.clone(), id.clone()),
@@ -110,6 +113,9 @@ impl JmapClient {
         let written: SetResponse = answer.take(&set, "ContactCard/set")?;
         if let Some(refused) = written.not_created.as_ref().and_then(|n| n.get(&key)).or_else(|| written.refusal(&key)) {
             return Err(refused.error());
+        }
+        if matches!(write, CardWrite::Update { .. }) && !written.updated.as_ref().is_some_and(|u| u.contains_key(&key)) {
+            return Err(JmapError::Decode("the card was not updated".into()));
         }
         let got: Got<Value> = answer.take(&get, "ContactCard/get")?;
         got.list.into_iter().next().ok_or(JmapError::NotFound)
