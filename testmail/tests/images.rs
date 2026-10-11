@@ -8,6 +8,9 @@ fn the_pull_script_names_every_pinned_image() {
         mailrs_testmail::DOVECOT_IMAGE,
         mailrs_testmail::MAILPIT_IMAGE,
         mailrs_testmail::RADICALE_IMAGE,
+        mailrs_testmail::CYRUS_IMAGE,
+        mailrs_testmail::STALWART_IMAGE,
+        mailrs_testmail::JAMES_IMAGE,
     ] {
         assert!(
             script.contains(image),

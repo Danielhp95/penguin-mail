@@ -55,19 +55,36 @@ const DOVECOT_POP3: u16 = 31110;
 const DOVECOT_POP3S: u16 = 31995;
 const RADICALE_PORT: u16 = 5232;
 
-/// Skips, or fails when [`REQUIRE`] is set. Returns `None` for the caller
+/// Set on a build machine, it makes a missing Docker fail the JMAP tests.
+pub const REQUIRE_JMAP: &str = "PENGUIN_MAIL_REQUIRE_JMAP";
+
+/// Skips, or fails when `require` is set. Returns `None` for the caller
 /// to hand back.
-pub fn unavailable<T>(why: &str) -> Option<T> {
-    if std::env::var_os(REQUIRE).is_some() {
-        panic!("{REQUIRE} is set and {why}, so these tests would have proved nothing");
+pub fn unavailable_under<T>(require: &str, why: &str) -> Option<T> {
+    if std::env::var_os(require).is_some() {
+        panic!("{require} is set and {why}, so these tests would have proved nothing");
     }
     eprintln!("skipping: {why}");
     None
 }
 
+/// Skips, or fails when [`REQUIRE`] is set.
+pub fn unavailable<T>(why: &str) -> Option<T> {
+    unavailable_under(REQUIRE, why)
+}
+
+/// Whether Docker answers, for the JMAP tests.
+pub fn jmap_docker() -> Option<()> {
+    docker_under(REQUIRE_JMAP)
+}
+
 /// Whether Docker answers. A test asks first, before it makes certificates
 /// or starts a runtime.
 pub fn docker() -> Option<()> {
+    docker_under(REQUIRE)
+}
+
+fn docker_under(require: &str) -> Option<()> {
     let answered = Command::new("docker")
         .args(["info", "--format", "{{.ServerVersion}}"])
         .stdin(Stdio::null())
@@ -76,8 +93,11 @@ pub fn docker() -> Option<()> {
         .status();
     match answered {
         Ok(status) if status.success() => Some(()),
-        Ok(_) => unavailable("Docker is installed and its daemon does not answer"),
-        Err(_) => unavailable("Docker is not installed"),
+        Ok(_) => unavailable_under(
+            require,
+            "Docker is installed and its daemon does not answer",
+        ),
+        Err(_) => unavailable_under(require, "Docker is not installed"),
     }
 }
 
@@ -242,15 +262,16 @@ fn root_args(name: &str) -> Vec<String> {
 
 /// One container, removed by its id when dropped, whether the test passed
 /// or not.
-pub struct Container {
+pub(crate) struct Container {
     id: String,
 }
 
 impl Container {
     /// Creates a container from `image`, copies each `(local, inside)` path
-    /// into it, and starts it. `None`, after [`unavailable`], when Docker
-    /// cannot.
-    async fn start(
+    /// into it, and starts it. `None`, after [`unavailable_under`] with
+    /// `require`, when Docker cannot.
+    pub(crate) async fn start(
+        require: &'static str,
         options: &[String],
         image: &str,
         command: &[&str],
@@ -272,14 +293,18 @@ impl Container {
             // A test never downloads: the image comes from
             // scripts/test-images.sh, run once on the computer.
             if said.contains("No such image") || said.contains("not found") {
-                return unavailable(&format!(
-                    "{image} is not on this computer; run scripts/test-images.sh"
-                ));
+                return unavailable_under(
+                    require,
+                    &format!("{image} is not on this computer; run scripts/test-images.sh"),
+                );
             }
-            return unavailable(&format!(
-                "docker could not create a container from {image}: {}",
-                said.trim()
-            ));
+            return unavailable_under(
+                require,
+                &format!(
+                    "docker could not create a container from {image}: {}",
+                    said.trim()
+                ),
+            );
         }
         let container = Container {
             id: String::from_utf8_lossy(&created.stdout).trim().to_string(),
@@ -300,10 +325,13 @@ impl Container {
         }
         let started = docker_output(&["start".into(), container.id.clone()]).await;
         if !started.status.success() {
-            return unavailable(&format!(
-                "docker could not start a container from {image}: {}",
-                String::from_utf8_lossy(&started.stderr).trim()
-            ));
+            return unavailable_under(
+                require,
+                &format!(
+                    "docker could not start a container from {image}: {}",
+                    String::from_utf8_lossy(&started.stderr).trim()
+                ),
+            );
         }
         Some(container)
     }
@@ -313,7 +341,7 @@ impl Container {
     }
 
     /// The host port Docker picked for `inner`.
-    async fn port(&self, inner: u16) -> u16 {
+    pub(crate) async fn port(&self, inner: u16) -> u16 {
         let out = docker_output(&["port".into(), self.id.clone(), format!("{inner}/tcp")]).await;
         let text = String::from_utf8_lossy(&out.stdout);
         // One line per address, such as `127.0.0.1:49153`.
@@ -345,17 +373,20 @@ impl Container {
     /// Fails the test when a server that stopped answering has exited,
     /// which means its configuration is wrong; skips when it runs but is
     /// slow, which is the computer's trouble.
-    async fn not_ready<T>(&self, what: &str) -> Option<T> {
+    pub(crate) async fn not_ready<T>(&self, require: &'static str, what: &str) -> Option<T> {
         if !self.running().await {
             panic!("{what} exited as it started:\n{}", self.logs().await);
         }
-        unavailable(&format!(
-            "{what} did not answer within {READY_WITHIN:?}:\n{}",
-            self.logs().await
-        ))
+        unavailable_under(
+            require,
+            &format!(
+                "{what} did not answer within {READY_WITHIN:?}:\n{}",
+                self.logs().await
+            ),
+        )
     }
 
-    async fn exec(&self, args: &[&str], stdin: Option<&[u8]>) -> Output {
+    pub(crate) async fn exec(&self, args: &[&str], stdin: Option<&[u8]>) -> Output {
         let mut command = tokio::process::Command::new("docker");
         command.arg("exec");
         if stdin.is_some() {
@@ -403,7 +434,7 @@ impl Drop for Container {
     }
 }
 
-async fn docker_output(args: &[String]) -> Output {
+pub(crate) async fn docker_output(args: &[String]) -> Output {
     tokio::process::Command::new("docker")
         .args(args)
         .stdin(Stdio::null())
@@ -517,6 +548,7 @@ impl Dovecot {
             ]);
         }
         let container = Container::start(
+            REQUIRE,
             &options,
             DOVECOT_IMAGE,
             &[],
@@ -530,7 +562,7 @@ impl Dovecot {
         let imap = container.port(DOVECOT_IMAP).await;
         let imaps = container.port(DOVECOT_IMAPS).await;
         if !greets(imap).await {
-            return container.not_ready("Dovecot").await;
+            return container.not_ready(REQUIRE, "Dovecot").await;
         }
         let sieve = match profile {
             Profile::Sieve => Some(container.port(DOVECOT_SIEVE).await),
@@ -815,6 +847,7 @@ impl Mailpit {
                 .expect("let the sink read its files");
         }
         let container = Container::start(
+            REQUIRE,
             &[
                 "-p".into(),
                 format!("127.0.0.1::{MAILPIT_SMTP}"),
@@ -842,7 +875,7 @@ impl Mailpit {
             http: reqwest::Client::new(),
         };
         if !mailpit.answers().await {
-            return mailpit.container.not_ready("Mailpit").await;
+            return mailpit.container.not_ready(REQUIRE, "Mailpit").await;
         }
         Some(mailpit)
     }
@@ -956,6 +989,7 @@ impl Radicale {
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755))
             .expect("let Radicale read its folder");
         let container = Container::start(
+            REQUIRE,
             &["-p".into(), format!("127.0.0.1::{RADICALE_PORT}")],
             RADICALE_IMAGE,
             &["--config", "/certs/config"],
@@ -968,7 +1002,7 @@ impl Radicale {
             http: reqwest::Client::new(),
         };
         if !radicale.answers().await {
-            return radicale.container.not_ready("Radicale").await;
+            return radicale.container.not_ready(REQUIRE, "Radicale").await;
         }
         Some(radicale)
     }
@@ -1101,3 +1135,7 @@ const MKADDRESSBOOK: &str = r#"<?xml version="1.0" encoding="utf-8"?>
     <D:displayname>People</D:displayname>
   </D:prop></D:set>
 </D:mkcol>"#;
+
+mod jmap;
+
+pub use jmap::{CYRUS_IMAGE, JAMES_IMAGE, JmapKind, JmapServer, STALWART_IMAGE};

@@ -108,6 +108,32 @@ jobs:
       - name: POP3 against Dovecot
         run: cargo test -p mailrs-pop3 --test dovecot && cargo test -p mailrs-sync --test pop3
 
+  jmap:
+    name: JMAP against real servers
+    # Cyrus, Stalwart and Apache James in Docker. As with the IMAP job,
+    # this runs on the runner, which has Docker, and builds only the
+    # crates the suite tests.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      PENGUIN_MAIL_REQUIRE_JMAP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust
+        run: scripts/ci-deps.sh --rust-only
+      - name: Put cargo on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: docker-suite
+      - name: Pull the test images
+        run: scripts/test-images.sh
+      - name: The test servers
+        run: cargo test -p mailrs-testmail --test jmap_servers
+      - name: The client against the servers
+        run: cargo test -p mailrs-jmap --test servers -- --nocapture
+
   flatpak:
     name: Flatpak builds and starts
     runs-on: ubuntu-latest
