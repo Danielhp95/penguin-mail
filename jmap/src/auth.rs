@@ -57,8 +57,6 @@ impl Auth {
 
     /// The `Authorization` header. `force` asks a refreshing credential
     /// for a new one; a password or a fixed token ignores it.
-    // Nothing calls it until the HTTP client lands; that task drops this.
-    #[allow(dead_code)]
     pub(crate) async fn header(&self, force: bool) -> Result<HeaderValue, JmapError> {
         let _ = force;
         let text = match self {

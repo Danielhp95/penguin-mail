@@ -8,10 +8,12 @@
 mod auth;
 mod request;
 pub mod error;
+pub mod http;
 pub mod session;
 
 pub use auth::{Auth, AuthKind};
 pub use error::JmapError;
+pub use http::JmapClient;
 pub use request::{CallId, Request, Response};
 pub use session::{
     CALENDARS, CONTACTS, CORE, Limits, MAIL, MASKED_EMAIL, MOST_AT_ONCE, SIEVE, SUBMISSION, Session, SessionAccount,
