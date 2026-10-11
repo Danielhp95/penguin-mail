@@ -23,6 +23,7 @@ mailrs-domain.workspace = true
 mailrs-gmail.workspace = true
 mailrs-graph.workspace = true
 mailrs-imap.workspace = true
+mailrs-jmap.workspace = true
 mailrs-mime.workspace = true
 mailrs-pop3.workspace = true
 mailrs-sieve.workspace = true

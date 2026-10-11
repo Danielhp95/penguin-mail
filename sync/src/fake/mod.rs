@@ -1,5 +1,6 @@
 //! In-memory servers for sync's tests and `penguin-mail --demo`: a Gmail
-//! here, and an IMAP server and SMTP sink in [`FakeImap`] and [`FakeSmtp`].
+//! here, a JMAP server in [`FakeJmap`], and an IMAP server and SMTP sink in
+//! [`FakeImap`] and [`FakeSmtp`].
 //! Seed a mailbox, hand the fake to an `AccountSync`, and every read and
 //! write the app makes goes through the same code the real client does.
 //!
@@ -11,6 +12,7 @@
 
 mod graph;
 mod imap;
+mod jmap;
 mod one_click;
 mod pop3;
 mod query;
@@ -23,6 +25,7 @@ pub use graph::{Area, FakeGraph, FakeMail, GraphState, ReplyWrites};
 pub use imap::{
     FakeImap, FakeMailbox, FakeMessage, FakeSmtp, ImapState, SmtpState, Submitted, raw_message,
 };
+pub use jmap::{FakeEmail, FakeJmap, FakeMailbox as FakeJmapMailbox, JmapState, Sent as JmapSent};
 pub use one_click::FakeOneClick;
 pub use pop3::{FakePop3, Release, pop3_mail};
 pub use sent::read_sent;

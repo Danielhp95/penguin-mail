@@ -29,14 +29,19 @@ use mailrs_imap::{
     AppendUid, BodyStructure, Capabilities, CopyUid, FlagsOf, ImapClient, ImapError, Listed, Selected, Since,
     SmtpClient, UidSet, Woke,
 };
+use mailrs_jmap::{
+    Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed as JmapListed, MailChanges, Mailbox, MailboxWrite, Pushed,
+    Queried, Saved, Session, SetResponse, Submission, Threads,
+};
 use mailrs_pop3::{ListItem, Pop3Api, Pop3Client, Pop3Error, Stat, UidlListing};
 use mailrs_sieve::client::{ManageSieveApi, ManageSieveClient, SieveError};
 use serde_json::Value;
 
+use super::jmap::JmapApi;
 use super::{GraphApi, ImapApi, Submit};
 use crate::api::{AccountClient, DraftRef, GmailApi, SavedDraft};
 #[cfg(any(test, feature = "fake"))]
-use crate::fake::{FakeDav, FakeGmail, FakeGraph, FakeImap, FakePop3, FakeSieve, FakeSmtp};
+use crate::fake::{FakeDav, FakeGmail, FakeGraph, FakeImap, FakeJmap, FakePop3, FakeSieve, FakeSmtp};
 
 /// Declares `$enum` over a real client and its fake, and implements
 /// `$trait` on it by passing each call to the client it holds. `now`
@@ -309,5 +314,30 @@ either_client! {
         fn get(name: &str) -> Result<String, SieveError>;
         fn put(name: &str, script: &str) -> Result<(), SieveError>;
         fn activate(name: &str) -> Result<(), SieveError>;
+    }
+}
+
+type Jmapped<T> = Result<T, JmapError>;
+
+either_client! {
+    /// A JMAP server: the client for one account, or the in-memory server.
+    AnyJmap(JmapClient, FakeJmap): JmapApi;
+    now {}
+    later {
+        fn session() -> Jmapped<std::sync::Arc<Session>>;
+        fn mailboxes() -> Jmapped<JmapListed<Mailbox>>;
+        fn mail_changes(email: &str, mailbox: &str, max: usize) -> Jmapped<MailChanges>;
+        fn email_state() -> Jmapped<String>;
+        fn query(query: &EmailQuery) -> Jmapped<Queried>;
+        fn emails(ids: &[String], properties: &[&str]) -> Jmapped<Got<Email>>;
+        fn threads(ids: &[String]) -> Jmapped<Threads>;
+        fn set_emails(update: &serde_json::Map<String, Value>, destroy: &[String]) -> Jmapped<SetResponse>;
+        fn set_mailbox(write: &MailboxWrite) -> Jmapped<String>;
+        fn download(blob_id: &str, limit: usize) -> Jmapped<Vec<u8>>;
+        fn upload(bytes: Vec<u8>) -> Jmapped<String>;
+        fn import(blob_id: &str, mailbox_ids: &[String], keywords: &[&str], destroy: Option<&str>) -> Jmapped<Saved>;
+        fn submit(submission: &Submission) -> Jmapped<Imported>;
+        fn identities() -> Jmapped<Vec<Identity>>;
+        fn push() -> Jmapped<Pushed>;
     }
 }
