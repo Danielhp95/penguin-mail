@@ -10656,6 +10656,18 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "O servidor não permite isto."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "O servidor recusou este pedido."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "O servidor não conseguiu aceitar este pedido."
+
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor não guarda cores para as caixas de correio."
@@ -10717,7 +10729,9 @@ msgstr "O servidor não tem caixa de Rascunhos."
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
-msgstr "O servidor já guarda esta mesma mensagem fora dos Rascunhos, por isso não a pode guardar também como rascunho."
+msgstr ""
+"O servidor já guarda esta mesma mensagem fora dos Rascunhos, por isso não a "
+"pode guardar também como rascunho."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."

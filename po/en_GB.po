@@ -9858,6 +9858,18 @@ msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgid "The message names nobody to send it to."
 msgstr "The message names nobody to send it to."
 
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "The server does not allow this."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "The server refused this request."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "The server could not take this request."
+
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."

@@ -10732,6 +10732,18 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "Le message n’indique aucun destinataire."
 
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "Le serveur ne le permet pas."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "Le serveur a refusé cette demande."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "Le serveur n’a pas pu accepter cette demande."
+
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
@@ -10794,7 +10806,9 @@ msgstr "Le serveur n’a pas de boîte Brouillons."
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
-msgstr "Le serveur conserve déjà ce même message hors des Brouillons ; il ne peut donc pas le garder aussi comme brouillon."
+msgstr ""
+"Le serveur conserve déjà ce même message hors des Brouillons ; il ne peut "
+"donc pas le garder aussi comme brouillon."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."

@@ -10686,6 +10686,18 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "El mensaje no indica a nadie a quien enviarlo."
 
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "El servidor no lo permite."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "El servidor ha rechazado esta solicitud."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "El servidor no ha podido aceptar esta solicitud."
+
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
@@ -10748,7 +10760,9 @@ msgstr "El servidor no tiene buzón de borradores."
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
-msgstr "El servidor ya guarda este mismo mensaje fuera de Borradores, así que no puede guardarlo también como borrador."
+msgstr ""
+"El servidor ya guarda este mismo mensaje fuera de Borradores, así que no "
+"puede guardarlo también como borrador."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."

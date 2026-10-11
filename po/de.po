@@ -10775,6 +10775,18 @@ msgstr "Penguin Mail erreicht Kalender- und Kontakteserver nur über HTTPS."
 msgid "The message names nobody to send it to."
 msgstr "Die Nachricht nennt niemanden, an den sie gesendet werden soll."
 
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "Der Server erlaubt das nicht."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "Der Server hat diese Anfrage abgelehnt."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "Der Server konnte diese Anfrage nicht annehmen."
+
 #: sync/src/services/jmap/mod.rs:230
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Dieser Server speichert keine Farben für seine Postfächer."
@@ -10835,7 +10847,9 @@ msgstr "Der Server hat kein Postfach für Entwürfe."
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
-msgstr "Der Server bewahrt genau diese Nachricht bereits außerhalb der Entwürfe auf und kann sie deshalb nicht zusätzlich als Entwurf speichern."
+msgstr ""
+"Der Server bewahrt genau diese Nachricht bereits außerhalb der Entwürfe auf "
+"und kann sie deshalb nicht zusätzlich als Entwurf speichern."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
