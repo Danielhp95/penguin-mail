@@ -6,7 +6,7 @@
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use mailrs_domain::MailSet;
 use mailrs_domain::query::{Query, Term};
-use mailrs_jmap::EmailQuery;
+use mailrs_jmap::{EmailQuery, JmapError};
 use serde_json::{Value, json};
 
 use super::{Jmap, JmapApi, Known, backend};
@@ -111,6 +111,16 @@ pub(super) fn compile(query: &Query, known: &Known, now: DateTime<Utc>) -> Resul
     })
 }
 
+/// A filter or sort the server cannot take leaves the search to the store,
+/// as Apache James answers a mailbox under `NOT`. Only a search reads it
+/// so: a window listing that fails this way must fail loudly.
+fn unsayable(err: JmapError) -> BackendError {
+    match &err {
+        JmapError::Method { kind, .. } if kind == "unsupportedFilter" || kind == "unsupportedSort" => BackendError::Unsupported,
+        _ => backend(err),
+    }
+}
+
 impl<J: JmapApi> Jmap<J> {
     pub(super) async fn find(&self, query: &SearchQuery, limit: usize) -> Result<Vec<RemoteRef>, BackendError> {
         let SearchQuery::Tree(tree) = query else {
@@ -129,7 +139,7 @@ impl<J: JmapApi> Jmap<J> {
         // ends the listing early.
         while found.len() < wanted {
             let page = EmailQuery { filter: filter.clone(), position: found.len() as u64, limit: wanted - found.len(), total: false };
-            let hits = self.api().query(&page).await.map_err(backend)?.hits;
+            let hits = self.api().query(&page).await.map_err(unsayable)?.hits;
             if hits.is_empty() {
                 break;
             }

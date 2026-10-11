@@ -122,3 +122,13 @@ async fn hits_are_capped_and_a_server_that_clamps_is_paged() {
     assert_eq!(h.mail().search(&query, 5).await.unwrap().len(), 5);
     assert_eq!(h.mail().search(&query, 50).await.unwrap().len(), 8);
 }
+
+#[tokio::test]
+async fn a_filter_the_server_cannot_take_leaves_the_search_to_the_store() {
+    let h = over(FakeJmap::new().one_mailbox_per_filter()).await;
+    h.fake.deliver("inbox", &raw("u1@x", "Kept"), now());
+    h.mail().mailboxes().await.unwrap();
+    let not_trash = SearchQuery::Tree(Query::not_in(MailSet::Role(Role::Trash)));
+    let asked = h.mail().search(&not_trash, 50).await;
+    assert!(matches!(asked, Err(crate::BackendError::Unsupported)), "{asked:?}");
+}
