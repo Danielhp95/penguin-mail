@@ -256,9 +256,11 @@ move `Penguin Mail.app` to Applications, and open it from Finder. The bundle
 includes its GTK libraries, so you do not need Homebrew to run it. The app
 bundle records the minimum macOS version each build requires.
 
-A zip ending in `-unsigned` is a test build without Apple notarization;
-macOS may block it. Download a signed, notarized zip for normal use. To
-update, download the next macOS zip and replace the app in Applications.
+The macOS builds are not notarized yet, so their zips end in `-unsigned`
+and macOS blocks the first launch. Open the app once, then go to System
+Settings → Privacy & Security and choose Open Anyway; from then on it opens
+normally. Notarized builds will come with the first release after the Apple
+certificates are in place. To update, download the next macOS zip and replace the app in Applications.
 Your mail and settings stay in your user folder. The macOS app has no tray
 icon. GnuPG and command-line assistants are not bundled.
 
