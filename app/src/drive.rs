@@ -22,6 +22,8 @@
 //! type Lisbon           text, one key each
 //! shot open-thread      saves open-thread.png
 //! check-menu            checks the native Settings menu and opens its dialog
+//! check-dock 5          checks the Dock unread count; 0 means no badge
+//! action win.select-all runs a GTK action on the active window
 //! check-web URL         checks scheme task cleanup and a local image-blocking fixture
 //! log anything          says it on stderr
 //! quit
@@ -53,6 +55,8 @@ enum Step {
     Type(String),
     Shot(String),
     CheckMenu,
+    CheckDock(u64),
+    Action(String),
     CheckWeb(String),
     Log(String),
     Quit,
@@ -104,6 +108,10 @@ fn parse(script: &str) -> Result<Vec<Step>, String> {
             "type" => Step::Type(rest.to_string()),
             "shot" => Step::Shot(rest.to_string()),
             "check-menu" => Step::CheckMenu,
+            "check-dock" => Step::CheckDock(rest.parse().map_err(|_| {
+                format!("line {}: check-dock takes an unread count", number + 1)
+            })?),
+            "action" => Step::Action(rest.to_string()),
             "check-web" => Step::CheckWeb(rest.to_string()),
             "log" => Step::Log(rest.to_string()),
             "quit" => Step::Quit,
@@ -274,6 +282,18 @@ impl Driver {
                 self.shot(&name);
             }
             Step::CheckWeb(url) => crate::web::check_macos(&url).await,
+            Step::Action(name) => {
+                let app = gio::Application::default().unwrap().downcast::<gtk::Application>().unwrap();
+                let window = app.active_window().expect("GTK tracks the active window");
+                gtk::prelude::WidgetExt::activate_action(&window, &name, None).expect("the action exists");
+                glib::timeout_future(pause).await;
+            }
+            Step::CheckDock(unread) => {
+                let native = NSApplication::sharedApplication(MainThreadMarker::new().unwrap());
+                let label = native.dockTile().badgeLabel().map(|label| label.to_string());
+                assert_eq!(label, (unread > 0).then(|| unread.to_string()), "Dock unread count");
+                eprintln!("drive: Dock unread count is {unread}");
+            }
             Step::Log(words) => eprintln!("drive: {words}"),
             Step::CheckMenu => {
                 let native = NSApplication::sharedApplication(MainThreadMarker::new().unwrap());
@@ -418,7 +438,7 @@ mod tests {
     fn a_script_reads_as_its_steps() {
         let steps = parse(
             "# open the first thread\nwait 500\nclick 528 350\nrclick 10 20\n\
-             scroll 700 400 -300\nkey f cmd shift\ntype Lisbon\nshot open\ncheck-menu\nquit\n",
+             scroll 700 400 -300\nkey f cmd shift\ntype Lisbon\nshot open\ncheck-menu\ncheck-dock 5\ncheck-dock 0\naction win.select-all\nquit\n",
         )
         .unwrap();
         assert_eq!(
@@ -432,6 +452,9 @@ mod tests {
                 Step::Type("Lisbon".into()),
                 Step::Shot("open".into()),
                 Step::CheckMenu,
+                Step::CheckDock(5),
+                Step::CheckDock(0),
+                Step::Action("win.select-all".into()),
                 Step::Quit,
             ]
         );
