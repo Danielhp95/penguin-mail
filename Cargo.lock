@@ -2614,6 +2614,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailrs-jmap"
+version = "1.0.7"
+dependencies = [
+ "base64 0.23.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
 name = "mailrs-mime"
 version = "1.0.7"
 dependencies = [
