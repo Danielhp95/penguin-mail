@@ -6,7 +6,7 @@
 //! address, so no error here repeats a URL.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use reqwest::header::CONTENT_TYPE;
@@ -63,6 +63,22 @@ fn io(err: std::io::Error) -> JmapError {
     JmapError::Network(format!("local file: {}", err.kind()))
 }
 
+/// A partial download, deleted when dropped unless `keep` is set.
+struct PartFile {
+    path: PathBuf,
+    keep: bool,
+}
+
+impl Drop for PartFile {
+    fn drop(&mut self) {
+        if !self.keep {
+            // A blocking unlink of one small file; there is nothing to
+            // report if it is already gone.
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 impl JmapClient {
     /// The open answer for a blob. The caller holds a permit.
     async fn blob_response(&self, url: &str) -> Result<reqwest::Response, JmapError> {
@@ -110,33 +126,23 @@ impl JmapClient {
         }
         let mut partial = OsString::from(to);
         partial.push(".part");
-        let partial = Path::new(&partial);
-        let mut file = tokio::fs::File::create(partial).await.map_err(io)?;
+        // Removes the partial file on any way out that does not rename it,
+        // including the caller dropping this future.
+        let mut guard = PartFile { path: partial.into(), keep: false };
+        let mut file = tokio::fs::File::create(&guard.path).await.map_err(io)?;
         let mut written: u64 = 0;
-        let outcome = async {
-            while let Some(chunk) = response.chunk().await.map_err(network)? {
-                written += chunk.len() as u64;
-                if written > limit as u64 {
-                    return Err(JmapError::AnswerTooLarge { limit });
-                }
-                file.write_all(&chunk).await.map_err(io)?;
+        while let Some(chunk) = response.chunk().await.map_err(network)? {
+            written += chunk.len() as u64;
+            if written > limit as u64 {
+                return Err(JmapError::AnswerTooLarge { limit });
             }
-            file.flush().await.map_err(io)?;
-            Ok(())
+            file.write_all(&chunk).await.map_err(io)?;
         }
-        .await;
+        file.flush().await.map_err(io)?;
         drop(file);
-        let outcome = match outcome {
-            Ok(()) => tokio::fs::rename(partial, to).await.map_err(io),
-            Err(err) => Err(err),
-        };
-        match outcome {
-            Ok(()) => Ok(written),
-            Err(err) => {
-                let _ = tokio::fs::remove_file(partial).await;
-                Err(err)
-            }
-        }
+        tokio::fs::rename(&guard.path, to).await.map_err(io)?;
+        guard.keep = true;
+        Ok(written)
     }
 
     /// Uploads `bytes` as a blob of `mime` to `account_id`, refused before

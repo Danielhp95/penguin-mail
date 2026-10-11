@@ -35,12 +35,11 @@ async fn a_blob_downloads_from_the_host_the_session_names() {
 }
 
 #[tokio::test]
-async fn a_blob_without_a_length_stops_at_the_cap() {
+async fn a_blob_with_a_length_past_the_cap_is_refused_before_it_is_read() {
     let server = MockServer::start().await;
     session_with_downloads_on(&server, &server.uri()).await;
     // wiremock always sets Content-Length, so this reaches the early
-    // refusal; the running count is shared with `read_capped`, which the
-    // J4 cap test covers.
+    // refusal. The next tests cover a body with no length.
     Mock::given(method("GET"))
         .and(path("/download/A1/B1/x"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'a'; 2048]))
@@ -136,4 +135,76 @@ async fn a_download_holds_a_permit_for_its_whole_transfer() {
         result.unwrap();
     }
     assert!(started.elapsed() >= std::time::Duration::from_millis(600), "{:?}", started.elapsed());
+}
+
+/// A server that answers every request with a chunked body of `chunks`
+/// chunks of 1 KiB, `pause` apart, and no Content-Length. Answers its address.
+async fn chunked_server(chunks: usize, pause: std::time::Duration) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else { return };
+            tokio::spawn(async move {
+                let mut seen = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => seen.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let head = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+                if stream.write_all(head.as_bytes()).await.is_err() {
+                    return;
+                }
+                for _ in 0..chunks {
+                    let chunk = format!("400\r\n{}\r\n", "a".repeat(1024));
+                    if stream.write_all(chunk.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    tokio::time::sleep(pause).await;
+                }
+                let _ = stream.write_all(b"0\r\n\r\n").await;
+            });
+        }
+    });
+    format!("http://{address}")
+}
+
+#[tokio::test]
+async fn a_chunked_blob_without_a_length_stops_at_the_cap() {
+    let server = MockServer::start().await;
+    session_with_downloads_on(&server, &chunked_server(4, std::time::Duration::ZERO).await).await;
+    let refused = client(&server).download("A1", "B1", "x", "text/plain", 1024).await;
+    assert_eq!(refused, Err(JmapError::AnswerTooLarge { limit: 1024 }));
+}
+
+#[tokio::test]
+async fn a_chunked_download_to_a_file_stops_at_the_cap_and_leaves_no_file() {
+    let server = MockServer::start().await;
+    session_with_downloads_on(&server, &chunked_server(4, std::time::Duration::ZERO).await).await;
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("x.bin");
+    let refused = client(&server).download_to("A1", "B1", "x", "text/plain", &target, 1024).await;
+    assert_eq!(refused, Err(JmapError::AnswerTooLarge { limit: 1024 }));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "neither the target nor a .part file remains");
+}
+
+#[tokio::test]
+async fn a_cancelled_download_to_a_file_leaves_no_part_file() {
+    let server = MockServer::start().await;
+    let slow = chunked_server(10, std::time::Duration::from_millis(200)).await;
+    session_with_downloads_on(&server, &slow).await;
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("x.bin");
+    let client = client(&server);
+    let cancelled = tokio::time::timeout(
+        std::time::Duration::from_millis(700),
+        client.download_to("A1", "B1", "x", "text/plain", &target, 1 << 20),
+    )
+    .await;
+    assert!(cancelled.is_err(), "the transfer should still be running");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
