@@ -1319,7 +1319,7 @@ impl MainWindow {
                 continue;
             }
             tracing::info!(
-                account = %account.email,
+                account = account.id,
                 ?missing,
                 "showing the Grant Access banner"
             );
@@ -2813,7 +2813,7 @@ impl MainWindow {
                 Ok(found) if found.calendar => win.refresh_accounts(Reload::Yes),
                 Ok(_) => {}
                 Err(err) => {
-                    tracing::info!(account = %account.email, %err, "found no calendar or contacts server");
+                    tracing::info!(account = account.id, %err, "found no calendar or contacts server");
                 }
             }
         });

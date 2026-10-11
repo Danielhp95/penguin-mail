@@ -104,7 +104,7 @@ fn fill_servers(app: &Rc<App>, row: &adw::ExpanderRow, account: &Account, shown:
                     let (app, weak_row, account, shown) = (Rc::clone(&app), weak_row.clone(), account.clone(), Rc::clone(&shown));
                     glib::spawn_future_local(async move {
                         if let Err(err) = app.core.confirm_server(account.clone(), kind).await {
-                            tracing::info!(account = %account.email, %err, "the server did not take the login");
+                            tracing::info!(account = account.id, %err, "the server did not take the login");
                         }
                         if let Some(row) = weak_row.upgrade() {
                             fill_servers(&app, &row, &account, &shown);
@@ -130,7 +130,7 @@ fn fill_servers(app: &Rc<App>, row: &adw::ExpanderRow, account: &Account, shown:
                 let (app, weak_row, account, shown) = (Rc::clone(&app), weak_row.clone(), account.clone(), Rc::clone(&shown));
                 glib::spawn_future_local(async move {
                     if let Err(err) = app.core.find_services(account.clone()).await {
-                        tracing::info!(account = %account.email, %err, "the search for servers failed");
+                        tracing::info!(account = account.id, %err, "the search for servers failed");
                     }
                     if let Some(row) = weak_row.upgrade() {
                         fill_servers(&app, &row, &account, &shown);

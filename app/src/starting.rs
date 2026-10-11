@@ -78,7 +78,7 @@ where
             Ok(Ok(Connected::NeedsSignIn)) => return port.report(account.id, AccountState::NeedsReauth).await,
             Ok(Err(err)) => {
                 tracing::warn!(
-                    account = %account.email,
+                    account = account.id,
                     error = %err,
                     retry_in_secs = pause.as_secs(),
                     "could not start syncing; trying again later"
@@ -87,7 +87,7 @@ where
             }
             Err(_) => {
                 tracing::warn!(
-                    account = %account.email,
+                    account = account.id,
                     waited_secs = waits.connect.as_secs(),
                     retry_in_secs = pause.as_secs(),
                     "starting the account took too long; trying again later"

@@ -25,6 +25,7 @@ mod incremental;
 mod invitations;
 mod labels;
 mod local_rules;
+mod log_lines;
 mod mailbox;
 mod microsoft;
 mod muted_replies;

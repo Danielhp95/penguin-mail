@@ -171,7 +171,7 @@ impl Connector {
             Provider::Gmail => {
                 let kept = Arc::clone(&self.secrets.google_clients);
                 let Some(oauth) = account_client(db, &self.config, self.clients.google.clone(), kept, account).await? else {
-                    tracing::warn!(account = %account.email, "no Google client for this account");
+                    tracing::warn!(account = account.id, "no Google client for this account");
                     return Ok(Connected::NeedsSignIn(Lacks::Client));
                 };
                 connect_account(oauth, Arc::clone(&self.secrets.google), account, db)
@@ -182,7 +182,7 @@ impl Connector {
             Provider::Pop3 => connect_pop3(db, Arc::clone(&self.secrets.passwords), account).await,
             Provider::Microsoft => {
                 let Some(client) = self.clients.microsoft.clone() else {
-                    tracing::warn!(account = %account.email, "no Microsoft client in this build");
+                    tracing::warn!(account = account.id, "no Microsoft client in this build");
                     return Ok(Connected::NeedsSignIn(Lacks::Client));
                 };
                 connect_microsoft(db, Arc::clone(&self.secrets.microsoft), client, account, window_days).await
