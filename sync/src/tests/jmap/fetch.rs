@@ -189,3 +189,46 @@ async fn window_ids_stay_inside_their_mailbox() {
     let ids = h.mail().window_ids(30, Some(&h.fake.mailbox("archive"))).await.unwrap();
     assert_eq!(ids.into_iter().map(|r| r.id).collect::<Vec<_>>(), [archived]);
 }
+
+#[tokio::test]
+async fn a_message_removed_between_backfill_pages_skips_no_other() {
+    let h = fastmail().await;
+    for n in 0..205 {
+        h.fake.deliver("inbox", &raw(&format!("g{n}@x"), "Paged"), days_ago(1));
+    }
+    let mail = h.mail();
+    let first = mail.backfill(30, None).await.unwrap();
+    h.fake.destroy(&first.refs[0].id);
+    let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
+    assert_eq!(second.refs.len(), 5, "the five after the first page, though one before them went");
+}
+
+#[tokio::test]
+async fn a_backfill_whose_last_message_went_starts_again_a_little_before() {
+    let h = fastmail().await;
+    for n in 0..205 {
+        h.fake.deliver("inbox", &raw(&format!("h{n}@x"), "Paged"), days_ago(1));
+    }
+    let mail = h.mail();
+    let first = mail.backfill(30, None).await.unwrap();
+    h.fake.destroy(&first.refs[150].id);
+    h.fake.destroy(&first.refs[199].id);
+    let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
+    let firsts: std::collections::BTreeSet<String> = first.refs.iter().map(|r| r.id.clone()).collect();
+    let fresh: Vec<&String> = second.refs.iter().map(|r| &r.id).filter(|id| !firsts.contains(*id)).collect();
+    assert_eq!(fresh.len(), 5, "repeats may come, but none of the rest is skipped");
+}
+
+#[tokio::test]
+async fn a_message_removed_during_a_window_listing_skips_no_other() {
+    let h = over(FakeJmap::new().clamping_queries(2)).await;
+    let ids: Vec<String> = (0..5).map(|n| h.fake.deliver("inbox", &raw(&format!("v{n}@x"), "Listed"), days_ago(1) + n)).collect();
+    h.mail().mailboxes().await.unwrap();
+    // The newest goes once the first page has named it.
+    h.fake.with(|s| s.vanish_after_query = Some(ids[4].clone()));
+    let mut listed: Vec<String> = h.mail().window_ids(30, None).await.unwrap().into_iter().map(|r| r.id).collect();
+    listed.sort();
+    let mut expected = ids.clone();
+    expected.sort();
+    assert_eq!(listed, expected);
+}

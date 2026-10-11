@@ -6,9 +6,10 @@
 use chrono::{DateTime, Local, NaiveDate, SecondsFormat, Utc};
 use mailrs_domain::MailSet;
 use mailrs_domain::query::{Query, Term};
-use mailrs_jmap::{EmailQuery, JmapError};
+use mailrs_jmap::JmapError;
 use serde_json::{Value, json};
 
+use super::fetch::Mark;
 use super::{Jmap, JmapApi, Known, backend};
 use crate::BackendError;
 use crate::services::{RemoteRef, SearchQuery};
@@ -135,15 +136,17 @@ impl<J: JmapApi> Jmap<J> {
         };
         let wanted = limit.min(MOST_HITS);
         let mut found: Vec<RemoteRef> = Vec::new();
+        let mut mark = Mark::default();
         // A server may answer fewer hits than asked, so only an empty page
         // ends the listing early.
         while found.len() < wanted {
-            let page = EmailQuery { filter: filter.clone(), position: found.len() as u64, limit: wanted - found.len(), total: false };
-            let hits = self.api().query(&page).await.map_err(unsayable)?.hits;
+            let (hits, next) = self.page_after(&filter, &mark, wanted - found.len()).await.map_err(unsayable)?;
             if hits.is_empty() {
                 break;
             }
-            found.extend(hits.into_iter().map(|h| RemoteRef { id: h.id, thread_id: h.thread_id }));
+            mark = next;
+            let fresh: Vec<_> = hits.into_iter().filter(|h| !found.iter().any(|f| f.id == h.id)).collect();
+            found.extend(fresh.into_iter().map(|h| RemoteRef { id: h.id, thread_id: h.thread_id }));
         }
         found.truncate(wanted);
         Ok(found)

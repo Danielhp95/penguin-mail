@@ -393,14 +393,33 @@ impl JmapClient {
 
     /// One page of a query, newest first, each hit with its thread.
     pub async fn query(&self, query: &EmailQuery) -> Result<Queried, JmapError> {
+        self.query_from(query, None).await
+    }
+
+    /// The page right after the hit `anchor`, which `query.position` then
+    /// does not name (RFC 8620 section 5.5, `anchorOffset` 1). A message
+    /// removed before the anchor does not shift the page the way it shifts
+    /// a position. A server that no longer lists the anchor answers the
+    /// method error `anchorNotFound`.
+    pub async fn query_after(&self, query: &EmailQuery, anchor: &str) -> Result<Queried, JmapError> {
+        self.query_from(query, Some(anchor)).await
+    }
+
+    async fn query_from(&self, query: &EmailQuery, anchor: Option<&str>) -> Result<Queried, JmapError> {
         let account = self.mail_account().await?;
         let mut args = json!({
             "accountId": account,
             "sort": [{ "property": "receivedAt", "isAscending": false }],
-            "position": query.position,
             "limit": query.limit,
             "calculateTotal": query.total,
         });
+        match anchor {
+            Some(anchor) => {
+                args["anchor"] = json!(anchor);
+                args["anchorOffset"] = json!(1);
+            }
+            None => args["position"] = json!(query.position),
+        }
         if let Some(filter) = &query.filter {
             args["filter"] = filter.clone();
         }

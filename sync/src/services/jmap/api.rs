@@ -23,6 +23,7 @@ pub trait JmapApi: Send + Sync + 'static {
     fn mail_changes(&self, email: &str, mailbox: &str, max: usize) -> impl Future<Output = Answer<MailChanges>> + Send;
     fn email_state(&self) -> impl Future<Output = Answer<String>> + Send;
     fn query(&self, query: &EmailQuery) -> impl Future<Output = Answer<Queried>> + Send;
+    fn query_after(&self, query: &EmailQuery, anchor: &str) -> impl Future<Output = Answer<Queried>> + Send;
     fn emails(&self, ids: &[String], properties: &[&str]) -> impl Future<Output = Answer<Got<Email>>> + Send;
     fn threads(&self, ids: &[String]) -> impl Future<Output = Answer<Threads>> + Send;
     fn set_emails(&self, update: &Map<String, Value>, destroy: &[String]) -> impl Future<Output = Answer<SetResponse>> + Send;
@@ -50,6 +51,9 @@ impl JmapApi for JmapClient {
     }
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         JmapClient::query(self, query).await
+    }
+    async fn query_after(&self, query: &EmailQuery, anchor: &str) -> Answer<Queried> {
+        JmapClient::query_after(self, query, anchor).await
     }
     async fn emails(&self, ids: &[String], properties: &[&str]) -> Answer<Got<Email>> {
         JmapClient::emails(self, ids, properties).await
