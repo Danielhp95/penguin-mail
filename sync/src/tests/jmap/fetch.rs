@@ -232,3 +232,35 @@ async fn a_message_removed_during_a_window_listing_skips_no_other() {
     expected.sort();
     assert_eq!(listed, expected);
 }
+
+fn calls_of(h: &super::Harness, name: &str) -> usize {
+    h.fake.with(|s| s.calls.iter().filter(|c| *c == name).count())
+}
+
+#[tokio::test]
+async fn a_mailbox_s_window_asks_for_its_older_inbox_mail_in_one_filter() {
+    let h = fastmail().await;
+    let old_inbox = h.fake.deliver("inbox", &raw("f1@x", "Old labelled"), days_ago(400));
+    let work = h.fake.add_mailbox("Work", None);
+    h.fake.with(|s| s.emails.get_mut(&old_inbox).unwrap().mailbox_ids.insert(work.clone()));
+    for n in 0..30 {
+        h.fake.deliver("inbox", &raw(&format!("f{n}@y"), "Old in the Inbox only"), days_ago(400));
+    }
+    h.mail().mailboxes().await.unwrap();
+    h.fake.with(|s| s.calls.clear());
+    let found = h.mail().window_ids(30, Some(&work)).await.unwrap();
+    assert_eq!(found.into_iter().map(|r| r.id).collect::<Vec<_>>(), [old_inbox]);
+    assert_eq!(calls_of(&h, "Email/get"), 0, "no look at the Inbox's other mail");
+}
+
+#[tokio::test]
+async fn a_server_that_refuses_two_mailboxes_a_filter_is_asked_once_a_session() {
+    let h = over(FakeJmap::new().one_mailbox_per_filter()).await;
+    let work = h.fake.add_mailbox("Work", None);
+    let travel = h.fake.add_mailbox("Travel", None);
+    h.mail().mailboxes().await.unwrap();
+    h.mail().window_ids(30, Some(&work)).await.unwrap();
+    h.fake.with(|s| s.calls.clear());
+    h.mail().window_ids(30, Some(&travel)).await.unwrap();
+    assert_eq!(calls_of(&h, "Email/query"), 2, "recent mail, then the Inbox's older mail, and no filter it refused");
+}

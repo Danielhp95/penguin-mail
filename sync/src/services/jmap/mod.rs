@@ -88,6 +88,9 @@ pub(super) struct Known {
     pub listed: bool,
     pub window_open: bool,
     pub identities: Vec<Identity>,
+    /// The server refused two mailbox conditions in one filter, as Apache
+    /// James does, so a mailbox's older mail is found another way.
+    pub one_mailbox_a_filter: bool,
     /// Whether push works: `None` until the first watch says.
     pub push: Option<bool>,
     pub push_failures: u32,

@@ -180,11 +180,15 @@ impl<J: JmapApi> Jmap<J> {
 
     /// Every id `filter` matches, up to `most`, `IDS_PER_CALL` a call.
     async fn every_id(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, BackendError> {
+        self.every_id_of(filter, most).await.map_err(backend)
+    }
+
+    async fn every_id_of(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, JmapError> {
         let mut out: Vec<RemoteRef> = Vec::new();
         let mut mark = Mark::default();
         while out.len() < most {
             let limit = IDS_PER_CALL.min(most - out.len());
-            let (hits, next) = self.page_after(&filter, &mark, limit).await.map_err(backend)?;
+            let (hits, next) = self.page_after(&filter, &mark, limit).await?;
             if hits.is_empty() {
                 break;
             }
@@ -221,14 +225,25 @@ impl<J: JmapApi> Jmap<J> {
         };
         // A mailbox other than the Inbox lists what the window holds of it:
         // its recent mail, and its older mail that is also in the Inbox,
-        // which is stored whatever its age. Apache James takes one mailbox
-        // condition a filter, so the older part lists the Inbox's older mail
-        // and keeps what also sits in `mailbox`.
+        // which is stored whatever its age.
         let mut out = self.every_id(Some(json!({ "inMailbox": mailbox, "after": start })), MOST_IDS).await?;
         let Some(inbox) = inbox else {
             return Ok(out);
         };
         let left = MOST_IDS - out.len();
+        if !self.known().one_mailbox_a_filter {
+            let both = json!({ "operator": "AND", "conditions": [{ "inMailbox": mailbox, "before": start }, { "inMailbox": inbox }] });
+            match self.every_id_of(Some(both), left).await {
+                Err(JmapError::Method { kind, .. }) if kind == "unsupportedFilter" => self.known().one_mailbox_a_filter = true,
+                listed => {
+                    out.extend(listed.map_err(backend)?);
+                    return Ok(out);
+                }
+            }
+        }
+        // Apache James takes one mailbox condition a filter, so the older
+        // part lists the Inbox's older mail and keeps what also sits in
+        // `mailbox`.
         let older = self.every_id(Some(json!({ "inMailbox": inbox, "before": start })), left).await?;
         let ids: Vec<String> = older.iter().map(|r| r.id.clone()).collect();
         let got = self.api().emails(&ids, &["id", "mailboxIds"]).await.map_err(backend)?;
