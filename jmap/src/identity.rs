@@ -11,6 +11,8 @@ use crate::{JmapClient, JmapError, Request};
 pub struct EmailAddress {
     #[serde(default)]
     pub name: Option<String>,
+    /// Group syntax can carry a name with no address.
+    #[serde(default)]
     pub email: String,
 }
 

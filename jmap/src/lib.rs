@@ -12,6 +12,7 @@ mod request;
 pub mod error;
 pub mod http;
 pub mod identity;
+pub mod mail;
 pub mod session;
 
 pub use auth::{Auth, AuthKind};
@@ -24,4 +25,8 @@ pub use request::{CallId, Request, Response};
 pub use session::{
     CALENDARS, CONTACTS, CORE, Limits, MAIL, MASKED_EMAIL, MOST_AT_ONCE, SIEVE, SUBMISSION, Session, SessionAccount,
     VACATION,
+};
+pub use mail::{
+    BODY, BodyPart, ChangesResponse, Email, EmailQuery, Got, Header, Hit, Imported, Listed, META, MailChanges, Mailbox,
+    MailboxWrite, PLACES, Queried, SetError, SetResponse, Submission, Thread, Threads, pointer,
 };
