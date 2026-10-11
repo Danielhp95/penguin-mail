@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # A weekly run of every job, whatever changed, catches drift in the
+  # Docker images, the runners and the toolchain.
+  schedule:
+    - cron: '17 3 * * 1'
 
 permissions:
   contents: read
@@ -14,13 +18,104 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides which of the jobs below a change needs. A skipped job counts as
+  # passed, so a run of skipped jobs concludes success, which is what the
+  # release workflow's CI check reads.
+  changes:
+    name: Which jobs this change needs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      imap: ${{ steps.paths.outputs.imap }}
+      jmap: ${{ steps.paths.outputs.jmap }}
+      packaging: ${{ steps.paths.outputs.packaging }}
+      macos: ${{ steps.paths.outputs.macos }}
+      full: ${{ steps.paths.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Compare the changed files with each job's paths
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.sha }}
+        run: |
+          full=false
+          case "$EVENT" in
+            workflow_dispatch|schedule) full=true ;;
+          esac
+          base=
+          case "$EVENT" in
+            push) base=$BEFORE ;;
+            pull_request) base=$PR_BASE ;;
+          esac
+          # A new branch has an all-zero before, and a force push leaves one
+          # the clone lacks. Either way, treat everything as changed.
+          if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] \
+              || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            full=true
+          fi
+          if [ "$full" = true ]; then
+            files=
+          else
+            files=$(git diff --name-only "$base" "$HEAD")
+          fi
+          # true when everything changed or a changed file matches the regex.
+          any() {
+            if [ "$full" = true ] || grep -Eq "$1" <<<"$files"; then echo true; else echo false; fi
+          }
+          if [ "$full" = true ] || grep -Evq '^(docs/|\.github/ISSUE_TEMPLATE/|LICENSE$)|\.md$' <<<"$files"; then
+            code=true
+          else
+            code=false
+          fi
+          imap=$(any '^(imap|sync|testmail|pop3|sieve|dav|discover|mime|store|domain)/|^(Cargo\.lock|Cargo\.toml|scripts/test-images\.sh|\.github/workflows/ci\.yml)$')
+          jmap=$(any '^(jmap|sync|testmail|discover)/|^(Cargo\.lock|Cargo\.toml|scripts/test-images\.sh|\.github/workflows/ci\.yml)$')
+          packaging=$(any '^(packaging|snap|app/data)/|^(Cargo\.lock|Cargo\.toml)$|^scripts/flatpak|^scripts/[^/]*macos|^\.github/workflows/|(^|/)build\.rs$')
+          # macOS-only sources: files under macos paths, and Rust files that
+          # name target_os = "macos" (find them with a grep over *.rs).
+          macos=true
+          if [ "$packaging" = false ]; then
+            macos=false
+            if grep -Eq '^app/src/(web/macos/|app/dock_badge/macos\.rs$)|^app/tests/drive_macos\.rs$' <<<"$files"; then
+              macos=true
+            else
+              while IFS= read -r f; do
+                case "$f" in
+                  *.rs) if [ -f "$f" ] && grep -q 'target_os = "macos"' "$f"; then macos=true; fi ;;
+                esac
+              done <<<"$files"
+            fi
+          fi
+          {
+            echo "code=$code"
+            echo "imap=$imap"
+            echo "jmap=$jmap"
+            echo "packaging=$packaging"
+            echo "macos=$macos"
+            echo "full=$full"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
   macos:
     name: macOS apps build and start
+    needs: changes
+    if: needs.changes.outputs.macos == 'true' || needs.changes.outputs.full == 'true'
     uses: ./.github/workflows/macos.yml
+    with:
+      # Scheduled and manual runs build both. Everyday changes build the
+      # Apple silicon app only.
+      arches: ${{ needs.changes.outputs.full == 'true' && '["arm64","x86_64"]' || '["arm64"]' }}
     # Pull requests exercise packaging without the release credentials.
 
   gate:
     name: Tests, clippy, translations, accessibility
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # GitHub's hosted runners stop short of the GTK, libadwaita and WebKitGTK
     # the app needs, so the gate runs on the release it targets.
@@ -72,6 +167,8 @@ jobs:
 
   imap:
     name: IMAP and SMTP against real servers
+    needs: changes
+    if: needs.changes.outputs.imap == 'true' || needs.changes.outputs.full == 'true'
     # The suite starts Dovecot and Mailpit in Docker. The gate's container
     # has no Docker, so this job runs on the runner, which has it, and
     # builds only the crates the suite tests. None of them needs GTK.
@@ -110,6 +207,8 @@ jobs:
 
   jmap:
     name: JMAP against real servers
+    needs: changes
+    if: needs.changes.outputs.jmap == 'true' || needs.changes.outputs.full == 'true'
     # Cyrus, Stalwart and Apache James in Docker. As with the IMAP job,
     # this runs on the runner, which has Docker, and builds only the
     # crates the suite tests.
@@ -136,6 +235,8 @@ jobs:
 
   flatpak:
     name: Flatpak builds and starts
+    needs: changes
+    if: needs.changes.outputs.packaging == 'true' || needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     # Flathub's own image, with flatpak-builder and the GNOME 51 SDK the
     # manifest names. flatpak-builder needs the privileges to make its own

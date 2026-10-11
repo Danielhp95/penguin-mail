@@ -2,6 +2,12 @@ name: macOS package
 
 on:
   workflow_call:
+    inputs:
+      # A JSON list of the architectures to build. Omitted, both build, which
+      # is what the release workflow wants.
+      arches:
+        type: string
+        default: '["arm64","x86_64"]'
 
 permissions:
   contents: read
@@ -12,6 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: ${{ fromJSON(inputs.arches) }}
         include:
           - runner: macos-15
             arch: arm64
