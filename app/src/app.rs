@@ -36,7 +36,6 @@ const BLOCK_REMOTE_RULES: &str = r#"[
 mod announce;
 mod calendar_file;
 mod composing;
-#[cfg(target_os = "macos")]
 mod dock_badge;
 mod hidden;
 mod photos;
@@ -86,8 +85,7 @@ pub struct App {
     tray_started: Cell<bool>,
     /// Holds the tray's recount while a burst of changes goes by.
     tray_recount: crate::tray::Burst,
-    #[cfg(target_os = "macos")]
-    dock_badge_changed: tokio::sync::watch::Sender<()>,
+    dock_badge: dock_badge::Badge,
     /// Accounts whose waiting rule would replace a script of the person's
     /// own and were asked about it this run, so the minute timer asks once.
     asked_to_replace: RefCell<std::collections::HashSet<AccountId>>,
@@ -168,8 +166,7 @@ impl App {
             pending_file: RefCell::new(calendar_file),
             tray_started: Cell::new(false),
             tray_recount: crate::tray::Burst::default(),
-            #[cfg(target_os = "macos")]
-            dock_badge_changed: tokio::sync::watch::channel(()).0,
+            dock_badge: dock_badge::Badge::default(),
             asked_to_replace: RefCell::default(),
             settings: RefCell::new(Settings {
                 // The demo's contacts are already in its throwaway store,
@@ -195,8 +192,7 @@ impl App {
         crate::locale_time::set_week_start_setting(app.settings.borrow().week_start);
         app.install_actions();
         app.listen();
-        #[cfg(target_os = "macos")]
-        app.watch_dock_badge();
+        app.dock_badge.watch(&app);
         app.listen_for_notifications(picked);
         // The tray's Quit and a session logout can end the process
         // through the application without ever calling `App::quit`, so
@@ -811,8 +807,7 @@ impl App {
             });
         }
         self.refresh_send_as(arrived);
-        #[cfg(target_os = "macos")]
-        self.dock_badge_changed.send_replace(());
+        self.dock_badge.recount();
         self.update_tray();
     }
 
@@ -1233,8 +1228,7 @@ impl App {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             while let Ok(event) = this.core.events.recv().await {
-                #[cfg(target_os = "macos")]
-                this.dock_badge_changed.send_replace(());
+                this.dock_badge.recount();
                 this.tell_window(Notice::Engine(&event));
                 match &event {
                     ChangeEvent::NewMail {
