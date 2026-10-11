@@ -2618,6 +2618,7 @@ name = "mailrs-jmap"
 version = "1.0.7"
 dependencies = [
  "base64 0.23.1",
+ "mailrs-testmail",
  "reqwest",
  "serde",
  "serde_json",

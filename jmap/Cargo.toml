@@ -17,6 +17,8 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+# The JMAP servers in Docker the client is checked against.
+mailrs-testmail.workspace = true
 tempfile.workspace = true
 # `start_paused` lets a test watch a wait without waiting.
 tokio = { workspace = true, features = ["test-util"] }

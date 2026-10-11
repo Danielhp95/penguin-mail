@@ -7,15 +7,19 @@
 
 mod auth;
 pub mod blob;
+mod check;
 mod request;
 pub mod error;
 pub mod http;
+pub mod identity;
 pub mod session;
 
 pub use auth::{Auth, AuthKind};
 pub use blob::{MOST_BLOB_BYTES, Uploaded};
+pub use check::{Checked, Offered, check};
 pub use error::JmapError;
 pub use http::JmapClient;
+pub use identity::{EmailAddress, Identity};
 pub use request::{CallId, Request, Response};
 pub use session::{
     CALENDARS, CONTACTS, CORE, Limits, MAIL, MASKED_EMAIL, MOST_AT_ONCE, SIEVE, SUBMISSION, Session, SessionAccount,
