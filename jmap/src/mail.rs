@@ -669,10 +669,10 @@ impl JmapClient {
                 // at once; only a submission it did not make is sent again.
                 let first = answer.take::<SetResponse>(&submitted, "EmailSubmission/set");
                 let made = first.is_ok_and(|set| set.created.is_some_and(|c| c.contains_key("s")));
-                return match made {
-                    true => self.file_sent_copy(&account, &existing, submission).await,
-                    false => self.submit_existing(&account, &existing, args, submission).await,
-                };
+                if made || self.went_out_before(&account, &sender, &existing).await? {
+                    return self.file_sent_copy(&account, &existing, submission).await;
+                }
+                return self.submit_existing(&account, &existing, args, submission).await;
             }
         };
         let refused = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
@@ -689,6 +689,23 @@ impl JmapClient {
             return Err(error);
         }
         Ok(email)
+    }
+
+    /// Whether an earlier try already sent the copy the server has as `id`,
+    /// as after a send whose answer was lost: a submission names it, or it
+    /// is no draft any more. Sending it then would send it twice.
+    /// `EmailSubmission/query` is not on every server, so a refusal of it
+    /// leaves the keyword to answer.
+    async fn went_out_before(&self, account: &str, sender: &str, id: &str) -> Result<bool, JmapError> {
+        let mut request = Request::new();
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "keywords"] }));
+        let asked = request.call(SUBMISSION, "EmailSubmission/query", json!({ "accountId": sender, "filter": { "emailIds": [id] } }));
+        let mut answer = self.send(&request).await?;
+        let email = answer.take::<Got<Email>>(&got, "Email/get")?.list.into_iter().next().ok_or(JmapError::NotFound)?;
+        let submitted = answer
+            .take::<Value>(&asked, "EmailSubmission/query")
+            .is_ok_and(|found| found["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
+        Ok(submitted || !email.keywords.get("$draft").copied().unwrap_or(false))
     }
 
     /// Submits the message the server already has as `id`, with the same

@@ -935,6 +935,23 @@ impl JmapApi for FakeJmap {
                 None => &["$seen"],
             };
             let had = s.one_copy && s.blobs.get(&submission.blob_id).is_some_and(|raw| s.emails.values().any(|e| &e.raw == raw));
+            // As the client does: a copy the server keeps that is no draft
+            // any more went out on an earlier try. It is filed again and
+            // not sent twice.
+            let raw = s.blobs.get(&submission.blob_id).cloned();
+            let went = s.emails.iter().find(|(_, e)| had && Some(&e.raw) == raw.as_ref() && !e.keywords.contains("$draft"));
+            if let (Some((id, _)), Some(sent)) = (went, submission.sent.clone()) {
+                let id = id.clone();
+                if let Some(email) = s.emails.get_mut(&id) {
+                    let before = email.clone();
+                    email.mailbox_ids = BTreeSet::from([sent]);
+                    let after = email.clone();
+                    s.settle(Some(&before), Some(&after));
+                    s.record("Email", &id, Op::Updated);
+                }
+                let thread_id = s.emails[&id].thread_id.clone();
+                return Ok(Imported { id, thread_id });
+            }
             let made = FakeJmap::import_now(s, &submission.blob_id, &[home], keywords)?;
             if let Some(kind) = s.submission_refusal.clone() {
                 // The client destroys the copy when the submission fails,

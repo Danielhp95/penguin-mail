@@ -196,6 +196,23 @@ async fn a_draft_sent_on_a_try_whose_answer_was_lost_is_not_sent_again() {
     assert!(h.fake.with(|s| !s.emails.contains_key(&draft.draft_id) && s.emails.contains_key(&sent)));
 }
 
+/// Cyrus sends the draft's own copy and files it in Sent, so after a lost
+/// answer the retry finds that copy again under the draft's id.
+#[tokio::test]
+async fn a_draft_the_server_keeps_once_goes_once_when_the_first_answer_was_lost() {
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    let draft = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    h.fake.with(|s| s.lose_submission_answer = true);
+    let lost = h.mail().send_draft(&draft.draft_id).await;
+    assert!(matches!(lost, Err(BackendError::Offline(_))), "{lost:?}");
+    let sent = h.mail().send_draft(&draft.draft_id).await.unwrap();
+    assert_eq!(sent, draft.draft_id);
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1, "one submission in all");
+    let (mailboxes, keywords) = h.fake.with(|s| (s.emails[&sent].mailbox_ids.clone(), s.emails[&sent].keywords.clone()));
+    assert_eq!(mailboxes.into_iter().collect::<Vec<_>>(), [h.fake.mailbox("sent")]);
+    assert!(!keywords.contains("$draft"));
+}
+
 #[tokio::test]
 async fn without_sent_the_copy_goes_to_archive_and_is_no_draft() {
     let h = fastmail().await;

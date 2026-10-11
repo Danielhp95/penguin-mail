@@ -300,6 +300,26 @@ async fn saving_an_unchanged_draft_keeps_the_copy_the_server_has() {
     assert_eq!((&update["mailboxIds/drafts"], &update["keywords/$draft"]), (&json!(true), &json!(true)));
 }
 
+/// The look at the server's copy before it is submitted: still a draft,
+/// and no submission names it.
+fn still_a_draft(id: &str) -> Value {
+    json!({"sessionState": "s1", "methodResponses": [
+        ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": id, "threadId": "T1", "keywords": {"$draft": true}}]}, "c0"],
+        ["EmailSubmission/query", {"accountId": "A1", "ids": []}, "c1"]]})
+}
+
+/// The first answer to a send of bytes the server has as `D1`: the import
+/// names the copy, and the submission of `#m` is not made.
+fn exists_and_not_submitted() -> Value {
+    json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
+        ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]})
+}
+
+fn submissions(sent: &[Value]) -> usize {
+    sent.iter().flat_map(|p| p["methodCalls"].as_array().unwrap().clone()).filter(|c| c[0] == "EmailSubmission/set").count()
+}
+
 #[tokio::test]
 async fn sending_bytes_the_server_has_submits_its_copy() {
     let server = MockServer::start().await;
@@ -307,6 +327,7 @@ async fn sending_bytes_the_server_has_submits_its_copy() {
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        still_a_draft("D1"),
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"],
@@ -315,8 +336,8 @@ async fn sending_bytes_the_server_has_submits_its_copy() {
     let imported = client(&server).submit(&a_submission()).await.unwrap();
     assert_eq!((imported.id.as_str(), imported.thread_id.as_str()), ("D1", "T1"));
     let sent = posts(&server).await;
-    assert_eq!(sent.len(), 2);
-    let set = &sent[1]["methodCalls"][1][1];
+    assert_eq!(sent.len(), 3);
+    let set = &sent[2]["methodCalls"][1][1];
     assert_eq!(set["create"]["s"]["emailId"], "D1");
     assert_eq!(set["onSuccessUpdateEmail"]["#s"]["mailboxIds/sent"], true);
     assert_eq!(set["onSuccessUpdateEmail"]["#s"]["keywords/$draft"], Value::Null);
@@ -329,13 +350,14 @@ async fn a_refused_submission_of_the_server_s_copy_leaves_that_copy() {
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        still_a_draft("D1"),
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "forbiddenFrom"}}}, "c1"]]}),
     ]).await;
     let refused = client(&server).submit(&a_submission()).await.unwrap_err();
     assert_eq!(refused, mailrs_jmap::JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
-    assert_eq!(posts(&server).await.len(), 2, "no destroy of a message the send did not make");
+    assert_eq!(posts(&server).await.len(), 3, "no destroy of a message the send did not make");
 }
 
 #[tokio::test]
@@ -365,6 +387,7 @@ async fn the_server_s_copy_sent_without_a_sent_mailbox_stops_being_a_draft() {
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        still_a_draft("D1"),
         json!({"sessionState": "s1", "methodResponses": [
             ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
             ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"]]}),
@@ -374,10 +397,50 @@ async fn the_server_s_copy_sent_without_a_sent_mailbox_stops_being_a_draft() {
     let submission = Submission { drafts: None, sent: Some("drafts".into()), ..a_submission() };
     client(&server).submit(&submission).await.unwrap();
     let sent = posts(&server).await;
-    let moved = &sent[1]["methodCalls"][1][1]["onSuccessUpdateEmail"]["#s"];
+    let moved = &sent[2]["methodCalls"][1][1]["onSuccessUpdateEmail"]["#s"];
     assert_eq!(moved["keywords/$draft"], Value::Null);
     assert!(moved.as_object().unwrap().contains_key("keywords/$draft"));
     assert_eq!(moved["mailboxIds/drafts"], true);
+}
+
+/// Cyrus after a send whose answer was lost: the server's copy was sent
+/// and filed, so a retry files it again and submits nothing.
+#[tokio::test]
+async fn a_retry_finds_its_copy_already_submitted_and_sends_nothing() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        exists_and_not_submitted(),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1", "keywords": {"$draft": true}}]}, "c0"],
+            ["EmailSubmission/query", {"accountId": "A1", "ids": ["S1"]}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "updated": {"D1": null}}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c1"]]}),
+    ]).await;
+    let imported = client(&server).submit(&a_submission()).await.unwrap();
+    assert_eq!(imported.id, "D1");
+    let sent = posts(&server).await;
+    assert_eq!(sent[1]["methodCalls"][1][1]["filter"]["emailIds"], json!(["D1"]));
+    assert_eq!(submissions(&sent), 1, "only the first try's submission, which was not made");
+    assert_eq!(sent[2]["methodCalls"][0][1]["update"]["D1"]["mailboxIds/sent"], true);
+}
+
+/// A server without `EmailSubmission/query`: a copy that is no draft any
+/// more was filed as sent by an earlier try.
+#[tokio::test]
+async fn a_retry_on_a_server_without_submission_query_trusts_the_missing_draft_keyword() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        exists_and_not_submitted(),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1", "keywords": {"$seen": true}}]}, "c0"],
+            ["error", {"type": "unknownMethod"}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "updated": {"D1": null}}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c1"]]}),
+    ]).await;
+    client(&server).submit(&a_submission()).await.unwrap();
+    assert_eq!(submissions(&posts(&server).await), 1);
 }
 
 #[tokio::test]
