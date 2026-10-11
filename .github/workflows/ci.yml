@@ -133,6 +133,9 @@ jobs:
         run: cargo test -p mailrs-testmail --test jmap_servers
       - name: The client against the servers
         run: cargo test -p mailrs-jmap --test servers -- --nocapture
+      # --nocapture keeps which servers pushed in the log.
+      - name: The adapter against the servers
+        run: cargo test -p mailrs-sync --test jmap -- --nocapture
 
   flatpak:
     name: Flatpak builds and starts

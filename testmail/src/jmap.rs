@@ -45,6 +45,10 @@ impl JmapKind {
 
 pub struct JmapServer {
     container: Container,
+    /// One pool for every call the test makes as the other client. Cyrus's
+    /// httpd takes no new connection while an EventSource stream is open,
+    /// so the witness keeps reusing the connection it already has.
+    http: reqwest::Client,
     pub kind: JmapKind,
     pub session_url: String,
     /// The user name Basic sends.
@@ -146,6 +150,14 @@ fn james_keystore(dir: &Path) -> Option<PathBuf> {
     Some(dir.join("keystore"))
 }
 
+/// A URL from the session, with `{accountId}` filled in, resolved against
+/// the session URL: Stalwart in bootstrap mode hands out relative ones.
+fn endpoint(session_url: &str, template: &str, account: &str) -> reqwest::Url {
+    reqwest::Url::parse(session_url)
+        .and_then(|url| url.join(&template.replace("{accountId}", account)))
+        .unwrap_or_else(|_| panic!("{template} does not resolve against {session_url}"))
+}
+
 impl JmapServer {
     pub async fn start(kind: JmapKind, password: &str) -> Option<JmapServer> {
         match kind {
@@ -181,6 +193,7 @@ impl JmapServer {
         }
         Some(JmapServer {
             container,
+            http: reqwest::Client::new(),
             kind: JmapKind::Cyrus,
             session_url,
             user: "user1".into(),
@@ -213,6 +226,7 @@ impl JmapServer {
         }
         let server = JmapServer {
             container,
+            http: reqwest::Client::new(),
             kind: JmapKind::Stalwart,
             session_url,
             user: format!("me@{STALWART_DOMAIN}"),
@@ -326,6 +340,7 @@ impl JmapServer {
         );
         Some(JmapServer {
             container,
+            http: reqwest::Client::new(),
             kind: JmapKind::James,
             session_url: format!("{base}/jmap/session"),
             user: "me@james.test".into(),
@@ -334,7 +349,7 @@ impl JmapServer {
     }
 
     async fn call_as(&self, user: &str, password: &str, using: &[&str], calls: Value) -> Value {
-        let http = reqwest::Client::new();
+        let http = &self.http;
         let session: Value = http
             .get(&self.session_url)
             .basic_auth(user, Some(password))
@@ -345,10 +360,7 @@ impl JmapServer {
             .json()
             .await
             .expect("the session's JSON");
-        // Stalwart in bootstrap mode names a relative apiUrl.
-        let api = reqwest::Url::parse(&self.session_url)
-            .and_then(|url| url.join(session["apiUrl"].as_str().expect("an apiUrl")))
-            .expect("an apiUrl that resolves against the session URL");
+        let api = endpoint(&self.session_url, session["apiUrl"].as_str().expect("an apiUrl"), "");
         http.post(api)
             .basic_auth(user, Some(password))
             .json(&json!({ "using": using, "methodCalls": calls }))
@@ -369,7 +381,7 @@ impl JmapServer {
 
     /// The session as this server's own user sees it.
     pub async fn session(&self, password: &str) -> Value {
-        reqwest::Client::new()
+        self.http
             .get(&self.session_url)
             .basic_auth(&self.user, Some(password))
             .send()
@@ -393,16 +405,13 @@ impl JmapServer {
     /// Imports `raw` into the Inbox as another client would, and answers
     /// the new Email's id.
     pub async fn deliver(&self, password: &str, raw: &[u8]) -> String {
-        let http = reqwest::Client::new();
+        let http = &self.http;
         let session = self.session(password).await;
         let account = session["primaryAccounts"]["urn:ietf:params:jmap:mail"]
             .as_str()
             .expect("a mail account")
             .to_string();
-        let upload = session["uploadUrl"]
-            .as_str()
-            .expect("an uploadUrl")
-            .replace("{accountId}", &account);
+        let upload = endpoint(&self.session_url, session["uploadUrl"].as_str().expect("an uploadUrl"), &account);
         let uploaded: Value = http
             .post(upload)
             .basic_auth(&self.user, Some(password))
@@ -410,6 +419,7 @@ impl JmapServer {
             .body(raw.to_vec())
             .send()
             .await
+            .and_then(|r| r.error_for_status())
             .expect("the upload")
             .json()
             .await
@@ -443,7 +453,24 @@ impl JmapServer {
             .await;
         imported["methodResponses"][0][1]["created"]["m"]["id"]
             .as_str()
-            .expect("the imported id")
+            .unwrap_or_else(|| panic!("the import made nothing: {imported}"))
             .to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::endpoint;
+
+    #[test]
+    fn a_relative_upload_url_resolves_against_the_session() {
+        let url = endpoint("http://localhost:4000/jmap/session", "/jmap/upload/{accountId}/", "a1");
+        assert_eq!(url.as_str(), "http://localhost:4000/jmap/upload/a1/");
+    }
+
+    #[test]
+    fn an_absolute_upload_url_stays_as_the_session_wrote_it() {
+        let url = endpoint("http://localhost:4000/jmap", "http://localhost:4000/jmap/upload/{accountId}/", "a1");
+        assert_eq!(url.as_str(), "http://localhost:4000/jmap/upload/a1/");
     }
 }
