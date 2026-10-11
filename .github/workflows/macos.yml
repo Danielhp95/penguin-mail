@@ -39,12 +39,9 @@ jobs:
       fail-fast: false
       matrix:
         arch: ${{ fromJSON(inputs.arches) }}
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    # Picked from the arch, not with matrix include: an include entry that
+    # matches no arch in the list adds a job of its own.
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     timeout-minutes: 90
     env:
       # Leave room for both debug checks and the release on hosted runners.
