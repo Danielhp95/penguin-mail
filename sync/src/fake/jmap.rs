@@ -106,7 +106,7 @@ pub struct JmapState {
     forgotten: u64,
     next: u64,
     push: bool,
-    push_ends: bool,
+    push_ends: Option<std::time::Duration>,
 }
 
 impl JmapState {
@@ -375,7 +375,7 @@ impl FakeJmap {
             forgotten: 0,
             next: 0,
             push: true,
-            push_ends: false,
+            push_ends: None,
         };
         for (name, role) in [("Inbox", "inbox"), ("Drafts", "drafts"), ("Sent", "sent"), ("Trash", "trash"), ("Junk Mail", "junk"), ("Archive", "archive")] {
             let id = format!("mb-{role}");
@@ -424,8 +424,19 @@ impl FakeJmap {
 
     /// A server whose event stream closes as soon as it opens.
     pub fn with_push_that_ends_at_once(self) -> FakeJmap {
-        self.with(|s| s.push_ends = true);
+        self.with(|s| s.push_ends = Some(std::time::Duration::ZERO));
         self
+    }
+
+    /// A server whose event stream closes after it has been open for `held`.
+    pub fn with_push_that_ends_after(self, held: std::time::Duration) -> FakeJmap {
+        self.with(|s| s.push_ends = Some(held));
+        self
+    }
+
+    /// Changes how long the stream stays open before it closes.
+    pub fn set_push_ends_after(&self, held: std::time::Duration) {
+        self.with(|s| s.push_ends = Some(held));
     }
 
     /// How many times the event stream was opened.
@@ -894,7 +905,11 @@ impl JmapApi for FakeJmap {
 
     async fn push(&self) -> Answer<Pushed> {
         self.called("push");
-        if self.with(|s| s.push_ends) {
+        if let Some(held) = self.with(|s| s.push_ends) {
+            tokio::select! {
+                () = tokio::time::sleep(held) => {}
+                () = self.pushed.notified() => return Ok(Pushed::Changed),
+            }
             return Err(JmapError::Network("the stream ended".into()));
         }
         if !self.with(|s| s.push) {

@@ -7,7 +7,8 @@
 
 use std::time::Duration;
 
-use mailrs_jmap::Pushed;
+use mailrs_jmap::{Pushed, push::PING_SECONDS};
+use tokio::time::Instant;
 
 use super::{Jmap, JmapApi};
 
@@ -25,6 +26,11 @@ const WATCH_RETRY_CAP: Duration = Duration::from_secs(15 * 60);
 
 /// The wait before reopening the stream after `failures` failures in a
 /// row before this one.
+/// How long a stream stays open before it counts as healthy: three pings,
+/// one more than the silence limit, so a stream that dies of silence never
+/// reaches it.
+const STREAM_HELD: Duration = Duration::from_secs(3 * PING_SECONDS as u64);
+
 fn watch_retry(failures: u32) -> Duration {
     WATCH_RETRY.saturating_mul(1u32 << failures.min(8)).min(WATCH_RETRY_CAP)
 }
@@ -39,9 +45,10 @@ fn slow_poll(tray_only: bool) -> Duration {
 impl<J: JmapApi> Jmap<J> {
     pub(super) fn poll_every(&self) -> Duration {
         let known = self.known();
-        match known.push {
-            Some(true) => slow_poll(!known.window_open),
-            _ => NO_PUSH_POLL,
+        let held = known.push_opened.is_some_and(|opened| opened.elapsed() >= STREAM_HELD);
+        match known.push == Some(true) || held {
+            true => slow_poll(!known.window_open),
+            false => NO_PUSH_POLL,
         }
     }
 
@@ -56,7 +63,10 @@ impl<J: JmapApi> Jmap<J> {
         if let Some(pause) = pause {
             tokio::time::sleep(pause).await;
         }
-        match self.api().push().await {
+        self.known().push_opened = Some(Instant::now());
+        let pushed = self.api().push().await;
+        let held = self.known().push_opened.take().is_some_and(|opened| opened.elapsed() >= STREAM_HELD);
+        match pushed {
             Ok(Pushed::Changed) => {
                 let mut known = self.known();
                 known.push = Some(true);
@@ -70,6 +80,11 @@ impl<J: JmapApi> Jmap<J> {
                 let failures = {
                     let mut known = self.known();
                     known.push = Some(false);
+                    if held {
+                        // The stream was healthy for a long time: this is a
+                        // new trouble, not the same one again.
+                        known.push_failures = 0;
+                    }
                     known.push_pause = Some(watch_retry(known.push_failures));
                     known.push_failures = known.push_failures.saturating_add(1);
                     known.push_failures

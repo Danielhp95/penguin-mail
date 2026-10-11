@@ -92,6 +92,8 @@ pub(super) struct Known {
     pub push: Option<bool>,
     pub push_failures: u32,
     pub push_pause: Option<Duration>,
+    /// When the open push stream was opened; `None` while none is open.
+    pub push_opened: Option<tokio::time::Instant>,
 }
 
 /// The blob ids of the parts of the last structures fetched, by part path.

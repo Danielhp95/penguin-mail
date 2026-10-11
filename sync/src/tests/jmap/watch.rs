@@ -66,3 +66,69 @@ async fn repeated_failures_wait_longer_before_each_reopening() {
     third.await.unwrap();
     assert_eq!(h.fake.push_opens(), 3);
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_stream_held_for_a_long_time_before_it_drops_starts_the_backoff_over() {
+    let h = over(FakeJmap::new().with_push_that_ends_at_once()).await;
+    h.mail().watch().await;
+    h.mail().watch().await;
+    h.fake.set_push_ends_after(Duration::from_secs(3 * 3600));
+    h.mail().watch().await; // waits 120 s, then holds three hours and drops
+    h.fake.set_push_ends_after(Duration::ZERO);
+    let next = tokio::spawn({
+        let mail = h.mail();
+        async move { mail.watch().await }
+    });
+    tokio::time::sleep(Duration::from_secs(59)).await;
+    assert_eq!(h.fake.push_opens(), 3, "the pause is the base one, not 240 s");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(h.fake.push_opens(), 4);
+    next.await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quiet_stream_that_holds_makes_the_account_look_slowly() {
+    let h = fastmail().await;
+    let mail = h.mail();
+    let watching = tokio::spawn(async move { mail.watch().await });
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    assert_eq!(h.mail().poll_interval(), Some(Duration::from_secs(60)), "not yet shown to hold");
+    tokio::time::sleep(Duration::from_secs(300)).await;
+    assert_eq!(h.mail().poll_interval(), Some(Duration::from_secs(15 * 60)));
+    watching.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_account_looks_each_minute_while_a_failed_stream_pauses() {
+    let h = over(FakeJmap::new().with_push_that_ends_at_once()).await;
+    h.mail().watch().await;
+    let mail = h.mail();
+    let waiting = tokio::spawn(async move { mail.watch().await });
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert_eq!(h.mail().poll_interval(), Some(Duration::from_secs(60)));
+    waiting.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_change_starts_the_backoff_over() {
+    let h = over(FakeJmap::new().with_push_that_ends_at_once()).await;
+    h.mail().watch().await;
+    h.mail().watch().await;
+    h.fake.set_push_ends_after(Duration::from_secs(10_000));
+    let mail = h.mail();
+    let watching = tokio::spawn(async move { mail.watch().await });
+    tokio::time::sleep(Duration::from_secs(121)).await;
+    h.fake.poke();
+    watching.await.unwrap();
+    h.fake.set_push_ends_after(Duration::ZERO);
+    h.mail().watch().await; // fails at once; the pause is the base one
+    let next = tokio::spawn({
+        let mail = h.mail();
+        async move { mail.watch().await }
+    });
+    tokio::time::sleep(Duration::from_secs(59)).await;
+    assert_eq!(h.fake.push_opens(), 4);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(h.fake.push_opens(), 5);
+    next.await.unwrap();
+}
