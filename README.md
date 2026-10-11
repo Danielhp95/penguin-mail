@@ -10,7 +10,7 @@
 Mail and calendar for Linux and macOS, written in Rust.
 
 [![CI](https://github.com/c9dev/penguin-mail/actions/workflows/ci.yml/badge.svg)](https://github.com/c9dev/penguin-mail/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/c9dev/penguin-mail?sort=semver&label=release)](https://github.com/c9dev/penguin-mail/releases/latest)
+[![Latest release](https://img.shields.io/badge/release-v1.0.7-blue)](https://github.com/c9dev/penguin-mail/releases/latest)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Rust 1.98](https://img.shields.io/badge/rust-1.98-orange?logo=rust)](https://www.rust-lang.org)
 [![GTK 4 and libadwaita 1.8](https://img.shields.io/badge/GTK_4-libadwaita_1.8-4a86cf?logo=gnome)](https://gnome.pages.gitlab.gnome.org/libadwaita/)
