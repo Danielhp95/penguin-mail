@@ -95,6 +95,9 @@ pub struct JmapState {
     /// The error type the server gives every submission, after the import
     /// it rides with was made.
     pub submission_refusal: Option<String>,
+    /// The next submission goes out, and then its answer is lost on the
+    /// way back, as a dropped connection does.
+    pub lose_submission_answer: bool,
     /// A mailbox id and the message count it claims, for a mailbox too big
     /// to fill in a test.
     pub total_override: Option<(String, u64)>,
@@ -364,6 +367,7 @@ impl FakeJmap {
             query_clamp: None,
             refused: BTreeSet::new(),
             submission_refusal: None,
+            lose_submission_answer: false,
             total_override: None,
             log: Vec::new(),
             state: 0,
@@ -815,7 +819,17 @@ impl JmapApi for FakeJmap {
     async fn submit(&self, submission: &Submission) -> Answer<Imported> {
         self.called("EmailSubmission/set");
         self.with(|s| {
-            if !s.identities.iter().any(|i| i.id == submission.identity_id) {
+            // A server sends only from the identity's address, or from any
+            // address in its domain for a `*@domain` identity.
+            let from = submission.mail_from.to_ascii_lowercase();
+            let owns = |i: &Identity| {
+                let email = i.email.to_ascii_lowercase();
+                match email.strip_prefix("*@") {
+                    Some(domain) => from.rsplit_once('@').is_some_and(|(_, d)| d == domain),
+                    None => email == from,
+                }
+            };
+            if !s.identities.iter().any(|i| i.id == submission.identity_id && owns(i)) {
                 return Err(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
             }
             let home = submission
@@ -853,6 +867,9 @@ impl JmapApi for FakeJmap {
                 let after = email.clone();
                 s.settle(Some(&before), Some(&after));
                 s.record("Email", &made.id, Op::Updated);
+            }
+            if std::mem::take(&mut s.lose_submission_answer) {
+                return Err(JmapError::Network("the answer was lost".into()));
             }
             Ok(made)
         })

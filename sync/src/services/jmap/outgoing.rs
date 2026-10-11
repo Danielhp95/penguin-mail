@@ -37,13 +37,17 @@ pub(super) fn identity_for<'a>(identities: &'a [Identity], from: &str) -> Option
 fn refused_send(err: JmapError, from: &str) -> BackendError {
     let kind = match &err {
         JmapError::Method { kind, .. } => kind.as_str(),
+        // `tooLarge` reads as this kind, and a submission request is small.
+        JmapError::RequestTooLarge => "tooLarge",
         _ => return backend(err),
     };
     BackendError::Refused(match kind {
-        "forbiddenFrom" => fill(&gettext("The server does not let this account send from {address}."), &[("address", from)]),
+        "forbiddenFrom" | "forbiddenMailFrom" => fill(&gettext("The server does not let this account send from {address}."), &[("address", from)]),
         "forbiddenToSend" => gettext("The server does not let this account send mail now."),
         "tooManyRecipients" => gettext("The message names more recipients than the server sends to at once."),
         "noRecipients" | "invalidRecipients" => gettext("The server could not send to one of the recipients."),
+        "tooLarge" => gettext("The message is larger than the server sends."),
+        "invalidEmail" => gettext("The server could not read the message to send it."),
         _ => return backend(err),
     })
 }
@@ -77,15 +81,23 @@ impl<J: JmapApi> Jmap<J> {
         self.sending().await?;
         self.listed().await?;
         let (from, to) = envelope_of(raw, &self.settings().address)?;
-        let (drafts, sent) = {
+        let (drafts, filed) = {
             let known = self.known();
-            (known.roles.get(&Role::Drafts).cloned(), known.roles.get(&Role::Sent).cloned())
+            let role = |r| known.roles.get(&r).cloned();
+            (role(Role::Drafts), role(Role::Sent).or_else(|| role(Role::Archive)))
         };
-        if drafts.is_none() && sent.is_none() {
-            return Err(BackendError::Refused(gettext(
-                "The server has neither a Drafts nor a Sent mailbox to keep the message in.",
-            )));
-        }
+        // The copy waits in Drafts and moves where sent mail is filed. With
+        // nowhere to file it, it stays in Drafts without `$draft`, so it
+        // never reads as a draft to send again.
+        let (drafts, sent) = match (drafts, filed) {
+            (drafts, Some(filed)) => (drafts, Some(filed)),
+            (Some(drafts), None) => (None, Some(drafts)),
+            (None, None) => {
+                return Err(BackendError::Refused(gettext(
+                    "The server has neither a Drafts nor a Sent mailbox to keep the message in.",
+                )));
+            }
+        };
         let identity = self.identity(&from).await?;
         let blob = self.api().upload(without_bcc(raw)).await.map_err(backend)?;
         let submission = Submission { blob_id: blob, identity_id: identity.id, mail_from: from.clone(), rcpt_to: to, drafts, sent };
@@ -122,11 +134,31 @@ impl<J: JmapApi> Jmap<J> {
     pub(super) async fn send_saved(&self, draft_id: &str) -> Result<String, BackendError> {
         self.sending().await?;
         let raw = self.raws(&[draft_id.to_string()]).await?.into_iter().next().ok_or(BackendError::NotFound)?;
-        let sent = self.send_raw(&raw.bytes).await?;
+        // A try whose answer was lost may have sent it already: the draft
+        // stays until a good answer, so a retry would send it twice.
+        let sent = match self.already_sent(&raw.bytes, draft_id).await? {
+            Some(sent) => sent,
+            None => self.send_raw(&raw.bytes).await?,
+        };
         if self.drop_draft(draft_id).await.is_err() {
             tracing::warn!("the draft stayed after its message went");
         }
         Ok(sent)
+    }
+
+    /// The sent copy of the draft `draft_id`, found by its Message-ID among
+    /// the messages that are no drafts, wherever the copy was filed.
+    async fn already_sent(&self, raw: &[u8], draft_id: &str) -> Result<Option<String>, BackendError> {
+        let parts = mailrs_mime::parts(raw).unwrap_or_default();
+        let Some(message_id) = parts.header("Message-ID").map(str::trim).filter(|m| !m.is_empty()) else {
+            return Ok(None);
+        };
+        let header = json!({ "header": ["Message-ID", message_id] });
+        let filter = json!({ "operator": "AND", "conditions": [header, { "notKeyword": "$draft" }] });
+        // Two, so a draft that lost its `$draft` elsewhere is passed over.
+        let query = EmailQuery { filter: Some(filter), position: 0, limit: 2, total: false };
+        let found = self.api().query(&query).await.map_err(backend)?;
+        Ok(found.hits.into_iter().map(|h| h.id).find(|id| id != draft_id))
     }
 
     pub(super) async fn drop_draft(&self, draft_id: &str) -> Result<(), BackendError> {

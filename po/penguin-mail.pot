@@ -9947,38 +9947,46 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:43
+#: sync/src/services/jmap/outgoing.rs:45
 msgid "The server does not let this account send from {address}."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:44
+#: sync/src/services/jmap/outgoing.rs:46
 msgid "The server does not let this account send mail now."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:45
+#: sync/src/services/jmap/outgoing.rs:47
 msgid "The message names more recipients than the server sends to at once."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:46
+#: sync/src/services/jmap/outgoing.rs:48
 msgid "The server could not send to one of the recipients."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:58
+#: sync/src/services/jmap/outgoing.rs:49
+msgid "The message is larger than the server sends."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:50
+msgid "The server could not read the message to send it."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:62
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:73
+#: sync/src/services/jmap/outgoing.rs:77
 msgid "This account has no address the server lets it send from."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:86
+#: sync/src/services/jmap/outgoing.rs:97
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:104
+#: sync/src/services/jmap/outgoing.rs:116
 msgid "The server has no Drafts mailbox."
 msgstr ""
 

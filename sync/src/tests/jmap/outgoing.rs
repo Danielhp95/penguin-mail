@@ -130,11 +130,89 @@ async fn a_refused_submission_says_why_and_leaves_no_copy() {
 }
 
 #[tokio::test]
-async fn an_account_with_neither_drafts_nor_sent_refuses_to_send_in_words() {
+async fn an_account_with_no_drafts_sent_or_archive_refuses_to_send_in_words() {
     let h = fastmail().await;
-    h.fake.with(|s| s.mailboxes.retain(|_, m| !matches!(m.role.as_deref(), Some("drafts" | "sent"))));
+    h.fake.with(|s| s.mailboxes.retain(|_, m| !matches!(m.role.as_deref(), Some("drafts" | "sent" | "archive"))));
     let refused = h.mail().send(&letter("me@example.com", ""), None).await;
     let Err(BackendError::Refused(why)) = refused else { panic!("{refused:?}") };
     assert_eq!(why, "The server has neither a Drafts nor a Sent mailbox to keep the message in.");
     assert!(h.fake.with(|s| s.sent.is_empty()));
+}
+
+#[tokio::test]
+async fn a_draft_sent_on_a_try_whose_answer_was_lost_is_not_sent_again() {
+    let h = fastmail().await;
+    let draft = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    h.fake.with(|s| s.lose_submission_answer = true);
+    let lost = h.mail().send_draft(&draft.draft_id).await;
+    assert!(matches!(lost, Err(BackendError::Offline(_))), "{lost:?}");
+    let sent = h.mail().send_draft(&draft.draft_id).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1);
+    assert!(h.fake.with(|s| !s.emails.contains_key(&draft.draft_id) && s.emails.contains_key(&sent)));
+}
+
+#[tokio::test]
+async fn without_sent_the_copy_goes_to_archive_and_is_no_draft() {
+    let h = fastmail().await;
+    h.fake.with(|s| s.mailboxes.retain(|_, m| m.role.as_deref() != Some("sent")));
+    let id = h.mail().send(&letter("me@example.com", ""), None).await.unwrap();
+    let (mailboxes, keywords) = h.fake.with(|s| (s.emails[&id].mailbox_ids.clone(), s.emails[&id].keywords.clone()));
+    assert_eq!(mailboxes.into_iter().collect::<Vec<_>>(), [h.fake.mailbox("archive")]);
+    assert!(!keywords.contains("$draft"));
+    assert!(h.mail().list_drafts().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn without_sent_or_archive_the_copy_waits_in_drafts_as_no_draft() {
+    let h = fastmail().await;
+    h.fake.with(|s| s.mailboxes.retain(|_, m| !matches!(m.role.as_deref(), Some("sent" | "archive"))));
+    let id = h.mail().send(&letter("me@example.com", ""), None).await.unwrap();
+    assert!(h.fake.with(|s| !s.emails[&id].keywords.contains("$draft")));
+    assert!(h.mail().list_drafts().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_from_the_account_does_not_own_is_refused_in_words() {
+    let h = fastmail().await;
+    let refused = h.mail().send(&letter("stranger@example.net", ""), None).await;
+    let Err(BackendError::Refused(why)) = refused else { panic!("{refused:?}") };
+    assert_eq!(why, "The server does not let this account send from stranger@example.net.");
+    assert!(h.fake.with(|s| s.sent.is_empty()));
+}
+
+#[tokio::test]
+async fn a_message_too_large_to_send_says_so() {
+    let h = over(FakeJmap::new().refusing_submissions("tooLarge")).await;
+    let refused = h.mail().send(&letter("me@example.com", ""), None).await;
+    let Err(BackendError::Refused(why)) = refused else { panic!("{refused:?}") };
+    assert_eq!(why, "The message is larger than the server sends.");
+}
+
+#[tokio::test]
+async fn a_draft_with_bcc_sends_it_in_the_envelope_only_and_goes() {
+    let h = fastmail().await;
+    let draft = h.mail().save_draft(None, &letter("me@example.com", "Bcc: secret@example.com\r\n"), None).await.unwrap();
+    h.mail().send_draft(&draft.draft_id).await.unwrap();
+    let sent = h.fake.with(|s| s.sent[0].clone());
+    assert!(sent.rcpt_to.contains(&"secret@example.com".to_string()));
+    assert!(!String::from_utf8_lossy(&sent.raw).to_ascii_lowercase().contains("bcc:"));
+    assert!(h.fake.with(|s| !s.emails.contains_key(&draft.draft_id)));
+}
+
+#[tokio::test]
+async fn a_refused_draft_stays_in_drafts() {
+    let h = over(FakeJmap::new().refusing_submissions("forbiddenToSend")).await;
+    let draft = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    let refused = h.mail().send_draft(&draft.draft_id).await;
+    assert!(matches!(refused, Err(BackendError::Refused(_))), "{refused:?}");
+    let listed: Vec<String> = h.mail().list_drafts().await.unwrap().into_iter().map(|d| d.draft_id).collect();
+    assert_eq!(listed, std::slice::from_ref(&draft.draft_id));
+}
+
+#[tokio::test]
+async fn a_refused_envelope_sender_reads_as_a_refused_from() {
+    let h = over(FakeJmap::new().refusing_submissions("forbiddenMailFrom")).await;
+    let refused = h.mail().send(&letter("me@example.com", ""), None).await;
+    let Err(BackendError::Refused(why)) = refused else { panic!("{refused:?}") };
+    assert_eq!(why, "The server does not let this account send from me@example.com.");
 }

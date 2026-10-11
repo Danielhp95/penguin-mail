@@ -10015,48 +10015,60 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr "伺服器未回應"
 
-#: sync/src/services/jmap/outgoing.rs:43
+#: sync/src/services/jmap/outgoing.rs:45
 #, fuzzy
 #| msgid "The server does not answer"
 msgid "The server does not let this account send from {address}."
 msgstr "伺服器未回應"
 
-#: sync/src/services/jmap/outgoing.rs:44
+#: sync/src/services/jmap/outgoing.rs:46
 #, fuzzy
 #| msgid "The server does not answer"
 msgid "The server does not let this account send mail now."
 msgstr "伺服器未回應"
 
-#: sync/src/services/jmap/outgoing.rs:45
+#: sync/src/services/jmap/outgoing.rs:47
 #, fuzzy
 #| msgid "The message names nobody to send it to."
 msgid "The message names more recipients than the server sends to at once."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/outgoing.rs:46
+#: sync/src/services/jmap/outgoing.rs:48
 #, fuzzy
 #| msgid "The server would not hand it over."
 msgid "The server could not send to one of the recipients."
 msgstr "伺服器拒絕提供郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:58
+#: sync/src/services/jmap/outgoing.rs:49
+#, fuzzy
+#| msgid "The message is larger than Penguin Mail downloads."
+msgid "The message is larger than the server sends."
+msgstr "郵件超過 Penguin Mail 的下載大小上限。"
+
+#: sync/src/services/jmap/outgoing.rs:50
+#, fuzzy
+#| msgid "The server would not hand it over."
+msgid "The server could not read the message to send it."
+msgstr "伺服器拒絕提供郵件。"
+
+#: sync/src/services/jmap/outgoing.rs:62
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:73
+#: sync/src/services/jmap/outgoing.rs:77
 #, fuzzy
 #| msgid "This account has no tags yet. Make one in Outlook."
 msgid "This account has no address the server lets it send from."
 msgstr "此帳號尚無標記。請在 Outlook 中建立。"
 
-#: sync/src/services/jmap/outgoing.rs:86
+#: sync/src/services/jmap/outgoing.rs:97
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr ""
 
-#: sync/src/services/jmap/outgoing.rs:104
+#: sync/src/services/jmap/outgoing.rs:116
 #, fuzzy
 #| msgid "The server does not answer"
 msgid "The server has no Drafts mailbox."
