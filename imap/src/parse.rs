@@ -2,8 +2,10 @@
 //! parsed responses one at a time, the way they arrive, so a test feeds
 //! it lines written by hand and no server is needed.
 
+use async_imap::imap_proto::rfc4315::UidSetMember;
 use async_imap::imap_proto::{
-    AttributeValue, MailboxDatum, NameAttribute, Response, ResponseCode, Status, UidSetMember,
+    AttributeValue, MailboxDatum, MailboxListData, NameAttribute, Outcome, Response, ResponseCode,
+    Status,
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -155,11 +157,19 @@ impl Reads for CapabilityReader {
         let list = match response {
             Response::Capabilities(list) => list,
             Response::Data {
-                code: Some(ResponseCode::Capabilities(list)),
+                outcome:
+                    Outcome {
+                        code: Some(ResponseCode::Capabilities(list)),
+                        ..
+                    },
                 ..
             }
             | Response::Done {
-                code: Some(ResponseCode::Capabilities(list)),
+                outcome:
+                    Outcome {
+                        code: Some(ResponseCode::Capabilities(list)),
+                        ..
+                    },
                 ..
             } => list,
             _ => return,
@@ -223,8 +233,10 @@ impl Reads for SelectReader {
         match response {
             Response::Data {
                 status: Status::Ok,
-                code: Some(code),
-                ..
+                outcome:
+                    Outcome {
+                        code: Some(code), ..
+                    },
             } => match code {
                 ResponseCode::UidValidity(v) => self.uidvalidity = Some(*v),
                 ResponseCode::UidNext(n) => self.selected.uidnext = Some(*n),
@@ -640,11 +652,11 @@ impl Reads for ListReader {
     }
 
     fn read(&mut self, response: &Response<'_>) {
-        let Response::MailboxData(MailboxDatum::List {
+        let Response::MailboxData(MailboxDatum::List(MailboxListData {
             name_attributes,
             delimiter,
             name,
-        }) = response
+        })) = response
         else {
             return;
         };
@@ -765,14 +777,13 @@ impl Reads for CopyUidReader {
         let code = match response {
             Response::Data {
                 status: Status::Ok,
-                code,
-                ..
-            } => code,
-            Response::Done {
+                outcome,
+            }
+            | Response::Done {
                 status: Status::Ok,
-                code,
+                outcome,
                 ..
-            } => code,
+            } => &outcome.code,
             _ => return,
         };
         let Some(ResponseCode::CopyUid(uidvalidity, from, to)) = code else {
@@ -804,7 +815,11 @@ impl Reads for AppendUidReader {
     fn read(&mut self, response: &Response<'_>) {
         if let Response::Done {
             status: Status::Ok,
-            code: Some(ResponseCode::AppendUid(uidvalidity, set)),
+            outcome:
+                Outcome {
+                    code: Some(ResponseCode::AppendUid(uidvalidity, set)),
+                    ..
+                },
             ..
         } = response
             && let Some(uid) = uids(set).next()
@@ -848,7 +863,7 @@ pub(crate) mod tests {
     pub(crate) fn feed(reader: &mut impl Reads, lines: &[&str]) {
         for line in lines {
             let (rest, response) =
-                Response::from_bytes(line.as_bytes()).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
+                Response::parse(line.as_bytes()).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
             assert!(rest.is_empty(), "{line:?} left {rest:?}");
             reader.read(&response);
         }
@@ -1321,7 +1336,7 @@ pub(crate) mod tests {
     #[test]
     fn a_section_reader_takes_the_bytes_of_its_uid_whole() {
         let (_, response) =
-            Response::from_bytes(b"* 2 FETCH (UID 9 BODY[1] {5}\r\nhello)\r\n").unwrap();
+            Response::parse(b"* 2 FETCH (UID 9 BODY[1] {5}\r\nhello)\r\n").unwrap();
         let mut reader = SectionReader::new(9);
         assert_eq!(reader.wants(&response), Some(&b"hello"[..]));
         reader.keep(b"hello".to_vec());

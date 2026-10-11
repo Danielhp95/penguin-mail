@@ -10,7 +10,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_imap::extensions::idle::IdleResponse;
-use async_imap::imap_proto::{RequestId, Response, ResponseCode, Status};
+use async_imap::imap_proto::{Outcome, RequestId, Response, ResponseCode, Status};
 use async_imap::{Authenticator, Client, Session};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::time::Instant;
@@ -91,14 +91,13 @@ impl<S: Stream> Conn<S> {
                 } => before.read(greeting.parsed()),
                 Response::Data {
                     status: Status::Bye,
-                    information,
-                    ..
+                    outcome,
                 } => {
                     return Err(refusal(
                         Doing::Greeting,
                         Refusal::Bye,
                         false,
-                        information.as_deref().unwrap_or_default(),
+                        outcome.information.as_deref().unwrap_or_default(),
                     ));
                 }
                 other => {
@@ -502,11 +501,10 @@ impl<S: Stream> Conn<S> {
                     IdleResponse::NewData(data) => match data.parsed() {
                         Response::Data {
                             status: Status::Bye,
-                            information,
-                            ..
+                            outcome,
                         } => {
                             return Err(ImapError::Network(clipped(
-                                information.as_deref().unwrap_or_default().to_string(),
+                                outcome.information.as_deref().unwrap_or_default().to_string(),
                             )));
                         }
                         _ => Woke::Changed,
@@ -671,9 +669,7 @@ fn ended(
     tag: &RequestId,
     doing: Doing<'_>,
 ) -> Option<Result<(), ImapError>> {
-    let text = |information: &Option<std::borrow::Cow<'_, str>>| {
-        information.as_deref().unwrap_or_default().to_string()
-    };
+    let text = |outcome: &Outcome<'_>| outcome.information.as_deref().unwrap_or_default().to_string();
     match response {
         // A tag has no length limit, so the text is clipped.
         Response::Done { tag: other, .. } if other != tag => {
@@ -685,23 +681,21 @@ fn ended(
         Response::Done {
             tag: done,
             status,
-            code,
-            information,
+            outcome,
         } if done == tag => Some(match status {
             Status::Ok => Ok(()),
             Status::No => Err(refusal(
                 doing,
                 Refusal::No,
-                matches!(code, Some(ResponseCode::TryCreate)),
-                &text(information),
+                matches!(outcome.code, Some(ResponseCode::TryCreate)),
+                &text(outcome),
             )),
-            _ => Err(refusal(doing, Refusal::Bad, false, &text(information))),
+            _ => Err(refusal(doing, Refusal::Bad, false, &text(outcome))),
         }),
         Response::Data {
             status: Status::Bye,
-            information,
-            ..
-        } => Some(Err(refusal(doing, Refusal::Bye, false, &text(information)))),
+            outcome,
+        } => Some(Err(refusal(doing, Refusal::Bye, false, &text(outcome)))),
         _ => None,
     }
 }
@@ -729,15 +723,14 @@ async fn raw_capability<S: Stream>(
         if let Response::Done {
             tag,
             status,
-            information,
-            ..
+            outcome,
         } = response.parsed()
             && tag.0 == RAW_TAG
         {
             return match status {
                 Status::Ok => Ok(()),
                 _ => Err(ImapError::Protocol(clipped(
-                    information.as_deref().unwrap_or_default().to_string(),
+                    outcome.information.as_deref().unwrap_or_default().to_string(),
                 ))),
             };
         }
@@ -1587,14 +1580,16 @@ mod tests {
         )
     }
 
-    /// Runs `test` on a 2 MB stack, the size of a tokio worker's, so an
-    /// answer that makes imap-proto recurse too deep crashes the test
-    /// binary instead of passing.
+    /// Runs `test` on an 8 MiB stack, what `mailrs_sync::WORKER_STACK`
+    /// gives each thread that runs this client, so an answer that makes
+    /// imap-proto recurse too deep crashes the test binary instead of
+    /// passing. A debug build of imap-proto 0.17 parses only 59 levels in
+    /// Tokio's default 2 MiB, below the cap; a release build parses 371.
     fn on_a_small_stack<F: std::future::Future<Output = ()>>(
         test: impl FnOnce() -> F + Send + 'static,
     ) {
         std::thread::Builder::new()
-            .stack_size(2 << 20)
+            .stack_size(8 << 20)
             .spawn(|| {
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()

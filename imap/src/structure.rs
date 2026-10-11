@@ -260,7 +260,7 @@ mod tests {
 
     /// The structure in a FETCH answer written by hand.
     fn structure(line: &str) -> BodyStructure {
-        let (_, response) = Response::from_bytes(line.as_bytes()).expect("parses");
+        let (_, response) = Response::parse(line.as_bytes()).expect("parses");
         let Response::Fetch(_, attributes) = response else {
             panic!("not a FETCH")
         };
@@ -356,7 +356,16 @@ mod tests {
         for _ in 0..70 {
             body = format!("({body} \"mixed\" (\"boundary\" \"b\") NIL NIL NIL)");
         }
-        let s = structure(&format!("* 1 FETCH (UID 9 BODYSTRUCTURE {body})\r\n"));
+        let line = format!("* 1 FETCH (UID 9 BODYSTRUCTURE {body})\r\n");
+        // A debug build of imap-proto takes more than libtest's 2 MiB to
+        // parse 71 levels, so this parses on the stack the client's worker
+        // threads get (`mailrs_sync::WORKER_STACK`).
+        let s = std::thread::Builder::new()
+            .stack_size(8 << 20)
+            .spawn(move || structure(&line))
+            .expect("a thread starts")
+            .join()
+            .expect("the structure parses");
         let mut depth = 0;
         let mut part = &s.root;
         while let Some(child) = part.children.first() {
