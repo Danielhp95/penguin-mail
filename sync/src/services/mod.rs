@@ -33,7 +33,7 @@ pub use clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySiev
 pub use local::LocalRules;
 pub use google::{Google, ID_PAGE_SIZE, LIST_PAGE_SIZE, is_workspace};
 pub use imap::{Imap, ImapApi, ImapSettings, Submit};
-pub use jmap::JmapApi;
+pub use jmap::{Jmap, JmapApi, JmapSettings};
 pub use microsoft::{GraphApi, Microsoft, MicrosoftSettings};
 pub use pop3::{Pop3, Pop3Settings};
 pub use pacing::{Priority, background, priority};
@@ -67,7 +67,7 @@ use mailrs_store::threading::Links;
 
 use crate::api::{DraftRef, SavedDraft};
 #[cfg(any(test, feature = "fake"))]
-use crate::fake::{FakeGmail, FakeGraph, FakeImap, FakeSmtp};
+use crate::fake::{FakeGmail, FakeGraph, FakeImap, FakeJmap, FakeSmtp};
 use crate::{BackendError, MailOp};
 
 /// One address an account may send mail as: its own, or an alias whose
@@ -414,6 +414,44 @@ impl AccountServices {
     pub fn with_auto_reply(mut self, auto_reply: AnyAutoReply) -> Self {
         self.auto_reply = Some(auto_reply);
         self
+    }
+
+    /// An account on a JMAP server: its mail and the addresses it sends
+    /// as. `connect_jmap` adds the calendar, contacts, rules and automatic
+    /// reply its session and its found servers offer; until then its
+    /// rules stay on this computer.
+    pub fn jmap(db: Db, account_id: AccountId, jmap: impl Into<AnyJmap>, settings: JmapSettings) -> Self {
+        let adapter = Jmap::new(Arc::new(jmap.into()), settings);
+        AccountServices {
+            mail: AnyMail::Jmap(adapter.clone()),
+            calendar: None,
+            contacts: None,
+            rules: Some(AnyRules::Local(LocalRules::new(db, account_id))),
+            auto_reply: None,
+            identities: AnyIdentities::Jmap(adapter),
+        }
+    }
+
+    /// The in-memory JMAP server, as a Fastmail account, for tests and the
+    /// demo. Its rules run nowhere, as the tests that need rules give it
+    /// some.
+    #[cfg(any(test, feature = "fake"))]
+    pub fn fake_jmap(fake: Arc<FakeJmap>) -> Self {
+        let settings = JmapSettings {
+            address: "me@example.com".into(),
+            provider_name: "Fastmail".into(),
+            window_days: crate::DEFAULT_WINDOW_DAYS,
+            labels: fake.with(|s| s.session.mailboxes_per_email() != Some(1)),
+        };
+        let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
+        AccountServices {
+            mail: AnyMail::Jmap(adapter.clone()),
+            calendar: None,
+            contacts: None,
+            rules: None,
+            auto_reply: None,
+            identities: AnyIdentities::Jmap(adapter),
+        }
     }
 
     /// A Microsoft account: every service over the one Graph client.

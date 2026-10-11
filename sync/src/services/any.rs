@@ -16,11 +16,11 @@ use mailrs_domain::{EpochMillis, Filter, MailSet, RemoteMailbox, Role, Vacation}
 use mailrs_gmail::{ConnectionsPage, ContactFields, LabelColor, Person};
 use mailrs_mime::Parts;
 
-use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyPop3, AnySieve, AnySmtp};
+use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp};
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    IdentityService, Imap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, Refused,
+    IdentityService, Imap, Jmap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, Refused,
     Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, SieveRules, SyncState, Unapplied,
     Want, Withheld,
 };
@@ -70,6 +70,7 @@ macro_rules! forward_all {
         match $self {
             $enum::Google(adapter) => adapter.$method($($arg),*).await,
             $enum::Imap(adapter) => adapter.$method($($arg),*).await,
+            $enum::Jmap(adapter) => adapter.$method($($arg),*).await,
             $enum::Microsoft(adapter) => adapter.$method($($arg),*).await,
             $enum::Pop3(adapter) => adapter.$method($($arg),*).await,
         }
@@ -82,6 +83,7 @@ macro_rules! forward_all_now {
         match $self {
             $enum::Google(adapter) => adapter.$method($($arg),*),
             $enum::Imap(adapter) => adapter.$method($($arg),*),
+            $enum::Jmap(adapter) => adapter.$method($($arg),*),
             $enum::Microsoft(adapter) => adapter.$method($($arg),*),
             $enum::Pop3(adapter) => adapter.$method($($arg),*),
         }
@@ -90,6 +92,7 @@ macro_rules! forward_all_now {
 
 type GoogleAdapter = Google<AnyGmail>;
 type ImapAdapter = Imap<AnyImap, AnySmtp>;
+type JmapAdapter = Jmap<AnyJmap>;
 type MicrosoftAdapter = Microsoft<AnyGraph>;
 type Pop3Adapter = Pop3<AnySmtp, AnyPop3>;
 
@@ -98,6 +101,7 @@ type Pop3Adapter = Pop3<AnySmtp, AnyPop3>;
 pub enum AnyMail {
     Google(GoogleAdapter),
     Imap(ImapAdapter),
+    Jmap(JmapAdapter),
     Microsoft(MicrosoftAdapter),
     Pop3(Pop3Adapter),
 }
@@ -141,6 +145,7 @@ pub enum AnyAutoReply {
 pub enum AnyIdentities {
     Google(GoogleAdapter),
     Imap(ImapAdapter),
+    Jmap(JmapAdapter),
     Microsoft(MicrosoftAdapter),
     Pop3(Pop3Adapter),
 }
@@ -153,6 +158,7 @@ impl AnyMail {
         match self {
             AnyMail::Google(adapter) => adapter.withheld(),
             AnyMail::Imap(_) => Withheld::NONE,
+            AnyMail::Jmap(_) => Withheld::NONE,
             AnyMail::Microsoft(adapter) => adapter.withheld(),
             AnyMail::Pop3(_) => Withheld::NONE,
         }

@@ -27,6 +27,7 @@ mod labels;
 mod local_rules;
 mod log_lines;
 mod mailbox;
+mod jmap;
 mod microsoft;
 mod muted_replies;
 mod newsletters;

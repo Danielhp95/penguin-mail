@@ -10424,6 +10424,14 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
+#: sync/src/services/jmap/mod.rs:230
+msgid "This server keeps no colors for its mailboxes."
+msgstr "Este servidor não guarda cores para as caixas de correio."
+
+#: sync/src/services/jmap/mod.rs:303
+msgid "This server files sent mail itself."
+msgstr "Este servidor arquiva o correio enviado por si próprio."
+
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."
 msgstr "Esta regra é só de leitura, por isso o Penguin Mail deixa-a como está."

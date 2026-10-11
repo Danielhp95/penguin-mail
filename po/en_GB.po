@@ -9664,6 +9664,14 @@ msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgid "The message names nobody to send it to."
 msgstr "The message names nobody to send it to."
 
+#: sync/src/services/jmap/mod.rs:230
+msgid "This server keeps no colors for its mailboxes."
+msgstr "This server keeps no colours for its mailboxes."
+
+#: sync/src/services/jmap/mod.rs:303
+msgid "This server files sent mail itself."
+msgstr "This server files sent mail itself."
+
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."
 msgstr "This rule is read-only, so Penguin Mail leaves it as it is."
