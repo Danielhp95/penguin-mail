@@ -337,9 +337,11 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
 
     /// Every message `mailbox` holds now, up to `top`, as one change. A
     /// server without QRESYNC names no UID it expunged, so this is how an
-    /// expunge made elsewhere reaches the store. The UIDs arrive a window
-    /// at a time and go into the set as runs, so a mailbox with few gaps
-    /// costs a few ranges.
+    /// expunge made elsewhere reaches the store. A message marked
+    /// `\Deleted` and not yet expunged counts as gone: a phone that deletes
+    /// that way has taken it out of every list its owner sees. The UIDs
+    /// arrive a window at a time and go into the set as runs, so a mailbox
+    /// with few gaps costs a few ranges.
     async fn holds(
         &self,
         mailbox: &str,
@@ -347,7 +349,7 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
         top: u32,
     ) -> Result<RemoteChange, BackendError> {
         let mut ranges = Vec::new();
-        self.search_windows(mailbox, (1, top), "", |found| {
+        self.search_windows(mailbox, (1, top), "UNDELETED", |found| {
             push_runs(&mut ranges, &found)
         })
         .await?;
@@ -391,14 +393,26 @@ impl Look<'_> {
     }
 
     /// The changes that bring each message met before to the flags in
-    /// `flags`, added to `changes`.
+    /// `flags`, added to `changes`. A message now marked `\Deleted` leaves
+    /// the store, as an expunged one would.
     fn flags(&self, flags: &[FlagsOf], changes: &mut Vec<RemoteChange>) {
+        let mut deleted = Vec::new();
         for changed in flags.iter().filter(|f| f.uid < self.uidnext) {
-            changes.extend(flag_changes(
-                &self.name(changed.uid),
-                &changed.flags,
-                self.stored,
-            ));
+            match is_deleted(&changed.flags) {
+                true => push_runs(&mut deleted, &[changed.uid]),
+                false => changes.extend(flag_changes(
+                    &self.name(changed.uid),
+                    &changed.flags,
+                    self.stored,
+                )),
+            }
+        }
+        if !deleted.is_empty() {
+            changes.push(RemoteChange::Vanished {
+                mailbox: self.mailbox.to_string(),
+                uidvalidity: self.uidvalidity,
+                uids: UidSet::from(deleted),
+            });
         }
     }
 }
