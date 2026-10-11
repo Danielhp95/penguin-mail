@@ -92,6 +92,9 @@ pub struct JmapState {
     pub query_clamp: Option<usize>,
     /// Messages the server refuses to change or destroy, as `forbidden`.
     pub refused: BTreeSet<String>,
+    /// The error type the server gives every submission, after the import
+    /// it rides with was made.
+    pub submission_refusal: Option<String>,
     /// A mailbox id and the message count it claims, for a mailbox too big
     /// to fill in a test.
     pub total_override: Option<(String, u64)>,
@@ -360,6 +363,7 @@ impl FakeJmap {
             oversized: BTreeSet::new(),
             query_clamp: None,
             refused: BTreeSet::new(),
+            submission_refusal: None,
             total_override: None,
             log: Vec::new(),
             state: 0,
@@ -402,6 +406,13 @@ impl FakeJmap {
     /// A server that refuses every change to the message `id`.
     pub fn refusing(self, id: &str) -> FakeJmap {
         self.with(|s| s.refused.insert(id.to_string()));
+        self
+    }
+
+    /// A server that refuses every submission as `kind`, as
+    /// `EmailSubmission/set` does in `notCreated`.
+    pub fn refusing_submissions(self, kind: &str) -> FakeJmap {
+        self.with(|s| s.submission_refusal = Some(kind.to_string()));
         self
     }
 
@@ -784,13 +795,20 @@ impl JmapApi for FakeJmap {
         self.called("Email/import");
         self.with(|s| {
             let made = FakeJmap::import_now(s, blob_id, mailbox_ids, keywords)?;
-            if let Some(old) = destroy
-                && let Some(gone) = s.emails.remove(old)
-            {
+            // As the client does: the old draft goes in a second request,
+            // and a refusal there comes back beside the new message.
+            let leftover = destroy.and_then(|old| {
+                if s.refused.contains(old) {
+                    return Some(JmapError::Forbidden(String::new()));
+                }
+                let Some(gone) = s.emails.remove(old) else {
+                    return Some(JmapError::NotFound);
+                };
                 s.record("Email", old, Op::Destroyed);
                 s.settle(Some(&gone), None);
-            }
-            Ok(Saved { email: made, leftover: None })
+                None
+            });
+            Ok(Saved { email: made, leftover })
         })
     }
 
@@ -800,8 +818,24 @@ impl JmapApi for FakeJmap {
             if !s.identities.iter().any(|i| i.id == submission.identity_id) {
                 return Err(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
             }
-            let home = submission.drafts.clone().or(submission.sent.clone()).ok_or(JmapError::NotFound)?;
-            let made = FakeJmap::import_now(s, &submission.blob_id, &[home], &["$seen", "$draft"])?;
+            let home = submission
+                .drafts
+                .clone()
+                .or(submission.sent.clone())
+                .ok_or_else(|| JmapError::Forbidden("the account has neither Drafts nor Sent".into()))?;
+            let keywords: &[&str] = match submission.drafts {
+                Some(_) => &["$seen", "$draft"],
+                None => &["$seen"],
+            };
+            let made = FakeJmap::import_now(s, &submission.blob_id, &[home], keywords)?;
+            if let Some(kind) = s.submission_refusal.clone() {
+                // The client destroys the copy when the submission fails.
+                if let Some(gone) = s.emails.remove(&made.id) {
+                    s.record("Email", &made.id, Op::Destroyed);
+                    s.settle(Some(&gone), None);
+                }
+                return Err(mailrs_jmap::error::method_error(&kind, None));
+            }
             let raw = s.blobs.get(&submission.blob_id).cloned().unwrap_or_default();
             s.sent.push(Sent {
                 identity_id: submission.identity_id.clone(),
@@ -809,16 +843,17 @@ impl JmapApi for FakeJmap {
                 rcpt_to: submission.rcpt_to.clone(),
                 raw,
             });
-            if let Some(email) = s.emails.get_mut(&made.id) {
+            // The client moves the copy only when it names both mailboxes.
+            if let (Some(_), Some(sent)) = (&submission.drafts, &submission.sent)
+                && let Some(email) = s.emails.get_mut(&made.id)
+            {
                 let before = email.clone();
                 email.keywords.remove("$draft");
-                if let Some(sent) = &submission.sent {
-                    email.mailbox_ids = BTreeSet::from([sent.clone()]);
-                }
+                email.mailbox_ids = BTreeSet::from([sent.clone()]);
                 let after = email.clone();
                 s.settle(Some(&before), Some(&after));
+                s.record("Email", &made.id, Op::Updated);
             }
-            s.record("Email", &made.id, Op::Updated);
             Ok(made)
         })
     }

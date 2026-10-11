@@ -9935,7 +9935,7 @@ msgstr ""
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr ""
 
-#: sync/src/services/imap/outgoing.rs:86
+#: sync/src/services/imap/outgoing.rs:85
 msgid "The message names nobody to send it to."
 msgstr ""
 
@@ -9945,6 +9945,41 @@ msgstr ""
 
 #: sync/src/services/jmap/mod.rs:302
 msgid "This server files sent mail itself."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:43
+msgid "The server does not let this account send from {address}."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:44
+msgid "The server does not let this account send mail now."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:45
+msgid "The message names more recipients than the server sends to at once."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:46
+msgid "The server could not send to one of the recipients."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:58
+msgid ""
+"This account can read mail but not send it: its sign-in has no access to "
+"sending."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:73
+msgid "This account has no address the server lets it send from."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:86
+msgid ""
+"The server has neither a Drafts nor a Sent mailbox to keep the message in."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:104
+msgid "The server has no Drafts mailbox."
 msgstr ""
 
 #: sync/src/services/jmap/writes.rs:95

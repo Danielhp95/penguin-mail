@@ -169,6 +169,7 @@ sync/src/services/sieve.rs
 sync/src/services/microsoft/errors.rs
 sync/src/services/jmap/errors.rs
 sync/src/services/jmap/mod.rs
+sync/src/services/jmap/outgoing.rs
 sync/src/services/jmap/writes.rs
 sync/src/services/caldav.rs
 sync/src/services/finding.rs

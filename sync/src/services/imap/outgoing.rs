@@ -32,7 +32,7 @@ fn header_end(raw: &[u8]) -> usize {
 /// `raw` without its Bcc header and the lines folded under it: the blind
 /// copies' addresses must not reach the other recipients. The envelope
 /// still carries them.
-pub(super) fn without_bcc(raw: &[u8]) -> Vec<u8> {
+pub(crate) fn without_bcc(raw: &[u8]) -> Vec<u8> {
     let (head, body) = raw.split_at(header_end(raw));
     let mut out = Vec::with_capacity(raw.len());
     let mut skipping = false;
@@ -58,11 +58,10 @@ fn message_id_of(raw: &[u8]) -> Option<String> {
     })
 }
 
-/// Hands `raw` to the SMTP server `smtp` and answers its Message-ID, which
-/// is all the server says about it. The envelope goes from the address in
-/// the From header, or `address` when there is none, to every address in
-/// To, Cc and Bcc; the Bcc header itself stays out of what is sent.
-pub(crate) async fn submit_over<S: Submit>(smtp: &S, address: &str, raw: &[u8]) -> Result<String, BackendError> {
+/// Who `raw` goes from and to: the address in its From header, or
+/// `fallback` when there is none, and every address in To, Cc and Bcc
+/// once. Refused when it names nobody.
+pub(crate) fn envelope_of(raw: &[u8], fallback: &str) -> Result<(String, Vec<String>), BackendError> {
     let parts = mailrs_mime::parts(raw).unwrap_or_default();
     let from = parts
         .header("From")
@@ -71,7 +70,7 @@ pub(crate) async fn submit_over<S: Submit>(smtp: &S, address: &str, raw: &[u8]) 
         .into_iter()
         .next()
         .map(|a| a.email)
-        .unwrap_or_else(|| address.to_string());
+        .unwrap_or_else(|| fallback.to_string());
     let mut to: Vec<String> = parts
         .headers
         .iter()
@@ -86,7 +85,16 @@ pub(crate) async fn submit_over<S: Submit>(smtp: &S, address: &str, raw: &[u8]) 
             "The message names nobody to send it to.",
         )));
     }
+    Ok((from, to))
+}
+
+/// Hands `raw` to the SMTP server `smtp` and answers its Message-ID, which
+/// is all the server says about it. The envelope comes from
+/// [`envelope_of`]; the Bcc header itself stays out of what is sent.
+pub(crate) async fn submit_over<S: Submit>(smtp: &S, address: &str, raw: &[u8]) -> Result<String, BackendError> {
+    let (from, to) = envelope_of(raw, address)?;
     smtp.submit(&from, &to, &without_bcc(raw)).await?;
+    let parts = mailrs_mime::parts(raw).unwrap_or_default();
     Ok(parts
         .header("Message-ID")
         .map(|id| id.trim().to_string())

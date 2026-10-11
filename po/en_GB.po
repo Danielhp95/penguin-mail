@@ -9660,7 +9660,7 @@ msgstr "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 
-#: sync/src/services/imap/outgoing.rs:86
+#: sync/src/services/imap/outgoing.rs:85
 msgid "The message names nobody to send it to."
 msgstr "The message names nobody to send it to."
 
@@ -9671,6 +9671,38 @@ msgstr "This server keeps no colours for its mailboxes."
 #: sync/src/services/jmap/mod.rs:302
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
+
+#: sync/src/services/jmap/outgoing.rs:43
+msgid "The server does not let this account send from {address}."
+msgstr "The server does not let this account send from {address}."
+
+#: sync/src/services/jmap/outgoing.rs:44
+msgid "The server does not let this account send mail now."
+msgstr "The server does not let this account send mail now."
+
+#: sync/src/services/jmap/outgoing.rs:45
+msgid "The message names more recipients than the server sends to at once."
+msgstr "The message names more recipients than the server sends to at once."
+
+#: sync/src/services/jmap/outgoing.rs:46
+msgid "The server could not send to one of the recipients."
+msgstr "The server could not send to one of the recipients."
+
+#: sync/src/services/jmap/outgoing.rs:58
+msgid "This account can read mail but not send it: its sign-in has no access to sending."
+msgstr "This account can read mail but not send it: its sign-in has no access to sending."
+
+#: sync/src/services/jmap/outgoing.rs:73
+msgid "This account has no address the server lets it send from."
+msgstr "This account has no address the server lets it send from."
+
+#: sync/src/services/jmap/outgoing.rs:86
+msgid "The server has neither a Drafts nor a Sent mailbox to keep the message in."
+msgstr "The server has neither a Drafts nor a Sent mailbox to keep the message in."
+
+#: sync/src/services/jmap/outgoing.rs:104
+msgid "The server has no Drafts mailbox."
+msgstr "The server has no Drafts mailbox."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."

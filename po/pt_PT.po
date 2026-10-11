@@ -10420,7 +10420,7 @@ msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr ""
 "O Penguin Mail só acede a servidores de calendário e contactos por HTTPS."
 
-#: sync/src/services/imap/outgoing.rs:86
+#: sync/src/services/imap/outgoing.rs:85
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
@@ -10431,6 +10431,41 @@ msgstr "Este servidor não guarda cores para as caixas de correio."
 #: sync/src/services/jmap/mod.rs:302
 msgid "This server files sent mail itself."
 msgstr "Este servidor arquiva o correio enviado por si próprio."
+
+#: sync/src/services/jmap/outgoing.rs:43
+msgid "The server does not let this account send from {address}."
+msgstr "O servidor não deixa esta conta enviar a partir de {address}."
+
+#: sync/src/services/jmap/outgoing.rs:44
+msgid "The server does not let this account send mail now."
+msgstr "O servidor não deixa esta conta enviar correio agora."
+
+#: sync/src/services/jmap/outgoing.rs:45
+msgid "The message names more recipients than the server sends to at once."
+msgstr "A mensagem tem mais destinatários do que o servidor envia de uma vez."
+
+#: sync/src/services/jmap/outgoing.rs:46
+msgid "The server could not send to one of the recipients."
+msgstr "O servidor não conseguiu enviar para um dos destinatários."
+
+#: sync/src/services/jmap/outgoing.rs:58
+msgid ""
+"This account can read mail but not send it: its sign-in has no access to "
+"sending."
+msgstr "Esta conta pode ler correio, mas não enviá-lo: o início de sessão não tem acesso ao envio."
+
+#: sync/src/services/jmap/outgoing.rs:73
+msgid "This account has no address the server lets it send from."
+msgstr "Esta conta não tem nenhum endereço a partir do qual o servidor a deixe enviar."
+
+#: sync/src/services/jmap/outgoing.rs:86
+msgid ""
+"The server has neither a Drafts nor a Sent mailbox to keep the message in."
+msgstr "O servidor não tem caixa de Rascunhos nem de Enviados onde guardar a mensagem."
+
+#: sync/src/services/jmap/outgoing.rs:104
+msgid "The server has no Drafts mailbox."
+msgstr "O servidor não tem caixa de Rascunhos."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."

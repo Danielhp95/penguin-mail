@@ -10001,7 +10001,7 @@ msgstr "Penguin Mail 無法變更 CalDAV 伺服器的行事曆清單。"
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 
-#: sync/src/services/imap/outgoing.rs:86
+#: sync/src/services/imap/outgoing.rs:85
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
@@ -10013,6 +10013,53 @@ msgstr ""
 #, fuzzy
 #| msgid "The server does not answer"
 msgid "This server files sent mail itself."
+msgstr "伺服器未回應"
+
+#: sync/src/services/jmap/outgoing.rs:43
+#, fuzzy
+#| msgid "The server does not answer"
+msgid "The server does not let this account send from {address}."
+msgstr "伺服器未回應"
+
+#: sync/src/services/jmap/outgoing.rs:44
+#, fuzzy
+#| msgid "The server does not answer"
+msgid "The server does not let this account send mail now."
+msgstr "伺服器未回應"
+
+#: sync/src/services/jmap/outgoing.rs:45
+#, fuzzy
+#| msgid "The message names nobody to send it to."
+msgid "The message names more recipients than the server sends to at once."
+msgstr "郵件未指定收件者。"
+
+#: sync/src/services/jmap/outgoing.rs:46
+#, fuzzy
+#| msgid "The server would not hand it over."
+msgid "The server could not send to one of the recipients."
+msgstr "伺服器拒絕提供郵件。"
+
+#: sync/src/services/jmap/outgoing.rs:58
+msgid ""
+"This account can read mail but not send it: its sign-in has no access to "
+"sending."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:73
+#, fuzzy
+#| msgid "This account has no tags yet. Make one in Outlook."
+msgid "This account has no address the server lets it send from."
+msgstr "此帳號尚無標記。請在 Outlook 中建立。"
+
+#: sync/src/services/jmap/outgoing.rs:86
+msgid ""
+"The server has neither a Drafts nor a Sent mailbox to keep the message in."
+msgstr ""
+
+#: sync/src/services/jmap/outgoing.rs:104
+#, fuzzy
+#| msgid "The server does not answer"
+msgid "The server has no Drafts mailbox."
 msgstr "伺服器未回應"
 
 #: sync/src/services/jmap/writes.rs:95
