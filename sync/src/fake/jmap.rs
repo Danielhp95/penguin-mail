@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mailrs_jmap::{
-    CORE, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Hit, Identity, Imported, JmapError, Listed, MAIL,
+    BodyPart, CORE, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header, Hit, Identity, Imported, JmapError, Listed, MAIL,
     MailChanges, Mailbox, MailboxWrite, Pushed, Queried, SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse,
     Submission, Thread, Threads,
 };
@@ -20,6 +20,27 @@ use crate::services::jmap::JmapApi;
 type Answer<T> = Result<T, JmapError>;
 
 const ACCOUNT: &str = "A1";
+
+/// Whether any part below `part` is a file.
+fn has_file(part: &mailrs_mime::Part) -> bool {
+    part.attachment || part.children.iter().any(has_file)
+}
+
+/// `part` as a server describes it in `bodyStructure`.
+fn body_part(part: &mailrs_mime::Part, blob: &str) -> BodyPart {
+    let leaf = part.children.is_empty();
+    BodyPart {
+        part_id: leaf.then(|| part.path.clone()),
+        blob_id: leaf.then(|| format!("{blob}/{}", part.path)),
+        size: u64::try_from(part.size).unwrap_or_default(),
+        mime_type: part.mime_type.clone(),
+        charset: part.charset.clone(),
+        disposition: part.attachment.then(|| "attachment".to_string()),
+        cid: part.content_id.clone(),
+        name: part.filename.clone(),
+        sub_parts: (!leaf).then(|| part.children.iter().map(|c| body_part(c, blob)).collect()),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeMailbox {
@@ -134,7 +155,21 @@ impl JmapState {
         }
     }
 
-    fn email(&self, id: &str) -> Option<Email> {
+    /// A blob by id: a whole message, or one part of one as `blob/path`.
+    fn blob(&self, id: &str) -> Option<Vec<u8>> {
+        if let Some(whole) = self.blobs.get(id) {
+            return Some(whole.clone());
+        }
+        let (blob, path) = id.split_once('/')?;
+        let parts = mailrs_mime::parts(self.blobs.get(blob)?)?;
+        parts.find(path)?.data.clone()
+    }
+
+    /// The Email as `Email/get` answers it. The structure and headers
+    /// come only when `bodies` asks for them, as a server sends only the
+    /// properties requested. Each leaf's blob id is the message's blob id,
+    /// a slash and the part's section number.
+    fn email(&self, id: &str, bodies: bool) -> Option<Email> {
         let held = self.emails.get(id)?;
         let parts = mailrs_mime::parts(&held.raw).unwrap_or_default();
         let addresses = |name: &str| {
@@ -160,11 +195,11 @@ impl JmapState {
             cc: addresses("Cc"),
             subject: parts.header("Subject").map(str::to_string),
             preview: Some(String::from_utf8_lossy(&held.raw).lines().last().unwrap_or_default().trim().to_string()),
-            has_attachment: false,
+            has_attachment: has_file(&parts.root),
             list_unsubscribe: parts.header("List-Unsubscribe").map(str::to_string),
             list_unsubscribe_post: parts.header("List-Unsubscribe-Post").map(str::to_string),
-            headers: None,
-            body_structure: None,
+            headers: bodies.then(|| parts.headers.iter().map(|(name, value)| Header { name: name.clone(), value: value.clone() }).collect()),
+            body_structure: bodies.then(|| body_part(&parts.root, &held.blob_id)),
         })
     }
 
@@ -514,7 +549,7 @@ impl JmapApi for FakeJmap {
         self.called("Email/changes");
         self.with(|s| {
             let changes = s.changes("Email", email, max)?;
-            let changed = changes.created.iter().chain(&changes.updated).filter_map(|id| s.email(id)).collect();
+            let changed = changes.created.iter().chain(&changes.updated).filter_map(|id| s.email(id, false)).collect();
             let mailbox = s.changes("Mailbox", mailbox, 10_000)?;
             Ok(MailChanges { email: changes, mailbox, changed })
         })
@@ -544,12 +579,12 @@ impl JmapApi for FakeJmap {
         }))
     }
 
-    async fn emails(&self, ids: &[String], _properties: &[&str]) -> Answer<Got<Email>> {
+    async fn emails(&self, ids: &[String], properties: &[&str]) -> Answer<Got<Email>> {
         self.called("Email/get");
         Ok(self.with(|s| {
             let (mut list, mut not_found) = (Vec::new(), Vec::new());
             for id in ids {
-                match s.email(id) {
+                match s.email(id, properties.contains(&"bodyStructure")) {
                     Some(email) => list.push(email),
                     None => not_found.push(id.clone()),
                 }
@@ -570,7 +605,7 @@ impl JmapApi for FakeJmap {
                 }
                 members.sort_by_key(|(_, e)| e.received_at);
                 out.threads.push(Thread { id: thread.clone(), email_ids: members.iter().map(|(id, _)| (*id).clone()).collect() });
-                out.emails.extend(members.iter().filter_map(|(id, _)| s.email(id)));
+                out.emails.extend(members.iter().filter_map(|(id, _)| s.email(id, false)));
             }
             out
         }))
@@ -677,7 +712,7 @@ impl JmapApi for FakeJmap {
         if self.with(|s| s.oversized.contains(blob_id)) {
             return Err(JmapError::AnswerTooLarge { limit });
         }
-        let bytes = self.with(|s| s.blobs.get(blob_id).cloned()).ok_or(JmapError::NotFound)?;
+        let bytes = self.with(|s| s.blob(blob_id)).ok_or(JmapError::NotFound)?;
         match bytes.len() > limit {
             true => Err(JmapError::AnswerTooLarge { limit }),
             false => Ok(bytes),

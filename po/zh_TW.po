@@ -10005,11 +10005,11 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/mod.rs:230
+#: sync/src/services/jmap/mod.rs:229
 msgid "This server keeps no colors for its mailboxes."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:303
+#: sync/src/services/jmap/mod.rs:302
 #, fuzzy
 #| msgid "The server does not answer"
 msgid "This server files sent mail itself."

@@ -6,7 +6,7 @@
 //! remote ref. This adapter never opens the store.
 
 mod api;
-mod bodies;
+pub(in crate::services) mod bodies;
 mod cadence;
 mod feed;
 mod keywords;

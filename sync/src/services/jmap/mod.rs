@@ -28,6 +28,8 @@ use mailrs_mime::Parts;
 
 pub use api::JmapApi;
 pub(crate) use errors::backend;
+#[cfg(test)]
+pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
     Backfill, Changes, Found, IdentityService, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
@@ -94,13 +96,11 @@ pub(super) struct Known {
 }
 
 /// The blob ids of the parts of the last structures fetched, by part path.
-#[allow(dead_code)] // Read by the tasks that fill the stubs.
 #[derive(Debug, Default)]
 pub(super) struct Handles {
     recent: VecDeque<(String, Vec<(String, String)>)>,
 }
 
-#[allow(dead_code)] // Read by the tasks that fill the stubs.
 impl Handles {
     const KEPT: usize = 64;
 
@@ -159,7 +159,6 @@ impl<J: JmapApi> Jmap<J> {
         self.known.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    #[allow(dead_code)] // Used once structures are fetched.
     pub(super) fn handles(&self) -> MutexGuard<'_, Handles> {
         self.handles.lock().unwrap_or_else(PoisonError::into_inner)
     }
