@@ -17,6 +17,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### Fixed
 
 - A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
+- Mail you delete on another device leaves the list at the next check: on IMAP, mail that device only marked as deleted goes too, and on Outlook, Check for Mail now looks at every folder at once ([#35](https://github.com/c9dev/penguin-mail/issues/35)).
 
 ## 1.0.7 (2026-10-10)
 
