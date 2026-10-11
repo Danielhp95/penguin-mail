@@ -323,7 +323,7 @@ async fn a_jmap_account_connects_from_its_session_row_and_its_secret() {
     let (db, _dir) = store().await;
     let secrets = Secrets::memory();
     let new = new_jmap("me@fastmail.com", "fmu1-token");
-    let account = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new, 0).await.unwrap();
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new, 0).await.unwrap();
     assert_eq!(account.provider, Provider::Jmap);
     let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), &account, 30).await.unwrap();
     assert!(matches!(services.mail, AnyMail::Jmap(_)));
@@ -338,12 +338,12 @@ async fn a_jmap_account_connects_from_its_session_row_and_its_secret() {
 async fn signing_a_jmap_account_in_again_keeps_the_new_token_and_ends_needs_sign_in() {
     let (db, _dir) = store().await;
     let secrets = Secrets::memory();
-    let first = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap("me@fastmail.com", "old"), 0)
+    let first = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "old"), 0)
         .await
         .unwrap();
     let id = first.id;
     db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth)).await.unwrap();
-    let again = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap("me@fastmail.com", "new"), 1)
+    let again = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "new"), 1)
         .await
         .unwrap();
     assert_eq!(again.id, first.id);
@@ -352,11 +352,28 @@ async fn signing_a_jmap_account_in_again_keeps_the_new_token_and_ends_needs_sign
 }
 
 #[tokio::test]
+async fn a_new_jmap_account_never_inherits_a_password_left_under_its_id() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    // A removed account whose forget failed left its passwords behind, and
+    // ids are reused once the highest row goes.
+    secrets.passwords.save(1, "stale").unwrap();
+    secrets.passwords.save_outgoing(1, "stale smtp").unwrap();
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "token"), 0)
+        .await
+        .unwrap();
+    assert_eq!(account.id, 1);
+    assert_eq!(secrets.passwords.load(1).unwrap(), None);
+    assert_eq!(secrets.passwords.load_outgoing(1).unwrap(), None);
+    assert_eq!(secrets.jmap.load(1).unwrap().as_deref(), Some("token"));
+}
+
+#[tokio::test]
 async fn a_jmap_sign_in_for_an_address_an_imap_account_holds_is_refused() {
     let (db, _dir) = store().await;
     let secrets = Secrets::memory();
     let dana = imap_account(&db).await;
-    let refused = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap(&dana.email, "token"), 0).await;
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap(&dana.email, "token"), 0).await;
     assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::Taken { .. })));
     assert_eq!(secrets.jmap.load(dana.id).unwrap(), None, "nothing reaches the keyring");
 }

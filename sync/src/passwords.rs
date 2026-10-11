@@ -346,10 +346,7 @@ impl Secrets {
             }
             Provider::Imap | Provider::Pop3 => {
                 let passwords = Arc::clone(&self.passwords);
-                Box::new(move || {
-                    passwords.delete_outgoing(id)?;
-                    passwords.delete(id)
-                })
+                Box::new(move || first_error([passwords.delete_outgoing(id), passwords.delete(id)]))
             }
             Provider::Microsoft => {
                 let tokens = Arc::clone(&self.microsoft);
@@ -358,8 +355,11 @@ impl Secrets {
             Provider::Jmap => {
                 let (jmap, passwords) = (Arc::clone(&self.jmap), Arc::clone(&self.passwords));
                 // The token or password, and the CalDAV app password kept
-                // beside it in part 3.
-                Box::new(move || jmap.delete(id).and_then(|()| passwords.delete(id)))
+                // beside it in part 3. Nothing may stay under the id: ids
+                // are reused, and the next account would read it.
+                Box::new(move || {
+                    first_error([jmap.delete(id), passwords.delete(id), passwords.delete_outgoing(id)])
+                })
             }
         };
         tokio::task::spawn_blocking(delete)
@@ -368,9 +368,15 @@ impl Secrets {
     }
 }
 
+/// The first error among deletes that all ran, so one the keyring refuses
+/// does not leave the others behind.
+pub(crate) fn first_error<const N: usize>(deletes: [Result<(), PasswordError>; N]) -> Result<(), PasswordError> {
+    deletes.into_iter().find_map(Result::err).map_or(Ok(()), Err)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{KeyringPasswords, MemoryPasswords, PasswordStore, Secrets, outgoing_user, user};
+    use super::{KeyringPasswords, MemoryPasswords, PasswordError, PasswordStore, Secrets, first_error, outgoing_user, user};
 
     #[test]
     fn every_imap_password_sits_under_one_service_by_account_id() {
@@ -441,8 +447,18 @@ mod tests {
         };
         secrets.jmap.save(4, "fmu1-token").unwrap();
         secrets.passwords.save(4, "caldav").unwrap();
+        secrets.passwords.save_outgoing(4, "smtp").unwrap();
         secrets.forget(&account).await.unwrap();
         assert_eq!(secrets.jmap.load(4).unwrap(), None);
         assert_eq!(secrets.passwords.load(4).unwrap(), None);
+        assert_eq!(secrets.passwords.load_outgoing(4).unwrap(), None);
+    }
+
+    #[test]
+    fn the_first_failed_delete_is_the_answer() {
+        let refused = |why: &str| Err(PasswordError::Keyring(why.into()));
+        let answer = first_error([Ok(()), refused("first"), Ok(()), refused("third")]);
+        assert!(matches!(answer, Err(PasswordError::Keyring(why)) if why == "first"));
+        assert!(first_error([Ok(()), Ok(())]).is_ok());
     }
 }

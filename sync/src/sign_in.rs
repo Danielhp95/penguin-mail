@@ -414,10 +414,12 @@ pub enum JmapSignInError {
 /// Keeps a JMAP account whose sign-in worked: adds it, or finds the one
 /// already here for the address, with its session row and its secret. As
 /// for IMAP, the keyring takes the secret before anything else changes,
-/// and a new row goes again when it refuses.
-pub async fn jmap_signed_in<P: PasswordStore + 'static>(
+/// and a new row goes again when it refuses. A new row may take the id of
+/// an account removed before it, so any password still kept under that id
+/// goes first: part 3 would send it to this account's CalDAV server.
+pub async fn jmap_signed_in(
     db: &Db,
-    secrets: Arc<P>,
+    secrets: &Secrets,
     new: NewJmap,
     now: EpochMillis,
 ) -> Result<Account, JmapSignInError> {
@@ -438,7 +440,7 @@ pub async fn jmap_signed_in<P: PasswordStore + 'static>(
                 provider: held.provider_name().to_string(),
             });
         }
-        keep_secret(Arc::clone(&secrets), held.id, secret.clone()).await?;
+        keep_secret(Arc::clone(&secrets.jmap), held.id, secret.clone()).await?;
     }
     let (email, again) = (address.clone(), before.as_ref().map(|held| held.state));
     let added = db
@@ -461,7 +463,7 @@ pub async fn jmap_signed_in<P: PasswordStore + 'static>(
         provider: provider.unwrap_or_default(),
     })?;
     if before.is_none()
-        && let Err(err) = keep_secret(Arc::clone(&secrets), id, secret).await
+        && let Err(err) = clear_and_keep(secrets, id, secret).await
     {
         db.write(move |c| accounts::delete_account(c, id)).await?;
         return Err(err);
@@ -471,6 +473,18 @@ pub async fn jmap_signed_in<P: PasswordStore + 'static>(
         .ok_or(JmapSignInError::Store(StoreError::Sqlite(
             rusqlite::Error::QueryReturnedNoRows,
         )))
+}
+
+/// Deletes the passwords a removed account may have left under `id`, then
+/// keeps `secret` as the JMAP account's.
+async fn clear_and_keep(secrets: &Secrets, id: AccountId, secret: String) -> Result<(), JmapSignInError> {
+    let passwords = Arc::clone(&secrets.passwords);
+    tokio::task::spawn_blocking(move || {
+        crate::passwords::first_error([passwords.delete(id), passwords.delete_outgoing(id)])
+    })
+    .await
+    .map_err(|err| PasswordError::Keyring(err.to_string()))??;
+    keep_secret(Arc::clone(&secrets.jmap), id, secret).await
 }
 
 async fn keep_secret<P: PasswordStore + 'static>(

@@ -29,8 +29,9 @@ impl JmapAuth {
     }
 }
 
-/// A JMAP account's row: what it needs to reach its session again.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A JMAP account's row: what it needs to reach its session again. Its
+/// `Debug` leaves the user name out, which is often an address.
+#[derive(Clone, PartialEq, Eq)]
 pub struct JmapSaved {
     pub session_url: String,
     pub auth: JmapAuth,
@@ -39,6 +40,18 @@ pub struct JmapSaved {
     pub labels: bool,
     /// The capabilities the session offered this sign-in, by URN.
     pub capabilities: Vec<String>,
+}
+
+impl std::fmt::Debug for JmapSaved {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JmapSaved")
+            .field("session_url", &self.session_url)
+            .field("auth", &self.auth)
+            .field("user_name", &self.user_name.as_ref().map(|_| "<hidden>"))
+            .field("labels", &self.labels)
+            .field("capabilities", &self.capabilities)
+            .finish()
+    }
 }
 
 impl JmapSaved {
@@ -98,6 +111,20 @@ mod tests {
         let basic = JmapSaved { auth: JmapAuth::Basic, user_name: Some("me".into()), ..saved };
         save(&conn, id, &basic).unwrap();
         assert_eq!(load(&conn, id).unwrap(), Some(basic));
+    }
+
+    #[test]
+    fn debug_output_leaves_the_user_name_out() {
+        let saved = JmapSaved {
+            session_url: "https://mail.example.org/jmap/session".into(),
+            auth: JmapAuth::Basic,
+            user_name: Some("dana@example.org".into()),
+            labels: false,
+            capabilities: vec![],
+        };
+        let shown = format!("{saved:?}");
+        assert!(!shown.contains("dana"), "{shown}");
+        assert!(shown.contains("https://mail.example.org/jmap/session"), "{shown}");
     }
 
     #[test]
