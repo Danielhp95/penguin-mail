@@ -19,7 +19,7 @@ use adw::prelude::*;
 use gtk::{gio, glib, graphene};
 use mailrs_discover::Server;
 use mailrs_domain::translate::{fill, gettext};
-use mailrs_domain::{Account, AccountId, MailSet, Provider, RemoveSetting, Role as MailRole};
+use mailrs_domain::{Account, AccountId, MailSet, Provider, RemoveSetting, Role as MailRole, SignInClient};
 use mailrs_store::{accounts, servers};
 
 use crate::add_account::lookup::{Check, Checks, State};
@@ -2624,6 +2624,18 @@ impl Dialog {
                     "This copy of Penguin Mail was built without Microsoft sign-in. Get a release from github.com/c9dev/penguin-mail/releases.",
                 ),
             });
+        }
+        // An own client named in the environment replaces the build's, so
+        // the page says which one Google is about to see. Half of one is
+        // refused here, before a page opens.
+        if !self.core.demo && browser == Browser::Google {
+            match self.core.google_sign_in_client() {
+                Err(err) => return self.browser_failed(&err.to_string()),
+                Ok(SignInClient::Own) => page.lede.set_text(&gettext(
+                    "Signing in with your own Google client. Google's sign-in page is open in your browser. When you finish there, this window moves on.",
+                )),
+                Ok(SignInClient::BuiltIn) => {}
+            }
         }
         let ticket = self.asking.ask();
         let (urls, opened) = async_channel::unbounded::<String>();

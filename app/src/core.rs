@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, anyhow, bail};
 use mailrs_discover::{Found, Net, RealNet, Security, SrvRecord};
-use mailrs_domain::{Account, AccountId, AccountState, ChangeEvent, Provider, Target};
+use mailrs_domain::{Account, AccountId, AccountState, ChangeEvent, Provider, SignInClient, Target};
 use mailrs_pgp::{Pgp, PgpError};
 use mailrs_smime::{Smime, SmimeError};
 use mailrs_store::services::{FoundService, Miss, ServiceKind};
@@ -23,7 +23,8 @@ use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::passwords::{PasswordStore, Passwords, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
-    Browser, NewImap, NewPop3, Wanted, check_pop3, imap_signed_in, in_browser, pop3_signed_in,
+    Browser, BrowserSignInError, NewImap, NewPop3, Wanted, check_pop3, google_sign_in, imap_signed_in,
+    in_browser, pop3_signed_in,
 };
 use mailrs_sync::{
     AccountServices, AccountSettings, AccountSync, Accounts, BackendError, Clients, ContactBook,
@@ -313,15 +314,26 @@ impl Core {
         Ok(core)
     }
 
-    /// Whether this copy was built with the client that every sign-in on
-    /// `browser`'s page goes through. A copy built from source without the
-    /// release values has none and cannot add such an account.
+    /// Whether this copy has a client for a sign-in on `browser`'s page:
+    /// the build's own, or for Google an own client the environment names.
+    /// A copy built from source without the release values has no built-in
+    /// client. Half an own client counts as one, so the sign-in goes on to
+    /// say which value is missing.
     pub fn built_with_sign_in(&self, browser: Browser) -> bool {
-        let clients = Clients::built_in();
+        let clients = Clients::current();
         match browser {
-            Browser::Google => clients.google.is_some(),
+            Browser::Google => !matches!(
+                google_sign_in(&clients),
+                Err(BrowserSignInError::NoClient(_))
+            ),
             Browser::Microsoft => clients.microsoft.is_some(),
         }
+    }
+
+    /// Which client a Google sign-in started now would go through, or why
+    /// it cannot start. The environment is read again on each call.
+    pub fn google_sign_in_client(&self) -> Result<SignInClient, BrowserSignInError> {
+        google_sign_in(&Clients::current()).map(|(_, kind)| kind)
     }
 
     /// What connecting, signing in and forgetting an account needs, with
@@ -330,7 +342,7 @@ impl Core {
         Connector {
             db: self.db.clone(),
             config: self.config.borrow().clone(),
-            clients: Clients::built_in(),
+            clients: Clients::current(),
             secrets: self.secrets.clone(),
         }
     }

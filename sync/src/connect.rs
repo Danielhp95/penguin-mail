@@ -17,6 +17,7 @@ use mailrs_store::{Db, accounts};
 use crate::config::Config;
 use crate::passwords::{PasswordError, PasswordStore, Secrets};
 use crate::sign_in::account_client;
+use crate::sign_in::own_client::{self, OwnClient, OwnClientError};
 use crate::{
     AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyRules, AnySieve, BackendError,
     CalDav, CardDav, ImapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
@@ -55,7 +56,7 @@ async fn bounded<T, E: Into<SyncError>>(
 /// lock for the whole process while an unlock prompt is on screen, so a
 /// prompt nobody answers holds every later read too. The blocking thread
 /// stays behind until the keyring answers; the account does not.
-async fn read_secret<P: PasswordStore + 'static>(
+pub(crate) async fn read_secret<P: PasswordStore + 'static>(
     store: Arc<P>,
     account: AccountId,
     wait: Duration,
@@ -68,21 +69,36 @@ async fn read_secret<P: PasswordStore + 'static>(
     bounded(account, KEYRING, wait, read).await
 }
 
-/// The build's own sign-in clients. A copy built from source without the
-/// release values has neither, and its Google and Microsoft accounts
-/// cannot refresh their tokens.
+/// The build's own sign-in clients, and the own Google client the
+/// environment names. A copy built from source without the release values
+/// has neither built-in client, and its Google and Microsoft accounts
+/// cannot refresh their tokens unless they signed in with an own client.
 #[derive(Clone, Default)]
 pub struct Clients {
     pub google: Option<OAuthClient>,
     pub microsoft: Option<MicrosoftClient>,
+    /// The own Google client a new Google sign-in uses in place of
+    /// `google`, or why the environment does not name one.
+    pub own_google: Option<Result<OwnClient, OwnClientError>>,
 }
 
 impl Clients {
-    /// The clients compiled into this build.
+    /// The clients compiled into this build, with no own client.
     pub fn built_in() -> Self {
         Clients {
             google: mailrs_gmail::built_in_client(),
             microsoft: mailrs_graph::built_in_client(),
+            own_google: None,
+        }
+    }
+
+    /// The clients compiled into this build, and the own Google client the
+    /// environment names now. Read again for each sign-in, so the
+    /// variables need not be set when Penguin Mail starts.
+    pub fn current() -> Self {
+        Clients {
+            own_google: own_client::from_env(),
+            ..Clients::built_in()
         }
     }
 }
@@ -103,7 +119,7 @@ pub enum Connected {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lacks {
     /// The client it signed in with: this build has none, or an own
-    /// Google client left `config.toml`.
+    /// Google client left the keyring or `config.toml`.
     Client,
     /// Its refresh token or password, or an IMAP or POP3 account's servers.
     Secret,
@@ -129,7 +145,8 @@ impl Connector {
         let window_days = self.config.engine_config().window_days;
         let started = match account.provider {
             Provider::Gmail => {
-                let Some(oauth) = account_client(db, &self.config, self.clients.google.clone(), account).await? else {
+                let kept = Arc::clone(&self.secrets.google_clients);
+                let Some(oauth) = account_client(db, &self.config, self.clients.google.clone(), kept, account).await? else {
                     tracing::warn!(account = %account.email, "no Google client for this account");
                     return Ok(Connected::NeedsSignIn(Lacks::Client));
                 };

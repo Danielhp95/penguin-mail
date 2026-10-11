@@ -5,6 +5,10 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ## Unreleased
 
+### New
+
+- Sign in to Gmail with a Google client from your own Google Cloud project, named in two environment variables, when Google blocks Penguin Mail's own client. docs/setup.md says how.
+
 ## 1.0.7 (2026-10-10)
 
 ### Fixed

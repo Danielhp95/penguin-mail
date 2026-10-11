@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use mailrs_domain::{Account, AccountId, ChangeEvent, EpochMillis, MailSet, Provider};
-use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize, built_in_client};
+use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize};
 use mailrs_store::threads::{self, ThreadFilter};
 use mailrs_store::{Db, accounts, messages};
 use mailrs_sync::passwords::Secrets;
@@ -21,7 +21,7 @@ use mailrs_sync::{
 use mailrs_sync::config::{Config, config_path, data_dir, migrate_old_dirs, secure_dirs};
 use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::mailbox::Standard;
-use mailrs_sync::sign_in::google_signed_in;
+use mailrs_sync::sign_in::{google_sign_in, google_signed_in};
 
 /// How long `account add` waits for the browser.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -202,9 +202,14 @@ async fn connect(connector: &Connector, account: &Account) -> Result<AccountServ
 }
 
 async fn add_account(db: &Db) -> Result<()> {
-    // Every sign-in, first or again, goes through the build's client.
-    let oauth = built_in_client()
-        .ok_or_else(|| anyhow!("This copy of Penguin Mail was built without Google sign-in."))?;
+    // Every sign-in, first or again, goes through the own client the
+    // environment names, or else the build's.
+    let clients = Clients::current();
+    let (oauth, _) = google_sign_in(&clients)?;
+    let own = match &clients.own_google {
+        Some(Ok(own)) => Some(own),
+        _ => None,
+    };
     let flow = authorize(&oauth, GMAIL_API_BASE, |url| {
         println!(
             "Opening your browser for Google's consent screen. If it does not open, visit:\n\n{url}\n"
@@ -220,12 +225,13 @@ async fn add_account(db: &Db) -> Result<()> {
         .context("gave up waiting for the browser after five minutes")??;
     let account = google_signed_in(
         db,
-        Secrets::keyring().google,
+        &Secrets::keyring(),
         &authorized.email,
         &authorized.refresh_token,
         now_millis(),
         authorized.granted.as_ref().map(Granted::to_scope).as_deref(),
         &SIGN_IN_SCOPES.join(" "),
+        own,
     )
     .await?;
     println!(

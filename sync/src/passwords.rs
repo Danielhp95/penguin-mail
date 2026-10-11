@@ -60,6 +60,17 @@ impl KeyringPasswords {
         }
     }
 
+    /// The own Google client an account signed in with, keyed by account
+    /// id. Apart from Google's refresh tokens, which are keyed by address,
+    /// so an entry here can never be read as a token.
+    pub const GOOGLE_CLIENT_SERVICE: &'static str = "penguin-mail-google-client";
+
+    pub fn google_client() -> Self {
+        KeyringPasswords {
+            service: Self::GOOGLE_CLIENT_SERVICE.to_string(),
+        }
+    }
+
     #[cfg(not(feature = "packaging-flatpak"))]
     fn entry(&self, account_id: AccountId) -> Result<keyring::Entry, PasswordError> {
         keyring::Entry::new(&self.service, &user(account_id)).map_err(keyring_error)
@@ -182,12 +193,14 @@ impl PasswordStore for Passwords {
 }
 
 /// Where each kind of account keeps what signs it in: a Google account's
-/// refresh token under its address, an IMAP or POP3 account's password
-/// and a Microsoft account's refresh token under its id. Clones share the
+/// refresh token under its address, and the own client it signed in with
+/// under its id when it has one; an IMAP or POP3 account's password and a
+/// Microsoft account's refresh token under its id. Clones share the
 /// stores.
 #[derive(Clone)]
 pub struct Secrets {
     pub google: Arc<dyn TokenStore>,
+    pub google_clients: Arc<Passwords>,
     pub passwords: Arc<Passwords>,
     pub microsoft: Arc<Passwords>,
 }
@@ -198,6 +211,7 @@ impl Secrets {
     pub fn keyring() -> Self {
         Secrets {
             google: Arc::new(KeyringTokenStore::new()),
+            google_clients: Arc::new(Passwords::Keyring(KeyringPasswords::google_client())),
             passwords: Arc::new(Passwords::Keyring(KeyringPasswords::new())),
             microsoft: Arc::new(Passwords::Keyring(KeyringPasswords::microsoft())),
         }
@@ -208,23 +222,27 @@ impl Secrets {
     pub fn memory() -> Self {
         Secrets {
             google: Arc::new(MemoryTokenStore::default()),
+            google_clients: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             passwords: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             microsoft: Arc::new(Passwords::Memory(MemoryPasswords::default())),
         }
     }
 
     /// Deletes what signs `account` in from the store its provider keeps
-    /// it in, off the runtime. Succeeds when nothing was kept.
+    /// it in, off the runtime: a Google account's own client goes with its
+    /// token. Succeeds when nothing was kept.
     pub async fn forget(&self, account: &Account) -> Result<(), PasswordError> {
         let id = account.id;
         let delete: Box<dyn FnOnce() -> Result<(), PasswordError> + Send> = match account.provider {
             Provider::Gmail => {
                 let (tokens, email) = (Arc::clone(&self.google), account.email.clone());
+                let clients = Arc::clone(&self.google_clients);
                 Box::new(move || {
                     tokens.delete(&email).map_err(|err| match err {
                         mailrs_gmail::GmailError::Keyring(reason) => PasswordError::Keyring(reason),
                         err => PasswordError::Keyring(err.to_string()),
-                    })
+                    })?;
+                    clients.delete(id)
                 })
             }
             Provider::Imap | Provider::Pop3 => {

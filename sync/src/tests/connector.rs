@@ -1,7 +1,7 @@
 //! Connecting, forgetting and signing in an account through the one
 //! interface the app and the CLI share, for every provider.
 
-use mailrs_domain::{Account, AccountState, Provider, RemoveSetting};
+use mailrs_domain::{Account, AccountState, Provider, RemoveSetting, SignInClient};
 use mailrs_gmail::OAuthClient;
 use mailrs_graph::MicrosoftClient;
 use mailrs_store::servers::{self, Pop3Servers, Saved, Security, Servers};
@@ -10,7 +10,8 @@ use mailrs_store::{Db, accounts};
 use crate::config::Config;
 use crate::passwords::{PasswordStore, Secrets};
 use crate::services::{AnyIdentities, AnyMail};
-use crate::sign_in::{Browser, BrowserSignInError, Wanted, in_browser};
+use crate::sign_in::own_client::{ID_VAR, OwnClient, OwnClientError, SECRET_VAR};
+use crate::sign_in::{Browser, BrowserSignInError, Wanted, google_sign_in, in_browser};
 use crate::{Clients, Connected, Connector, Lacks};
 
 async fn store() -> (Db, tempfile::TempDir) {
@@ -30,6 +31,7 @@ fn both_clients() -> Clients {
     Clients {
         google: Some(OAuthClient::new("cid", "secret")),
         microsoft: Some(MicrosoftClient::new("00000000-0000-0000-0000-000000000000")),
+        own_google: None,
     }
 }
 
@@ -249,6 +251,39 @@ async fn forgetting_a_pop3_account_deletes_only_its_password() {
 }
 
 #[tokio::test]
+async fn forgetting_a_google_account_deletes_its_own_client_too() {
+    let (db, _dir) = store().await;
+    let me = gmail_account(&db).await;
+    let reach = connector(&db, both_clients());
+    reach.secrets.google_clients.save(me.id, &OwnClient::new("own", "secret").encode()).unwrap();
+    reach.forget(&me).await.unwrap();
+    assert_eq!(reach.secrets.google_clients.load(me.id).unwrap(), None);
+}
+
+#[tokio::test]
+async fn forgetting_an_imap_account_leaves_the_own_client_kept_under_its_id() {
+    let (db, _dir) = store().await;
+    let dana = imap_account(&db).await;
+    let reach = connector(&db, both_clients());
+    reach.secrets.google_clients.save(dana.id, "kept").unwrap();
+    reach.forget(&dana).await.unwrap();
+    assert_eq!(reach.secrets.google_clients.load(dana.id).unwrap().as_deref(), Some("kept"));
+}
+
+#[tokio::test]
+async fn a_google_account_with_its_own_client_connects_in_a_build_without_one() {
+    let (db, _dir) = store().await;
+    let me = gmail_account(&db).await;
+    let id = me.id;
+    db.write(move |c| accounts::set_sign_in_client(c, id, SignInClient::Own)).await.unwrap();
+    let reach = connector(&db, Clients::default());
+    reach.secrets.google.save(&me.email, "rt").unwrap();
+    reach.secrets.google_clients.save(me.id, &OwnClient::new("own", "secret").encode()).unwrap();
+    let connected = reach.connect(&me).await.unwrap();
+    assert!(matches!(connected, Connected::Ready(services) if matches!(services.mail, AnyMail::Google(_))));
+}
+
+#[tokio::test]
 async fn forgetting_an_account_with_no_secret_kept_succeeds() {
     let (db, _dir) = store().await;
     let dana = imap_account(&db).await;
@@ -266,8 +301,12 @@ fn only_google_and_microsoft_accounts_sign_in_in_the_browser() {
 /// The page a browser sign-in hands the opener, with the run dropped once
 /// it has, since nobody comes back from that page in a test.
 async fn page_opened(browser: Browser, wanted: Wanted) -> String {
+    page_opened_with(both_clients(), browser, wanted).await
+}
+
+async fn page_opened_with(clients: Clients, browser: Browser, wanted: Wanted) -> String {
     let (db, _dir) = store().await;
-    let reach = connector(&db, both_clients());
+    let reach = connector(&db, clients);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let run = in_browser(&reach, browser, wanted, move |url: &str| {
         let _ = tx.send(url.to_string());
@@ -318,4 +357,44 @@ async fn a_build_without_the_client_opens_no_page() {
         .await;
         assert!(matches!(refused, Err(BrowserSignInError::NoClient(b)) if b == browser));
     }
+}
+
+#[tokio::test]
+async fn an_own_client_in_the_environment_signs_in_over_the_built_in_one() {
+    let clients = Clients {
+        own_google: Some(Ok(OwnClient::new("own-cid", "own-secret"))),
+        ..both_clients()
+    };
+    let url = page_opened_with(clients, Browser::Google, Wanted::Anyone).await;
+    assert!(url.contains("client_id=own-cid"), "{url}");
+}
+
+#[tokio::test]
+async fn an_own_client_signs_in_from_a_build_without_the_built_in_one() {
+    let clients = Clients {
+        own_google: Some(Ok(OwnClient::new("own-cid", "own-secret"))),
+        ..Clients::default()
+    };
+    let url = page_opened_with(clients, Browser::Google, Wanted::Anyone).await;
+    assert!(url.contains("client_id=own-cid"), "{url}");
+}
+
+#[tokio::test]
+async fn half_an_own_client_opens_no_page_and_says_which_value_is_missing() {
+    let (db, _dir) = store().await;
+    let half = OwnClientError::Half { set: ID_VAR, missing: SECRET_VAR };
+    let clients = Clients { own_google: Some(Err(half.clone())), ..both_clients() };
+    let refused = in_browser(&connector(&db, clients), Browser::Google, Wanted::Anyone, |url: &str| {
+        panic!("opened {url}")
+    })
+    .await;
+    assert!(matches!(refused, Err(BrowserSignInError::OwnClient(err)) if err == half));
+}
+
+#[test]
+fn the_sign_in_says_which_client_it_uses() {
+    let own = Clients { own_google: Some(Ok(OwnClient::new("own-cid", "own-secret"))), ..both_clients() };
+    assert_eq!(google_sign_in(&own).unwrap().1, SignInClient::Own);
+    assert_eq!(google_sign_in(&both_clients()).unwrap().1, SignInClient::BuiltIn);
+    assert!(matches!(google_sign_in(&Clients::default()), Err(BrowserSignInError::NoClient(Browser::Google))));
 }
