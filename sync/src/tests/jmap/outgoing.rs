@@ -291,3 +291,54 @@ async fn without_sent_the_draft_is_not_taken_for_its_sent_copy() {
     let id = h.mail().send(&letter("me@example.com", ""), None).await.unwrap();
     assert_eq!(h.mail().find_sent("out-1@example.com").await.unwrap(), Some(id));
 }
+
+/// The outbox sends a message from a draft on Cyrus, which sends the
+/// draft's own copy; the answer is lost. The retry finds that copy in Sent
+/// under the draft's id and must not delete it as the draft.
+#[tokio::test]
+async fn an_outbox_retry_keeps_the_sent_copy_that_was_the_draft() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use mailrs_store::outbox::{self, Queued};
+
+    use crate::tests::Connected;
+    use crate::{Outbox, Posted, now_millis};
+
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    h.sync.refresh_labels().await.unwrap();
+    let raw = letter("me@example.com", "");
+    let draft = h.sync.save_draft(raw.clone(), None, None).await.unwrap();
+    h.fake.with(|s| s.lose_submission_answer = true);
+    let queue = Outbox::new(Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone());
+    let message = Queued {
+        account_id: h.account_id,
+        subject: "Hi".into(),
+        recipients: "ada@example.com".into(),
+        send_at: now_millis(),
+        raw: Some(raw),
+        draft_id: Some(draft.draft_id.clone()),
+        composer: "{}".into(),
+        ..Queued::default()
+    };
+    let posted = queue.post(message).await.unwrap();
+    assert!(matches!(posted, Posted::Waiting(_)), "{posted:?}");
+
+    h.db.write(|c| outbox::try_now(c, now_millis())).await.unwrap();
+    let drained = queue.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1, "the retry counts it as sent");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1, "and sends it once");
+    let kept = h.fake.with(|s| s.emails.get(&draft.draft_id).map(|e| e.mailbox_ids.clone()));
+    assert_eq!(kept.map(|m| m.into_iter().collect::<Vec<_>>()), Some(vec![h.fake.mailbox("sent")]), "the sent copy stays");
+}
+
+/// Deleting a draft by an id that names a message without `$draft`, such
+/// as the sent copy a one-copy server made of it, leaves that message and
+/// counts the draft as gone.
+#[tokio::test]
+async fn deleting_a_draft_never_destroys_a_message_that_is_no_draft() {
+    let h = fastmail().await;
+    let sent = h.mail().send(&letter("me@example.com", ""), None).await.unwrap();
+    h.mail().delete_draft(&sent).await.unwrap();
+    assert!(h.fake.with(|s| s.emails.contains_key(&sent)));
+}

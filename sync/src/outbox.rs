@@ -349,7 +349,11 @@ impl<A: Accounts> Outbox<A> {
                         account = message.account_id,
                         "a message tried before is already in Sent; not sending it again"
                     );
+                    // A server that keeps one copy of the same bytes sent
+                    // the draft itself: the copy found is the draft, and
+                    // deleting it would delete the sent message.
                     if let Some(draft_id) = draft_id
+                        && *draft_id != sent
                         && let Err(err) = sync.delete_draft(draft_id).await
                     {
                         tracing::warn!(error = %err, "sent, but could not delete the draft");

@@ -184,7 +184,18 @@ impl<J: JmapApi> Jmap<J> {
         Ok(found.hits.into_iter().map(|h| h.id).find(|id| id != draft_id))
     }
 
+    /// Destroys the draft `draft_id`. A message there without `$draft` is
+    /// no draft: on a server that keeps one copy of the same bytes it can
+    /// be the sent copy the draft became. It stays, and the draft counts
+    /// as gone.
     pub(super) async fn drop_draft(&self, draft_id: &str) -> Result<(), BackendError> {
+        let got = self.api().emails(&[draft_id.to_string()], &["id", "keywords"]).await.map_err(backend)?;
+        let Some(email) = got.list.into_iter().next() else {
+            return Ok(());
+        };
+        if !email.keywords.get("$draft").copied().unwrap_or(false) {
+            return Ok(());
+        }
         let answer = self.api().set_emails(&Map::new(), &[draft_id.to_string()]).await.map_err(backend)?;
         match answer.refusal(draft_id) {
             Some(refused) if refused.kind != "notFound" => Err(backend(refused.error())),
