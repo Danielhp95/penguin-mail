@@ -894,6 +894,23 @@ impl Core {
         .await
     }
 
+    /// Where a JMAP well-known URL leads, followed without credentials,
+    /// for a bare host typed in Server Settings. `None` when nothing
+    /// answers in time; the demo asks nobody.
+    pub async fn locate_jmap(&self, url: String) -> Option<String> {
+        if self.demo {
+            return None;
+        }
+        self.call(async move {
+            let net = RealNet::new()?;
+            let led = tokio::time::timeout(mailrs_discover::STEP_LIMIT, net.locate(&url)).await;
+            Ok::<_, anyhow::Error>(led.ok().flatten())
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
     /// Signs in to a JMAP account: checks the session with the password or
     /// the token, then keeps the account, its session row and its secret,
     /// and starts syncing it. Nothing is kept when the check fails; the

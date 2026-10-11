@@ -981,8 +981,7 @@ fn password_page() -> PasswordPage {
         .visible(false)
         .build();
     agree.add_prefix(&confirmed);
-    let session = icon_row("penguin-mail-lock-symbolic", "JMAP", "", true);
-    session.set_subtitle_selectable(true);
+    let session = icon_row("penguin-mail-lock-symbolic", &gettext("Server"), "", true);
     session.set_visible(false);
     let imap_instead = adw::ActionRow::builder()
         .activatable(true)
@@ -2552,7 +2551,8 @@ impl Dialog {
                 Err(err) => err,
             };
             if !self.asking.wants(ticket) {
-                tracing::info!(error = %err, "a sign-in failed after its dialog moved on");
+                let kind = add_account::failure_kind(&err);
+                tracing::info!(kind, "a sign-in failed after its dialog moved on");
                 return;
             }
             match add_account::after_failure(&err, &proposal, &address) {
@@ -2632,7 +2632,8 @@ impl Dialog {
                 }
             }
             Err(err) if !self.asking.wants(ticket) => {
-                tracing::info!(error = %err, "a JMAP sign-in failed after its dialog moved on");
+                let kind = add_account::failure_kind(&err);
+                tracing::info!(kind, "a JMAP sign-in failed after its dialog moved on");
             }
             Err(err) => self.show_failure(&add_account::jmap_failure(&err, &proposal, token)),
         }
@@ -2821,8 +2822,13 @@ impl Dialog {
         let jmap = self.jmap.borrow().clone();
         let host = self.manual.incoming.host.text();
         if add_account::jmap_at(index) {
-            if let Some(jmap) = &jmap {
-                self.manual.incoming.host.set_text(&jmap.session_url);
+            // An IMAP host means nothing to JMAP: the session found, or
+            // else the address's domain, whose well-known URL comes first.
+            let domain = self.typed.borrow().as_ref().map(|a| a.domain.clone());
+            match (&jmap, domain) {
+                (Some(jmap), _) => self.manual.incoming.host.set_text(&jmap.session_url),
+                (None, Some(domain)) => self.manual.incoming.host.set_text(&domain),
+                (None, None) => self.manual.incoming.host.set_text(""),
             }
             return;
         }
@@ -2856,12 +2862,18 @@ impl Dialog {
             return;
         };
         if add_account::jmap_at(self.manual.protocol.active()) {
+            let url = self.manual.incoming.host.text().to_string();
+            let before = self.jmap.borrow().clone();
             let typed = add_account::typed_jmap(
-                &self.manual.incoming.host.text(),
+                &url,
                 &self.manual.incoming.user.text(),
                 &address,
+                before.as_ref(),
             );
             match typed {
+                // A bare host's session can live on another host: follow
+                // its well-known URL first, without credentials.
+                Ok(proposal) if !url.contains("://") => self.locate_jmap(proposal, address),
                 Ok(proposal) => self.show_jmap(proposal),
                 Err(problem) => {
                     self.manual.problem.set_text(&problem);
@@ -2903,6 +2915,29 @@ impl Dialog {
                 self.manual.problem.set_visible(true);
             }
         }
+    }
+
+    /// Follows a typed bare host's well-known URL, then shows the JMAP
+    /// sign-in for where it led. Use These Settings waits meanwhile, and
+    /// an answer that comes after the person left the form goes nowhere.
+    fn locate_jmap(self: &Rc<Self>, proposal: JmapProposal, address: Address) {
+        let ticket = self.asking.ask();
+        let button = &self.manual.use_them;
+        button.set_sensitive(false);
+        button.set_label(&gettext("Looking Up…"));
+        self.manual.problem.set_visible(false);
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let url = proposal.session_url.clone();
+            let target = this.core.locate_jmap(url).await;
+            this.manual.use_them.set_label(&gettext("Use These Settings"));
+            this.manual.use_them.set_sensitive(true);
+            if !this.asking.wants(ticket) {
+                return;
+            }
+            this.asking.forget();
+            this.show_jmap(add_account::located_jmap(proposal, target, &address));
+        });
     }
 
     /// The password page for an account signing in again, from the

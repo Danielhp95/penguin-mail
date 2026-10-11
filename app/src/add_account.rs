@@ -1221,7 +1221,9 @@ pub fn typed_servers(
         smtp: server(smtp_host, smtp, &smtp_user, before.smtp.user_name),
         incoming_user,
         smtp_user,
-        confirm: false,
+        // Hosts discovery guessed still wait for the yes when the form
+        // comes back with them unchanged; hosts the person typed do not.
+        confirm: same_hosts && before.confirm,
         source: None,
         remaining: Vec::new(),
         pop3_offer: None,
@@ -1614,8 +1616,16 @@ pub fn can_sign_in_jmap(secret: &str, proposal: &JmapProposal, confirmed: bool, 
 }
 
 /// A session URL the person typed in Server Settings: a bare host means
-/// its well-known URL; plain HTTP only on this computer.
-pub fn typed_jmap(url: &str, user: &str, address: &Address) -> Result<JmapProposal, String> {
+/// its well-known URL; plain HTTP only on this computer. A URL on the host
+/// of `before`, the session the page held, keeps what was known of it,
+/// its question among them: Server Settings left unchanged must not
+/// take away a yes the person still owes.
+pub fn typed_jmap(
+    url: &str,
+    user: &str,
+    address: &Address,
+    before: Option<&JmapProposal>,
+) -> Result<JmapProposal, String> {
     let url = url.trim();
     let unusable = || gettext("Enter the server's address or its JMAP session URL.");
     if url.is_empty() {
@@ -1631,6 +1641,14 @@ pub fn typed_jmap(url: &str, user: &str, address: &Address) -> Result<JmapPropos
         return Err(gettext("Penguin Mail reaches JMAP servers over HTTPS only."));
     }
     let user = user.trim();
+    let user = (!user.is_empty()).then(|| user.to_string());
+    if let Some(before) = before.filter(|b| host_of(&b.session_url) == host_of(&full)) {
+        return Ok(JmapProposal {
+            session_url: full,
+            user,
+            ..before.clone()
+        });
+    }
     Ok(JmapProposal {
         provider_name: parsed
             .host_str()
@@ -1640,9 +1658,30 @@ pub fn typed_jmap(url: &str, user: &str, address: &Address) -> Result<JmapPropos
         source: Some(Source::Manual),
         provider: None,
         imap: None,
-        user: (!user.is_empty()).then(|| user.to_string()),
+        user,
         token: false,
     })
+}
+
+/// A typed bare host once its well-known URL was followed without
+/// credentials: the session lives at `target`. A target on another host,
+/// outside the address's domain, waits for the person's yes, as one
+/// discovery found would. `None` (nothing answered) keeps the well-known
+/// URL for the sign-in to try.
+pub fn located_jmap(proposal: JmapProposal, target: Option<String>, address: &Address) -> JmapProposal {
+    let Some(target) = target else {
+        return proposal;
+    };
+    let typed_host = host_of(&proposal.session_url);
+    let host = host_of(&target);
+    let domain = &address.domain;
+    let within = host == *domain || host.ends_with(&format!(".{domain}"));
+    let away = host != typed_host && !within;
+    JmapProposal {
+        session_url: target,
+        confirm: proposal.confirm || away,
+        ..proposal
+    }
 }
 
 /// The JMAP sign-in for an account signing in again, from its saved row.
@@ -1695,6 +1734,7 @@ pub fn jmap_failure(err: &anyhow::Error, proposal: &JmapProposal, token: bool) -
         return Failure::plain(err.to_string(), gettext("Could not sign in"), err.to_string());
     };
     let mut said = None;
+    let imap = proposal.imap.is_some();
     let (title, body) = match jmap {
         JmapError::Unauthorized => match token {
             true => (
@@ -1715,12 +1755,33 @@ pub fn jmap_failure(err: &anyhow::Error, proposal: &JmapProposal, token: bool) -
         ),
         JmapError::NotFound => (
             fill(&gettext("No JMAP server at {host}"), &[("host", &session_line(proposal))]),
-            gettext("Check the session URL in Server Settings, or use IMAP instead."),
+            match imap {
+                true => gettext("Check the session URL in Server Settings, or use IMAP instead."),
+                false => gettext("Check the session URL in Server Settings."),
+            },
         ),
         JmapError::UnknownCapability(_) => (
             fill(&gettext("{provider} offers no mail over JMAP"), &named),
-            gettext("Use IMAP for this account instead."),
+            match imap {
+                true => gettext("Use IMAP for this account instead."),
+                false => gettext("Choose IMAP in Server Settings to add this account."),
+            },
         ),
+        JmapError::OffHost(other) => {
+            let other = [("other", other.as_str())];
+            (
+                fill(
+                    &gettext("{host} sends the sign-in elsewhere"),
+                    &[("host", &session_line(proposal))],
+                ),
+                fill(
+                    &gettext(
+                        "It tried to pass your sign-in on to {other}, and Penguin Mail refused. If you trust {other}, enter its session URL in Server Settings.",
+                    ),
+                    &other,
+                ),
+            )
+        }
         JmapError::Network(_) => (
             fill(&gettext("{provider} does not answer"), &named),
             gettext("Check your connection, then choose Sign In."),
@@ -1734,7 +1795,12 @@ pub fn jmap_failure(err: &anyhow::Error, proposal: &JmapProposal, token: bool) -
             (
                 gettext("Could not sign in"),
                 fill(
-                    &gettext("{provider} gave an answer Penguin Mail cannot use. Try again later, or use IMAP instead."),
+                    &match imap {
+                        true => gettext(
+                            "{provider} gave an answer Penguin Mail cannot use. Try again later, or use IMAP instead.",
+                        ),
+                        false => gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."),
+                    },
                     &named,
                 ),
             )
@@ -1750,6 +1816,46 @@ pub fn jmap_failure(err: &anyhow::Error, proposal: &JmapProposal, token: bool) -
         links,
         copy: None,
         kind: FailureKind::Refused,
+    }
+}
+
+/// What kind of failure a sign-in met, for a log line. Never the error's
+/// own text: some name the address, or carry the server's words.
+pub fn failure_kind(err: &anyhow::Error) -> &'static str {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::sign_in::{ImapSignInError, JmapSignInError};
+    if let Some(jmap) = err.downcast_ref::<JmapError>() {
+        return match jmap {
+            JmapError::Unauthorized => "unauthorized",
+            JmapError::Network(_) => "network",
+            JmapError::RateLimited { .. } => "rate limited",
+            JmapError::RequestTooLarge => "request too large",
+            JmapError::AnswerTooLarge { .. } => "answer too large",
+            JmapError::OffHost(_) => "off host",
+            JmapError::BadUrl(_) => "bad url",
+            JmapError::BadCredential => "bad credential",
+            JmapError::CannotCalculateChanges => "cannot calculate changes",
+            JmapError::StateMismatch => "state mismatch",
+            JmapError::Forbidden(_) => "forbidden",
+            JmapError::NotFound => "not found",
+            JmapError::UnknownCapability(_) => "unknown capability",
+            JmapError::Method { .. } => "method",
+            JmapError::Problem { .. } => "problem",
+            JmapError::Decode(_) => "decode",
+            JmapError::LocalFile(_) => "local file",
+        };
+    }
+    if let Some(check) = err.downcast_ref::<CheckError>() {
+        return match check {
+            CheckError::Imap(_) => "incoming server",
+            CheckError::Smtp(_) => "outgoing server",
+        };
+    }
+    match (err.downcast_ref::<JmapSignInError>(), err.downcast_ref::<ImapSignInError>()) {
+        (Some(JmapSignInError::Taken { .. }), _) | (_, Some(ImapSignInError::Taken { .. })) => "address taken",
+        (Some(JmapSignInError::Store(_)), _) | (_, Some(ImapSignInError::Store(_))) => "store",
+        (Some(JmapSignInError::Password(_)), _) | (_, Some(ImapSignInError::Password(_))) => "keyring",
+        _ => "other",
     }
 }
 
@@ -3232,7 +3338,7 @@ mod tests {
             jmap_found_line(&unlisted, &address),
             "Penguin Mail found a JMAP server for example.org."
         );
-        let typed = typed_jmap("mail.example.org", "", &address).unwrap();
+        let typed = typed_jmap("mail.example.org", "", &address, None).unwrap();
         assert_eq!(jmap_found_line(&typed, &address), "The JMAP server you gave.");
     }
 
@@ -3250,22 +3356,22 @@ mod tests {
     #[test]
     fn a_typed_session_url_takes_https_and_a_bare_host() {
         let address = Address::parse("me@example.org").unwrap();
-        let typed = typed_jmap("mail.example.org", "", &address).unwrap();
+        let typed = typed_jmap("mail.example.org", "", &address, None).unwrap();
         assert_eq!(typed.session_url, "https://mail.example.org/.well-known/jmap");
-        let full = typed_jmap("https://mail.example.org/jmap/session", "me", &address).unwrap();
+        let full = typed_jmap("https://mail.example.org/jmap/session", "me", &address, None).unwrap();
         assert_eq!(full.session_url, "https://mail.example.org/jmap/session");
         assert_eq!(full.user.as_deref(), Some("me"));
-        assert!(typed_jmap("http://mail.example.org/jmap", "", &address).is_err());
-        assert!(typed_jmap("http://localhost:8080/jmap/session", "", &address).is_ok());
-        assert!(typed_jmap("", "", &address).is_err());
+        assert!(typed_jmap("http://mail.example.org/jmap", "", &address, None).is_err());
+        assert!(typed_jmap("http://localhost:8080/jmap/session", "", &address, None).is_ok());
+        assert!(typed_jmap("", "", &address, None).is_err());
     }
 
     #[test]
     fn the_attempt_logs_in_with_the_address_unless_a_user_name_was_typed() {
         let address = Address::parse("me@example.org").unwrap();
-        let bare = typed_jmap("mail.example.org", "", &address).unwrap();
+        let bare = typed_jmap("mail.example.org", "", &address, None).unwrap();
         assert_eq!(jmap_attempt(&address, &bare, "pw", false).user, "me@example.org");
-        let named = typed_jmap("mail.example.org", "me", &address).unwrap();
+        let named = typed_jmap("mail.example.org", "me", &address, None).unwrap();
         assert_eq!(jmap_attempt(&address, &named, "pw", false).user, "me");
     }
 
@@ -3282,7 +3388,7 @@ mod tests {
     #[test]
     fn a_refused_password_says_so() {
         let address = Address::parse("me@example.org").unwrap();
-        let proposal = typed_jmap("mail.example.org", "", &address).unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
         let err = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
         let failure = jmap_failure(&err, &proposal, false);
         assert_eq!(failure.title, "mail.example.org refused the password");
@@ -3292,7 +3398,7 @@ mod tests {
     #[test]
     fn a_session_url_with_nothing_there_says_no_jmap_server_answered() {
         let address = Address::parse("me@example.org").unwrap();
-        let proposal = typed_jmap("mail.example.org", "", &address).unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
         let err = anyhow::Error::new(mailrs_jmap::JmapError::NotFound);
         let failure = jmap_failure(&err, &proposal, false);
         assert_eq!(failure.title, "No JMAP server at mail.example.org");
@@ -3302,7 +3408,7 @@ mod tests {
     #[test]
     fn a_session_without_mail_says_the_server_offers_none() {
         let address = Address::parse("me@example.org").unwrap();
-        let proposal = typed_jmap("mail.example.org", "", &address).unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
         let err = anyhow::Error::new(mailrs_jmap::JmapError::UnknownCapability(mailrs_jmap::MAIL.into()));
         assert_eq!(jmap_failure(&err, &proposal, false).title, "mail.example.org offers no mail over JMAP");
     }
@@ -3310,7 +3416,7 @@ mod tests {
     #[test]
     fn a_network_failure_asks_for_the_connection() {
         let address = Address::parse("me@example.org").unwrap();
-        let proposal = typed_jmap("mail.example.org", "", &address).unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
         let err = anyhow::Error::new(mailrs_jmap::JmapError::Network("timed out".into()));
         let failure = jmap_failure(&err, &proposal, false);
         assert_eq!(failure.title, "mail.example.org does not answer");
@@ -3320,7 +3426,7 @@ mod tests {
     #[test]
     fn a_secret_with_a_line_break_is_never_sent() {
         let address = Address::parse("me@example.org").unwrap();
-        let proposal = typed_jmap("mail.example.org", "", &address).unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
         let err = anyhow::Error::new(mailrs_jmap::JmapError::BadCredential);
         let failure = jmap_failure(&err, &proposal, true);
         assert!(!failure.title.contains("refused"), "{}", failure.title);
@@ -3383,5 +3489,108 @@ mod tests {
         assert_eq!(PROTOCOL_CHOICES, ["IMAP", "POP3", "JMAP"]);
         assert!(jmap_at(2) && !jmap_at(1));
         assert_eq!(protocol_at(2), Protocol::Imap, "the mail protocols ignore the JMAP index");
+    }
+
+    #[test]
+    fn an_unchanged_round_trip_through_server_settings_keeps_the_question() {
+        let address = Address::parse("me@example.org").unwrap();
+        let found = jmap_proposal(hoster_jmap(), None, &address);
+        let back = typed_jmap(&found.session_url, "", &address, Some(&found)).unwrap();
+        assert!(back.confirm, "the host is still the one discovery found off the domain");
+        assert!(!can_sign_in_jmap("secret", &back, false, false));
+        assert!(can_sign_in_jmap("secret", &back, true, false));
+        let own = typed_jmap("https://mail.example.org/jmap/session", "", &address, Some(&found)).unwrap();
+        assert!(!own.confirm, "a host the person typed needs no yes");
+    }
+
+    #[test]
+    fn an_unchanged_round_trip_keeps_what_the_list_knows() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let found = jmap_proposal(fastmail_jmap(), None, &address);
+        let back = typed_jmap(&found.session_url, "", &address, Some(&found)).unwrap();
+        assert!(token_only(&back));
+        assert_eq!(back.provider_name, "Fastmail");
+    }
+
+    #[test]
+    fn an_unchanged_imap_round_trip_keeps_the_question_for_guessed_servers() {
+        let address = Address::parse("me@example.org").unwrap();
+        let Next::Password(found) = after_discovery(found(None, Source::Srv, true), None, &address, true)
+        else {
+            panic!("expected the password step");
+        };
+        let back = typed_servers(
+            &typed("imap.example.org", 993, ""),
+            &typed("smtp.example.org", 465, ""),
+            &found,
+            &address,
+        )
+        .unwrap();
+        assert!(back.confirm);
+        assert!(!can_sign_in("secret", &back, false, false));
+        let own = typed_servers(
+            &typed("mail.example.org", 993, ""),
+            &typed("smtp.example.org", 465, ""),
+            &found,
+            &address,
+        )
+        .unwrap();
+        assert!(!own.confirm, "a host the person typed needs no yes");
+    }
+
+    #[test]
+    fn a_bare_host_that_leads_off_the_domain_asks_first() {
+        let address = Address::parse("me@example.org").unwrap();
+        let typed = typed_jmap("mail.example.org", "", &address, None).unwrap();
+        let away = located_jmap(typed.clone(), Some("https://jmap.hoster.net/session".into()), &address);
+        assert_eq!(away.session_url, "https://jmap.hoster.net/session");
+        assert!(away.confirm);
+        let home = located_jmap(typed.clone(), Some("https://mail.example.org/jmap/session".into()), &address);
+        assert_eq!(home.session_url, "https://mail.example.org/jmap/session");
+        assert!(!home.confirm);
+        assert_eq!(located_jmap(typed.clone(), None, &address), typed);
+    }
+
+    #[test]
+    fn a_bare_host_off_the_domain_that_stays_on_itself_needs_no_yes() {
+        let address = Address::parse("me@example.org").unwrap();
+        let typed = typed_jmap("jmap.hoster.net", "", &address, None).unwrap();
+        let located = located_jmap(typed, Some("https://jmap.hoster.net/jmap/session".into()), &address);
+        assert!(!located.confirm, "the person typed that host");
+    }
+
+    #[test]
+    fn a_session_that_sends_elsewhere_names_both_hosts() {
+        let address = Address::parse("me@example.org").unwrap();
+        let proposal = typed_jmap("mail.example.org", "", &address, None).unwrap();
+        let err = anyhow::Error::new(mailrs_jmap::JmapError::OffHost("api.other.net".into()));
+        let failure = jmap_failure(&err, &proposal, false);
+        assert!(failure.title.contains("mail.example.org"), "{}", failure.title);
+        assert!(failure.body.contains("api.other.net"), "{}", failure.body);
+    }
+
+    #[test]
+    fn imap_is_offered_in_a_failure_only_where_discovery_found_it() {
+        let address = Address::parse("me@example.org").unwrap();
+        let alone = typed_jmap("mail.example.org", "", &address, None).unwrap();
+        let err = anyhow::Error::new(mailrs_jmap::JmapError::NotFound);
+        assert!(!jmap_failure(&err, &alone, false).body.contains("IMAP"));
+        let beside = JmapProposal { imap: Some(Box::new(guess(&address))), ..alone };
+        assert!(jmap_failure(&err, &beside, false).body.contains("use IMAP instead"));
+        let odd = anyhow::Error::new(mailrs_jmap::JmapError::Decode("x".into()));
+        assert!(jmap_failure(&odd, &beside, false).body.contains("use IMAP instead"));
+        let bare = JmapProposal { imap: None, ..beside };
+        assert!(!jmap_failure(&odd, &bare, false).body.contains("IMAP"));
+    }
+
+    #[test]
+    fn a_failure_logs_its_kind_and_never_the_address() {
+        let taken = anyhow::Error::new(mailrs_sync::sign_in::JmapSignInError::Taken {
+            address: "me@example.org".into(),
+            provider: "Gmail".into(),
+        });
+        assert!(!failure_kind(&taken).contains('@'));
+        let refused = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
+        assert_eq!(failure_kind(&refused), "unauthorized");
     }
 }
