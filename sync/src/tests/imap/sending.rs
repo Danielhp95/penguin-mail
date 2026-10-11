@@ -136,8 +136,9 @@ async fn a_draft_whose_send_answer_was_lost_is_not_sent_again() {
     h.sync.send_draft(&saved.draft_id).await.unwrap_err();
     h.imap.deliver_flagged("Sent", &draft("one"), &["\\Seen"], days_ago(0));
 
-    h.sync.send_draft(&saved.draft_id).await.unwrap();
+    let sent = h.sync.send_draft(&saved.draft_id).await.unwrap();
 
+    assert_eq!(sent, None, "the caller reads the draft as sent");
     assert!(h.smtp.sent().is_empty(), "the retry sent nothing");
     assert!(undeleted(&h, "Drafts").await.is_empty(), "the draft is gone");
 }

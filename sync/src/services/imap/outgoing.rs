@@ -130,10 +130,12 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     }
 
     /// The name of the newest message in `mailbox` whose Message-ID is
-    /// `message_id`, given without angle brackets.
+    /// `message_id`, given without angle brackets. `HEADER` matches a
+    /// substring, so the search names the brackets to anchor both ends.
     async fn newest_with(&self, mailbox: &str, message_id: &str) -> Result<Option<String>, BackendError> {
         let uidvalidity = self.select(mailbox, None).await?.uidvalidity;
-        let keys = format!("HEADER Message-ID {} UNDELETED", string(message_id));
+        let anchored = format!("<{message_id}>");
+        let keys = format!("HEADER Message-ID {} UNDELETED", string(&anchored));
         Ok(self
             .api
             .search(mailbox, &keys)
@@ -202,8 +204,11 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     /// whose answer was lost leaves it for the next try. That try looks in
     /// Sent for the draft's Message-ID first, and when a copy is there it
     /// erases the draft and answers `NotFound`, the answer for a draft
-    /// already sent: the caller then files no second copy. A draft without
-    /// a Message-ID cannot be looked for and goes out again.
+    /// already sent: the caller then files no second copy. Only a server
+    /// that files what it sends (Yahoo, AOL and Zoho among the known
+    /// providers) has that copy after a lost answer; on any other the
+    /// client files it after a good answer, so the retry finds nothing and
+    /// sends again. A draft without a Message-ID goes out again too.
     pub(super) async fn send_saved(&self, draft_id: &str) -> Result<String, BackendError> {
         let raw = self
             .raw_messages(&[draft_id.to_string()])

@@ -16,7 +16,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
-- A Send Later message on an IMAP or Outlook account no longer goes out twice when the connection drops just as it is sent.
+- A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
 
 ## 1.0.7 (2026-10-10)
 

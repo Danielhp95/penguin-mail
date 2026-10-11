@@ -173,6 +173,27 @@ mod tests {
         assert_eq!(hidden, "NO login failed for \"<hidden>");
     }
 
+    /// One character is enough to cut: "p" is a fragment of "pä…" too.
+    #[test]
+    fn a_text_cut_after_the_first_character_of_the_password_loses_it() {
+        let login = Login::new("ann", "päss");
+        assert_eq!(login.hide("NO bad \"p\u{FFFD}"), "NO bad \"<hidden>");
+    }
+
+    #[test]
+    fn a_character_the_password_does_not_start_with_stays_before_a_cut() {
+        let login = Login::new("ann", "päss");
+        let text = "NO bad \"x\u{FFFD}";
+        assert_eq!(login.hide(text), text);
+    }
+
+    #[test]
+    fn a_cut_text_with_no_part_of_the_password_stays_whole() {
+        let login = Login::new("ann", "päss");
+        let text = "NO the server said \u{FFFD}\u{FFFD}";
+        assert_eq!(login.hide(text), text);
+    }
+
     #[test]
     fn a_text_under_the_limit_keeps_its_ending() {
         let login = Login::new("ann", "denied-secret");
