@@ -18,7 +18,6 @@ use mailrs_store::{Db, accounts, messages};
 use crate::fake::FakeJmap;
 use crate::{AccountServices, AccountSync, AnyMail};
 
-#[allow(dead_code)] // The feature tests use the rest.
 pub(crate) struct Harness {
     pub fake: Arc<FakeJmap>,
     pub sync: Arc<AccountSync>,
@@ -51,7 +50,6 @@ pub(crate) fn raw(message_id: &str, subject: &str) -> Vec<u8> {
     .into_bytes()
 }
 
-#[allow(dead_code)] // The feature tests use these.
 impl Harness {
     pub fn mail(&self) -> AnyMail {
         self.sync.services().mail.clone()
