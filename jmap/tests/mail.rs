@@ -274,6 +274,34 @@ async fn emails_are_fetched_in_chunks_of_the_servers_get_limit() {
     assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
 }
 
+#[tokio::test]
+async fn threads_are_fetched_in_chunks_of_the_servers_get_limit() {
+    let server = MockServer::start().await;
+    let page = |ids: &[&str]| {
+        let threads: Vec<Value> = ids.iter().map(|t| json!({"id": t, "emailIds": [format!("m{t}")]})).collect();
+        let emails: Vec<Value> = ids.iter().map(|t| json!({"id": format!("m{t}"), "threadId": t})).collect();
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Thread/get", {"accountId": "A1", "state": "t", "notFound": [], "list": threads}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": emails}, "c1"]]})
+    };
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxObjectsInGet": 2}))))
+        .mount(&server)
+        .await;
+    for answer in [page(&["a", "b"]), page(&["c"])] {
+        Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(200).set_body_json(answer))
+            .up_to_n_times(1).mount(&server).await;
+    }
+    let ids: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+    let got = client(&server).threads(&ids).await.unwrap();
+    assert_eq!((got.threads.len(), got.emails.len()), (3, 3));
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0]["methodCalls"][0][1]["ids"], json!(["a", "b"]));
+    assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
+}
+
 /// Cyrus, as Fastmail, keeps one copy of a message per account: importing
 /// the same bytes again answers `alreadyExists` with the copy it has.
 fn already_there(id: &str) -> Value {

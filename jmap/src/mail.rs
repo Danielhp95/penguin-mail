@@ -442,18 +442,27 @@ impl JmapClient {
         Ok(all)
     }
 
-    /// The threads `ids` and every message in them, with `META`.
+    /// The threads `ids` and every message in them, with `META`, a
+    /// request per `maxObjectsInGet` threads.
     pub async fn threads(&self, ids: &[String]) -> Result<Threads, JmapError> {
-        let account = self.mail_account().await?;
-        let mut request = Request::new();
-        let threads = request.call(MAIL, "Thread/get", json!({ "accountId": account, "ids": ids }));
-        let emails = request.call(MAIL, "Email/get", json!({
-            "accountId": account, "#ids": threads.result_of("Thread/get", "/list/*/emailIds"), "properties": META
-        }));
-        let mut answer = self.send(&request).await?;
-        let listed: Got<Thread> = answer.take(&threads, "Thread/get")?;
-        let got: Got<Email> = answer.take(&emails, "Email/get")?;
-        Ok(Threads { threads: listed.list, emails: got.list, not_found: listed.not_found })
+        let session = self.session().await?;
+        let account = account(&session)?;
+        let step = session.limits().max_objects_in_get.clamp(1, 500);
+        let mut all = Threads::default();
+        for chunk in ids.chunks(step) {
+            let mut request = Request::new();
+            let threads = request.call(MAIL, "Thread/get", json!({ "accountId": account, "ids": chunk }));
+            let emails = request.call(MAIL, "Email/get", json!({
+                "accountId": account, "#ids": threads.result_of("Thread/get", "/list/*/emailIds"), "properties": META
+            }));
+            let mut answer = self.send(&request).await?;
+            let listed: Got<Thread> = answer.take(&threads, "Thread/get")?;
+            let got: Got<Email> = answer.take(&emails, "Email/get")?;
+            all.threads.extend(listed.list);
+            all.emails.extend(got.list);
+            all.not_found.extend(listed.not_found);
+        }
+        Ok(all)
     }
 
     /// Patches `update` (id to patch object) and destroys `destroy`.
