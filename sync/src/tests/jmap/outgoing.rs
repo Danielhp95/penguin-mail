@@ -75,6 +75,27 @@ async fn a_draft_saved_twice_keeps_one_copy_under_a_new_id() {
 }
 
 #[tokio::test]
+async fn an_unchanged_draft_saved_again_keeps_its_one_copy() {
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    let first = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    let second = h.mail().save_draft(Some(&first.draft_id), &letter("me@example.com", ""), None).await.unwrap();
+    let listed: Vec<String> = h.mail().list_drafts().await.unwrap().into_iter().map(|d| d.draft_id).collect();
+    assert_eq!(listed, std::slice::from_ref(&second.draft_id));
+}
+
+#[tokio::test]
+async fn an_unchanged_draft_sends_as_the_server_s_own_copy_and_stays_in_sent() {
+    let h = over(FakeJmap::new().keeping_one_copy()).await;
+    let draft = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    let sent = h.mail().send_draft(&draft.draft_id).await.unwrap();
+    assert_eq!(sent, draft.draft_id, "the server keeps one copy of the same bytes");
+    let (mailboxes, keywords) = h.fake.with(|s| (s.emails[&sent].mailbox_ids.clone(), s.emails[&sent].keywords.clone()));
+    assert_eq!(mailboxes.into_iter().collect::<Vec<_>>(), [h.fake.mailbox("sent")]);
+    assert!(!keywords.contains("$draft"));
+    assert!(h.mail().list_drafts().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn a_draft_whose_old_copy_stays_still_saves_and_tries_the_old_one_again() {
     let h = fastmail().await;
     let first = h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();

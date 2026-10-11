@@ -90,6 +90,9 @@ pub struct JmapState {
     /// The most hits one `Email/query` answers, whatever limit it was given:
     /// RFC 8620 5.5 lets a server return fewer than asked.
     pub query_clamp: Option<usize>,
+    /// Refuses `inMailbox` under an `OR` or a `NOT`, as Apache James 3.9
+    /// does ("Nested inMailbox filters are not supported").
+    pub flat_mailbox_filters: bool,
     /// Messages the server refuses to change or destroy, as `forbidden`.
     pub refused: BTreeSet<String>,
     /// The error type the server gives every submission, after the import
@@ -98,6 +101,9 @@ pub struct JmapState {
     /// The next submission goes out, and then its answer is lost on the
     /// way back, as a dropped connection does.
     pub lose_submission_answer: bool,
+    /// Keeps one copy of the same bytes, as Cyrus and Fastmail do: an
+    /// import of a message already there answers that message.
+    pub one_copy: bool,
     /// A mailbox id and the message count it claims, for a mailbox too big
     /// to fill in a test.
     pub total_override: Option<(String, u64)>,
@@ -366,9 +372,11 @@ impl FakeJmap {
             calls: Vec::new(),
             oversized: BTreeSet::new(),
             query_clamp: None,
+            flat_mailbox_filters: false,
             refused: BTreeSet::new(),
             submission_refusal: None,
             lose_submission_answer: false,
+            one_copy: false,
             total_override: None,
             log: Vec::new(),
             state: 0,
@@ -390,6 +398,13 @@ impl FakeJmap {
 
     fn called(&self, name: &str) {
         self.with(|s| s.calls.push(name.to_string()));
+    }
+
+    /// A server that refuses a mailbox condition under `OR` or `NOT`, as
+    /// Apache James does.
+    pub fn refusing_mailboxes_under_or(self) -> FakeJmap {
+        self.with(|s| s.flat_mailbox_filters = true);
+        self
     }
 
     /// A server that answers at most `most` hits to a query.
@@ -468,6 +483,12 @@ impl FakeJmap {
             s.session.capabilities.remove(capability);
             s.session.primary_accounts.remove(capability);
         });
+        self
+    }
+
+    /// Keeps one copy of the same bytes per account, as Cyrus does.
+    pub fn keeping_one_copy(self) -> FakeJmap {
+        self.with(|s| s.one_copy = true);
         self
     }
 
@@ -570,8 +591,20 @@ impl FakeJmap {
         self.pushed.notify_one();
     }
 
+    /// Imports the blob. A server that keeps one copy of the same bytes
+    /// files the copy already there instead, as the client does after an
+    /// `alreadyExists`.
     fn import_now(s: &mut JmapState, blob_id: &str, mailboxes: &[String], keywords: &[&str]) -> Answer<Imported> {
         let raw = s.blobs.get(blob_id).cloned().ok_or(JmapError::NotFound)?;
+        if let Some((id, email)) = s.emails.iter_mut().find(|(_, e)| e.raw == raw).filter(|_| s.one_copy) {
+            let (id, before) = (id.clone(), email.clone());
+            email.mailbox_ids.extend(mailboxes.iter().cloned());
+            email.keywords.extend(keywords.iter().map(|k| k.to_string()));
+            let after = email.clone();
+            s.settle(Some(&before), Some(&after));
+            s.record("Email", &id, Op::Updated);
+            return Ok(Imported { id, thread_id: after.thread_id });
+        }
         let places: BTreeSet<String> = mailboxes.iter().cloned().collect();
         s.check_places(&places).map_err(|refused| refused.error())?;
         let id = s.id("M");
@@ -588,6 +621,17 @@ impl FakeJmap {
         let made = s.emails.get(&id).cloned();
         s.settle(None, made.as_ref());
         Ok(Imported { id, thread_id: thread })
+    }
+}
+
+/// Whether `filter` holds a mailbox condition under an `OR` or a `NOT`.
+fn mailbox_under_or(filter: &Value, under: bool) -> bool {
+    match filter.get("operator").and_then(Value::as_str) {
+        Some(op) => {
+            let under = under || op != "AND";
+            filter["conditions"].as_array().is_some_and(|c| c.iter().any(|c| mailbox_under_or(c, under)))
+        }
+        None => under && (filter.get("inMailbox").is_some() || filter.get("inMailboxOtherThan").is_some()),
     }
 }
 
@@ -640,6 +684,12 @@ impl JmapApi for FakeJmap {
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         self.called("Email/query");
         self.with(|s| {
+            if s.flat_mailbox_filters && query.filter.as_ref().is_some_and(|f| mailbox_under_or(f, false)) {
+                return Err(JmapError::Method {
+                    kind: "unsupportedFilter".into(),
+                    description: "Nested inMailbox filters are not supported".into(),
+                });
+            }
             let mut found: Vec<(&String, &FakeEmail)> = Vec::new();
             for (id, e) in &s.emails {
                 if query.filter.as_ref().map_or(Ok(true), |f| s.matches(e, f))? {
@@ -825,7 +875,7 @@ impl JmapApi for FakeJmap {
             let made = FakeJmap::import_now(s, blob_id, mailbox_ids, keywords)?;
             // As the client does: the old draft goes in a second request,
             // and a refusal there comes back beside the new message.
-            let leftover = destroy.and_then(|old| {
+            let leftover = destroy.filter(|old| *old != made.id).and_then(|old| {
                 if s.refused.contains(old) {
                     return Some(JmapError::Forbidden(String::new()));
                 }
@@ -865,10 +915,12 @@ impl JmapApi for FakeJmap {
                 Some(_) => &["$seen", "$draft"],
                 None => &["$seen"],
             };
+            let had = s.one_copy && s.blobs.get(&submission.blob_id).is_some_and(|raw| s.emails.values().any(|e| &e.raw == raw));
             let made = FakeJmap::import_now(s, &submission.blob_id, &[home], keywords)?;
             if let Some(kind) = s.submission_refusal.clone() {
-                // The client destroys the copy when the submission fails.
-                if let Some(gone) = s.emails.remove(&made.id) {
+                // The client destroys the copy when the submission fails,
+                // unless the server had it before.
+                if let Some(gone) = (!had).then(|| s.emails.remove(&made.id)).flatten() {
                     s.record("Email", &made.id, Op::Destroyed);
                     s.settle(Some(&gone), None);
                 }

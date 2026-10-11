@@ -273,3 +273,67 @@ async fn emails_are_fetched_in_chunks_of_the_servers_get_limit() {
     assert_eq!(sent[0]["methodCalls"][0][1]["ids"], json!(["a", "b"]));
     assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
 }
+
+/// Cyrus, as Fastmail, keeps one copy of a message per account: importing
+/// the same bytes again answers `alreadyExists` with the copy it has.
+fn already_there(id: &str) -> Value {
+    json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": id}}}, "c0"]
+    ]})
+}
+
+#[tokio::test]
+async fn saving_an_unchanged_draft_keeps_the_copy_the_server_has() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        already_there("OLD"),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "updated": {"OLD": null}}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "OLD", "threadId": "T1"}]}, "c1"]]}),
+    ]).await;
+    let saved = client(&server).import("G1", &["drafts".into()], &["$draft"], Some("OLD")).await.unwrap();
+    assert_eq!((saved.email.id.as_str(), saved.email.thread_id.as_str()), ("OLD", "T1"));
+    assert_eq!(saved.leftover, None);
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2, "the copy is kept, not destroyed");
+    let update = &sent[1]["methodCalls"][0][1]["update"]["OLD"];
+    assert_eq!((&update["mailboxIds/drafts"], &update["keywords/$draft"]), (&json!(true), &json!(true)));
+}
+
+#[tokio::test]
+async fn sending_bytes_the_server_has_submits_its_copy() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"],
+            ["Email/set", {"accountId": "A1", "updated": {"D1": null}}, "c1"]]}),
+    ]).await;
+    let imported = client(&server).submit(&a_submission()).await.unwrap();
+    assert_eq!((imported.id.as_str(), imported.thread_id.as_str()), ("D1", "T1"));
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    let set = &sent[1]["methodCalls"][1][1];
+    assert_eq!(set["create"]["s"]["emailId"], "D1");
+    assert_eq!(set["onSuccessUpdateEmail"]["#s"]["mailboxIds/sent"], true);
+    assert_eq!(set["onSuccessUpdateEmail"]["#s"]["keywords/$draft"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_refused_submission_of_the_server_s_copy_leaves_that_copy() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "notCreated": {"m": {"type": "alreadyExists", "existingId": "D1"}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "invalidProperties"}}}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "forbiddenFrom"}}}, "c1"]]}),
+    ]).await;
+    let refused = client(&server).submit(&a_submission()).await.unwrap_err();
+    assert_eq!(refused, mailrs_jmap::JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
+    assert_eq!(posts(&server).await.len(), 2, "no destroy of a message the send did not make");
+}

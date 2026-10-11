@@ -289,16 +289,44 @@ struct ImportAnswer {
     #[serde(default)]
     created: Option<BTreeMap<String, Imported>>,
     #[serde(default)]
-    not_created: Option<BTreeMap<String, SetError>>,
+    not_created: Option<BTreeMap<String, ImportRefusal>>,
+}
+
+/// What one import did.
+enum Outcome {
+    Made(Imported),
+    /// The server keeps one copy of a message per account and already has
+    /// these bytes, under this id (RFC 8621 section 4.8, `alreadyExists`).
+    /// Cyrus, and so Fastmail, answers this.
+    Exists(String),
 }
 
 impl ImportAnswer {
-    fn one(self, key: &str) -> Result<Imported, JmapError> {
-        if let Some(refused) = self.not_created.as_ref().and_then(|n| n.get(key)) {
-            return Err(refused.error());
+    fn one(mut self, key: &str) -> Result<Outcome, JmapError> {
+        if let Some(refused) = self.not_created.as_mut().and_then(|n| n.remove(key)) {
+            return match (refused.kind.as_str(), refused.existing_id) {
+                ("alreadyExists", Some(existing)) => Ok(Outcome::Exists(existing)),
+                _ => Err(method_error(&refused.kind, refused.description.as_deref())),
+            };
         }
-        self.created.and_then(|mut c| c.remove(key)).ok_or_else(|| JmapError::Decode("the import created nothing".into()))
+        self.created
+            .and_then(|mut c| c.remove(key))
+            .map(Outcome::Made)
+            .ok_or_else(|| JmapError::Decode("the import created nothing".into()))
     }
+}
+
+/// A `notCreated` entry of an import, which may name the copy the server
+/// already has.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportRefusal {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    existing_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -497,12 +525,44 @@ impl JmapClient {
         let import = request.call(MAIL, "Email/import", json!({
             "accountId": account, "emails": { "m": { "blobId": blob_id, "mailboxIds": mailboxes, "keywords": marks } }
         }));
-        let email = self.send(&request).await?.take::<ImportAnswer>(&import, "Email/import")?.one("m")?;
-        let leftover = match destroy {
+        let email = match self.send(&request).await?.take::<ImportAnswer>(&import, "Email/import")?.one("m")? {
+            Outcome::Made(email) => email,
+            Outcome::Exists(existing) => self.file_existing(&account, &existing, mailbox_ids, keywords).await?,
+        };
+        // The server's copy of unchanged bytes is the old draft itself.
+        let leftover = match destroy.filter(|old| *old != email.id) {
             Some(old) => self.destroy_email(old).await.err(),
             None => None,
         };
         Ok(Saved { email, leftover })
+    }
+
+    /// Adds `mailbox_ids` and `keywords` to the copy the server already
+    /// has, as an import of the same bytes would have set them, and answers
+    /// it with its thread.
+    async fn file_existing(&self, account: &str, id: &str, mailbox_ids: &[String], keywords: &[&str]) -> Result<Imported, JmapError> {
+        let mut patch = Map::new();
+        for mailbox in mailbox_ids {
+            patch.insert(format!("mailboxIds/{}", pointer(mailbox)), json!(true));
+        }
+        for keyword in keywords {
+            patch.insert(format!("keywords/{}", pointer(keyword)), json!(true));
+        }
+        let mut request = Request::new();
+        let set = request.call(MAIL, "Email/set", json!({ "accountId": account, "update": { id: patch } }));
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
+        let mut answer = self.send(&request).await?;
+        let set: SetResponse = answer.take(&set, "Email/set")?;
+        if let Some(refused) = set.refusal(id) {
+            return Err(refused.error());
+        }
+        self.found_copy(answer.take(&got, "Email/get")?)
+    }
+
+    /// The one message an `Email/get` of an existing copy answers.
+    fn found_copy(&self, got: Got<Email>) -> Result<Imported, JmapError> {
+        let email = got.list.into_iter().next().ok_or(JmapError::NotFound)?;
+        Ok(Imported { id: email.id, thread_id: email.thread_id })
     }
 
     /// Destroys one message, and says why when the server refuses.
@@ -555,9 +615,15 @@ impl JmapClient {
             moved.insert("keywords/$draft".into(), Value::Null);
             args["onSuccessUpdateEmail"] = json!({ "#s": moved });
         }
-        let submitted = request.call(SUBMISSION, "EmailSubmission/set", args);
+        let submitted = request.call(SUBMISSION, "EmailSubmission/set", args.clone());
         let mut answer = self.send(&request).await?;
-        let email = answer.take::<ImportAnswer>(&import, "Email/import")?.one("m")?;
+        let email = match answer.take::<ImportAnswer>(&import, "Email/import")?.one("m")? {
+            Outcome::Made(email) => email,
+            // The submission named a copy that was never made, so nothing
+            // went out. Send the server's own copy instead, and leave it be
+            // if that is refused: this send did not make it.
+            Outcome::Exists(existing) => return self.submit_existing(&account, &existing, args).await,
+        };
         let refused = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
             Ok(set) => set.not_created.as_ref().and_then(|n| n.get("s")).map(SetError::error),
             Err(error) => Some(error),
@@ -570,6 +636,22 @@ impl JmapClient {
                 tracing::warn!("a refused submission left its imported copy on the server");
             }
             return Err(error);
+        }
+        Ok(email)
+    }
+
+    /// Submits the message the server already has as `id`, with the same
+    /// envelope and filing as `args` asked for a new copy.
+    async fn submit_existing(&self, account: &str, id: &str, mut args: Value) -> Result<Imported, JmapError> {
+        args["create"]["s"]["emailId"] = json!(id);
+        let mut request = Request::new();
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
+        let submitted = request.call(SUBMISSION, "EmailSubmission/set", args);
+        let mut answer = self.send(&request).await?;
+        let email = self.found_copy(answer.take(&got, "Email/get")?)?;
+        let set: SetResponse = answer.take(&submitted, "EmailSubmission/set")?;
+        if let Some(refused) = set.not_created.as_ref().and_then(|n| n.get("s")) {
+            return Err(refused.error());
         }
         Ok(email)
     }

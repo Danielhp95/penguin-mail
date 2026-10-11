@@ -140,7 +140,9 @@ impl<J: JmapApi> Jmap<J> {
             Some(sent) => sent,
             None => self.send_raw(&raw.bytes).await?,
         };
-        if self.drop_draft(draft_id).await.is_err() {
+        // A server that keeps one copy of the same bytes sent the draft
+        // itself and filed it in Sent: there is nothing left to drop.
+        if sent != draft_id && self.drop_draft(draft_id).await.is_err() {
             tracing::warn!("the draft stayed after its message went");
         }
         Ok(sent)

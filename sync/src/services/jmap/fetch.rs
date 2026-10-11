@@ -30,18 +30,39 @@ pub(super) fn received_millis(email: &Email) -> i64 {
         .unwrap_or_default()
 }
 
-/// The window's filter: mail received in the last `days` days, or sitting
-/// in `inbox` whatever its age. A window of `mailrs_sync::ALL_MAIL` (0
-/// days) takes every message, which no filter says best.
-pub(super) fn window_filter(days: i64, inbox: Option<&str>) -> Option<Value> {
+/// The window's filters, listed one after the other: mail received in the
+/// last `days` days, then the older mail in `inbox`, which the window holds
+/// whatever its age. One `OR` would say it in one filter, but Apache James
+/// refuses a mailbox under `OR`. The two never overlap (`after` takes the
+/// instant itself, `before` does not), and in this order the whole listing
+/// stays newest first. A window of `mailrs_sync::ALL_MAIL` (0 days) takes
+/// every message, which no filter says best.
+pub(super) fn window_filters(days: i64, inbox: Option<&str>) -> Vec<Option<Value>> {
     if days <= 0 {
-        return None;
+        return vec![None];
     }
     let after = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    Some(match inbox {
-        Some(inbox) => json!({ "operator": "OR", "conditions": [{ "after": after }, { "inMailbox": inbox }] }),
-        None => json!({ "after": after }),
-    })
+    let mut filters = vec![Some(json!({ "after": after }))];
+    if let Some(inbox) = inbox {
+        filters.push(Some(json!({ "inMailbox": inbox, "before": after })));
+    }
+    filters
+}
+
+/// A backfill cursor: which of the window's filters, and the position in
+/// its listing. The first filter's cursor is the bare position.
+fn cursor_of(filter: usize, position: u64) -> String {
+    match filter {
+        0 => position.to_string(),
+        _ => format!("{filter}:{position}"),
+    }
+}
+
+fn parse_cursor(text: &str) -> Option<(usize, u64)> {
+    match text.split_once(':') {
+        Some((filter, position)) => Some((filter.parse().ok()?, position.parse().ok()?)),
+        None => Some((0, text.parse().ok()?)),
+    }
 }
 
 fn address(from: &EmailAddress) -> Option<Address> {
@@ -90,18 +111,31 @@ impl<J: JmapApi> Jmap<J> {
 
     pub(super) async fn backfill_page(&self, days: i64, cursor: Option<&str>) -> Result<Backfill, BackendError> {
         self.listed().await?;
-        let position = match cursor {
-            Some(text) => text.parse::<u64>().map_err(|_| BackendError::StateLost)?,
-            None => 0,
+        let (mut at, mut position) = match cursor {
+            Some(text) => parse_cursor(text).ok_or(BackendError::StateLost)?,
+            None => (0, 0),
         };
-        let query = EmailQuery { filter: window_filter(days, self.inbox_id().as_deref()), position, limit: PAGE, total: false };
-        let found = self.api().query(&query).await.map_err(backend)?;
-        let got = found.hits.len();
-        let refs = found.hits.into_iter().map(remote_ref).collect();
-        // A server may answer fewer hits than asked, so only an empty page
-        // is the last one.
-        let next = (got > 0).then(|| (position + got as u64).to_string());
-        Ok(Backfill { refs, next })
+        let filters = window_filters(days, self.inbox_id().as_deref());
+        let mut refs = Vec::new();
+        // A page fills from one filter and then the next, so a short window
+        // still brings the Inbox's older mail in the first page.
+        while let Some(filter) = filters.get(at) {
+            if refs.len() >= PAGE {
+                return Ok(Backfill { refs, next: Some(cursor_of(at, position)) });
+            }
+            let query = EmailQuery { filter: filter.clone(), position, limit: PAGE - refs.len(), total: false };
+            let found = self.api().query(&query).await.map_err(backend)?;
+            // A server may answer fewer hits than asked, so only an empty
+            // answer ends a filter's listing.
+            match found.hits.is_empty() {
+                true => (at, position) = (at + 1, 0),
+                false => {
+                    position += found.hits.len() as u64;
+                    refs.extend(found.hits.into_iter().map(remote_ref));
+                }
+            }
+        }
+        Ok(Backfill { refs, next: None })
     }
 
     /// Every id `filter` matches, up to `MOST_IDS`, `IDS_PER_CALL` a call.
@@ -124,16 +158,31 @@ impl<J: JmapApi> Jmap<J> {
     pub(super) async fn ids_in(&self, days: Option<i64>, mailbox: Option<&str>) -> Result<Vec<RemoteRef>, BackendError> {
         self.listed().await?;
         let inbox = self.inbox_id();
+        let only = |mailbox: &str| json!({ "inMailbox": mailbox });
         // A mailbox other than the Inbox lists what the window holds, which
         // includes the whole Inbox: a message there is stored whatever its age.
-        let window = days.and_then(|days| window_filter(days, inbox.as_deref()));
-        let filter = match (mailbox, window) {
-            (Some(mailbox), _) if Some(mailbox) == inbox.as_deref() => Some(json!({ "inMailbox": mailbox })),
-            (Some(mailbox), Some(window)) => Some(json!({ "operator": "AND", "conditions": [{ "inMailbox": mailbox }, window] })),
-            (Some(mailbox), None) => Some(json!({ "inMailbox": mailbox })),
-            (None, window) => window,
+        let filters = match (mailbox, days) {
+            (Some(mailbox), _) if Some(mailbox) == inbox.as_deref() => vec![Some(only(mailbox))],
+            (Some(mailbox), Some(days)) => window_filters(days, inbox.as_deref())
+                .into_iter()
+                .map(|window| match window {
+                    Some(window) => Some(json!({ "operator": "AND", "conditions": [only(mailbox), window] })),
+                    None => Some(only(mailbox)),
+                })
+                .collect(),
+            (Some(mailbox), None) => vec![Some(only(mailbox))],
+            (None, Some(days)) => window_filters(days, inbox.as_deref()),
+            (None, None) => vec![None],
         };
-        self.every_id(filter).await
+        let mut out = Vec::new();
+        for filter in filters {
+            out.extend(self.every_id(filter).await?);
+            if out.len() >= MOST_IDS {
+                out.truncate(MOST_IDS);
+                break;
+            }
+        }
+        Ok(out)
     }
 
     /// Every message in the Inbox, refused as `Unsupported` past

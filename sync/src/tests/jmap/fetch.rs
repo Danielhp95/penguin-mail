@@ -22,6 +22,21 @@ async fn the_window_holds_recent_mail_and_the_whole_inbox() {
 }
 
 #[tokio::test]
+async fn a_server_that_refuses_a_mailbox_under_or_still_lists_the_window() {
+    let h = over(FakeJmap::new().refusing_mailboxes_under_or()).await;
+    let recent = h.fake.deliver("archive", &raw("j1@x", "Recent"), days_ago(2));
+    let old_inbox = h.fake.deliver("inbox", &raw("j2@x", "Old but in the inbox"), days_ago(400));
+    let old_archive = h.fake.deliver("archive", &raw("j3@x", "Old"), days_ago(400));
+    let work = h.fake.add_mailbox("Work", None);
+    h.fake.with(|s| s.emails.get_mut(&old_inbox).unwrap().mailbox_ids.insert(work.clone()));
+    h.bootstrap_all().await;
+    assert!(h.stored(&recent).await && h.stored(&old_inbox).await);
+    assert!(!h.stored(&old_archive).await);
+    let in_work = h.mail().window_ids(30, Some(&work)).await.unwrap();
+    assert_eq!(in_work.into_iter().map(|r| r.id).collect::<Vec<_>>(), [old_inbox]);
+}
+
+#[tokio::test]
 async fn backfill_pages_on_until_the_last_page() {
     let h = fastmail().await;
     for n in 0..205 {
@@ -32,8 +47,28 @@ async fn backfill_pages_on_until_the_last_page() {
     assert_eq!(first.refs.len(), 200);
     let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
     assert_eq!(second.refs.len(), 5);
-    let last = mail.backfill(30, second.next.as_deref()).await.unwrap();
-    assert!(last.refs.is_empty() && last.next.is_none());
+    assert!(second.next.is_none(), "a page that reaches the end of every filter is the last");
+}
+
+#[tokio::test]
+async fn a_page_runs_on_from_recent_mail_into_the_inbox_s_older_mail() {
+    let h = fastmail().await;
+    for n in 0..150 {
+        h.fake.deliver("archive", &raw(&format!("r{n}@x"), "Recent"), days_ago(1));
+    }
+    for n in 0..100 {
+        h.fake.deliver("inbox", &raw(&format!("o{n}@x"), "Old"), days_ago(400));
+    }
+    let mail = h.mail();
+    let first = mail.backfill(30, None).await.unwrap();
+    assert_eq!(first.refs.len(), 200);
+    let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
+    assert_eq!(second.refs.len(), 50);
+    assert!(second.next.is_none());
+    let mut all: Vec<String> = first.refs.into_iter().chain(second.refs).map(|r| r.id).collect();
+    all.sort();
+    all.dedup();
+    assert_eq!(all.len(), 250, "no message twice and none left out");
 }
 
 #[tokio::test]
