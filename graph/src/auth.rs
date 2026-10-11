@@ -97,11 +97,24 @@ impl Granted {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AccessToken {
     pub token: String,
     pub expires_at: Instant,
     pub granted: Option<Granted>,
+}
+
+// Tokens and the PKCE verifier sign in as the person, and the id token's
+// username is their address, so Debug output, which can end up in a log
+// or a panic message, hides them.
+impl std::fmt::Debug for AccessToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessToken")
+            .field("token", &"<hidden>")
+            .field("expires_at", &self.expires_at)
+            .field("granted", &self.granted)
+            .finish()
+    }
 }
 
 impl AccessToken {
@@ -135,7 +148,7 @@ impl IdToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tokens {
     pub access: AccessToken,
     /// Microsoft sends a new one with most answers and the old one stops
@@ -144,10 +157,29 @@ pub struct Tokens {
     pub id_token: Option<IdToken>,
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokens")
+            .field("access", &self.access)
+            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "<hidden>"))
+            .field("tenant", &self.id_token.as_ref().map(|id| id.tenant))
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
 pub struct Pkce {
     pub verifier: String,
     pub challenge: String,
+}
+
+impl std::fmt::Debug for Pkce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pkce")
+            .field("verifier", &"<hidden>")
+            .field("challenge", &self.challenge)
+            .finish()
+    }
 }
 
 impl Pkce {
@@ -626,4 +658,26 @@ pub async fn authorize(
         refresh_token,
         granted,
     })
+}
+
+#[cfg(test)]
+mod hidden_tests {
+    use super::*;
+
+    #[test]
+    fn debug_output_leaves_out_tokens_the_verifier_and_the_username() {
+        let access = AccessToken { token: "EwB.access".into(), expires_at: Instant::now(), granted: None };
+        let id_token = IdToken { tenant: Tenant::Personal, username: Some("dana@outlook.com".into()) };
+        let tokens = Tokens {
+            access: access.clone(),
+            refresh_token: Some("M.C5.refresh".into()),
+            id_token: Some(id_token),
+        };
+        let pkce = Pkce::generate();
+        let shown = format!("{access:?} {tokens:?} {pkce:?}");
+        assert!(!shown.contains("EwB.access"), "{shown}");
+        assert!(!shown.contains("M.C5.refresh"), "{shown}");
+        assert!(!shown.contains("dana@outlook.com"), "{shown}");
+        assert!(!shown.contains(&pkce.verifier), "{shown}");
+    }
 }

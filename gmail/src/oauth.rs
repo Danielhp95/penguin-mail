@@ -58,7 +58,7 @@ pub const SIGN_IN_SCOPES: [&str; 7] = [
     DRIVE_FILE_SCOPE,
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AccessToken {
     pub token: String,
     pub expires_at: Instant,
@@ -66,6 +66,18 @@ pub struct AccessToken {
     /// when the answer carried no `scope` field, which an old refresh
     /// token's first use after an upgrade still can.
     pub granted: Option<Granted>,
+}
+
+// Tokens and the PKCE verifier sign in as the person, so their Debug
+// output, which can end up in a log or a panic message, hides them.
+impl std::fmt::Debug for AccessToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessToken")
+            .field("token", &"<hidden>")
+            .field("expires_at", &self.expires_at)
+            .field("granted", &self.granted)
+            .finish()
+    }
 }
 
 /// The scopes a token carries, parsed from Google's space-separated
@@ -131,17 +143,35 @@ impl AccessToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tokens {
     pub access: AccessToken,
     pub refresh_token: String,
 }
 
+impl std::fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokens")
+            .field("access", &self.access)
+            .field("refresh_token", &"<hidden>")
+            .finish()
+    }
+}
+
 /// A PKCE verifier and its S256 challenge.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Pkce {
     pub verifier: String,
     pub challenge: String,
+}
+
+impl std::fmt::Debug for Pkce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pkce")
+            .field("verifier", &"<hidden>")
+            .field("challenge", &self.challenge)
+            .finish()
+    }
 }
 
 impl Pkce {
@@ -457,6 +487,22 @@ mod build_client_tests {
         let shown = format!("{client:?}");
         assert!(!shown.contains("GOCSPX-x"));
         assert!(!shown.contains("id.apps.googleusercontent.com"));
+    }
+
+    #[test]
+    fn debug_output_leaves_out_tokens_and_the_verifier() {
+        let access = AccessToken { token: "ya29.access".into(), expires_at: Instant::now(), granted: None };
+        let tokens = Tokens { access: access.clone(), refresh_token: "1//refresh".into() };
+        let authorized = crate::Authorized {
+            email: "dana@gmail.com".into(),
+            refresh_token: "1//refresh".into(),
+            granted: None,
+        };
+        let pkce = Pkce::generate();
+        let shown = format!("{access:?} {tokens:?} {authorized:?} {pkce:?}");
+        assert!(!shown.contains("ya29.access"), "{shown}");
+        assert!(!shown.contains("1//refresh"), "{shown}");
+        assert!(!shown.contains(&pkce.verifier), "{shown}");
     }
 }
 

@@ -989,13 +989,25 @@ pub async fn one_click_unsubscribe(url: &str) -> Result<(), OneClickError> {
 }
 
 /// The result of a completed consent flow.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Authorized {
     pub email: String,
     pub refresh_token: String,
     /// The scopes Google's token answer said it granted. `None` when the
     /// answer carried no `scope` field.
     pub granted: Option<Granted>,
+}
+
+// The refresh token signs in as the person and the address names them, so
+// Debug output, which can end up in a log, hides both.
+impl std::fmt::Debug for Authorized {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Authorized")
+            .field("email", &"<hidden>")
+            .field("refresh_token", &"<hidden>")
+            .field("granted", &self.granted)
+            .finish()
+    }
 }
 
 /// Runs the consent flow for one account, asking for every
