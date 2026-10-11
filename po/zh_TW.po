@@ -97,7 +97,9 @@ msgid ""
 "Every control named for screen readers and reachable from the keyboard, in "
 "American English, British English, French, German, Spanish, European "
 "Portuguese and Traditional Chinese (Taiwan)"
-msgstr "每個控制項都為螢幕閱讀器命名，並可用鍵盤操作，提供美式英文、英式英文、法文、德文、西班牙文、歐洲葡萄牙文與正體中文（台灣）"
+msgstr ""
+"每個控制項都為螢幕閱讀器命名，並可用鍵盤操作，提供美式英文、英式英文、法文、"
+"德文、西班牙文、歐洲葡萄牙文與正體中文（台灣）"
 
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:35
 msgid ""
@@ -316,34 +318,24 @@ msgid "Could not sign in: {reason}"
 msgstr "無法登入：{reason}"
 
 #: app/src/add_account.rs:796
-#, fuzzy
-#| msgid "The server refused the password."
 msgid "The outgoing server refused the outgoing password."
-msgstr "伺服器拒絕此密碼。"
+msgstr "寄件伺服器拒絕寄件密碼。"
 
 #: app/src/add_account.rs:799
-#, fuzzy
-#| msgid "The server refused the password"
 msgid "The outgoing server refused its password"
-msgstr "伺服器拒絕此密碼"
+msgstr "寄件伺服器拒絕其密碼"
 
 #: app/src/add_account.rs:800
-#, fuzzy
-#| msgid "Check the password, then choose Sign In."
 msgid "Check the outgoing password in Server Settings, then choose Sign In."
-msgstr "請檢查密碼，再選擇 [登入]。"
+msgstr "請在 [伺服器設定] 中檢查寄件密碼，再選擇 [登入]。"
 
 #: app/src/add_account.rs:804
-#, fuzzy
-#| msgid "The server refused the password."
 msgid "The outgoing server refused the password."
-msgstr "伺服器拒絕此密碼。"
+msgstr "寄件伺服器拒絕此密碼。"
 
 #: app/src/add_account.rs:812
-#, fuzzy
-#| msgid "The server refused the password."
 msgid "The incoming server refused the password."
-msgstr "伺服器拒絕此密碼。"
+msgstr "收件伺服器拒絕此密碼。"
 
 #: app/src/add_account.rs:820
 msgid "The server refused the password."
@@ -3369,22 +3361,20 @@ msgid "1 year"
 msgstr "1 年"
 
 #: app/src/settings/mod.rs:751
-#, fuzzy
-#| msgid "1 year"
 msgid "2 years"
-msgstr "1 年"
+msgstr "2 年"
 
 #: app/src/settings/mod.rs:752
-#, fuzzy
-#| msgid "1 year"
 msgid "5 years"
-msgstr "1 年"
+msgstr "5 年"
 
 #: app/src/settings/mod.rs:774
 msgid ""
 "Every message stays on this computer. A large account takes a lot of disk "
 "space and memory, and its older mail downloads in the background."
 msgstr ""
+"所有郵件都會保存在此電腦上。大型帳號會佔用大量磁碟空間和記憶體，較舊的郵件會"
+"在背景下載。"
 
 #: app/src/settings/mod.rs:776
 msgid "Everything in your inbox stays too, and older mail remains searchable"
@@ -3899,16 +3889,12 @@ msgid "Leave it empty to use the incoming user name."
 msgstr "留空以使用收件使用者名稱。"
 
 #: app/src/ui/add_account.rs:1400 app/src/ui/add_account.rs:1402
-#, fuzzy
-#| msgid "Outgoing Mail"
 msgid "Outgoing Password"
-msgstr "寄件郵件"
+msgstr "寄件密碼"
 
 #: app/src/ui/add_account.rs:1404
-#, fuzzy
-#| msgid "Leave it empty to use the incoming user name."
 msgid "Leave it empty to use the password you sign in with."
-msgstr "留空以使用收件使用者名稱。"
+msgstr "留空以使用登入時的密碼。"
 
 #: app/src/ui/add_account.rs:1407
 msgid "Incoming Mail"
@@ -3927,10 +3913,8 @@ msgid "Sign-In"
 msgstr "登入"
 
 #: app/src/ui/add_account.rs:1460
-#, fuzzy
-#| msgid "Leave them empty to sign in with your address."
 msgid "Leave the user names empty to sign in with your address."
-msgstr "留空以使用電子郵件地址登入。"
+msgstr "留空使用者名稱以使用電子郵件地址登入。"
 
 #: app/src/ui/add_account.rs:1472
 msgid "Use These Settings"
@@ -3999,6 +3983,8 @@ msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
 msgstr ""
+"正在使用自訂的 Google 用戶端登入。Google 的登入頁面已在瀏覽器中開啟。在該頁面"
+"完成後，此視窗會繼續。"
 
 #: app/src/ui/add_account.rs:2841
 msgid "Link copied"
@@ -10170,6 +10156,8 @@ msgid ""
 "{set} is set but {missing} is not. Set both to sign in with your own Google "
 "client, or neither to use Penguin Mail's."
 msgstr ""
+"已設定 {set}，但尚未設定 {missing}。請兩者都設定以使用自訂的 Google 用戶端登"
+"入，或兩者都不設定以使用 Penguin Mail 內建的。"
 
 #: sync/src/triage.rs:53
 msgid "Mark read"
