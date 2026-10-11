@@ -1,0 +1,117 @@
+//! Contacts over JMAP (RFC 9610): address books, and cards in JSContact
+//! (RFC 9553), read whole as JSON so a field this client does not know
+//! survives an edit. Contacts can live in an account of their own.
+
+use serde::Deserialize;
+use serde_json::{Map, Value, json};
+
+use crate::mail::{ChangesResponse, Got, SetResponse};
+use crate::session::CONTACTS;
+use crate::{JmapClient, JmapError, Request};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddressBook {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CardsPage {
+    pub state: String,
+    pub cards: Vec<Value>,
+    pub position: u64,
+    pub total: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CardChanges {
+    pub changes: ChangesResponse,
+    pub cards: Vec<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CardWrite {
+    Create(Map<String, Value>),
+    Update { id: String, patch: Map<String, Value> },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CardQuery {
+    #[serde(default)]
+    position: u64,
+    #[serde(default)]
+    total: Option<u64>,
+}
+
+impl JmapClient {
+    async fn contacts_account(&self) -> Result<String, JmapError> {
+        let session = self.session().await?;
+        session.account_for(CONTACTS).map(str::to_string).ok_or_else(|| JmapError::UnknownCapability(CONTACTS.into()))
+    }
+
+    pub async fn address_books(&self) -> Result<Vec<AddressBook>, JmapError> {
+        let account = self.contacts_account().await?;
+        let mut request = Request::new();
+        let id = request.call(CONTACTS, "AddressBook/get", json!({ "accountId": account, "ids": null }));
+        Ok(self.send(&request).await?.take::<Got<AddressBook>>(&id, "AddressBook/get")?.list)
+    }
+
+    /// One page of every card, and the ContactCard state the page read.
+    pub async fn cards_page(&self, position: u64, limit: usize) -> Result<CardsPage, JmapError> {
+        let account = self.contacts_account().await?;
+        let mut request = Request::new();
+        let query = request.call(CONTACTS, "ContactCard/query", json!({
+            "accountId": account, "position": position, "limit": limit, "calculateTotal": true
+        }));
+        let get = request.call(CONTACTS, "ContactCard/get", json!({
+            "accountId": account, "#ids": query.result_of("ContactCard/query", "/ids")
+        }));
+        let mut answer = self.send(&request).await?;
+        let listed: CardQuery = answer.take(&query, "ContactCard/query")?;
+        let got: Got<Value> = answer.take(&get, "ContactCard/get")?;
+        Ok(CardsPage { state: got.state, cards: got.list, position: listed.position, total: listed.total })
+    }
+
+    /// The cards changed since `since`, at most `max`, fetched in the same
+    /// request.
+    pub async fn card_changes(&self, since: &str, max: usize) -> Result<CardChanges, JmapError> {
+        let account = self.contacts_account().await?;
+        let mut request = Request::new();
+        let changes = request.call(CONTACTS, "ContactCard/changes", json!({ "accountId": account, "sinceState": since, "maxChanges": max }));
+        let created = request.call(CONTACTS, "ContactCard/get", json!({
+            "accountId": account, "#ids": changes.result_of("ContactCard/changes", "/created")
+        }));
+        let updated = request.call(CONTACTS, "ContactCard/get", json!({
+            "accountId": account, "#ids": changes.result_of("ContactCard/changes", "/updated")
+        }));
+        let mut answer = self.send(&request).await?;
+        let changes: ChangesResponse = answer.take(&changes, "ContactCard/changes")?;
+        let mut cards = answer.take::<Got<Value>>(&created, "ContactCard/get")?.list;
+        cards.extend(answer.take::<Got<Value>>(&updated, "ContactCard/get")?.list);
+        Ok(CardChanges { changes, cards })
+    }
+
+    /// Makes or changes a card, and answers it as the server now holds it.
+    pub async fn set_card(&self, write: &CardWrite) -> Result<Value, JmapError> {
+        let account = self.contacts_account().await?;
+        let (args, key, read) = match write {
+            CardWrite::Create(card) => (json!({ "accountId": account, "create": { "k": card } }), "k".to_string(), "#k".to_string()),
+            CardWrite::Update { id, patch } => (json!({ "accountId": account, "update": { id.clone(): patch } }), id.clone(), id.clone()),
+        };
+        let mut request = Request::new();
+        let set = request.call(CONTACTS, "ContactCard/set", args);
+        let get = request.call(CONTACTS, "ContactCard/get", json!({ "accountId": account, "ids": [read] }));
+        let mut answer = self.send(&request).await?;
+        let written: SetResponse = answer.take(&set, "ContactCard/set")?;
+        if let Some(refused) = written.not_created.as_ref().and_then(|n| n.get(&key)).or_else(|| written.refusal(&key)) {
+            return Err(refused.error());
+        }
+        let got: Got<Value> = answer.take(&get, "ContactCard/get")?;
+        got.list.into_iter().next().ok_or(JmapError::NotFound)
+    }
+}
