@@ -215,7 +215,7 @@ impl JmapClient {
                     if !same_origin(&next, &url) {
                         return Err(JmapError::OffHost(next.host_str().unwrap_or_default().to_string()));
                     }
-                    url = next;
+                    url = without_userinfo(next)?;
                 }
                 _ => return Err(failure(response).await),
             }
@@ -367,6 +367,13 @@ mod tests {
         let client = JmapClient::new(&format!("{base}/jmap/session"), Auth::Bearer("t".into())).unwrap();
         client.session().await.unwrap();
         client
+    }
+
+    #[test]
+    fn an_https_session_refuses_a_loopback_http_url() {
+        let client = JmapClient::new("https://mail.example.org/jmap/session", Auth::Bearer("t".into())).unwrap();
+        assert!(matches!(client.endpoint("http://127.0.0.1/api/"), Err(JmapError::BadUrl(_))));
+        assert!(client.endpoint("https://mail.example.org/api/").is_ok());
     }
 
     #[tokio::test]

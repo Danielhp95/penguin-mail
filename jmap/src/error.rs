@@ -53,6 +53,17 @@ pub enum JmapError {
     Problem { status: u16, kind: String, detail: String },
     #[error("could not read the server's answer: {0}")]
     Decode(String),
+    /// A local file could not be written. Only the io error kind is kept,
+    /// never the path. A retry would hit the same full disk.
+    #[error("local file: {0}")]
+    LocalFile(String),
+}
+
+/// A decode failure for `what`, keeping the error's category and position
+/// only. serde_json's own text quotes the rejected value, which can be an
+/// address.
+pub(crate) fn decode(what: &str, err: &serde_json::Error) -> JmapError {
+    JmapError::Decode(format!("{what}: {:?} at line {} column {}", err.classify(), err.line(), err.column()))
 }
 
 impl JmapError {
@@ -115,6 +126,19 @@ mod tests {
             method_error("invalidArguments", Some("bad filter")),
             JmapError::Method { kind: "invalidArguments".into(), description: "bad filter".into() }
         );
+    }
+
+    #[test]
+    fn a_local_file_error_is_not_retried() {
+        assert!(!JmapError::LocalFile("StorageFull".into()).is_transient());
+    }
+
+    #[test]
+    fn a_decode_error_keeps_the_category_and_position_but_not_the_value() {
+        let err = serde_json::from_str::<Vec<u8>>(r#"["secret@example.org"]"#).unwrap_err();
+        let said = decode("the answer", &err).to_string();
+        assert!(said.contains("the answer") && said.contains("line 1"), "{said}");
+        assert!(!said.contains("secret@example.org"), "{said}");
     }
 
     #[test]

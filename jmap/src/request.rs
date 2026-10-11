@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::JmapError;
-use crate::error::method_error;
+use crate::error::{decode, method_error};
 use crate::session::CORE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +90,7 @@ pub struct Response {
 
 impl Response {
     pub fn parse(bytes: &[u8]) -> Result<Response, JmapError> {
-        let wire: Wire = serde_json::from_slice(bytes).map_err(|e| JmapError::Decode(format!("the answer: {e}")))?;
+        let wire: Wire = serde_json::from_slice(bytes).map_err(|e| decode("the answer", &e))?;
         Ok(Response { session_state: wire.session_state, answers: wire.method_responses })
     }
 
@@ -109,7 +109,7 @@ impl Response {
                 args.get("description").and_then(Value::as_str),
             ));
         }
-        serde_json::from_value(args).map_err(|e| JmapError::Decode(format!("{name}: {e}")))
+        serde_json::from_value(args).map_err(|e| decode(name, &e))
     }
 }
 

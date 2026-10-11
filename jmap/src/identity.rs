@@ -21,6 +21,7 @@ pub struct Identity {
     pub id: String,
     #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub email: String,
     #[serde(default)]
     pub reply_to: Option<Vec<EmailAddress>>,

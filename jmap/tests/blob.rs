@@ -208,3 +208,27 @@ async fn a_cancelled_download_to_a_file_leaves_no_part_file() {
     assert!(cancelled.is_err(), "the transfer should still be running");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
+
+#[tokio::test]
+async fn a_full_or_missing_folder_is_not_a_retryable_network_error() {
+    let server = MockServer::start().await;
+    session_with_downloads_on(&server, &server.uri()).await;
+    Mock::given(method("GET"))
+        .and(path("/download/A1/B1/a.pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7u8; 16]))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let into = dir.path().join("no-such-folder").join("a.pdf");
+    let refused = client(&server).download_to("A1", "B1", "a.pdf", "application/pdf", &into, 1024).await.unwrap_err();
+    assert!(matches!(refused, JmapError::LocalFile(_)), "{refused:?}");
+    assert!(!refused.is_transient());
+}
+
+#[tokio::test]
+async fn an_upload_with_a_mime_a_header_cannot_carry_is_refused_and_not_retried() {
+    let server = MockServer::start().await;
+    session_with_downloads_on(&server, &server.uri()).await;
+    let refused = client(&server).upload("A1", "text/plain\nX: y", b"hi".to_vec()).await.unwrap_err();
+    assert!(!refused.is_transient(), "{refused:?}");
+}

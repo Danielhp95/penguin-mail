@@ -277,3 +277,53 @@ async fn a_session_naming_a_url_that_does_not_parse_is_not_repeated() {
     assert!(matches!(refused, JmapError::BadUrl(_)), "{refused:?}");
     assert!(!refused.to_string().contains("hunter2"), "{refused}");
 }
+
+#[tokio::test]
+async fn a_same_host_redirect_with_a_password_in_it_is_refused_not_followed() {
+    let server = MockServer::start().await;
+    let port = server.address().port();
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", format!("http://u:hunter2@127.0.0.1:{port}/other")))
+        .mount(&server)
+        .await;
+    let refused = client(&server).session().await.unwrap_err();
+    assert!(matches!(refused, JmapError::BadUrl(_)), "{refused:?}");
+    assert!(!refused.to_string().contains("hunter2"), "{refused}");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1, "the target is never fetched");
+}
+
+#[tokio::test]
+async fn a_redirect_from_the_api_url_is_not_followed_and_gets_no_credentials() {
+    let (server, elsewhere) = (MockServer::start().await, MockServer::start().await);
+    serving_session(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .respond_with(ResponseTemplate::new(307).insert_header("Location", format!("{}/api/", elsewhere.uri())))
+        .mount(&server)
+        .await;
+    let mut request = Request::new();
+    request.call(MAIL, "Mailbox/get", json!({"accountId": "A1", "ids": null}));
+    let refused = client(&server).send(&request).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(elsewhere.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_malformed_answer_does_not_repeat_what_it_carried() {
+    let server = MockServer::start().await;
+    serving_session(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "methodResponses": [["Mailbox/get", {"accountId": "secret@example.org", "state": 7}, "c0"]],
+            "sessionState": ["secret@example.org"]
+        })))
+        .mount(&server)
+        .await;
+    let mut request = Request::new();
+    request.call(MAIL, "Mailbox/get", json!({"accountId": "A1", "ids": null}));
+    let refused = client(&server).send(&request).await.unwrap_err();
+    assert!(matches!(refused, JmapError::Decode(_)), "{refused:?}");
+    assert!(!refused.to_string().contains("secret@example.org"), "{refused}");
+}

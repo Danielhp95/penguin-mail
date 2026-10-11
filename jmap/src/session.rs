@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::JmapError;
+use crate::error::decode;
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";
 pub const MAIL: &str = "urn:ietf:params:jmap:mail";
@@ -83,7 +84,7 @@ impl Limits {
 
 impl Session {
     pub fn parse(bytes: &[u8]) -> Result<Session, JmapError> {
-        serde_json::from_slice(bytes).map_err(|e| JmapError::Decode(format!("the session: {e}")))
+        serde_json::from_slice(bytes).map_err(|e| decode("the session", &e))
     }
 
     /// The account that holds `capability`'s data, from `primaryAccounts`.
@@ -200,6 +201,12 @@ mod tests {
         assert_eq!(session.mailboxes_per_email(), Some(1000));
         let rfc = Session::parse(RFC.as_bytes()).unwrap();
         assert_eq!(rfc.mailboxes_per_email(), None);
+    }
+
+    #[test]
+    fn a_session_that_does_not_fit_does_not_repeat_its_values() {
+        let said = Session::parse(br#"{"username": ["secret@example.org"]}"#).unwrap_err().to_string();
+        assert!(!said.contains("secret@example.org"), "{said}");
     }
 
     #[test]

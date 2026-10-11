@@ -93,3 +93,25 @@ async fn an_identity_without_an_address_falls_back_to_the_user_name() {
 async fn no_address_anywhere_answers_none() {
     assert_eq!(identity_without_an_address("user1").await, None);
 }
+
+#[tokio::test]
+async fn an_identity_without_an_email_field_still_parses_and_falls_back() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({}))))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "methodResponses": [["Identity/get", {"accountId": "A1", "state": "i1", "notFound": [], "list": [
+                {"id": "user1", "name": "", "mayDelete": false}
+            ]}, "c0"]],
+            "sessionState": "s1"
+        })))
+        .mount(&server)
+        .await;
+    let checked = check(&client(&server)).await.unwrap();
+    assert_eq!(checked.address.as_deref(), Some("me@example.org"));
+}

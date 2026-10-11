@@ -93,9 +93,9 @@ jobs:
           shared-key: docker-suite
       # The tests never pull; this step fetches every pinned image once.
       - name: Pull the test images
-        run: scripts/test-images.sh
+        run: scripts/test-images.sh imap
       - name: The test servers
-        run: cargo test -p mailrs-testmail
+        run: cargo test -p mailrs-testmail --lib --test images --test servers --test pop3_profile --test radicale --test sieve_profile
       - name: The client against Dovecot and Mailpit
         run: cargo test -p mailrs-imap --test dovecot --test dovecot_untrusted
       # --nocapture keeps each profile's IDLE time in the log.
@@ -126,9 +126,9 @@ jobs:
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: docker-suite
+          shared-key: jmap-suite
       - name: Pull the test images
-        run: scripts/test-images.sh
+        run: scripts/test-images.sh jmap
       - name: The test servers
         run: cargo test -p mailrs-testmail --test jmap_servers
       - name: The client against the servers

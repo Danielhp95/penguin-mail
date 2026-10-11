@@ -36,7 +36,7 @@
 #   says how to make an API token; token_plan_above names the plan a token
 #   needs more than; token_access lists the access to tick when making one,
 #   in the provider's own words; token_lacks lists the capabilities a token
-#   can never carry, so the window can say why rather than fail. Features
+#   can never carry, so the caller can say why rather than fail. Features
 #   still follow the session's capabilities, never this entry.
 # - caldav, carddav: the CalDAV and CardDAV context URL; the principal is asked
 #   there, and at the host's /.well-known/ URL when the context URL has none.

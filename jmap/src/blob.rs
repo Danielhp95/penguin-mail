@@ -9,10 +9,11 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{CONTENT_TYPE, HeaderValue};
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
+use crate::error::decode;
 use crate::http::{failure, network, read_capped};
 use crate::{JmapClient, JmapError};
 
@@ -60,7 +61,7 @@ fn encode(value: &str) -> String {
 
 /// What a local file error says, without the path.
 fn io(err: std::io::Error) -> JmapError {
-    JmapError::Network(format!("local file: {}", err.kind()))
+    JmapError::LocalFile(err.kind().to_string())
 }
 
 /// A partial download, deleted when dropped unless `keep` is set.
@@ -154,6 +155,11 @@ impl JmapClient {
         }
         let url = expand(&session.upload_url, &[("accountId", account_id)]);
         let url = self.endpoint(&url).map_err(|_| JmapError::BadUrl("the upload URL".into()))?;
+        let mime = HeaderValue::from_str(mime).map_err(|_| JmapError::Problem {
+            status: 0,
+            kind: "mime".into(),
+            detail: "the type is not a valid header value".into(),
+        })?;
         let _permit = self.permit().await;
         let response = self
             .authorized(reqwest::Method::POST, url)
@@ -168,6 +174,6 @@ impl JmapClient {
             return Err(failure(response).await);
         }
         let body = read_capped(response, UPLOAD_ANSWER_LIMIT).await?;
-        serde_json::from_slice(&body).map_err(|e| JmapError::Decode(format!("the upload answer: {e}")))
+        serde_json::from_slice(&body).map_err(|e| decode("the upload answer", &e))
     }
 }
