@@ -21,6 +21,12 @@ const PAGES_PER_LOOK: usize = 10;
 
 const CHANGES_PER_PAGE: usize = 500;
 
+/// The most memberships one look restates. A change names every known
+/// mailbox and keyword, had or lacked, so an account with many mailboxes
+/// reads fewer changes a look, and the next look carries on from the state
+/// reached.
+const MOST_RESTATED: usize = 50_000;
+
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(super) struct FeedState {
     pub email: String,
@@ -37,6 +43,13 @@ impl FeedState {
     }
 }
 
+fn memberships_in(change: &RemoteChange) -> usize {
+    match change {
+        RemoteChange::Gained { memberships, .. } | RemoteChange::Lost { memberships, .. } => memberships.len(),
+        _ => 0,
+    }
+}
+
 impl<J: JmapApi> Jmap<J> {
     pub(super) async fn feed(&self, since: Option<&SyncState>) -> Result<Changes, BackendError> {
         let Some(since) = since else {
@@ -49,13 +62,22 @@ impl<J: JmapApi> Jmap<J> {
         self.listed().await?;
         let mut changes = Vec::new();
         let mut relist = false;
+        let mut restated = 0;
         for _ in 0..PAGES_PER_LOOK {
-            let page = self.api().mail_changes(&state.email, &state.mailbox, CHANGES_PER_PAGE).await.map_err(backend)?;
+            let each = self.known().mailboxes.len() + KEYWORDS.len();
+            let fits = (MOST_RESTATED - restated.min(MOST_RESTATED)) / each.max(1);
+            if fits == 0 && restated > 0 {
+                break;
+            }
+            let max = fits.clamp(1, CHANGES_PER_PAGE);
+            let page = self.api().mail_changes(&state.email, &state.mailbox, max).await.map_err(backend)?;
             // Any mailbox change relists: a new or renamed mailbox, and the
             // counts the sidebar shows, all come from one Mailbox/get.
             relist |= !page.mailbox.created.is_empty() || !page.mailbox.updated.is_empty() || !page.mailbox.destroyed.is_empty();
             for email in &page.changed {
-                changes.extend(self.restated(email));
+                let made = self.restated(email);
+                restated += made.iter().map(memberships_in).sum::<usize>();
+                changes.extend(made);
             }
             changes.extend(page.email.destroyed.iter().map(|id| RemoteChange::Deleted { id: id.clone() }));
             state.email = page.email.new_state;
