@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, anyhow, bail};
-use mailrs_discover::{Found, Net, RealNet, Security, SrvRecord};
+use mailrs_discover::{Found, JmapFound, Net, RealNet, Security, SrvRecord};
 use mailrs_domain::{Account, AccountId, AccountState, ChangeEvent, Provider, SignInClient, Target};
 use mailrs_pgp::{Pgp, PgpError};
 use mailrs_smime::{Smime, SmimeError};
@@ -23,17 +23,17 @@ use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::passwords::{PasswordStore, Passwords, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
-    Browser, BrowserSignInError, NewImap, NewPop3, Wanted, check_pop3, google_sign_in, imap_signed_in,
-    in_browser, pop3_signed_in,
+    Browser, BrowserSignInError, NewImap, NewJmap, NewPop3, Wanted, check_pop3, google_sign_in,
+    imap_signed_in, in_browser, jmap_signed_in, pop3_signed_in,
 };
 use mailrs_sync::{
     AccountServices, AccountSettings, AccountSync, Accounts, BackendError, Clients, ContactBook,
     Connector, Failure, History, Invitations, MailAction, MailActions, Mailboxes, MovedFrom,
-    OneClick, Outbox, Outcome, SyncEngine, SyncError, Undone, connect_imap, connect_pop3,
+    OneClick, Outbox, Outcome, SyncEngine, SyncError, Undone, connect_imap, connect_jmap, connect_pop3,
     now_millis, pop3_servers_for, servers_for,
 };
 
-use crate::add_account::Attempt;
+use crate::add_account::{Attempt, JmapAttempt};
 use crate::add_account::lookup::{Check, Heard, check_of_url};
 use crate::assistant::run::{Background, Modules};
 use crate::demo::{self, DemoMail};
@@ -761,14 +761,32 @@ impl Core {
     /// demo reads the table alone, so it sends nothing anywhere. Each
     /// question discovery sends out, and its answer, goes to `heard` for
     /// the lookup page.
-    pub async fn discover(&self, address: String, heard: async_channel::Sender<Heard>) -> Result<Found> {
+    pub async fn discover(
+        &self,
+        address: String,
+        heard: async_channel::Sender<Heard>,
+    ) -> Result<(Found, Option<JmapFound>)> {
         let demo = self.demo;
         self.call(async move {
+            // Both lookups share one watched network, so the lookup page
+            // ticks off what either of them asks.
             let found = match demo {
-                true => mailrs_discover::find(&Watched { net: Offline, heard }, &address).await,
+                true => {
+                    let net = Watched { net: Offline, heard };
+                    tokio::join!(
+                        mailrs_discover::find(&net, &address),
+                        mailrs_discover::find_jmap(&net, &address)
+                    )
+                }
                 false => {
-                    let net = RealNet::new()?;
-                    mailrs_discover::find(&Watched { net, heard }, &address).await
+                    let net = Watched {
+                        net: RealNet::new()?,
+                        heard,
+                    };
+                    tokio::join!(
+                        mailrs_discover::find(&net, &address),
+                        mailrs_discover::find_jmap(&net, &address)
+                    )
                 }
             };
             Ok::<_, anyhow::Error>(found)
@@ -870,6 +888,73 @@ impl Core {
             };
             let account = pop3_signed_in(&db, Arc::clone(&passwords), new, now_millis()).await?;
             let services = connect_pop3(&db, passwords, &account).await?;
+            engine.start_account(account.id, services);
+            Ok::<_, anyhow::Error>(account)
+        })
+        .await
+    }
+
+    /// Signs in to a JMAP account: checks the session with the password or
+    /// the token, then keeps the account, its session row and its secret,
+    /// and starts syncing it. Nothing is kept when the check fails; the
+    /// failure comes back as a `JmapError` the dialog reads. The dialog
+    /// has the person's yes for a session outside their domain before it
+    /// calls this.
+    pub async fn sign_in_jmap(&self, attempt: JmapAttempt) -> Result<Account> {
+        if self.demo {
+            bail!(gettext("Demo mode cannot add real accounts."));
+        }
+        let engine = self
+            .engine
+            .current()
+            .ok_or_else(|| anyhow!("sync is not running"))?;
+        let (db, secrets) = (self.db.clone(), self.secrets.clone());
+        let window_days = self.config.borrow().engine_config().window_days;
+        self.call(async move {
+            let JmapAttempt {
+                address,
+                provider_name,
+                session_url,
+                token,
+                user,
+                secret,
+            } = attempt;
+            let auth = match token {
+                true => mailrs_jmap::Auth::Bearer(secret.clone()),
+                false => mailrs_jmap::Auth::Basic {
+                    user: user.clone(),
+                    password: secret.clone(),
+                },
+            };
+            let client = mailrs_jmap::JmapClient::new(&session_url, auth)?;
+            // The account takes the address the person typed, whatever the
+            // server names: Cyrus names none, and signing in again must
+            // find the account it already is.
+            let checked = mailrs_jmap::check(&client).await?;
+            let session = &checked.session;
+            let saved = mailrs_store::jmap::JmapSaved {
+                session_url,
+                auth: match token {
+                    true => mailrs_store::jmap::JmapAuth::Bearer,
+                    false => mailrs_store::jmap::JmapAuth::Basic,
+                },
+                user_name: (!token && !user.eq_ignore_ascii_case(&address)).then_some(user),
+                labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
+                capabilities: session
+                    .capabilities
+                    .keys()
+                    .filter(|c| session.offers(c))
+                    .cloned()
+                    .collect(),
+            };
+            let new = NewJmap {
+                address,
+                provider_name,
+                saved,
+                secret,
+            };
+            let account = jmap_signed_in(&db, &secrets, new, now_millis()).await?;
+            let services = connect_jmap(&db, Arc::clone(&secrets.jmap), &account, window_days).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)
         })
@@ -1267,6 +1352,11 @@ impl<N: Net> Net for Watched<N> {
 
     async fn get(&self, url: &str) -> Option<String> {
         self.asking(check_of_url(url), self.net.get(url), Option::is_some)
+            .await
+    }
+
+    async fn locate(&self, url: &str) -> Option<String> {
+        self.asking(check_of_url(url), self.net.locate(url), Option::is_some)
             .await
     }
 

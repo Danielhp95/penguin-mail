@@ -2425,6 +2425,7 @@ dependencies = [
  "mailrs-gmail",
  "mailrs-graph",
  "mailrs-imap",
+ "mailrs-jmap",
  "mailrs-mime",
  "mailrs-pgp",
  "mailrs-smime",

@@ -26,8 +26,8 @@ use crate::add_account::lookup::{Check, Checks, State};
 use crate::add_account::post::{self, Advice, AdviceKind, Band, Browser, BrowserWords, Stamp, Step, Tile};
 use mailrs_sync::sign_in::Wanted;
 use crate::add_account::{
-    self, Address, Asking, Continue, Failure, FailureKind, Next, Outcome, Proposal, Protocol,
-    Removal, Role, Running, Typed,
+    self, Address, Asking, Continue, Failure, FailureKind, JmapProposal, Next, Outcome, Proposal,
+    Protocol, Removal, Role, Running, Typed,
 };
 use crate::core::Core;
 use crate::permission::Permission;
@@ -889,6 +889,13 @@ struct PasswordPage {
     agree: adw::ActionRow,
     confirmed: gtk::CheckButton,
     sign_in: gtk::Button,
+    /// The JMAP session's host, in place of the two server rows, leading
+    /// to Server Settings with JMAP picked.
+    session: adw::ActionRow,
+    /// IMAP, when discovery found it beside JMAP.
+    imap_instead: adw::ActionRow,
+    /// A token in place of the password, for a server that takes either.
+    use_token: adw::SwitchRow,
 }
 
 fn password_page() -> PasswordPage {
@@ -915,6 +922,12 @@ fn password_page() -> PasswordPage {
     };
     let name_list = field(name.upcast_ref());
     let password_list = field(password.upcast_ref());
+    let use_token = adw::SwitchRow::builder()
+        .title(gettext("Sign In With a Token"))
+        .visible(false)
+        .build();
+    crate::ui::name(&use_token, &gettext("Sign In With a Token"));
+    password_list.append(&use_token);
     let hint = Card::new();
     let failed = Card::new();
     let failed_servers = icon_button(
@@ -968,7 +981,26 @@ fn password_page() -> PasswordPage {
         .visible(false)
         .build();
     agree.add_prefix(&confirmed);
-    for row in [&incoming, &outgoing, &pop3_offer, &down, &summary, &agree] {
+    let session = icon_row("penguin-mail-lock-symbolic", "JMAP", "", true);
+    session.set_subtitle_selectable(true);
+    session.set_visible(false);
+    let imap_instead = adw::ActionRow::builder()
+        .activatable(true)
+        .title(gettext("Use IMAP Instead"))
+        .visible(false)
+        .build();
+    imap_instead.add_prefix(&gtk::Image::from_icon_name("mail-send-receive-symbolic"));
+    imap_instead.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    for row in [
+        &incoming,
+        &outgoing,
+        &session,
+        &pop3_offer,
+        &down,
+        &summary,
+        &agree,
+        &imap_instead,
+    ] {
         hosts.append(row);
     }
     let fields = gtk::Box::builder()
@@ -1016,7 +1048,16 @@ fn password_page() -> PasswordPage {
         agree,
         confirmed,
         sign_in,
+        session,
+        imap_instead,
+        use_token,
     }
+}
+
+/// What an account signing in again kept from before.
+enum Saved {
+    Mail(add_account::Kept),
+    Jmap(mailrs_store::jmap::JmapSaved),
 }
 
 struct ClosedPage {
@@ -1218,6 +1259,7 @@ struct ServerRows {
     host: adw::EntryRow,
     port: adw::SpinRow,
     security: adw::ToggleGroup,
+    security_row: adw::ActionRow,
     user: adw::EntryRow,
 }
 
@@ -1268,6 +1310,7 @@ impl ServerRows {
             host,
             port,
             security,
+            security_row,
             user,
         }
     }
@@ -1410,8 +1453,7 @@ fn manual_step() -> ManualStep {
     let protocol = adw::ToggleGroup::builder()
         .valign(gtk::Align::Center)
         .build();
-    for choice in add_account::PROTOCOLS {
-        let label = add_account::protocol_label(choice);
+    for label in add_account::PROTOCOL_CHOICES {
         protocol.add(adw::Toggle::builder().label(label).name(label).build());
     }
     crate::ui::name(&protocol, &gettext("Protocol"));
@@ -1427,37 +1469,70 @@ fn manual_step() -> ManualStep {
         imap_user,
     );
     let removal = Removals::new();
+    let login = adw::PreferencesGroup::builder()
+        .title(gettext("Sign-In"))
+        .description(gettext("Leave the user names empty to sign in with your address."))
+        .build();
+    let outgoing = adw::PreferencesGroup::builder()
+        .title(gettext("Outgoing Mail"))
+        .build();
+    let smtp = ServerRows::new(Role::Outgoing, None, &outgoing, smtp_user);
     // The port follows the protocol as it follows Security, and the
-    // removal rows show for POP3 alone.
+    // removal rows show for POP3 alone. JMAP takes one session URL and
+    // the sign-in, so the rest goes while it is picked.
     let (port, security, shown) = (
         incoming_rows.port.clone(),
         incoming_rows.security.clone(),
         removal.group.clone(),
     );
+    let host = incoming_rows.host.clone();
+    let security_row = incoming_rows.security_row.clone();
+    let user = incoming_rows.user.clone();
+    let described = login.clone();
+    let hidden_by_jmap = [
+        outgoing.clone().upcast::<gtk::Widget>(),
+        smtp.user.clone().upcast(),
+        smtp_password.clone().upcast(),
+    ];
     protocol.connect_active_notify(move |protocol| {
+        let jmap = add_account::jmap_at(protocol.active());
         let now = add_account::protocol_at(protocol.active());
         let at = port.value() as u16;
-        let security = add_account::security_at(security.active());
-        let moved = add_account::port_after_protocol(at, security, now);
-        if moved != at {
+        let chosen = add_account::security_at(security.active());
+        let moved = add_account::port_after_protocol(at, chosen, now);
+        if moved != at && !jmap {
             port.set_value(f64::from(moved));
         }
-        shown.set_visible(now == Protocol::Pop3);
+        shown.set_visible(now == Protocol::Pop3 && !jmap);
+        let (host_title, user_title, description) = match jmap {
+            true => (
+                gettext("Session URL"),
+                gettext("User Name"),
+                gettext("Leave the user name empty to sign in with your address."),
+            ),
+            false => (
+                gettext("Server"),
+                gettext("Incoming User Name"),
+                gettext("Leave the user names empty to sign in with your address."),
+            ),
+        };
+        described.set_description(Some(&description));
+        host.set_title(&host_title);
+        crate::ui::name(&host, &host_title);
+        user.set_title(&user_title);
+        crate::ui::name(&user, &user_title);
+        port.set_visible(!jmap);
+        security_row.set_visible(!jmap);
+        for widget in &hidden_by_jmap {
+            widget.set_visible(!jmap);
+        }
     });
-    let outgoing = adw::PreferencesGroup::builder()
-        .title(gettext("Outgoing Mail"))
-        .build();
-    let smtp = ServerRows::new(Role::Outgoing, None, &outgoing, smtp_user);
     let problem = gtk::Label::builder()
         .wrap(true)
         .xalign(0.0)
         .visible(false)
         .margin_top(12)
         .css_classes(["error"])
-        .build();
-    let login = adw::PreferencesGroup::builder()
-        .title(gettext("Sign-In"))
-        .description(gettext("Leave the user names empty to sign in with your address."))
         .build();
     login.add(&incoming_rows.user);
     login.add(&smtp.user);
@@ -1531,6 +1606,11 @@ struct Dialog {
     typed: RefCell<Option<Address>>,
     /// What the password page signs in to.
     proposal: RefCell<Option<Proposal>>,
+    /// The JMAP session the password page signs in to, in place of
+    /// `proposal`.
+    jmap: RefCell<Option<JmapProposal>>,
+    /// Whether the JMAP sign-in sends a token rather than a password.
+    token: Cell<bool>,
     /// The address the password page last opened for, whose password the
     /// field may hold.
     password_for: RefCell<Option<String>>,
@@ -1616,6 +1696,8 @@ impl Dialog {
             by_hand: Cell::new(false),
             typed: RefCell::new(None),
             proposal: RefCell::new(None),
+            jmap: RefCell::new(None),
+            token: Cell::new(false),
             password_for: RefCell::new(None),
             smtp_password: RefCell::new(String::new()),
             declined: RefCell::new(None),
@@ -1697,6 +1779,24 @@ impl Dialog {
         self.password.failed_servers.connect_clicked(move |_| manual());
         let as_pop3 = on(Dialog::manual_as_pop3);
         self.password.pop3_offer.connect_activated(move |_| as_pop3());
+        let manual = on(Dialog::manual_from_password);
+        self.password.session.connect_activated(move |_| manual());
+        let this = Rc::downgrade(self);
+        self.password.use_token.connect_active_notify(move |row| {
+            let Some(this) = this.upgrade() else { return };
+            this.token.set(row.is_active());
+            let proposal = this.jmap.borrow().clone();
+            if let Some(proposal) = proposal {
+                this.show_jmap_secret(&proposal);
+            }
+        });
+        let imap = on(|this| {
+            let imap = this.jmap.borrow().as_ref().and_then(|p| p.imap.clone());
+            if let Some(imap) = imap {
+                this.show_password(*imap);
+            }
+        });
+        self.password.imap_instead.connect_activated(move |_| imap());
         let follow = on(Dialog::follow_protocol);
         self.manual.protocol.connect_active_notify(move |_| follow());
         let sign_in = on(Dialog::sign_in);
@@ -1949,13 +2049,14 @@ impl Dialog {
             this.asking.forget();
             this.address.look.set_sensitive(true);
             let next = match found {
-                Ok(found) => {
-                    add_account::after_discovery(found, &address, this.microsoft())
+                Ok((found, jmap)) => {
+                    add_account::after_discovery(found, jmap, &address, this.microsoft())
                 }
                 Err(err) => Next::Say(err.to_string()),
             };
             match next {
                 Next::Password(proposal) => this.show_password(proposal),
+                Next::Jmap(proposal) => this.show_jmap(proposal),
                 Next::Say(said) => {
                     this.back_to("address");
                     this.say(&said);
@@ -2132,6 +2233,15 @@ impl Dialog {
 
     fn show_password(self: &Rc<Self>, proposal: Proposal) {
         let page = &self.password;
+        self.jmap.replace(None);
+        page.session.set_visible(false);
+        page.imap_instead.set_visible(false);
+        page.use_token.set_visible(false);
+        page.agree.set_title(&gettext("Use these servers"));
+        page.agree.set_subtitle(&gettext(
+            "Penguin Mail guessed these servers. Your password goes to them only after you check the box.",
+        ));
+        crate::ui::name(&page.confirmed, &gettext("Use these servers"));
         let provider = post::short_name(&proposal.provider_name);
         let title = add_account::password_title(&proposal);
         page.password.set_title(&title);
@@ -2206,6 +2316,102 @@ impl Dialog {
         self.push("password");
     }
 
+    /// The password page as the JMAP sign-in: one session row in place of
+    /// the two servers, the field named for a token or a password, and the
+    /// provider's token advice. A session outside the address's domain
+    /// waits for the person's yes, naming its host.
+    fn show_jmap(self: &Rc<Self>, proposal: JmapProposal) {
+        let page = &self.password;
+        let kept = self.token.get() && self.jmap.borrow().is_some();
+        let token = add_account::token_only(&proposal) || proposal.token || kept;
+        // With no proposal held, the switch's handler draws nothing for
+        // the one this page showed before.
+        self.jmap.replace(None);
+        self.token.set(token);
+        page.use_token.set_active(token);
+        page.use_token.set_visible(!add_account::token_only(&proposal));
+        let typed = self.typed.borrow().clone();
+        let address = match &self.again {
+            Some(account) => account.email.clone(),
+            None => typed.as_ref().map(Address::full).unwrap_or_default(),
+        };
+        if !add_account::keeps_password(self.password_for.borrow().as_deref(), &address) {
+            page.password.set_text("");
+        }
+        self.smtp_password.replace(String::new());
+        self.password_for.replace(Some(address));
+        let provider = post::short_name(&proposal.provider_name);
+        match &self.again {
+            Some(account) => {
+                page.title.set_text(&account.email);
+                page.lede.set_text(&add_account::again_line(account));
+                page.name_list.set_visible(false);
+            }
+            None => {
+                if let Some(typed) = &typed {
+                    page.title.set_text(&add_account::jmap_title(&proposal, typed));
+                    page.lede.set_text(&add_account::jmap_found_line(&proposal, typed));
+                }
+            }
+        }
+        page.failed.hide();
+        self.arrange_password(false);
+        self.show_jmap_rows();
+        page.pop3_offer.set_visible(false);
+        page.session.set_subtitle(&add_account::session_line(&proposal));
+        page.imap_instead.set_visible(proposal.imap.is_some() && self.again.is_none());
+        page.imap_instead
+            .set_subtitle(&add_account::imap_instead_line(&proposal));
+        page.confirmed.set_active(false);
+        page.agree.set_visible(proposal.confirm);
+        self.show_jmap_secret(&proposal);
+        let stamp = match proposal.provider.is_some() {
+            true => post::stamp_for(&proposal.provider_name),
+            false => post::ANY_SERVER,
+        };
+        self.set_band("password", Step::Found, Some(stamp), Some(&provider));
+        self.proposal.replace(None);
+        self.jmap.replace(Some(proposal));
+        self.update_sign_in();
+        self.push("password");
+    }
+
+    /// The session row in place of the two servers and their summary.
+    fn show_jmap_rows(&self) {
+        let page = &self.password;
+        page.incoming.set_visible(false);
+        page.outgoing.set_visible(false);
+        page.summary.set_visible(false);
+        page.session.set_visible(true);
+    }
+
+    /// What follows the token switch: the field's name, the token card,
+    /// and the question about the session's host.
+    fn show_jmap_secret(&self, proposal: &JmapProposal) {
+        let page = &self.password;
+        let token = self.token.get();
+        let title = add_account::jmap_secret_title(token);
+        page.password.set_title(&title);
+        crate::ui::name(&page.password, &title);
+        match add_account::jmap_hint(proposal, token) {
+            Some((heading, body, link)) => page.hint.show(
+                "advice",
+                Ok("dialog-password-symbolic"),
+                &heading,
+                &body,
+                link.as_slice(),
+            ),
+            None => page.hint.hide(),
+        }
+        let typed = self.typed.borrow().clone();
+        if let Some(address) = typed {
+            let (title, line) = add_account::jmap_agree(proposal, &address, token);
+            page.agree.set_title(&title);
+            page.agree.set_subtitle(&line);
+            crate::ui::name(&page.confirmed, &title);
+        }
+    }
+
     /// Puts the failure card first for an unreachable server, as the
     /// mockup does, or after the fields for everything else.
     fn arrange_password(&self, card_first: bool) {
@@ -2256,14 +2462,16 @@ impl Dialog {
     }
 
     fn update_sign_in(self: &Rc<Self>) {
-        let ready = self.proposal.borrow().as_ref().is_some_and(|proposal| {
-            add_account::can_sign_in(
-                &self.password.password.text(),
-                proposal,
-                self.password.confirmed.is_active(),
-                self.running.is_on(),
-            )
-        });
+        let secret = self.password.password.text();
+        let confirmed = self.password.confirmed.is_active();
+        let ready = match self.jmap.borrow().as_ref() {
+            Some(jmap) => {
+                add_account::can_sign_in_jmap(&secret, jmap, confirmed, self.running.is_on())
+            }
+            None => self.proposal.borrow().as_ref().is_some_and(|proposal| {
+                add_account::can_sign_in(&secret, proposal, confirmed, self.running.is_on())
+            }),
+        };
         self.password.sign_in.set_sensitive(ready);
         self.password.failed_retry.set_sensitive(ready);
     }
@@ -2273,6 +2481,10 @@ impl Dialog {
     /// password. A candidate that needs a yes stops the run and waits for
     /// it.
     fn sign_in(self: &Rc<Self>) {
+        let jmap = self.jmap.borrow().clone();
+        if let Some(jmap) = jmap {
+            return self.sign_in_jmap(jmap);
+        }
         let address = self.typed.borrow().clone();
         let proposal = self.proposal.borrow().clone();
         let (Some(address), Some(proposal)) = (address, proposal) else {
@@ -2365,6 +2577,67 @@ impl Dialog {
         }
     }
 
+    /// Sign In for a JMAP session. Nothing reaches the session before the
+    /// person said yes to a host outside their domain.
+    fn sign_in_jmap(self: &Rc<Self>, jmap: JmapProposal) {
+        let Some(address) = self.typed.borrow().clone() else {
+            return;
+        };
+        let secret = self.password.password.text().to_string();
+        let confirmed = self.password.confirmed.is_active();
+        if !add_account::can_sign_in_jmap(&secret, &jmap, confirmed, self.running.is_on())
+            || !self.running.begin()
+        {
+            return;
+        }
+        let name = Some(self.password.name.text().trim().to_string())
+            .filter(|name| !name.is_empty() && self.again.is_none());
+        let ticket = self.asking.ask();
+        self.password.sign_in.set_sensitive(false);
+        self.password.failed_retry.set_sensitive(false);
+        self.password.sign_in.set_label(&gettext("Signing In…"));
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            this.try_jmap(address, jmap, secret, name, ticket).await;
+            this.running.end();
+            this.password.sign_in.set_label(&gettext("Sign In"));
+            this.update_sign_in();
+        });
+    }
+
+    async fn try_jmap(
+        self: &Rc<Self>,
+        address: Address,
+        proposal: JmapProposal,
+        secret: String,
+        name: Option<String>,
+        ticket: add_account::Ticket,
+    ) {
+        let token = self.token.get();
+        let attempt = add_account::jmap_attempt(&address, &proposal, &secret, token);
+        match self.core.sign_in_jmap(attempt).await {
+            // The account is kept whether or not the dialog is still
+            // open, so the window hears about it either way.
+            Ok(account) => {
+                if self.again.is_some() {
+                    return self.finish(Done::SignedInAgain(account));
+                }
+                (self.done)(Done::Added {
+                    account: account.clone(),
+                    name,
+                });
+                if self.asking.wants(ticket) {
+                    let stamp = post::stamp_for(&proposal.provider_name);
+                    self.show_added(&account, Some(stamp), None);
+                }
+            }
+            Err(err) if !self.asking.wants(ticket) => {
+                tracing::info!(error = %err, "a JMAP sign-in failed after its dialog moved on");
+            }
+            Err(err) => self.show_failure(&add_account::jmap_failure(&err, &proposal, token)),
+        }
+    }
+
     fn show_failure(self: &Rc<Self>, failure: &Failure) {
         let page = &self.password;
         let band = self.bands.borrow().get("password").cloned();
@@ -2432,6 +2705,9 @@ impl Dialog {
                 self.set_band("password", Step::Refused, stamp, provider.as_deref());
             }
         }
+        if self.jmap.borrow().is_some() {
+            self.show_jmap_rows();
+        }
         self.update_sign_in();
         // Sign In took the focus with it when it went insensitive. A
         // server that did not answer wants another try, not another
@@ -2468,10 +2744,25 @@ impl Dialog {
     }
 
     fn manual_from_password(self: &Rc<Self>) {
+        let jmap = self.jmap.borrow().clone();
+        if let Some(jmap) = jmap {
+            return self.manual_as_jmap(&jmap);
+        }
         let proposal = self.proposal.borrow().clone();
         if let Some(proposal) = proposal {
             self.show_manual(&proposal, None);
         }
+    }
+
+    /// Server Settings with JMAP picked and the session on show.
+    fn manual_as_jmap(self: &Rc<Self>, jmap: &JmapProposal) {
+        let manual = &self.manual;
+        manual.content.set_description("");
+        manual.protocol.set_active(add_account::JMAP_INDEX);
+        manual.incoming.host.set_text(&jmap.session_url);
+        manual.incoming.user.set_text(jmap.user.as_deref().unwrap_or_default());
+        manual.problem.set_visible(false);
+        self.push("servers");
     }
 
     fn show_manual(self: &Rc<Self>, proposal: &Proposal, said: Option<&str>) {
@@ -2526,7 +2817,29 @@ impl Dialog {
     /// Moves the incoming rows to the server discovery found for the
     /// protocol just picked, while they still hold the other one.
     fn follow_protocol(self: &Rc<Self>) {
-        let now = add_account::protocol_at(self.manual.protocol.active());
+        let index = self.manual.protocol.active();
+        let jmap = self.jmap.borrow().clone();
+        let host = self.manual.incoming.host.text();
+        if add_account::jmap_at(index) {
+            if let Some(jmap) = &jmap {
+                self.manual.incoming.host.set_text(&jmap.session_url);
+            }
+            return;
+        }
+        // A session URL means nothing to IMAP or POP3: the servers found
+        // beside it take its place, or the row starts empty.
+        if host.contains("://") {
+            let imap = self
+                .proposal
+                .borrow()
+                .clone()
+                .or_else(|| jmap.and_then(|j| j.imap.map(|imap| *imap)));
+            match imap {
+                Some(imap) => self.manual.incoming.fill_server(&imap.incoming),
+                None => self.manual.incoming.host.set_text(""),
+            }
+        }
+        let now = add_account::protocol_at(index);
         let host = self.manual.incoming.host.text();
         let found = self
             .proposal
@@ -2539,11 +2852,33 @@ impl Dialog {
     }
 
     fn use_manual(self: &Rc<Self>) {
-        let before = self.proposal.borrow().clone();
-        let address = self.typed.borrow().clone();
-        let (Some(before), Some(address)) = (before, address) else {
+        let Some(address) = self.typed.borrow().clone() else {
             return;
         };
+        if add_account::jmap_at(self.manual.protocol.active()) {
+            let typed = add_account::typed_jmap(
+                &self.manual.incoming.host.text(),
+                &self.manual.incoming.user.text(),
+                &address,
+            );
+            match typed {
+                Ok(proposal) => self.show_jmap(proposal),
+                Err(problem) => {
+                    self.manual.problem.set_text(&problem);
+                    self.manual.problem.set_visible(true);
+                }
+            }
+            return;
+        }
+        // Coming from a JMAP sign-in, the IMAP servers found beside it
+        // stand in for the proposal the form started from.
+        let jmap_imap = self.jmap.borrow().as_ref().and_then(|j| j.imap.clone());
+        let before = self
+            .proposal
+            .borrow()
+            .clone()
+            .or(jmap_imap.map(|imap| *imap))
+            .unwrap_or_else(|| add_account::guess(&address));
         let protocol = add_account::protocol_at(self.manual.protocol.active());
         let typed = add_account::typed_servers(
             &self.manual.incoming.typed(),
@@ -2581,18 +2916,24 @@ impl Dialog {
             let saved = this
                 .core
                 .read(move |c| {
+                    if let Some(saved) = mailrs_store::jmap::load(c, id)? {
+                        return Ok(Some(Saved::Jmap(saved)));
+                    }
                     if let Some(servers) = servers::load(c, id)? {
-                        return Ok(Some(add_account::Kept::Imap(servers)));
+                        return Ok(Some(Saved::Mail(add_account::Kept::Imap(servers))));
                     }
                     let Some(servers) = servers::load_pop3(c, id)? else {
                         return Ok(None);
                     };
                     let remove = accounts::pop3_remove(c, id)?;
-                    Ok(Some(add_account::Kept::Pop3(servers, remove)))
+                    Ok(Some(Saved::Mail(add_account::Kept::Pop3(servers, remove))))
                 })
                 .await;
             match saved {
-                Ok(Some(kept)) => {
+                Ok(Some(Saved::Jmap(saved))) => {
+                    this.show_jmap(add_account::saved_jmap(&account, &saved));
+                }
+                Ok(Some(Saved::Mail(kept))) => {
                     // An outgoing password kept from before stays unless
                     // the person clears it in Server Settings.
                     let outgoing = this.core.outgoing_password(id).await.unwrap_or_default();
@@ -3050,7 +3391,7 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
             verdict: Verdict::Servers,
             candidates: vec![fastmail_candidate()],
         };
-        match add_account::after_discovery(found, &studio, true) {
+        match add_account::after_discovery(found, None, &studio, true) {
             Next::Password(proposal) => proposal,
             _ => add_account::guess(&studio),
         }
@@ -3144,7 +3485,7 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
                     ..fastmail_candidate()
                 }],
             };
-            let Next::Password(imap) = add_account::after_discovery(found, &studio, true) else {
+            let Next::Password(imap) = add_account::after_discovery(found, None, &studio, true) else {
                 return;
             };
             this.typed.replace(Some(studio.clone()));
@@ -3178,6 +3519,44 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
                         this.show_failure(&add_account::failure(&failed, &pop3));
                     }
                 }
+                _ => {}
+            }
+        }
+        // JMAP: Fastmail through the real lookup, which the demo answers
+        // from the built-in list; a server off the address's domain that
+        // waits for a yes; a refused token; Server Settings on JMAP.
+        "jmap" => {
+            this.open_address(Some(Tile::Fastmail), false);
+            this.address.address.set_text("dana@fastmail.com");
+            this.look();
+        }
+        "jmap-confirm" | "jmap-wrong" | "jmap-servers" => {
+            this.typed.replace(Some(studio.clone()));
+            this.push("address");
+            let found = match stage {
+                "jmap-wrong" => mailrs_discover::JmapFound {
+                    session_url: "https://api.fastmail.com/jmap/session".into(),
+                    source: Source::Mx,
+                    confirm: false,
+                    provider: mailrs_discover::jmap_named("Fastmail"),
+                },
+                _ => mailrs_discover::JmapFound {
+                    session_url: "https://jmap.hoster.net/jmap/session".into(),
+                    source: Source::Srv,
+                    confirm: true,
+                    provider: None,
+                },
+            };
+            let proposal = add_account::jmap_proposal(found, None, &studio);
+            this.show_jmap(proposal.clone());
+            this.password.name.set_text("Dana Reyes");
+            match stage {
+                "jmap-wrong" => {
+                    this.password.password.set_text("fmu1-0123456789abcdef");
+                    let refused = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
+                    this.show_failure(&add_account::jmap_failure(&refused, &proposal, true));
+                }
+                "jmap-servers" => this.manual_from_password(),
                 _ => {}
             }
         }

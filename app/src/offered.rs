@@ -465,6 +465,20 @@ pub fn reason(account: &Account, missing: Missing, missed: Option<Miss>) -> Stri
         (Provider::Imap, Missing::AutoReply) => {
             gettext("{provider} cannot send automatic replies.")
         }
+        // Penguin Mail reads mail over JMAP and nothing else yet, so what
+        // the server may well offer is not set up on the account.
+        (Provider::Jmap, Missing::Calendar) => {
+            gettext("Penguin Mail cannot show {provider}'s calendar over JMAP yet.")
+        }
+        (Provider::Jmap, Missing::Contacts) => {
+            gettext("Penguin Mail cannot read {provider}'s contacts over JMAP yet.")
+        }
+        (Provider::Jmap, Missing::Rules) => {
+            gettext("Penguin Mail cannot change {provider}'s rules over JMAP yet.")
+        }
+        (Provider::Jmap, Missing::AutoReply) => {
+            gettext("Penguin Mail cannot change {provider}'s automatic reply over JMAP yet.")
+        }
         (_, Missing::Calendar) => gettext("{provider} has no calendar that other apps can reach."),
         (_, Missing::Contacts) => {
             gettext("{provider} keeps no contacts that other apps can reach.")
@@ -778,6 +792,25 @@ mod tests {
             let said = reason(&gmail(), missing, None);
             assert!(said.starts_with("Gmail "), "{said}");
             assert!(said.ends_with('.'), "{said}");
+        }
+    }
+
+    #[test]
+    fn a_jmap_account_says_penguin_mail_does_not_reach_it_there_yet() {
+        let jmap = Account {
+            provider: Provider::Jmap,
+            ..fastmail()
+        };
+        for (missing, said) in [
+            (Missing::Calendar, "Penguin Mail cannot show Fastmail's calendar over JMAP yet."),
+            (Missing::Contacts, "Penguin Mail cannot read Fastmail's contacts over JMAP yet."),
+            (Missing::Rules, "Penguin Mail cannot change Fastmail's rules over JMAP yet."),
+            (
+                Missing::AutoReply,
+                "Penguin Mail cannot change Fastmail's automatic reply over JMAP yet.",
+            ),
+        ] {
+            assert_eq!(reason(&jmap, missing, None), said);
         }
     }
 

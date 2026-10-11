@@ -17,6 +17,7 @@ mailrs-domain.workspace = true
 mailrs-gmail.workspace = true
 mailrs-graph.workspace = true
 mailrs-imap.workspace = true
+mailrs-jmap.workspace = true
 mailrs-mime.workspace = true
 mailrs-store.workspace = true
 # `--demo` runs on sync's in-memory Gmail, so the app asks for it.

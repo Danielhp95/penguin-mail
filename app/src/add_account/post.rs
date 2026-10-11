@@ -357,6 +357,8 @@ const APPLE_ACCOUNT: &str = "https://account.apple.com";
 pub enum AdviceKind {
     /// The provider wants an app password.
     AppPassword,
+    /// The provider signs in over JMAP with an API token.
+    Token,
     /// The provider signs in through the browser.
     Browser,
     /// No other mail app can reach the provider.
@@ -435,6 +437,27 @@ pub fn tile_advice(tile: Tile) -> Option<Advice> {
 fn password_advice(info: &ProviderInfo) -> Option<Advice> {
     let provider = short_name(&info.name);
     let named = [("provider", provider.as_str())];
+    // A provider whose JMAP entry names a token page signs in over JMAP
+    // with a token, so the next page asks for one.
+    let token_url = mailrs_discover::jmap_named(&info.name).and_then(|jmap| jmap.token_url);
+    if let Some(url) = token_url {
+        return Some(Advice {
+            kind: AdviceKind::Token,
+            stamp: stamp_for(&info.name),
+            title: fill(&gettext("{provider} signs in with an API token"), &named),
+            body: fill(
+                &gettext(
+                    "On the next page, paste an API token from {provider}'s settings, not your {provider} password.",
+                ),
+                &named,
+            ),
+            link: Some(Link {
+                label: gettext("How to Make a Token"),
+                url,
+            }),
+            provider,
+        });
+    }
     let title = match info.password {
         PasswordKind::AppPassword => gettext("{provider} needs an app password"),
         PasswordKind::AppPasswordWithTwoStep => {
@@ -731,12 +754,14 @@ mod tests {
     }
 
     #[test]
-    fn fastmail_advice_keeps_the_general_words() {
+    fn fastmail_advice_asks_for_an_api_token() {
         let said = advice("fastmail.com", true).expect("the list knows Fastmail");
-        assert_eq!(
-            said.link.map(|link| link.label),
-            Some("Open Fastmail's Settings".to_string())
-        );
+        assert_eq!(said.kind, AdviceKind::Token);
+        assert_eq!(said.title, "Fastmail signs in with an API token");
+        assert!(said.body.contains("API token"), "{}", said.body);
+        let link = said.link.expect("the token page");
+        assert_eq!(link.label, "How to Make a Token");
+        assert!(link.url.contains("fastmail.help"), "{}", link.url);
     }
 
     #[test]
@@ -816,7 +841,7 @@ mod tests {
     fn a_tile_picked_before_an_address_already_has_its_advice() {
         assert_eq!(
             tile_advice(Tile::Fastmail).map(|a| a.title),
-            Some("Fastmail needs an app password".to_string())
+            Some("Fastmail signs in with an API token".to_string())
         );
         assert_eq!(tile_advice(Tile::Other), None);
     }
