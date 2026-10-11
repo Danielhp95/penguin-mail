@@ -10223,50 +10223,50 @@ msgstr "此伺服器不會儲存信箱的顏色。"
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:45
+#: sync/src/services/jmap/outgoing.rs:59
 msgid "The server does not let this account send from {address}."
 msgstr "伺服器不允許此帳號以 {address} 寄件。"
 
-#: sync/src/services/jmap/outgoing.rs:46
+#: sync/src/services/jmap/outgoing.rs:60
 msgid "The server does not let this account send mail now."
 msgstr "伺服器目前不允許此帳號寄送郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:47
+#: sync/src/services/jmap/outgoing.rs:61
 msgid "The message names more recipients than the server sends to at once."
 msgstr "郵件的收件者數量超過伺服器單次寄送的上限。"
 
-#: sync/src/services/jmap/outgoing.rs:48
+#: sync/src/services/jmap/outgoing.rs:62
 msgid "The server could not send to one of the recipients."
 msgstr "伺服器無法寄送給其中一位收件者。"
 
-#: sync/src/services/jmap/outgoing.rs:49
+#: sync/src/services/jmap/outgoing.rs:63
 msgid "The message is larger than the server sends."
 msgstr "郵件超過伺服器的寄送大小上限。"
 
-#: sync/src/services/jmap/outgoing.rs:50
+#: sync/src/services/jmap/outgoing.rs:64
 msgid "The server could not read the message to send it."
 msgstr "伺服器無法讀取要寄送的郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:62
+#: sync/src/services/jmap/outgoing.rs:76
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
 msgstr "此帳號可以讀取郵件，但無法寄件：其登入未取得寄件權限。"
 
-#: sync/src/services/jmap/outgoing.rs:77
+#: sync/src/services/jmap/outgoing.rs:91
 msgid "This account has no address the server lets it send from."
 msgstr "此帳號沒有伺服器允許用來寄件的地址。"
 
-#: sync/src/services/jmap/outgoing.rs:97
+#: sync/src/services/jmap/outgoing.rs:111
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr "伺服器沒有 [草稿] 或 [寄件備份] 信箱可存放此郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:116
+#: sync/src/services/jmap/outgoing.rs:130
 msgid "The server has no Drafts mailbox."
 msgstr "伺服器沒有 [草稿] 信箱。"
 
-#: sync/src/services/jmap/outgoing.rs:124
+#: sync/src/services/jmap/outgoing.rs:138
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."

@@ -10694,32 +10694,32 @@ msgstr "Este servidor no guarda colores para sus buzones."
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 
-#: sync/src/services/jmap/outgoing.rs:45
+#: sync/src/services/jmap/outgoing.rs:59
 msgid "The server does not let this account send from {address}."
 msgstr "El servidor no permite que esta cuenta envíe desde {address}."
 
-#: sync/src/services/jmap/outgoing.rs:46
+#: sync/src/services/jmap/outgoing.rs:60
 msgid "The server does not let this account send mail now."
 msgstr "El servidor no permite que esta cuenta envíe correo ahora."
 
-#: sync/src/services/jmap/outgoing.rs:47
+#: sync/src/services/jmap/outgoing.rs:61
 msgid "The message names more recipients than the server sends to at once."
 msgstr ""
 "El mensaje tiene más destinatarios de los que el servidor admite de una vez."
 
-#: sync/src/services/jmap/outgoing.rs:48
+#: sync/src/services/jmap/outgoing.rs:62
 msgid "The server could not send to one of the recipients."
 msgstr "El servidor no ha podido enviar a uno de los destinatarios."
 
-#: sync/src/services/jmap/outgoing.rs:49
+#: sync/src/services/jmap/outgoing.rs:63
 msgid "The message is larger than the server sends."
 msgstr "El mensaje es más grande de lo que envía el servidor."
 
-#: sync/src/services/jmap/outgoing.rs:50
+#: sync/src/services/jmap/outgoing.rs:64
 msgid "The server could not read the message to send it."
 msgstr "El servidor no ha podido leer el mensaje para enviarlo."
 
-#: sync/src/services/jmap/outgoing.rs:62
+#: sync/src/services/jmap/outgoing.rs:76
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
@@ -10727,28 +10727,30 @@ msgstr ""
 "Esta cuenta puede leer correo pero no enviarlo: su inicio de sesión no tiene "
 "acceso para enviar."
 
-#: sync/src/services/jmap/outgoing.rs:77
+#: sync/src/services/jmap/outgoing.rs:91
 msgid "This account has no address the server lets it send from."
 msgstr ""
 "Esta cuenta no tiene ninguna dirección desde la que el servidor le permita "
 "enviar."
 
-#: sync/src/services/jmap/outgoing.rs:97
+#: sync/src/services/jmap/outgoing.rs:111
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr ""
 "El servidor no tiene ni un buzón de borradores ni uno de enviados donde "
 "guardar el mensaje."
 
-#: sync/src/services/jmap/outgoing.rs:116
+#: sync/src/services/jmap/outgoing.rs:130
 msgid "The server has no Drafts mailbox."
 msgstr "El servidor no tiene buzón de borradores."
 
-#: sync/src/services/jmap/outgoing.rs:124
+#: sync/src/services/jmap/outgoing.rs:138
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
-msgstr "El servidor ya guarda este mismo mensaje fuera de Borradores, así que no puede guardarlo también como borrador."
+msgstr ""
+"El servidor ya guarda este mismo mensaje fuera de Borradores, así que no "
+"puede guardarlo también como borrador."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
