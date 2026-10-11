@@ -7,6 +7,9 @@ version = "1.0.7"
 edition = "2024"
 rust-version = "1.98"
 license = "GPL-3.0-or-later"
+# None of the crates goes to crates.io. This also lets cargo-deny accept
+# their path dependencies on each other without a version.
+publish = false
 repository = "https://github.com/c9dev/penguin-mail"
 
 [workspace.dependencies]
