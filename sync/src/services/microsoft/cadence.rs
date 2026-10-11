@@ -24,8 +24,9 @@ impl<G: GraphApi> Microsoft<G> {
 
     /// The folders this look covers, and whether the slow poll is due: the
     /// Inbox each time, the rest when the slow poll comes round, and all of
-    /// them at every look while only the tray runs or after Check for
-    /// Mail. The number is the Check for Mail this look answers, for
+    /// them at every look while only the tray runs or after the engine was
+    /// poked (Check for Mail, a send, a saved draft, the network coming
+    /// back). The number is the latest poke this look answers, for
     /// [`Self::slow_poll_done`].
     pub(super) fn due(&self, synced: Vec<String>) -> (Vec<String>, bool, u64) {
         let known = self.known();
@@ -40,15 +41,16 @@ impl<G: GraphApi> Microsoft<G> {
         (due, slow, known.full_check_requested)
     }
 
-    /// Notes that a look read every synced folder, answering the Check for
-    /// Mail numbered `requested`. One asked for during the look stays due.
+    /// Notes that a look read every synced folder, answering the pokes up
+    /// to the one numbered `requested`. A poke during the look stays due.
     pub(super) fn slow_poll_done(&self, requested: u64) {
         let mut known = self.known();
         known.last_slow = Some(Instant::now());
         known.full_check_completed = requested;
     }
 
-    /// Makes the next look read every synced folder.
+    /// Makes the next look read every synced folder. The engine calls it
+    /// on every poke, not only for Check for Mail.
     pub(super) fn check_every_folder(&self) {
         let mut known = self.known();
         known.full_check_requested = known.full_check_requested.wrapping_add(1);

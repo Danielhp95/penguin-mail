@@ -120,8 +120,9 @@ pub(super) struct Known {
     pub listed: bool,
     pub window_open: bool,
     pub last_slow: Option<Instant>,
-    /// Check for Mail presses asked for and answered by a look at every
-    /// synced folder; they differ while one is waiting.
+    /// Engine pokes (Check for Mail, a send, a saved draft, the network
+    /// coming back) counted, and the last one a look at every synced
+    /// folder answered; they differ while one is waiting.
     pub full_check_requested: u64,
     pub full_check_completed: u64,
 }
