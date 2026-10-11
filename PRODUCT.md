@@ -52,8 +52,8 @@ supported and checked.
 - Security: OpenPGP and S/MIME signing and encryption through GnuPG, revocation checks, signed update checks.
 - Assistant: models from Anthropic, OpenAI-compatible servers, local servers or a Claude subscription; MCP
   servers; sandboxed skills; every change asks first unless the person chose Always Allow.
-- Languages: American English source strings, British English generated from them, European Portuguese and
-  Traditional Chinese (Taiwan) kept complete.
+- Languages: American English source strings, British English generated from them, French, German, Spanish,
+  European Portuguese and Traditional Chinese (Taiwan) kept complete.
 - Terms are defined in `CONTEXT.md`; the code's rules are in `AGENTS.md`.
 
 ## Brand Commitments

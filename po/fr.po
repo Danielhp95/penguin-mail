@@ -103,12 +103,9 @@ msgstr ""
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:33
 msgid ""
 "Every control named for screen readers and reachable from the keyboard, in "
-"American English, British English, European Portuguese and Traditional "
-"Chinese (Taiwan)"
-msgstr ""
-"Chaque contrôle nommé pour les lecteurs d’écran et accessible au clavier, en "
-"anglais américain, anglais britannique, portugais européen et chinois "
-"traditionnel (Taïwan)"
+"American English, British English, French, German, Spanish, European "
+"Portuguese and Traditional Chinese (Taiwan)"
+msgstr "Chaque contrôle est nommé pour les lecteurs d’écran et accessible au clavier, en anglais américain, anglais britannique, français, allemand, espagnol, portugais européen et chinois traditionnel (Taïwan)"
 
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:35
 msgid ""
