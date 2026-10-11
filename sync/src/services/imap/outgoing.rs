@@ -197,6 +197,13 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     }
 
     /// Sends the draft as the server holds it, then erases it.
+    ///
+    /// The draft stays until a send succeeds, so a send the server took
+    /// whose answer was lost leaves it for the next try. That try looks in
+    /// Sent for the draft's Message-ID first, and when a copy is there it
+    /// erases the draft and answers `NotFound`, the answer for a draft
+    /// already sent: the caller then files no second copy. A draft without
+    /// a Message-ID cannot be looked for and goes out again.
     pub(super) async fn send_saved(&self, draft_id: &str) -> Result<String, BackendError> {
         let raw = self
             .raw_messages(&[draft_id.to_string()])
@@ -205,6 +212,19 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
             .next()
             .ok_or(BackendError::NotFound)?
             .bytes;
+        // An empty Message-ID would match every message in Sent.
+        if let Some(message_id) = message_id_of(&raw).filter(|id| !id.is_empty())
+            && self
+                .sent_with(&message_id)
+                .await?
+                .is_some_and(|found| found != draft_id)
+        {
+            tracing::info!("a draft tried before is already in Sent; not sending it again");
+            if let Err(err) = self.erase(draft_id).await {
+                tracing::warn!(%err, "the draft went out before, but could not remove it from Drafts");
+            }
+            return Err(BackendError::NotFound);
+        }
         let sent = self.submit(&raw).await?;
         if let Err(err) = self.erase(draft_id).await {
             tracing::warn!(%err, "sent the draft, but could not remove it from Drafts");

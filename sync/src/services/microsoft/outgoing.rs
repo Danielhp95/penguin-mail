@@ -140,16 +140,28 @@ impl<G: GraphApi> Microsoft<G> {
         })
     }
 
+    /// Sends the draft as Graph holds it. Graph moves a draft it sends to
+    /// Sent Items, and with immutable ids the message keeps the draft's
+    /// id, so a retry after a lost answer finds the message itself. One
+    /// that is no longer a draft has gone out and is not sent again.
     pub(super) async fn send_saved(&self, draft: &str) -> Result<String, BackendError> {
-        let held = self.graph().messages(&[draft.to_string()]).await.map_err(backend)?;
-        let message_id = held
+        let held = self
+            .graph()
+            .messages(&[draft.to_string()])
+            .await
+            .map_err(backend)?
             .into_iter()
             .next()
             .ok_or(BackendError::NotFound)?
-            .map_err(backend)?
+            .map_err(backend)?;
+        let message_id = held
             .internet_message_id
             .map(|m| m.trim_matches(['<', '>']).to_string())
             .unwrap_or_else(|| draft.to_string());
+        if held.is_draft == Some(false) {
+            tracing::info!("a draft tried before has already gone out; not sending it again");
+            return Ok(message_id);
+        }
         self.graph().send_draft(draft).await.map_err(backend)?;
         Ok(message_id)
     }

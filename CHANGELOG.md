@@ -14,6 +14,10 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Keep 2 years, 5 years or all of your mail on this computer. Older mail downloads in the background while new mail keeps arriving, and a shorter choice frees the space at once.
 - Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
 
+### Fixed
+
+- A Send Later message on an IMAP or Outlook account no longer goes out twice when the connection drops just as it is sent.
+
 ## 1.0.7 (2026-10-10)
 
 ### Fixed
