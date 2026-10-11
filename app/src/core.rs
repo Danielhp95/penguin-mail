@@ -800,18 +800,26 @@ impl Core {
                 incoming_login,
                 smtp_login,
                 password,
+                smtp_password,
                 ..
             } = attempt;
             // `check` reports which server refused, as a `CheckError` the
             // dialog reads back out of the `anyhow::Error`.
-            let checked =
-                mailrs_imap::check(&incoming, &smtp, &incoming_login, &smtp_login, &password)
-                    .await?;
+            let checked = mailrs_imap::check(
+                &incoming,
+                &smtp,
+                &incoming_login,
+                &smtp_login,
+                &password,
+                smtp_password.as_deref().unwrap_or(&password),
+            )
+            .await?;
             let new = NewImap {
                 address,
                 provider_name,
                 servers: servers_for(&incoming, &checked.imap_user, &smtp, &checked.smtp_user),
                 password,
+                smtp_password,
             };
             let account = imap_signed_in(&db, Arc::clone(&passwords), new, now_millis()).await?;
             let services = connect_imap(&db, passwords, &account, window_days).await?;
@@ -844,18 +852,21 @@ impl Core {
                 incoming_login,
                 smtp_login,
                 password,
+                smtp_password,
                 pop3_remove,
                 ..
             } = attempt;
             let pop3_user = check_pop3(&incoming, &incoming_login, &password).await?;
+            let outgoing = smtp_password.as_deref().unwrap_or(&password);
             let smtp_user =
-                mailrs_imap::check_smtp(&smtp, &pop3_user, &smtp_login, &password).await?;
+                mailrs_imap::check_smtp(&smtp, &pop3_user, &smtp_login, outgoing).await?;
             let new = NewPop3 {
                 address,
                 provider_name,
                 servers: pop3_servers_for(&incoming, &pop3_user, &smtp, &smtp_user),
                 remove: pop3_remove,
                 password,
+                smtp_password,
             };
             let account = pop3_signed_in(&db, Arc::clone(&passwords), new, now_millis()).await?;
             let services = connect_pop3(&db, passwords, &account).await?;
@@ -1036,6 +1047,28 @@ pub struct ServicesFound {
     pub calendar_missed: Option<Miss>,
     /// Why no contacts server was found, when none was.
     pub contacts_missed: Option<Miss>,
+}
+
+impl Core {
+    /// The outgoing password `account_id` keeps apart from its incoming
+    /// one, for Server Settings to hold when the account signs in again,
+    /// so signing in leaves it in place. `None` when it has none or the
+    /// keyring would not say.
+    pub async fn outgoing_password(&self, account_id: AccountId) -> Option<String> {
+        let passwords = Arc::clone(&self.secrets.passwords);
+        let read = self
+            .call(async move {
+                tokio::task::spawn_blocking(move || passwords.load_outgoing(account_id))
+                    .await
+                    .map_err(anyhow::Error::from)?
+                    .map_err(anyhow::Error::from)
+            })
+            .await;
+        read.unwrap_or_else(|err| {
+            tracing::warn!(account = account_id, error = %err, "could not read the outgoing password");
+            None
+        })
+    }
 }
 
 /// The incoming server's host, the user name it took, and the password in

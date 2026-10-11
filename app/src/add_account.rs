@@ -181,6 +181,10 @@ pub struct Proposal {
     pub pop3_offer: Option<Server>,
     /// What a POP3 account does with mail on the server; `None` for IMAP.
     pub pop3_remove: Option<RemoveSetting>,
+    /// Server Settings holds a password for the outgoing server apart from
+    /// the incoming one. The password itself stays in the dialog, out of
+    /// this `Debug` type.
+    pub own_smtp_password: bool,
 }
 
 /// Where discovery's answer takes the dialog.
@@ -356,6 +360,7 @@ fn proposal_from(candidate: Candidate, remaining: Vec<Candidate>, address: &Addr
         remaining,
         pop3_offer,
         pop3_remove,
+        own_smtp_password: false,
     }
 }
 
@@ -397,6 +402,16 @@ fn usual_servers(address: &Address) -> Proposal {
         remaining: Vec::new(),
         pop3_offer: None,
         pop3_remove: None,
+        own_smtp_password: false,
+    }
+}
+
+/// `proposal` with the outgoing password Server Settings holds, `typed`:
+/// an empty one means the outgoing server takes the incoming password.
+pub fn with_smtp_password(proposal: Proposal, typed: &str) -> Proposal {
+    Proposal {
+        own_smtp_password: !typed.is_empty(),
+        ..proposal
     }
 }
 
@@ -643,13 +658,17 @@ pub struct Attempt {
     /// The same for the outgoing server.
     pub smtp_login: String,
     pub password: String,
+    /// The outgoing server's own password, when Server Settings holds one.
+    pub smtp_password: Option<String>,
     /// What a POP3 account does with mail on the server.
     pub pop3_remove: RemoveSetting,
 }
 
 /// The try Sign In makes. The password goes as typed: app passwords are
-/// shown in groups with spaces, and trimming one changes it.
-pub fn attempt(address: &Address, proposal: &Proposal, password: &str) -> Attempt {
+/// shown in groups with spaces, and trimming one changes it. The same
+/// holds for `smtp_password`, which goes only when the proposal says
+/// Server Settings holds one.
+pub fn attempt(address: &Address, proposal: &Proposal, password: &str, smtp_password: &str) -> Attempt {
     Attempt {
         address: address.full(),
         provider_name: proposal.provider_name.clone(),
@@ -662,6 +681,8 @@ pub fn attempt(address: &Address, proposal: &Proposal, password: &str) -> Attemp
             .unwrap_or_else(|| address.full()),
         smtp_login: proposal.smtp_user.clone().unwrap_or_else(|| address.full()),
         password: password.to_string(),
+        smtp_password: (proposal.own_smtp_password && !smtp_password.is_empty())
+            .then(|| smtp_password.to_string()),
         pop3_remove: proposal.pop3_remove.unwrap_or_default(),
     }
 }
@@ -769,14 +790,41 @@ fn failure_given(err: &anyhow::Error, proposal: &Proposal, plug: Plug) -> Failur
         Failure::plain(line, could_not.clone(), reason.to_string())
     };
     match err {
-        ImapError::Auth { text } => refused(
-            gettext("The server refused the password."),
-            text,
-            proposal,
-            refused_title(proposal),
-            refused_body(proposal),
-            false,
-        ),
+        // With two passwords, the person needs to know which one to fix.
+        ImapError::Auth { text } => match check {
+            CheckError::Smtp(_) if proposal.own_smtp_password => refused(
+                gettext("The outgoing server refused the outgoing password."),
+                text,
+                proposal,
+                gettext("The outgoing server refused its password"),
+                gettext("Check the outgoing password in Server Settings, then choose Sign In."),
+                false,
+            ),
+            CheckError::Smtp(_) => refused(
+                gettext("The outgoing server refused the password."),
+                text,
+                proposal,
+                refused_title(proposal),
+                refused_body(proposal),
+                false,
+            ),
+            CheckError::Imap(_) if proposal.own_smtp_password => refused(
+                gettext("The incoming server refused the password."),
+                text,
+                proposal,
+                refused_title(proposal),
+                refused_body(proposal),
+                false,
+            ),
+            CheckError::Imap(_) => refused(
+                gettext("The server refused the password."),
+                text,
+                proposal,
+                refused_title(proposal),
+                refused_body(proposal),
+                false,
+            ),
+        },
         ImapError::ImapDisabled { text } => refused(
             gettext("IMAP is off for this account."),
             text,
@@ -1170,6 +1218,7 @@ pub fn typed_servers(
         remaining: Vec::new(),
         pop3_offer: None,
         pop3_remove: before.pop3_remove,
+        own_smtp_password: before.own_smtp_password,
     })
 }
 
@@ -1218,6 +1267,7 @@ pub fn saved_proposal(account: &Account, kept: &Kept) -> Proposal {
         remaining: Vec::new(),
         pop3_offer: None,
         pop3_remove,
+        own_smtp_password: false,
     }
 }
 
@@ -1666,6 +1716,7 @@ mod tests {
                 remaining: Vec::new(),
                 pop3_offer: None,
                 pop3_remove: None,
+                own_smtp_password: false,
             }
         );
     }
@@ -1724,7 +1775,7 @@ mod tests {
 
     #[test]
     fn the_password_goes_as_typed_and_the_address_logs_in() {
-        let tried = attempt(&dana(), &fastmail(), " abcd efgh ");
+        let tried = attempt(&dana(), &fastmail(), " abcd efgh ", "");
         assert_eq!(tried.password, " abcd efgh ");
         assert_eq!(tried.incoming_login, "Dana@fastmail.com");
         assert_eq!(tried.smtp_login, "Dana@fastmail.com");
@@ -1738,7 +1789,7 @@ mod tests {
             smtp_user: Some("dana@fastmail.com".into()),
             ..fastmail()
         };
-        let tried = attempt(&dana(), &typed, "pw");
+        let tried = attempt(&dana(), &typed, "pw", "");
         assert_eq!(tried.incoming_login, "dana");
         assert_eq!(tried.smtp_login, "dana@fastmail.com");
     }
@@ -2195,7 +2246,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(proposal.smtp_user.as_deref(), Some("d.santos"));
-        let tried = attempt(&dana(), &proposal, "pw");
+        let tried = attempt(&dana(), &proposal, "pw", "");
         assert_eq!(tried.smtp_login, "d.santos");
     }
 
@@ -2255,6 +2306,51 @@ mod tests {
             said.said.as_deref(),
             Some("The server said: [AUTHENTICATIONFAILED]")
         );
+    }
+
+    #[test]
+    fn an_outgoing_password_goes_only_when_server_settings_has_one() {
+        let shared = attempt(&dana(), &fastmail(), "pw", "");
+        assert!(shared.smtp_password.is_none());
+        let own = with_smtp_password(fastmail(), "out");
+        assert!(own.own_smtp_password);
+        assert_eq!(attempt(&dana(), &own, "pw", "out").smtp_password.as_deref(), Some("out"));
+        let cleared = with_smtp_password(own, "");
+        assert!(!cleared.own_smtp_password);
+        assert!(attempt(&dana(), &cleared, "pw", "").smtp_password.is_none());
+    }
+
+    #[test]
+    fn a_refused_outgoing_password_of_its_own_is_named() {
+        let refused = anyhow::Error::new(CheckError::Smtp(ImapError::Auth {
+            text: "535 Bad credentials".into(),
+        }));
+        let said = failure(&refused, &with_smtp_password(fastmail(), "out"));
+        assert_eq!(said.kind, FailureKind::Refused);
+        assert_eq!(
+            said.line,
+            "The outgoing server refused the outgoing password. The server said: 535 Bad credentials"
+        );
+        assert_eq!(said.title, "The outgoing server refused its password");
+        assert_eq!(
+            said.body,
+            "Check the outgoing password in Server Settings, then choose Sign In."
+        );
+    }
+
+    #[test]
+    fn a_shared_password_the_outgoing_server_refused_says_which_server() {
+        let refused = anyhow::Error::new(CheckError::Smtp(ImapError::Auth { text: String::new() }));
+        let said = failure(&refused, &fastmail());
+        assert_eq!(said.line, "The outgoing server refused the password.");
+        assert_eq!(said.title, "Fastmail refused the password");
+    }
+
+    #[test]
+    fn with_an_outgoing_password_apart_an_incoming_refusal_names_the_incoming_server() {
+        let refused = anyhow::Error::new(CheckError::Imap(ImapError::Auth { text: String::new() }));
+        let said = failure(&refused, &with_smtp_password(fastmail(), "out"));
+        assert_eq!(said.line, "The incoming server refused the password.");
     }
 
     #[test]
@@ -2599,10 +2695,10 @@ mod tests {
             (pop3.protocol, pop3.pop3_remove),
             (Protocol::Pop3, Some(RemoveSetting::Downloaded))
         );
-        assert_eq!(attempt(&dana(), &pop3, "pw").pop3_remove, RemoveSetting::Downloaded);
+        assert_eq!(attempt(&dana(), &pop3, "pw", "").pop3_remove, RemoveSetting::Downloaded);
         let back = with_protocol(pop3, Protocol::Imap, RemoveSetting::Downloaded);
         assert_eq!((back.protocol, back.pop3_remove), (Protocol::Imap, None));
-        let tried = attempt(&dana(), &back, "pw");
+        let tried = attempt(&dana(), &back, "pw", "");
         assert_eq!((tried.protocol, tried.pop3_remove), (Protocol::Imap, RemoveSetting::Never));
     }
 

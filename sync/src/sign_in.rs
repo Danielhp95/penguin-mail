@@ -163,6 +163,8 @@ pub struct NewImap {
     pub provider_name: String,
     pub servers: Servers,
     pub password: String,
+    /// The outgoing server's own password, when it takes a different one.
+    pub smtp_password: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -222,6 +224,7 @@ pub async fn imap_signed_in<P: PasswordStore + 'static>(
         provider_name,
         servers,
         password,
+        smtp_password,
     } = new;
     let email = address.clone();
     let before = db
@@ -235,7 +238,8 @@ pub async fn imap_signed_in<P: PasswordStore + 'static>(
             });
         }
         Some(held) => {
-            save_password(Arc::clone(&passwords), held.id, password.clone()).await?;
+            save_passwords(Arc::clone(&passwords), held.id, password.clone(), smtp_password.clone())
+                .await?;
             held.id
         }
         None => {
@@ -257,7 +261,8 @@ pub async fn imap_signed_in<P: PasswordStore + 'static>(
                 address: address.clone(),
                 provider: provider.unwrap_or_default(),
             })?;
-            if let Err(err) = save_password(Arc::clone(&passwords), id, password.clone()).await
+            if let Err(err) =
+                save_passwords(Arc::clone(&passwords), id, password.clone(), smtp_password).await
             {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
                 return Err(err);
@@ -296,6 +301,8 @@ pub struct NewPop3 {
     /// What the account does with mail on the server.
     pub remove: RemoveSetting,
     pub password: String,
+    /// The outgoing server's own password, when it takes a different one.
+    pub smtp_password: Option<String>,
 }
 
 /// Keeps a POP3 account whose login worked, as [`imap_signed_in`] keeps an
@@ -315,6 +322,7 @@ pub async fn pop3_signed_in<P: PasswordStore + 'static>(
         servers,
         remove,
         password,
+        smtp_password,
     } = new;
     let email = address.clone();
     let before = db
@@ -328,7 +336,7 @@ pub async fn pop3_signed_in<P: PasswordStore + 'static>(
             });
         }
         Some(held) => {
-            save_password(Arc::clone(&passwords), held.id, password).await?;
+            save_passwords(Arc::clone(&passwords), held.id, password, smtp_password).await?;
             held.id
         }
         None => {
@@ -351,7 +359,9 @@ pub async fn pop3_signed_in<P: PasswordStore + 'static>(
                 address: address.clone(),
                 provider: provider.unwrap_or_default(),
             })?;
-            if let Err(err) = save_password(Arc::clone(&passwords), id, password).await {
+            if let Err(err) =
+                save_passwords(Arc::clone(&passwords), id, password, smtp_password).await
+            {
                 db.write(move |c| accounts::delete_account(c, id)).await?;
                 return Err(err);
             }
@@ -511,16 +521,26 @@ async fn save_token<P: PasswordStore + 'static>(
     Ok(())
 }
 
-/// Hands `password` to the keyring off the async runtime, since the
-/// Secret Service call blocks.
-async fn save_password<P: PasswordStore + 'static>(
+/// Hands `password`, and the outgoing server's own password when there
+/// is one, to the keyring off the async runtime, since the Secret Service
+/// call blocks. Without one, an outgoing password kept from before goes,
+/// so the outgoing server signs in with the incoming password as the
+/// form said it would.
+async fn save_passwords<P: PasswordStore + 'static>(
     passwords: Arc<P>,
     id: AccountId,
     password: String,
+    smtp_password: Option<String>,
 ) -> Result<(), ImapSignInError> {
-    tokio::task::spawn_blocking(move || passwords.save(id, &password))
-        .await
-        .map_err(|err| PasswordError::Keyring(err.to_string()))??;
+    tokio::task::spawn_blocking(move || {
+        passwords.save(id, &password)?;
+        match smtp_password {
+            Some(outgoing) => passwords.save_outgoing(id, &outgoing),
+            None => passwords.delete_outgoing(id),
+        }
+    })
+    .await
+    .map_err(|err| PasswordError::Keyring(err.to_string()))??;
     Ok(())
 }
 

@@ -8,6 +8,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### New
 
 - Sign in to Gmail with a Google client from your own Google Cloud project, named in two environment variables, when Google blocks Penguin Mail's own client. docs/setup.md says how.
+- Give the outgoing server a password of its own in Server Settings, for an IMAP or POP3 account whose SMTP password differs from its incoming one.
 
 ## 1.0.7 (2026-10-10)
 

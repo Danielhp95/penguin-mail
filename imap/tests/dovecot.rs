@@ -51,17 +51,17 @@ fn check_signs_in_to_real_servers_and_refuses_a_certificate_for_another_name() {
 
         let imaps = server("localhost", dovecot.imaps, Security::Tls);
         let smtps = server("localhost", tls.smtp, Security::Tls);
-        check(&imaps, &smtps, ADDRESS, ADDRESS, &password)
+        check(&imaps, &smtps, ADDRESS, ADDRESS, &password, &password)
             .await
             .expect("both servers take the password over TLS");
 
         let imap = server("localhost", dovecot.imap, Security::StartTls);
         let submission = server("localhost", starttls.smtp, Security::StartTls);
-        check(&imap, &submission, ADDRESS, ADDRESS, &password)
+        check(&imap, &submission, ADDRESS, ADDRESS, &password, &password)
             .await
             .expect("both servers take the password after STARTTLS");
 
-        let refused = check(&imaps, &smtps, ADDRESS, ADDRESS, "not-the-password")
+        let refused = check(&imaps, &smtps, ADDRESS, ADDRESS, "not-the-password", "not-the-password")
             .await
             .expect_err("a wrong password");
         // check signs in to IMAP first, so the refusal comes from there.
@@ -73,7 +73,7 @@ fn check_signs_in_to_real_servers_and_refuses_a_certificate_for_another_name() {
         // The certificate names localhost alone, so the same server reached
         // by its address has to fail the host name check.
         let by_address = server("127.0.0.1", dovecot.imaps, Security::Tls);
-        let mismatch = check(&by_address, &smtps, ADDRESS, ADDRESS, &password)
+        let mismatch = check(&by_address, &smtps, ADDRESS, ADDRESS, &password, &password)
             .await
             .expect_err("a certificate for another name");
         assert!(

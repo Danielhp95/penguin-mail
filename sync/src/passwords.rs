@@ -1,7 +1,8 @@
 //! Where an IMAP account's password and a Microsoft account's refresh
 //! token live: the desktop keyring, under one service name for each kind,
-//! with the account's id as the user. The store keeps the servers and
-//! never the secret.
+//! with the account's id as the user. An outgoing server with a password
+//! of its own keeps it beside the incoming one, under the id and `/smtp`.
+//! The store keeps the servers and never the secret.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -28,6 +29,12 @@ pub trait PasswordStore: Send + Sync {
     fn save(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError>;
     /// Succeeds when there is nothing to delete.
     fn delete(&self, account_id: AccountId) -> Result<(), PasswordError>;
+    /// The outgoing server's own password, for an account whose SMTP
+    /// server takes a different one; `None` means the incoming password.
+    fn load_outgoing(&self, account_id: AccountId) -> Result<Option<String>, PasswordError>;
+    fn save_outgoing(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError>;
+    /// Succeeds when there is nothing to delete.
+    fn delete_outgoing(&self, account_id: AccountId) -> Result<(), PasswordError>;
 }
 
 /// Passwords under one service name: the desktop keyring through Secret
@@ -72,8 +79,8 @@ impl KeyringPasswords {
     }
 
     #[cfg(not(feature = "packaging-flatpak"))]
-    fn entry(&self, account_id: AccountId) -> Result<keyring::Entry, PasswordError> {
-        keyring::Entry::new(&self.service, &user(account_id)).map_err(keyring_error)
+    fn entry(&self, user: &str) -> Result<keyring::Entry, PasswordError> {
+        keyring::Entry::new(&self.service, user).map_err(keyring_error)
     }
 }
 
@@ -89,27 +96,75 @@ fn user(account_id: AccountId) -> String {
     account_id.to_string()
 }
 
+/// The keyring's user name for an account's outgoing password, beside the
+/// incoming one under the same service.
+fn outgoing_user(account_id: AccountId) -> String {
+    format!("{account_id}/smtp")
+}
+
 #[cfg(not(feature = "packaging-flatpak"))]
-impl PasswordStore for KeyringPasswords {
-    fn load(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
-        match self.entry(account_id)?.get_password() {
+impl KeyringPasswords {
+    fn load_as(&self, user: &str) -> Result<Option<String>, PasswordError> {
+        match self.entry(user)?.get_password() {
             Ok(password) => Ok(Some(password)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(err) => Err(keyring_error(err)),
         }
     }
 
-    fn save(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
-        self.entry(account_id)?
+    fn save_as(&self, user: &str, password: &str) -> Result<(), PasswordError> {
+        self.entry(user)?
             .set_password(password)
             .map_err(keyring_error)
     }
 
-    fn delete(&self, account_id: AccountId) -> Result<(), PasswordError> {
-        match self.entry(account_id)?.delete_credential() {
+    fn delete_as(&self, user: &str) -> Result<(), PasswordError> {
+        match self.entry(user)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(err) => Err(keyring_error(err)),
         }
+    }
+}
+
+#[cfg(feature = "packaging-flatpak")]
+impl KeyringPasswords {
+    fn load_as(&self, user: &str) -> Result<Option<String>, PasswordError> {
+        mailrs_gmail::secret_portal::load(&self.service, user).map_err(PasswordError::Keyring)
+    }
+
+    fn save_as(&self, user: &str, password: &str) -> Result<(), PasswordError> {
+        mailrs_gmail::secret_portal::save(&self.service, user, password)
+            .map_err(PasswordError::Keyring)
+    }
+
+    fn delete_as(&self, user: &str) -> Result<(), PasswordError> {
+        mailrs_gmail::secret_portal::delete(&self.service, user).map_err(PasswordError::Keyring)
+    }
+}
+
+impl PasswordStore for KeyringPasswords {
+    fn load(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
+        self.load_as(&user(account_id))
+    }
+
+    fn save(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
+        self.save_as(&user(account_id), password)
+    }
+
+    fn delete(&self, account_id: AccountId) -> Result<(), PasswordError> {
+        self.delete_as(&user(account_id))
+    }
+
+    fn load_outgoing(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
+        self.load_as(&outgoing_user(account_id))
+    }
+
+    fn save_outgoing(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
+        self.save_as(&outgoing_user(account_id), password)
+    }
+
+    fn delete_outgoing(&self, account_id: AccountId) -> Result<(), PasswordError> {
+        self.delete_as(&outgoing_user(account_id))
     }
 }
 
@@ -118,47 +173,57 @@ fn keyring_error(err: keyring::Error) -> PasswordError {
     PasswordError::Keyring(err.to_string())
 }
 
-#[cfg(feature = "packaging-flatpak")]
-impl PasswordStore for KeyringPasswords {
-    fn load(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
-        mailrs_gmail::secret_portal::load(&self.service, &user(account_id))
-            .map_err(PasswordError::Keyring)
-    }
-
-    fn save(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
-        mailrs_gmail::secret_portal::save(&self.service, &user(account_id), password)
-            .map_err(PasswordError::Keyring)
-    }
-
-    fn delete(&self, account_id: AccountId) -> Result<(), PasswordError> {
-        mailrs_gmail::secret_portal::delete(&self.service, &user(account_id))
-            .map_err(PasswordError::Keyring)
-    }
-}
-
 /// Passwords in memory, for tests and the demo, which must never reach
 /// the person's keyring.
+/// Keyed by the user name the keyring would use, so the incoming and
+/// outgoing passwords sit apart as they do there.
 #[derive(Default)]
 pub struct MemoryPasswords {
-    passwords: Mutex<HashMap<AccountId, String>>,
+    passwords: Mutex<HashMap<String, String>>,
+}
+
+impl MemoryPasswords {
+    fn load_as(&self, user: String) -> Result<Option<String>, PasswordError> {
+        let passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(passwords.get(&user).cloned())
+    }
+
+    fn save_as(&self, user: String, password: &str) -> Result<(), PasswordError> {
+        let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
+        passwords.insert(user, password.to_string());
+        Ok(())
+    }
+
+    fn delete_as(&self, user: String) -> Result<(), PasswordError> {
+        let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
+        passwords.remove(&user);
+        Ok(())
+    }
 }
 
 impl PasswordStore for MemoryPasswords {
     fn load(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
-        let passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(passwords.get(&account_id).cloned())
+        self.load_as(user(account_id))
     }
 
     fn save(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
-        let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
-        passwords.insert(account_id, password.to_string());
-        Ok(())
+        self.save_as(user(account_id), password)
     }
 
     fn delete(&self, account_id: AccountId) -> Result<(), PasswordError> {
-        let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
-        passwords.remove(&account_id);
-        Ok(())
+        self.delete_as(user(account_id))
+    }
+
+    fn load_outgoing(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
+        self.load_as(outgoing_user(account_id))
+    }
+
+    fn save_outgoing(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
+        self.save_as(outgoing_user(account_id), password)
+    }
+
+    fn delete_outgoing(&self, account_id: AccountId) -> Result<(), PasswordError> {
+        self.delete_as(outgoing_user(account_id))
     }
 }
 
@@ -188,6 +253,27 @@ impl PasswordStore for Passwords {
         match self {
             Passwords::Keyring(store) => store.delete(account_id),
             Passwords::Memory(store) => store.delete(account_id),
+        }
+    }
+
+    fn load_outgoing(&self, account_id: AccountId) -> Result<Option<String>, PasswordError> {
+        match self {
+            Passwords::Keyring(store) => store.load_outgoing(account_id),
+            Passwords::Memory(store) => store.load_outgoing(account_id),
+        }
+    }
+
+    fn save_outgoing(&self, account_id: AccountId, password: &str) -> Result<(), PasswordError> {
+        match self {
+            Passwords::Keyring(store) => store.save_outgoing(account_id, password),
+            Passwords::Memory(store) => store.save_outgoing(account_id, password),
+        }
+    }
+
+    fn delete_outgoing(&self, account_id: AccountId) -> Result<(), PasswordError> {
+        match self {
+            Passwords::Keyring(store) => store.delete_outgoing(account_id),
+            Passwords::Memory(store) => store.delete_outgoing(account_id),
         }
     }
 }
@@ -247,7 +333,10 @@ impl Secrets {
             }
             Provider::Imap | Provider::Pop3 => {
                 let passwords = Arc::clone(&self.passwords);
-                Box::new(move || passwords.delete(id))
+                Box::new(move || {
+                    passwords.delete_outgoing(id)?;
+                    passwords.delete(id)
+                })
             }
             Provider::Microsoft => {
                 let tokens = Arc::clone(&self.microsoft);
@@ -262,7 +351,7 @@ impl Secrets {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyringPasswords, MemoryPasswords, PasswordStore, user};
+    use super::{KeyringPasswords, MemoryPasswords, PasswordStore, Secrets, outgoing_user, user};
 
     #[test]
     fn every_imap_password_sits_under_one_service_by_account_id() {
@@ -279,5 +368,40 @@ mod tests {
         store.delete(1).unwrap();
         store.delete(1).unwrap();
         assert_eq!(store.load(1).unwrap(), None);
+    }
+
+    #[test]
+    fn an_outgoing_password_is_kept_apart_from_the_incoming_one() {
+        let store = MemoryPasswords::default();
+        store.save(1, "incoming").unwrap();
+        assert_eq!(store.load_outgoing(1).unwrap(), None);
+        store.save_outgoing(1, "outgoing").unwrap();
+        assert_eq!(store.load(1).unwrap().as_deref(), Some("incoming"));
+        assert_eq!(store.load_outgoing(1).unwrap().as_deref(), Some("outgoing"));
+        store.delete_outgoing(1).unwrap();
+        assert_eq!(store.load_outgoing(1).unwrap(), None);
+        assert_eq!(store.load(1).unwrap().as_deref(), Some("incoming"));
+    }
+
+    #[test]
+    fn the_outgoing_password_sits_beside_the_incoming_one_under_its_own_user() {
+        assert_eq!(outgoing_user(7), "7/smtp");
+    }
+
+    #[tokio::test]
+    async fn forgetting_an_imap_account_deletes_both_its_passwords() {
+        let secrets = Secrets::memory();
+        let account = mailrs_domain::Account {
+            id: 3,
+            email: "dana@fastmail.com".into(),
+            state: mailrs_domain::AccountState::Ok,
+            provider: mailrs_domain::Provider::Imap,
+            provider_name: Some("Fastmail".into()),
+        };
+        secrets.passwords.save(3, "incoming").unwrap();
+        secrets.passwords.save_outgoing(3, "outgoing").unwrap();
+        secrets.forget(&account).await.unwrap();
+        assert_eq!(secrets.passwords.load(3).unwrap(), None);
+        assert_eq!(secrets.passwords.load_outgoing(3).unwrap(), None);
     }
 }

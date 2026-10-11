@@ -1206,6 +1206,8 @@ struct ManualStep {
     removal: Removals,
     incoming: ServerRows,
     smtp: ServerRows,
+    /// The outgoing server's own password; empty means the incoming one.
+    smtp_password: adw::PasswordEntryRow,
     problem: gtk::Label,
     use_them: gtk::Button,
 }
@@ -1394,6 +1396,13 @@ fn manual_step() -> ManualStep {
     smtp_user.set_tooltip_text(Some(&gettext(
         "Leave it empty to use the incoming user name.",
     )));
+    let smtp_password = adw::PasswordEntryRow::builder()
+        .title(gettext("Outgoing Password"))
+        .build();
+    crate::ui::name(&smtp_password, &gettext("Outgoing Password"));
+    smtp_password.set_tooltip_text(Some(&gettext(
+        "Leave it empty to use the password you sign in with.",
+    )));
     let incoming = adw::PreferencesGroup::builder()
         .title(gettext("Incoming Mail"))
         .build();
@@ -1448,10 +1457,11 @@ fn manual_step() -> ManualStep {
         .build();
     let login = adw::PreferencesGroup::builder()
         .title(gettext("Sign-In"))
-        .description(gettext("Leave them empty to sign in with your address."))
+        .description(gettext("Leave the user names empty to sign in with your address."))
         .build();
     login.add(&incoming_rows.user);
     login.add(&smtp.user);
+    login.add(&smtp_password);
     login.add(&problem);
     let content = adw::PreferencesPage::new();
     content.add(&incoming);
@@ -1481,6 +1491,7 @@ fn manual_step() -> ManualStep {
         removal,
         incoming: incoming_rows,
         smtp,
+        smtp_password,
         problem,
         use_them,
     }
@@ -1523,6 +1534,10 @@ struct Dialog {
     /// The address the password page last opened for, whose password the
     /// field may hold.
     password_for: RefCell<Option<String>>,
+    /// The outgoing server's own password, as Use These Settings took it
+    /// from Server Settings or the keyring gave it for an account signing
+    /// in again. Empty means the incoming password.
+    smtp_password: RefCell<String>,
     /// The address the address page offered a correction for, so a second
     /// Continue with it unchanged looks it up as typed.
     declined: RefCell<Option<Address>>,
@@ -1602,6 +1617,7 @@ impl Dialog {
             typed: RefCell::new(None),
             proposal: RefCell::new(None),
             password_for: RefCell::new(None),
+            smtp_password: RefCell::new(String::new()),
             declined: RefCell::new(None),
             checks: RefCell::new(Checks::default()),
             browser_cancel: RefCell::new(None),
@@ -2127,6 +2143,7 @@ impl Dialog {
         };
         if !add_account::keeps_password(self.password_for.borrow().as_deref(), &address) {
             page.password.set_text("");
+            self.smtp_password.replace(String::new());
         }
         self.password_for.replace(Some(address));
         match &self.again {
@@ -2270,13 +2287,14 @@ impl Dialog {
         }
         let name = Some(self.password.name.text().trim().to_string())
             .filter(|name| !name.is_empty() && self.again.is_none());
+        let smtp_password = self.smtp_password.borrow().clone();
         let ticket = self.asking.ask();
         self.password.sign_in.set_sensitive(false);
         self.password.failed_retry.set_sensitive(false);
         self.password.sign_in.set_label(&gettext("Signing In…"));
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            this.try_candidates(address, proposal, password, name, ticket)
+            this.try_candidates(address, proposal, (password, smtp_password), name, ticket)
                 .await;
             // Every way out of the run ends here, so Sign In comes back
             // whether the run signed in, failed or lost its dialog.
@@ -2292,12 +2310,12 @@ impl Dialog {
         self: &Rc<Self>,
         address: Address,
         mut proposal: Proposal,
-        password: String,
+        (password, smtp_password): (String, String),
         name: Option<String>,
         ticket: add_account::Ticket,
     ) {
         loop {
-            let attempt = add_account::attempt(&address, &proposal, &password);
+            let attempt = add_account::attempt(&address, &proposal, &password, &smtp_password);
             let signed = match attempt.protocol {
                 Protocol::Imap => self.core.sign_in_imap(attempt).await,
                 Protocol::Pop3 => self.core.sign_in_pop3(attempt).await,
@@ -2481,6 +2499,11 @@ impl Dialog {
             .incoming
             .fill(&proposal.incoming, proposal.incoming_user.as_deref());
         manual.smtp.fill(&proposal.smtp, smtp_user);
+        let held = match proposal.own_smtp_password {
+            true => self.smtp_password.borrow().clone(),
+            false => String::new(),
+        };
+        manual.smtp_password.set_text(&held);
         manual.removal.fill(proposal.pop3_remove.unwrap_or_default());
         manual
             .removal
@@ -2531,8 +2554,15 @@ impl Dialog {
         .map(|proposal| {
             add_account::with_protocol(proposal, protocol, self.manual.removal.chosen())
         });
+        let smtp_password = self.manual.smtp_password.text().to_string();
         match typed {
-            Ok(proposal) => self.show_password(proposal),
+            Ok(proposal) => {
+                let proposal = add_account::with_smtp_password(proposal, &smtp_password);
+                self.show_password(proposal);
+                // Showing the page clears a password kept for another
+                // address, so this one goes in after.
+                self.smtp_password.replace(smtp_password);
+            }
             Err(problem) => {
                 self.manual.problem.set_text(&problem);
                 self.manual.problem.set_visible(true);
@@ -2563,7 +2593,15 @@ impl Dialog {
                 .await;
             match saved {
                 Ok(Some(kept)) => {
-                    this.show_password(add_account::saved_proposal(&account, &kept))
+                    // An outgoing password kept from before stays unless
+                    // the person clears it in Server Settings.
+                    let outgoing = this.core.outgoing_password(id).await.unwrap_or_default();
+                    let proposal = add_account::with_smtp_password(
+                        add_account::saved_proposal(&account, &kept),
+                        &outgoing,
+                    );
+                    this.show_password(proposal);
+                    this.smtp_password.replace(outgoing);
                 }
                 Ok(None) => {
                     let typed = this.typed.borrow().clone();

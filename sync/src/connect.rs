@@ -69,6 +69,30 @@ pub(crate) async fn read_secret<P: PasswordStore + 'static>(
     bounded(account, KEYRING, wait, read).await
 }
 
+/// An IMAP or POP3 account's incoming password and, when it keeps one,
+/// its outgoing server's own, read together under one wait as
+/// [`read_secret`] reads one.
+async fn read_passwords<P: PasswordStore + 'static>(
+    store: Arc<P>,
+    account: AccountId,
+    wait: Duration,
+) -> Result<(Option<String>, Option<String>), SyncError> {
+    let read = async move {
+        tokio::task::spawn_blocking(move || {
+            Ok::<_, PasswordError>((store.load(account)?, store.load_outgoing(account)?))
+        })
+        .await
+        .map_err(|err| PasswordError::Keyring(err.to_string()))?
+    };
+    bounded(account, KEYRING, wait, read).await
+}
+
+/// What the outgoing server signs in with: its user name, and its own
+/// password when the account keeps one, else the incoming `password`.
+pub fn smtp_login(user: &str, password: String, outgoing: Option<String>) -> Login {
+    Login::new(user, outgoing.unwrap_or(password))
+}
+
 /// The build's own sign-in clients, and the own Google client the
 /// environment names. A copy built from source without the release values
 /// has neither built-in client, and its Google and Microsoft accounts
@@ -333,7 +357,7 @@ pub(crate) async fn connect_imap_within<P: PasswordStore + 'static>(
 ) -> Result<AccountServices, SyncError> {
     let id = account.id;
     let saved = bounded(id, "the mail store", wait, db.read(move |c| servers::load(c, id))).await?;
-    let password = read_secret(passwords, id, wait).await?;
+    let (password, outgoing) = read_passwords(passwords, id, wait).await?;
     let (Some(saved), Some(password)) = (saved, password) else {
         let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
         bounded(id, "the mail store", wait, marked).await?;
@@ -358,7 +382,7 @@ pub(crate) async fn connect_imap_within<P: PasswordStore + 'static>(
     let secret = password.clone();
     let smtp = SmtpClient::new(
         &server_of(&saved.smtp),
-        &Login::new(saved.smtp.user_name.as_str(), password),
+        &smtp_login(&saved.smtp.user_name, password, outgoing),
     )
     .map_err(BackendError::from)?;
     let mut services = AccountServices::imap(
@@ -405,7 +429,7 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
 ) -> Result<AccountServices, SyncError> {
     let id = account.id;
     let saved = bounded(id, "the mail store", wait, db.read(move |c| servers::load_pop3(c, id))).await?;
-    let password = read_secret(passwords, id, wait).await?;
+    let (password, outgoing) = read_passwords(passwords, id, wait).await?;
     let (Some(saved), Some(password)) = (saved, password) else {
         let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
         bounded(id, "the mail store", wait, marked).await?;
@@ -419,7 +443,7 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
     let secret = password.clone();
     let smtp = SmtpClient::new(
         &server_of(&saved.smtp),
-        &Login::new(saved.smtp.user_name.as_str(), password),
+        &smtp_login(&saved.smtp.user_name, password, outgoing),
     )
     .map_err(BackendError::from)?;
     let mut services = AccountServices::pop3(

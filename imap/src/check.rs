@@ -31,23 +31,27 @@ pub enum CheckError {
     Smtp(ImapError),
 }
 
-/// Signs in to `imap` and `smtp` with `password`, trying the user names
-/// each server's rule allows for its login (`imap_login`, `smtp_login`),
-/// and returns what worked. The two logins are the address unless the
-/// person typed a user name for that server. IMAP goes first, and SMTP is
-/// not tried when IMAP turns the account away.
+/// Signs in to `imap` with `password` and to `smtp` with `smtp_password`,
+/// trying the user names each server's rule allows for its login
+/// (`imap_login`, `smtp_login`), and returns what worked. The two logins
+/// are the address unless the person typed a user name for that server,
+/// and the two passwords are the same unless the person typed one for
+/// the outgoing server. IMAP goes first, and SMTP is not tried when IMAP
+/// turns the account away.
 pub async fn check(
     imap: &Server,
     smtp: &Server,
     imap_login: &str,
     smtp_login: &str,
     password: &str,
+    smtp_password: &str,
 ) -> Result<Checked, CheckError> {
     let smtp_dial = SmtpTls::new(smtp).map_err(CheckError::Smtp)?;
     check_with(
         (&TlsDial::new(imap.clone()), imap.user_name, imap_login),
         (&smtp_dial, smtp.user_name, smtp_login),
         password,
+        smtp_password,
     )
     .await
 }
@@ -74,6 +78,7 @@ async fn check_with<I, S>(
     (imap, imap_rule, imap_login): (&I, UserName, &str),
     (smtp, smtp_rule, smtp_login): (&S, UserName, &str),
     password: &str,
+    smtp_password: &str,
 ) -> Result<Checked, CheckError>
 where
     I: Dial + Clone,
@@ -83,7 +88,7 @@ where
     let (imap_user, capabilities) = sign_in_imap((imap, imap_rule), imap_login, password)
         .await
         .map_err(CheckError::Imap)?;
-    let smtp_user = sign_in_smtp((smtp, smtp_rule), &imap_user, smtp_login, password)
+    let smtp_user = sign_in_smtp((smtp, smtp_rule), &imap_user, smtp_login, smtp_password)
         .await
         .map_err(CheckError::Smtp)?;
     Ok(Checked {
@@ -224,6 +229,7 @@ mod tests {
             "ann@example.com",
             "ann@example.com",
             "pw",
+            "pw",
         ));
     }
 
@@ -297,6 +303,7 @@ mod tests {
             (&imap, UserName::LocalPartFirst, "ann@me.com"),
             (&smtp, UserName::LocalPartFirst, "ann@me.com"),
             "pw",
+            "pw",
         )
         .await
         .unwrap();
@@ -313,6 +320,7 @@ mod tests {
         let err = check_with(
             (&imap, UserName::LocalPartFirst, "ann@me.com"),
             (&smtp, UserName::Address, "ann@me.com"),
+            "pw",
             "pw",
         )
         .await
@@ -339,6 +347,7 @@ mod tests {
         let err = check_with(
             (&imap, UserName::LocalPartFirst, "ann@me.com"),
             (&smtp, UserName::LocalPartFirst, "ann@me.com"),
+            "pw",
             "pw",
         )
         .await
@@ -381,6 +390,7 @@ mod tests {
                     (&imap, UserName::LocalPartFirst, "ann@me.com"),
                     (&smtp, UserName::Address, "ann@me.com"),
                     password,
+                    password,
                 )
                 .await
                 .unwrap_err();
@@ -399,6 +409,44 @@ mod tests {
         }
     }
 
+    /// An SMTP server that takes `user` with the password "out" alone.
+    fn smtp_taking_out(user: &'static str) -> DuplexStream {
+        use base64::Engine;
+        let taken = base64::engine::general_purpose::STANDARD.encode(format!("\0{user}\0out"));
+        smtp_pipe(
+            "220 ready",
+            SmtpSeen::default(),
+            move |command| match command.strip_prefix("AUTH PLAIN ") {
+                Some(given) if given != taken => vec!["535 5.7.8 Bad credentials".into()],
+                _ => smtp_server(command),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn the_outgoing_server_gets_its_own_password() {
+        let imap = Servers::new(|| imap_taking("ann@me.com"));
+        let smtp = Servers::new(|| smtp_taking_out("ann@me.com"));
+        let checked = check_with(
+            (&imap, UserName::Address, "ann@me.com"),
+            (&smtp, UserName::Address, "ann@me.com"),
+            "pw",
+            "out",
+        )
+        .await
+        .unwrap();
+        assert_eq!(checked.smtp_user, "ann@me.com");
+        let refused = check_with(
+            (&imap, UserName::Address, "ann@me.com"),
+            (&smtp, UserName::Address, "ann@me.com"),
+            "pw",
+            "pw",
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(refused, CheckError::Smtp(ImapError::Auth { .. })), "{refused:?}");
+    }
+
     /// A provider that counts failed sign-ins should not see one for a
     /// name the IMAP server has just taken.
     #[tokio::test]
@@ -408,6 +456,7 @@ mod tests {
         let checked = check_with(
             (&imap, UserName::Address, "ann@me.com"),
             (&smtp, UserName::LocalPartFirst, "ann@me.com"),
+            "pw",
             "pw",
         )
         .await
@@ -425,6 +474,7 @@ mod tests {
         let checked = check_with(
             (&imap, UserName::Address, "d.santos"),
             (&smtp, UserName::Address, "dana@example.org"),
+            "pw",
             "pw",
         )
         .await
