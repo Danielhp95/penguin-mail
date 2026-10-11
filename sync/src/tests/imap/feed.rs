@@ -498,8 +498,21 @@ async fn a_message_marked_deleted_elsewhere_leaves_the_store(h: ImapHarness) {
 
     h.imap.set_flags("INBOX", 1, &["\\Seen", "\\Deleted"]);
     h.sync.incremental().await.unwrap();
-
     assert_eq!(h.ids().await, ["INBOX/1001/2"]);
+
+    // Undone on the phone: the message comes back, read as it was left.
+    h.imap.set_flags("INBOX", 1, &["\\Seen"]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1", "INBOX/1001/2"]);
+    assert!(!h.stored("INBOX/1001/1").await.unwrap().is_unread());
+
+    // An unread message undeleted carries no keyword to report a gain of.
+    h.imap.set_flags("INBOX", 2, &["\\Deleted"]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1"]);
+    h.imap.set_flags("INBOX", 2, &[]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1", "INBOX/1001/2"]);
 }
 
 #[tokio::test]
