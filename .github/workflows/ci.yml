@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its older run. On main every push
+# finishes, so a change a later push does not touch still gets its jobs.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Decides which of the jobs below a change needs. A skipped job counts as
@@ -36,6 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Compare the changed files with each job's paths
         id: paths
         env:
