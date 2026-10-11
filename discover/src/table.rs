@@ -48,6 +48,39 @@ pub(crate) struct Entry {
     pub(crate) caldav: Option<String>,
     pub(crate) carddav: Option<String>,
     pub(crate) sieve: Option<SieveEntry>,
+    pub(crate) jmap: Option<JmapEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JmapEntry {
+    pub(crate) session: String,
+    pub(crate) token_url: Option<String>,
+    pub(crate) token_plan_above: Option<String>,
+    #[serde(default)]
+    pub(crate) token_access: Vec<String>,
+    #[serde(default)]
+    pub(crate) token_lacks: Vec<String>,
+}
+
+impl Entry {
+    /// The entry's JMAP facts, when it has any.
+    pub(crate) fn jmap_provider(&self) -> Option<crate::JmapProvider> {
+        let jmap = self.jmap.as_ref()?;
+        Some(crate::JmapProvider {
+            name: self.name.clone(),
+            token_url: jmap.token_url.clone(),
+            token_plan_above: jmap.token_plan_above.clone(),
+            token_access: jmap.token_access.clone(),
+            token_lacks: jmap.token_lacks.clone(),
+            imap_host: self.imap.as_ref().map(|s| s.host.clone()),
+        })
+    }
+}
+
+/// The table's JMAP facts for the provider whose display name is `name`.
+pub fn jmap_named(name: &str) -> Option<crate::JmapProvider> {
+    Table::built_in().entries.iter().find(|e| e.name == name && e.jmap.is_some())?.jmap_provider()
 }
 
 #[derive(Debug, Deserialize)]

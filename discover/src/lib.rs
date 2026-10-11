@@ -6,6 +6,7 @@
 mod autoconfig;
 mod dav;
 mod find;
+mod jmap;
 mod name;
 mod net;
 mod probe;
@@ -19,8 +20,10 @@ pub mod fake;
 
 pub use dav::{DavHints, Hint, SieveHint, dav_hints};
 pub use find::{STEP_LIMIT, find, table_only};
+pub use jmap::{JmapFound, JmapProvider, find_jmap};
 pub use net::{Net, RealNet, RealNetError, SrvRecord};
 pub use table::{ProviderServices, services_of};
+pub use table::jmap_named;
 pub use table::{listed_domains, provider_named, resolved_provider_name};
 
 use serde::Deserialize;
