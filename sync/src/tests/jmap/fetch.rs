@@ -2,7 +2,8 @@
 
 use mailrs_domain::Role;
 
-use super::{fastmail, raw};
+use super::{fastmail, over, raw};
+use crate::fake::FakeJmap;
 use crate::{MailBackend, Want};
 
 fn days_ago(days: i64) -> i64 {
@@ -31,7 +32,66 @@ async fn backfill_pages_on_until_the_last_page() {
     assert_eq!(first.refs.len(), 200);
     let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
     assert_eq!(second.refs.len(), 5);
-    assert_eq!(second.next, None);
+    let last = mail.backfill(30, second.next.as_deref()).await.unwrap();
+    assert!(last.refs.is_empty() && last.next.is_none());
+}
+
+#[tokio::test]
+async fn a_server_that_clamps_its_pages_still_lists_the_whole_window() {
+    let h = over(FakeJmap::new().clamping_queries(50)).await;
+    for n in 0..120 {
+        h.fake.deliver("inbox", &raw(&format!("c{n}@x"), "Clamped"), days_ago(1));
+    }
+    let mail = h.mail();
+    let (mut seen, mut cursor) = (0, None::<String>);
+    loop {
+        let page = mail.backfill(30, cursor.as_deref()).await.unwrap();
+        seen += page.refs.len();
+        match page.next {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(seen, 120);
+    assert_eq!(mail.window_ids(30, None).await.unwrap().len(), 120);
+}
+
+#[tokio::test]
+async fn the_window_ids_keep_the_whole_inbox_and_nothing_old_elsewhere() {
+    let h = fastmail().await;
+    let old_inbox = h.fake.deliver("inbox", &raw("o1@x", "Old inbox"), days_ago(400));
+    let old_archive = h.fake.deliver("archive", &raw("o2@x", "Old archive"), days_ago(400));
+    let new_archive = h.fake.deliver("archive", &raw("o3@x", "New archive"), days_ago(1));
+    h.mail().mailboxes().await.unwrap();
+    let ids = |refs: Vec<crate::RemoteRef>| refs.into_iter().map(|r| r.id).collect::<std::collections::BTreeSet<_>>();
+    let all = ids(h.mail().window_ids(30, None).await.unwrap());
+    assert!(all.contains(&old_inbox) && all.contains(&new_archive) && !all.contains(&old_archive));
+    let inbox = ids(h.mail().window_ids(30, Some(&h.fake.mailbox("inbox"))).await.unwrap());
+    assert_eq!(inbox, [old_inbox].into());
+}
+
+#[tokio::test]
+async fn an_old_inbox_message_with_another_label_stays_in_that_labels_window() {
+    let h = fastmail().await;
+    let old_inbox = h.fake.deliver("inbox", &raw("l1@x", "Old labelled"), days_ago(400));
+    let work = h.fake.add_mailbox("Work", None);
+    h.fake.with(|s| s.emails.get_mut(&old_inbox).unwrap().mailbox_ids.insert(work.clone()));
+    let old_other = h.fake.deliver("archive", &raw("l2@x", "Old archived"), days_ago(400));
+    h.fake.with(|s| s.emails.get_mut(&old_other).unwrap().mailbox_ids.insert(work.clone()));
+    h.mail().mailboxes().await.unwrap();
+    let found = h.mail().window_ids(30, Some(&work)).await.unwrap();
+    assert_eq!(found.into_iter().map(|r| r.id).collect::<Vec<_>>(), [old_inbox]);
+}
+
+#[tokio::test]
+async fn an_inbox_past_the_cap_is_not_listed() {
+    let h = fastmail().await;
+    h.mail().mailboxes().await.unwrap();
+    h.fake.with(|s| {
+        s.total_override = Some(("mb-inbox".into(), 20_001));
+    });
+    h.mail().mailboxes().await.unwrap();
+    assert!(matches!(h.mail().inbox_ids().await, Err(crate::BackendError::Unsupported)));
 }
 
 #[tokio::test]

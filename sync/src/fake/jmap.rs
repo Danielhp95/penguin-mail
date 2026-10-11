@@ -66,6 +66,12 @@ pub struct JmapState {
     pub calls: Vec<String>,
     /// Blobs that answer as larger than any cap, without holding the bytes.
     pub oversized: BTreeSet<String>,
+    /// The most hits one `Email/query` answers, whatever limit it was given:
+    /// RFC 8620 5.5 lets a server return fewer than asked.
+    pub query_clamp: Option<usize>,
+    /// A mailbox id and the message count it claims, for a mailbox too big
+    /// to fill in a test.
+    pub total_override: Option<(String, u64)>,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -296,6 +302,8 @@ impl FakeJmap {
             sent: Vec::new(),
             calls: Vec::new(),
             oversized: BTreeSet::new(),
+            query_clamp: None,
+            total_override: None,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -315,6 +323,12 @@ impl FakeJmap {
 
     fn called(&self, name: &str) {
         self.with(|s| s.calls.push(name.to_string()));
+    }
+
+    /// A server that answers at most `most` hits to a query.
+    pub fn clamping_queries(self, most: usize) -> FakeJmap {
+        self.with(|s| s.query_clamp = Some(most));
+        self
     }
 
     pub fn without_push(self) -> FakeJmap {
@@ -483,7 +497,7 @@ impl JmapApi for FakeJmap {
                         name: m.name.clone(),
                         parent_id: m.parent_id.clone(),
                         role: m.role.clone(),
-                        total_emails: inside.len() as u64,
+                        total_emails: s.total_override.as_ref().filter(|(m, _)| m == id).map_or(inside.len() as u64, |(_, n)| *n),
                         unread_emails: unread,
                         total_threads: inside.iter().map(|e| &e.thread_id).collect::<BTreeSet<_>>().len() as u64,
                         unread_threads: unread,
@@ -523,7 +537,7 @@ impl JmapApi for FakeJmap {
             let hits = found
                 .into_iter()
                 .skip(query.position as usize)
-                .take(query.limit)
+                .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
                 .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
                 .collect();
             Queried { hits, position: query.position, total: query.total.then_some(total) }

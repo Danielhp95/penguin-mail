@@ -98,7 +98,9 @@ impl<J: JmapApi> Jmap<J> {
         let found = self.api().query(&query).await.map_err(backend)?;
         let got = found.hits.len();
         let refs = found.hits.into_iter().map(remote_ref).collect();
-        let next = (got == PAGE).then(|| (position + PAGE as u64).to_string());
+        // A server may answer fewer hits than asked, so only an empty page
+        // is the last one.
+        let next = (got > 0).then(|| (position + got as u64).to_string());
         Ok(Backfill { refs, next })
     }
 
@@ -110,7 +112,7 @@ impl<J: JmapApi> Jmap<J> {
             let found = self.api().query(&query).await.map_err(backend)?;
             let got = found.hits.len();
             out.extend(found.hits.into_iter().map(remote_ref));
-            if got < IDS_PER_CALL || out.len() >= MOST_IDS {
+            if got == 0 || out.len() >= MOST_IDS {
                 out.truncate(MOST_IDS);
                 return Ok(out);
             }
@@ -122,13 +124,14 @@ impl<J: JmapApi> Jmap<J> {
     pub(super) async fn ids_in(&self, days: Option<i64>, mailbox: Option<&str>) -> Result<Vec<RemoteRef>, BackendError> {
         self.listed().await?;
         let inbox = self.inbox_id();
-        let window = days.and_then(|days| window_filter(days, None));
-        let filter = match (window, mailbox) {
-            (Some(window), Some(mailbox)) if Some(mailbox) != inbox.as_deref() => {
-                Some(json!({ "operator": "AND", "conditions": [window, { "inMailbox": mailbox }] }))
-            }
-            (_, Some(mailbox)) => Some(json!({ "inMailbox": mailbox })),
-            (_, None) => days.and_then(|days| window_filter(days, inbox.as_deref())),
+        // A mailbox other than the Inbox lists what the window holds, which
+        // includes the whole Inbox: a message there is stored whatever its age.
+        let window = days.and_then(|days| window_filter(days, inbox.as_deref()));
+        let filter = match (mailbox, window) {
+            (Some(mailbox), _) if Some(mailbox) == inbox.as_deref() => Some(json!({ "inMailbox": mailbox })),
+            (Some(mailbox), Some(window)) => Some(json!({ "operator": "AND", "conditions": [{ "inMailbox": mailbox }, window] })),
+            (Some(mailbox), None) => Some(json!({ "inMailbox": mailbox })),
+            (None, window) => window,
         };
         self.every_id(filter).await
     }
