@@ -90,6 +90,8 @@ pub struct JmapState {
     /// The most hits one `Email/query` answers, whatever limit it was given:
     /// RFC 8620 5.5 lets a server return fewer than asked.
     pub query_clamp: Option<usize>,
+    /// Messages the server refuses to change or destroy, as `forbidden`.
+    pub refused: BTreeSet<String>,
     /// A mailbox id and the message count it claims, for a mailbox too big
     /// to fill in a test.
     pub total_override: Option<(String, u64)>,
@@ -338,6 +340,7 @@ impl FakeJmap {
             calls: Vec::new(),
             oversized: BTreeSet::new(),
             query_clamp: None,
+            refused: BTreeSet::new(),
             total_override: None,
             log: Vec::new(),
             state: 0,
@@ -363,6 +366,23 @@ impl FakeJmap {
     /// A server that answers at most `most` hits to a query.
     pub fn clamping_queries(self, most: usize) -> FakeJmap {
         self.with(|s| s.query_clamp = Some(most));
+        self
+    }
+
+    /// A server whose `maxObjectsInSet` is `most`; a bigger `Email/set`
+    /// answers `requestTooLarge`, as a server does.
+    pub fn objects_in_set(self, most: usize) -> FakeJmap {
+        self.with(|s| {
+            if let Some(core) = s.session.capabilities.get_mut(CORE) {
+                core["maxObjectsInSet"] = json!(most);
+            }
+        });
+        self
+    }
+
+    /// A server that refuses every change to the message `id`.
+    pub fn refusing(self, id: &str) -> FakeJmap {
+        self.with(|s| s.refused.insert(id.to_string()));
         self
     }
 
@@ -613,6 +633,10 @@ impl JmapApi for FakeJmap {
 
     async fn set_emails(&self, update: &Map<String, Value>, destroy: &[String]) -> Answer<SetResponse> {
         self.called("Email/set");
+        let too_many = self.with(|s| update.len() + destroy.len() > s.session.limits().max_objects_in_set);
+        if too_many {
+            return Err(JmapError::RequestTooLarge);
+        }
         Ok(self.with(|s| {
             let mut answer = SetResponse::default();
             let (mut updated, mut not_updated) = (BTreeMap::new(), BTreeMap::new());
@@ -621,6 +645,10 @@ impl JmapApi for FakeJmap {
                     not_updated.insert(id.clone(), SetError { kind: "notFound".into(), description: None });
                     continue;
                 };
+                if s.refused.contains(id) {
+                    not_updated.insert(id.clone(), SetError { kind: "forbidden".into(), description: None });
+                    continue;
+                }
                 let mut next = email.clone();
                 let invalid = |why: &str| SetError { kind: "invalidProperties".into(), description: Some(why.into()) };
                 let mut refusal = None;
@@ -663,6 +691,10 @@ impl JmapApi for FakeJmap {
             }
             let (mut destroyed, mut not_destroyed) = (Vec::new(), BTreeMap::new());
             for id in destroy {
+                if s.refused.contains(id) {
+                    not_destroyed.insert(id.clone(), SetError { kind: "forbidden".into(), description: None });
+                    continue;
+                }
                 match s.emails.remove(id) {
                     Some(gone) => {
                         s.record("Email", id, Op::Destroyed);

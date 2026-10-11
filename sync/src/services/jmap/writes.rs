@@ -15,16 +15,43 @@ use super::{Jmap, JmapApi, backend};
 use crate::services::{Relocated, Unapplied};
 use crate::{BackendError, MailOp};
 
-/// The most messages one `Email/set` names, under every server's
-/// `maxObjectsInSet` seen.
+/// The most messages one `Email/set` names, when the server's
+/// `maxObjectsInSet` allows it.
 const PER_SET: usize = 500;
+
+/// One step of a write on a message's mailboxes.
+enum Place {
+    Add(String),
+    Remove(String),
+    Only(String),
+}
 
 /// One write's patch, the same for every message it names.
 struct Patch {
     fields: Map<String, Value>,
-    /// Mailboxes the write takes messages out of while it puts them in
+    /// The mailbox steps in order, to work out where each message ends up.
+    places: Vec<Place>,
+}
+
+impl Patch {
+    /// Whether the write takes mailboxes away, so a message could end up in
     /// none: each message needs a look before it goes.
-    leaves: BTreeSet<String>,
+    fn removes(&self) -> bool {
+        self.places.iter().any(|p| matches!(p, Place::Remove(_)))
+    }
+
+    /// The mailboxes a message in `now` is in after the write.
+    fn end_in(&self, now: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut here = now.clone();
+        for place in &self.places {
+            match place {
+                Place::Add(id) => drop(here.insert(id.clone())),
+                Place::Remove(id) => drop(here.remove(id)),
+                Place::Only(id) => here = BTreeSet::from([id.clone()]),
+            }
+        }
+        here
+    }
 }
 
 fn unapplied(taken: usize, error: BackendError) -> Unapplied {
@@ -68,25 +95,25 @@ impl<J: JmapApi> Jmap<J> {
             known.roles.get(role).cloned().ok_or_else(|| BackendError::Refused(gettext("The server has no mailbox for this.")))
         };
         let mut fields = Map::new();
-        let mut leaves = BTreeSet::new();
-        let mut puts_somewhere = false;
+        let mut places = Vec::new();
         for op in ops {
             match op {
                 MailOp::AddToMailbox(id) => {
                     put_mailbox(&mut fields, id, true);
-                    puts_somewhere = true;
+                    places.push(Place::Add(id.clone()));
                 }
                 MailOp::RemoveFromMailbox(id) => {
                     put_mailbox(&mut fields, id, false);
-                    leaves.insert(id.clone());
+                    places.push(Place::Remove(id.clone()));
                 }
                 MailOp::MoveToRole(role) => {
-                    set_whole(&mut fields, &role_id(role)?);
-                    puts_somewhere = true;
+                    let target = role_id(role)?;
+                    set_whole(&mut fields, &target);
+                    places.push(Place::Only(target));
                 }
                 MailOp::MoveToMailbox(id) => {
                     set_whole(&mut fields, id);
-                    puts_somewhere = true;
+                    places.push(Place::Only(id.clone()));
                 }
                 MailOp::SetKeyword { keyword, on } => {
                     fields.insert(format!("keywords/{}", pointer(keyword)), if *on { json!(true) } else { Value::Null });
@@ -97,17 +124,14 @@ impl<J: JmapApi> Jmap<J> {
                 MailOp::Destroy => {}
             }
         }
-        if puts_somewhere {
-            leaves.clear();
-        }
-        Ok(Patch { fields, leaves })
+        Ok(Patch { fields, places })
     }
 
     /// Each message's patch: the write's own and, for a message it would
     /// take out of every mailbox, Archive in their place.
     async fn updates_for(&self, chunk: &[String], patch: &Patch) -> Result<Map<String, Value>, BackendError> {
         let mut update = Map::new();
-        if patch.leaves.is_empty() {
+        if !patch.removes() {
             for id in chunk {
                 update.insert(id.clone(), Value::Object(patch.fields.clone()));
             }
@@ -116,9 +140,9 @@ impl<J: JmapApi> Jmap<J> {
         let got = self.api().emails(chunk, &["id", "mailboxIds"]).await.map_err(backend)?;
         let archive = self.known().roles.get(&Role::Archive).cloned();
         for email in got.list {
-            let stays = email.mailbox_ids.iter().any(|(id, on)| *on && !patch.leaves.contains(id));
+            let now: BTreeSet<String> = email.mailbox_ids.iter().filter(|(_, on)| **on).map(|(id, _)| id.clone()).collect();
             let mut fields = patch.fields.clone();
-            if !stays {
+            if patch.end_in(&now).is_empty() {
                 let archive = archive.clone().ok_or_else(|| {
                     BackendError::Refused(gettext("A message must stay in at least one mailbox, and this server has no Archive."))
                 })?;
@@ -136,8 +160,9 @@ impl<J: JmapApi> Jmap<J> {
             true => None,
             false => Some(self.patch_of(ops).map_err(|e| unapplied(0, e))?),
         };
+        let per_set = self.api().session().await.map_err(|e| unapplied(0, backend(e)))?.limits().max_objects_in_set.clamp(1, PER_SET);
         let mut taken = 0;
-        for chunk in messages.chunks(PER_SET) {
+        for chunk in messages.chunks(per_set) {
             let answer = match &patch {
                 None => self.api().set_emails(&Map::new(), chunk).await,
                 Some(patch) => {
@@ -146,6 +171,10 @@ impl<J: JmapApi> Jmap<J> {
                 }
             }
             .map_err(|e| unapplied(taken, backend(e)))?;
+            // The server applied every id it did not refuse, also those past
+            // the first refusal. Only the ones before it count as taken, as
+            // `Unapplied` counts from the front; the next sync restates the
+            // rest, which the feed does for every changed message.
             if let Some((at, error)) = first_refusal(chunk, &answer) {
                 return Err(unapplied(taken + at, error));
             }

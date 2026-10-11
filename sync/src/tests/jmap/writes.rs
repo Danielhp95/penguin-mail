@@ -85,3 +85,86 @@ async fn a_category_is_refused_in_words() {
     let refused = h.mail().apply(&[id], &[MailOp::SetCategory { category: "social".into(), on: true }]).await.unwrap_err();
     assert!(matches!(refused.error, BackendError::Refused(_)));
 }
+
+fn flag(on: bool) -> [MailOp; 1] {
+    [MailOp::SetKeyword { keyword: FLAGGED.into(), on }]
+}
+
+fn deliver_many(h: &super::Harness, count: usize) -> Vec<String> {
+    (0..count).map(|n| h.fake.deliver("inbox", &raw(&format!("m{n}@x"), &format!("Many {n}")), now() + n as i64)).collect()
+}
+
+#[tokio::test]
+async fn a_write_is_split_to_the_server_s_set_limit() {
+    let h = over(FakeJmap::new().objects_in_set(2)).await;
+    let ids = deliver_many(&h, 5);
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(&ids, &flag(true)).await.unwrap();
+    assert!(h.fake.with(|s| ids.iter().all(|id| s.emails[id].keywords.contains(FLAGGED))));
+}
+
+#[tokio::test]
+async fn a_refusal_mid_chunk_counts_the_messages_before_it() {
+    let h = fastmail().await;
+    let ids = deliver_many(&h, 3);
+    h.fake.with(|s| s.refused.insert(ids[1].clone()));
+    h.mail().mailboxes().await.unwrap();
+    let refused = h.mail().apply(&ids, &flag(true)).await.unwrap_err();
+    assert_eq!(refused.taken, 1);
+    assert!(matches!(refused.error, BackendError::Refused(_)));
+}
+
+#[tokio::test]
+async fn a_refused_destroy_counts_the_messages_before_it() {
+    let h = fastmail().await;
+    let ids = deliver_many(&h, 3);
+    h.fake.with(|s| s.refused.insert(ids[2].clone()));
+    h.mail().mailboxes().await.unwrap();
+    let refused = h.mail().apply(&ids, &[MailOp::Destroy]).await.unwrap_err();
+    assert_eq!(refused.taken, 2);
+}
+
+#[tokio::test]
+async fn a_second_chunk_that_fails_leaves_the_first_counted() {
+    let h = over(FakeJmap::new().objects_in_set(2)).await;
+    let ids = deliver_many(&h, 5);
+    h.fake.with(|s| s.refused.insert(ids[2].clone()));
+    h.mail().mailboxes().await.unwrap();
+    let refused = h.mail().apply(&ids, &flag(true)).await.unwrap_err();
+    assert_eq!(refused.taken, 2);
+}
+
+#[tokio::test]
+async fn a_message_in_two_mailboxes_losing_one_gets_no_archive() {
+    let h = fastmail().await;
+    let id = h.fake.deliver("inbox", &raw("t1@x", "Two"), now());
+    let junk = h.fake.mailbox("junk");
+    h.fake.with(|s| s.emails.get_mut(&id).unwrap().mailbox_ids.insert(junk.clone()));
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(std::slice::from_ref(&id), &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.emails[&id].mailbox_ids.clone()), BTreeSet::from([junk]));
+}
+
+#[tokio::test]
+async fn only_the_messages_left_in_no_mailbox_go_to_archive() {
+    let h = fastmail().await;
+    let alone = h.fake.deliver("inbox", &raw("t2@x", "Alone"), now());
+    let shared = h.fake.deliver("inbox", &raw("t3@x", "Shared"), now() + 1);
+    let junk = h.fake.mailbox("junk");
+    h.fake.with(|s| s.emails.get_mut(&shared).unwrap().mailbox_ids.insert(junk.clone()));
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(&[alone.clone(), shared.clone()], &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.emails[&alone].mailbox_ids.clone()), BTreeSet::from([h.fake.mailbox("archive")]));
+    assert_eq!(h.fake.with(|s| s.emails[&shared].mailbox_ids.clone()), BTreeSet::from([junk]));
+}
+
+#[tokio::test]
+async fn adding_a_mailbox_and_removing_it_again_still_files_in_archive() {
+    let h = fastmail().await;
+    let id = h.fake.deliver("inbox", &raw("t4@x", "Undo"), now());
+    let junk = h.fake.mailbox("junk");
+    h.mail().mailboxes().await.unwrap();
+    let ops = [MailOp::AddToMailbox(junk.clone()), MailOp::RemoveFromMailbox(h.fake.mailbox("inbox")), MailOp::RemoveFromMailbox(junk)];
+    h.mail().apply(std::slice::from_ref(&id), &ops).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.emails[&id].mailbox_ids.clone()), BTreeSet::from([h.fake.mailbox("archive")]));
+}

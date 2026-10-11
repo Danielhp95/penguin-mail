@@ -10432,18 +10432,20 @@ msgstr "Este servidor não guarda cores para as caixas de correio."
 msgid "This server files sent mail itself."
 msgstr "Este servidor arquiva o correio enviado por si próprio."
 
-#: sync/src/services/jmap/writes.rs:68
+#: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr "O servidor não tem uma caixa de correio para isto."
 
-#: sync/src/services/jmap/writes.rs:95
+#: sync/src/services/jmap/writes.rs:122
 msgid "This server does not sort mail into categories."
 msgstr "Este servidor não ordena o correio por categorias."
 
-#: sync/src/services/jmap/writes.rs:123
+#: sync/src/services/jmap/writes.rs:147
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
-msgstr "Uma mensagem tem de ficar em pelo menos uma caixa de correio, e este servidor não tem Arquivo."
+msgstr ""
+"Uma mensagem tem de ficar em pelo menos uma caixa de correio, e este "
+"servidor não tem Arquivo."
 
 #: sync/src/services/local.rs:29
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."

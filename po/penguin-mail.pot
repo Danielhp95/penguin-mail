@@ -9947,15 +9947,15 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr ""
 
-#: sync/src/services/jmap/writes.rs:68
+#: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
 msgstr ""
 
-#: sync/src/services/jmap/writes.rs:95
+#: sync/src/services/jmap/writes.rs:122
 msgid "This server does not sort mail into categories."
 msgstr ""
 
-#: sync/src/services/jmap/writes.rs:123
+#: sync/src/services/jmap/writes.rs:147
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr ""
