@@ -16,6 +16,7 @@ pub mod flags;
 pub mod follow_ups;
 pub mod image_senders;
 pub mod invitations;
+pub mod jmap;
 pub mod labels;
 pub mod local_messages;
 pub mod local_rules;

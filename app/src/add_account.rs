@@ -1284,7 +1284,7 @@ pub fn shows_folder(provider: Provider, role: mailrs_domain::Role) -> bool {
     match provider {
         Provider::Gmail => role != mailrs_domain::Role::Archive,
         Provider::Pop3 => role == mailrs_domain::Role::Inbox,
-        Provider::Imap | Provider::Microsoft => true,
+        Provider::Imap | Provider::Microsoft | Provider::Jmap => true,
     }
 }
 
@@ -2805,6 +2805,7 @@ mod tests {
     fn the_added_page_lists_only_the_folders_the_server_fills() {
         use mailrs_domain::Role as MailRole;
         assert!(shows_folder(Provider::Imap, MailRole::Archive));
+        assert!(shows_folder(Provider::Jmap, MailRole::Archive));
         assert!(!shows_folder(Provider::Gmail, MailRole::Archive));
         assert!(shows_folder(Provider::Pop3, MailRole::Inbox));
         assert!(!shows_folder(Provider::Pop3, MailRole::Sent));

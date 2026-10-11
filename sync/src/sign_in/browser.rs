@@ -27,7 +27,7 @@ impl Browser {
         match provider {
             Provider::Gmail => Some(Browser::Google),
             Provider::Microsoft => Some(Browser::Microsoft),
-            Provider::Imap | Provider::Pop3 => None,
+            Provider::Imap | Provider::Pop3 | Provider::Jmap => None,
         }
     }
 }

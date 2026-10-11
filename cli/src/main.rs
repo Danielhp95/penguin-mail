@@ -269,7 +269,7 @@ async fn remove_account(db: &Db, email: &str) -> Result<()> {
             Provider::Gmail => format!(
                 "Removed {email}. Revoke Google's side at https://myaccount.google.com/permissions if you want."
             ),
-            Provider::Imap | Provider::Pop3 => format!("Removed {email} and its password."),
+            Provider::Imap | Provider::Pop3 | Provider::Jmap => format!("Removed {email} and its password or token."),
             Provider::Microsoft => format!(
                 "Removed {email} and its sign-in. Revoke Microsoft's side at https://account.live.com/consent/Manage if you want."
             ),

@@ -1086,3 +1086,24 @@ fn migration_52_turns_stored_over_size_words_into_a_reason() {
         "a reason is one of the codes"
     );
 }
+
+/// Migration 56 keeps a JMAP account's session URL, how it signs in, its
+/// Basic user name, whether its mail takes labels and what its session
+/// offered. The row goes with the account.
+#[test]
+fn migration_56_adds_jmap_accounts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), 56);
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
+         INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
+             VALUES (3, 'https://api.fastmail.com/jmap/session', 'bearer', NULL, 1, '[\"urn:ietf:params:jmap:mail\"]');",
+    )
+    .unwrap();
+    assert!(conn.execute("UPDATE jmap_accounts SET auth = 'digest' WHERE account_id = 3", []).is_err());
+    conn.execute("DELETE FROM accounts WHERE id = 3", []).unwrap();
+    let left: i64 = conn.query_row("SELECT COUNT(*) FROM jmap_accounts", [], |r| r.get(0)).unwrap();
+    assert_eq!(left, 0);
+}

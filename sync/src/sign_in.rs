@@ -1,6 +1,6 @@
 //! Which Google client an account signs in with, signing one in on its
-//! provider's page, and keeping an IMAP, POP3 or Microsoft account that
-//! just signed in.
+//! provider's page, and keeping an IMAP, POP3, JMAP or Microsoft account
+//! that just signed in.
 
 mod browser;
 pub mod own_client;
@@ -388,6 +388,100 @@ pub async fn pop3_signed_in<P: PasswordStore + 'static>(
         .ok_or(ImapSignInError::Store(StoreError::Sqlite(
             rusqlite::Error::QueryReturnedNoRows,
         )))
+}
+
+/// A JMAP account a person just signed in to. No `Debug`: the secret must
+/// not reach a log line.
+pub struct NewJmap {
+    pub address: String,
+    pub provider_name: String,
+    pub saved: mailrs_store::jmap::JmapSaved,
+    /// The password or the token.
+    pub secret: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum JmapSignInError {
+    /// The address belongs to an account another provider serves.
+    #[error("{}", taken(.address, .provider))]
+    Taken { address: String, provider: String },
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error(transparent)]
+    Password(#[from] PasswordError),
+}
+
+/// Keeps a JMAP account whose sign-in worked: adds it, or finds the one
+/// already here for the address, with its session row and its secret. As
+/// for IMAP, the keyring takes the secret before anything else changes,
+/// and a new row goes again when it refuses.
+pub async fn jmap_signed_in<P: PasswordStore + 'static>(
+    db: &Db,
+    secrets: Arc<P>,
+    new: NewJmap,
+    now: EpochMillis,
+) -> Result<Account, JmapSignInError> {
+    let NewJmap {
+        address,
+        provider_name,
+        saved,
+        secret,
+    } = new;
+    let email = address.clone();
+    let before = db
+        .read(move |c| accounts::account_by_email(c, &email))
+        .await?;
+    if let Some(held) = &before {
+        if held.provider != Provider::Jmap {
+            return Err(JmapSignInError::Taken {
+                address,
+                provider: held.provider_name().to_string(),
+            });
+        }
+        keep_secret(Arc::clone(&secrets), held.id, secret.clone()).await?;
+    }
+    let (email, again) = (address.clone(), before.as_ref().map(|held| held.state));
+    let added = db
+        .write(move |c| {
+            let Some(id) = accounts::insert_jmap_account(c, &email, &provider_name, now)? else {
+                // Another provider's account took the address between the
+                // read and this write.
+                let held = accounts::account_by_email(c, &email)?;
+                return Ok(Err(held.map(|a| a.provider_name().to_string())));
+            };
+            mailrs_store::jmap::save(c, id, &saved)?;
+            if again == Some(AccountState::NeedsReauth) {
+                accounts::set_state(c, id, AccountState::Ok)?;
+            }
+            Ok(Ok(id))
+        })
+        .await?;
+    let id = added.map_err(|provider| JmapSignInError::Taken {
+        address: address.clone(),
+        provider: provider.unwrap_or_default(),
+    })?;
+    if before.is_none()
+        && let Err(err) = keep_secret(Arc::clone(&secrets), id, secret).await
+    {
+        db.write(move |c| accounts::delete_account(c, id)).await?;
+        return Err(err);
+    }
+    db.read(move |c| accounts::account_by_email(c, &address))
+        .await?
+        .ok_or(JmapSignInError::Store(StoreError::Sqlite(
+            rusqlite::Error::QueryReturnedNoRows,
+        )))
+}
+
+async fn keep_secret<P: PasswordStore + 'static>(
+    secrets: Arc<P>,
+    id: AccountId,
+    secret: String,
+) -> Result<(), JmapSignInError> {
+    tokio::task::spawn_blocking(move || secrets.save(id, &secret))
+        .await
+        .map_err(|err| PasswordError::Keyring(err.to_string()))??;
+    Ok(())
 }
 
 /// Signs in to the POP3 server `server` with `password`, trying the user

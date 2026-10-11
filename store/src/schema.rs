@@ -872,6 +872,22 @@ CREATE TABLE contact_offers (
 ALTER TABLE accounts ADD COLUMN window_days INTEGER;
 ALTER TABLE accounts ADD COLUMN backfill_extends INTEGER NOT NULL DEFAULT 0;
 "#,
+    // A JMAP account's session URL, how it signs in (the account password
+    // over Basic, with the user name Basic sends when it is not the
+    // address, or a token over Bearer), whether its mail takes labels,
+    // from the session's maxMailboxesPerEmail, and the capabilities the
+    // session offered, as a JSON array, both read at sign-in. The password
+    // or token lives in the keyring and never here.
+    r#"
+CREATE TABLE jmap_accounts (
+    account_id   INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    session_url  TEXT NOT NULL,
+    auth         TEXT NOT NULL CHECK (auth IN ('basic', 'bearer')),
+    user_name    TEXT,
+    labels       INTEGER NOT NULL DEFAULT 1,
+    capabilities TEXT NOT NULL DEFAULT '[]'
+);
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has

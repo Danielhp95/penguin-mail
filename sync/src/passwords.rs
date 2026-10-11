@@ -1,5 +1,5 @@
-//! Where an IMAP account's password and a Microsoft account's refresh
-//! token live: the desktop keyring, under one service name for each kind,
+//! Where an IMAP or JMAP account's password or token and a Microsoft
+//! account's refresh token live: the desktop keyring, under one service name for each kind,
 //! with the account's id as the user. An outgoing server with a password
 //! of its own keeps it beside the incoming one, under the id and `/smtp`.
 //! The store keeps the servers and never the secret.
@@ -75,6 +75,16 @@ impl KeyringPasswords {
     pub fn google_client() -> Self {
         KeyringPasswords {
             service: Self::GOOGLE_CLIENT_SERVICE.to_string(),
+        }
+    }
+
+    /// JMAP passwords and tokens, apart from IMAP passwords, so a JMAP
+    /// account keeps its CalDAV app password under `SERVICE` beside them.
+    pub const JMAP_SERVICE: &'static str = "penguin-mail-jmap";
+
+    pub fn jmap() -> Self {
+        KeyringPasswords {
+            service: Self::JMAP_SERVICE.to_string(),
         }
     }
 
@@ -280,15 +290,16 @@ impl PasswordStore for Passwords {
 
 /// Where each kind of account keeps what signs it in: a Google account's
 /// refresh token under its address, and the own client it signed in with
-/// under its id when it has one; an IMAP or POP3 account's password and a
-/// Microsoft account's refresh token under its id. Clones share the
-/// stores.
+/// under its id when it has one; an IMAP or POP3 account's password, a
+/// JMAP account's password or token and a Microsoft account's refresh
+/// token under its id. Clones share the stores.
 #[derive(Clone)]
 pub struct Secrets {
     pub google: Arc<dyn TokenStore>,
     pub google_clients: Arc<Passwords>,
     pub passwords: Arc<Passwords>,
     pub microsoft: Arc<Passwords>,
+    pub jmap: Arc<Passwords>,
 }
 
 impl Secrets {
@@ -300,6 +311,7 @@ impl Secrets {
             google_clients: Arc::new(Passwords::Keyring(KeyringPasswords::google_client())),
             passwords: Arc::new(Passwords::Keyring(KeyringPasswords::new())),
             microsoft: Arc::new(Passwords::Keyring(KeyringPasswords::microsoft())),
+            jmap: Arc::new(Passwords::Keyring(KeyringPasswords::jmap())),
         }
     }
 
@@ -311,6 +323,7 @@ impl Secrets {
             google_clients: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             passwords: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             microsoft: Arc::new(Passwords::Memory(MemoryPasswords::default())),
+            jmap: Arc::new(Passwords::Memory(MemoryPasswords::default())),
         }
     }
 
@@ -341,6 +354,12 @@ impl Secrets {
             Provider::Microsoft => {
                 let tokens = Arc::clone(&self.microsoft);
                 Box::new(move || tokens.delete(id))
+            }
+            Provider::Jmap => {
+                let (jmap, passwords) = (Arc::clone(&self.jmap), Arc::clone(&self.passwords));
+                // The token or password, and the CalDAV app password kept
+                // beside it in part 3.
+                Box::new(move || jmap.delete(id).and_then(|()| passwords.delete(id)))
             }
         };
         tokio::task::spawn_blocking(delete)
@@ -403,5 +422,27 @@ mod tests {
         secrets.forget(&account).await.unwrap();
         assert_eq!(secrets.passwords.load(3).unwrap(), None);
         assert_eq!(secrets.passwords.load_outgoing(3).unwrap(), None);
+    }
+
+    #[test]
+    fn jmap_secrets_sit_under_their_own_service() {
+        assert_eq!(KeyringPasswords::JMAP_SERVICE, "penguin-mail-jmap");
+    }
+
+    #[tokio::test]
+    async fn forgetting_a_jmap_account_deletes_its_secret_and_its_password() {
+        let secrets = Secrets::memory();
+        let account = mailrs_domain::Account {
+            id: 4,
+            email: "me@fastmail.com".into(),
+            state: mailrs_domain::AccountState::Ok,
+            provider: mailrs_domain::Provider::Jmap,
+            provider_name: Some("Fastmail".into()),
+        };
+        secrets.jmap.save(4, "fmu1-token").unwrap();
+        secrets.passwords.save(4, "caldav").unwrap();
+        secrets.forget(&account).await.unwrap();
+        assert_eq!(secrets.jmap.load(4).unwrap(), None);
+        assert_eq!(secrets.passwords.load(4).unwrap(), None);
     }
 }

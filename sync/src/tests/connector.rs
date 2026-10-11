@@ -1,6 +1,8 @@
 //! Connecting, forgetting and signing in an account through the one
 //! interface the app and the CLI share, for every provider.
 
+use std::sync::Arc;
+
 use mailrs_domain::{Account, AccountState, Provider, RemoveSetting, SignInClient};
 use mailrs_gmail::OAuthClient;
 use mailrs_graph::MicrosoftClient;
@@ -296,6 +298,67 @@ fn only_google_and_microsoft_accounts_sign_in_in_the_browser() {
     assert_eq!(Browser::of(Provider::Microsoft), Some(Browser::Microsoft));
     assert_eq!(Browser::of(Provider::Imap), None);
     assert_eq!(Browser::of(Provider::Pop3), None);
+    assert_eq!(Browser::of(Provider::Jmap), None);
+}
+
+fn new_jmap(address: &str, token: &str) -> crate::sign_in::NewJmap {
+    use mailrs_store::jmap::{JmapAuth, JmapSaved};
+
+    crate::sign_in::NewJmap {
+        address: address.into(),
+        provider_name: "Fastmail".into(),
+        saved: JmapSaved {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            auth: JmapAuth::Bearer,
+            user_name: None,
+            labels: true,
+            capabilities: vec!["urn:ietf:params:jmap:mail".into()],
+        },
+        secret: token.into(),
+    }
+}
+
+#[tokio::test]
+async fn a_jmap_account_connects_from_its_session_row_and_its_secret() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let new = new_jmap("me@fastmail.com", "fmu1-token");
+    let account = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new, 0).await.unwrap();
+    assert_eq!(account.provider, Provider::Jmap);
+    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), &account, 30).await.unwrap();
+    assert!(matches!(services.mail, AnyMail::Jmap(_)));
+    assert!(matches!(services.rules, Some(crate::AnyRules::Local(_))), "rules stay here until part 3");
+    secrets.forget(&account).await.unwrap();
+    let missing = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), &account, 30).await;
+    assert!(matches!(missing, Err(crate::SyncError::Backend(crate::BackendError::NeedsReauth))));
+    assert_eq!(state(&db, &account).await, AccountState::NeedsReauth);
+}
+
+#[tokio::test]
+async fn signing_a_jmap_account_in_again_keeps_the_new_token_and_ends_needs_sign_in() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let first = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap("me@fastmail.com", "old"), 0)
+        .await
+        .unwrap();
+    let id = first.id;
+    db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth)).await.unwrap();
+    let again = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap("me@fastmail.com", "new"), 1)
+        .await
+        .unwrap();
+    assert_eq!(again.id, first.id);
+    assert_eq!(again.state, AccountState::Ok);
+    assert_eq!(secrets.jmap.load(id).unwrap().as_deref(), Some("new"));
+}
+
+#[tokio::test]
+async fn a_jmap_sign_in_for_an_address_an_imap_account_holds_is_refused() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let dana = imap_account(&db).await;
+    let refused = crate::sign_in::jmap_signed_in(&db, Arc::clone(&secrets.jmap), new_jmap(&dana.email, "token"), 0).await;
+    assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::Taken { .. })));
+    assert_eq!(secrets.jmap.load(dana.id).unwrap(), None, "nothing reaches the keyring");
 }
 
 /// The page a browser sign-in hands the opener, with the run dropped once

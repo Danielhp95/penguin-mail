@@ -137,6 +137,32 @@ pub fn insert_pop3_account(
     Ok(Some(conn.last_insert_rowid()))
 }
 
+/// Adds a JMAP account that `provider_name` serves, or finds the JMAP
+/// account already here for the address and takes the new name. `None`
+/// when an account of another provider holds the address.
+pub fn insert_jmap_account(
+    conn: &Connection,
+    email: &str,
+    provider_name: &str,
+    now: EpochMillis,
+) -> Result<Option<AccountId>> {
+    if let Some(existing) = account_by_email(conn, email)? {
+        if existing.provider != Provider::Jmap {
+            return Ok(None);
+        }
+        conn.execute(
+            "UPDATE accounts SET provider_name = ?2 WHERE id = ?1",
+            params![existing.id, provider_name],
+        )?;
+        return Ok(Some(existing.id));
+    }
+    conn.execute(
+        "INSERT INTO accounts (email, added_at, provider, provider_name) VALUES (?1, ?2, ?3, ?4)",
+        params![email, now, Provider::Jmap.as_str(), provider_name],
+    )?;
+    Ok(Some(conn.last_insert_rowid()))
+}
+
 /// What a POP3 account does with mail on the server. Any other account
 /// answers `Never`, the column's default.
 pub fn pop3_remove(conn: &Connection, id: AccountId) -> Result<RemoveSetting> {

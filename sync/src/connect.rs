@@ -20,7 +20,7 @@ use crate::sign_in::account_client;
 use crate::sign_in::own_client::{self, OwnClient, OwnClientError};
 use crate::{
     AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyRules, AnySieve, BackendError,
-    CalDav, CardDav, ImapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
+    CalDav, CardDav, ImapSettings, JmapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
 };
 
 /// How long starting an account waits on one step, such as a keyring
@@ -180,6 +180,7 @@ impl Connector {
             }
             Provider::Imap => connect_imap(db, Arc::clone(&self.secrets.passwords), account, window_days).await,
             Provider::Pop3 => connect_pop3(db, Arc::clone(&self.secrets.passwords), account).await,
+            Provider::Jmap => connect_jmap(db, Arc::clone(&self.secrets.jmap), account, window_days).await,
             Provider::Microsoft => {
                 let Some(client) = self.clients.microsoft.clone() else {
                     tracing::warn!(account = account.id, "no Microsoft client in this build");
@@ -462,6 +463,56 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
         services = attach(services, &service, &secret, account, &provider_name);
     }
     Ok(services)
+}
+
+/// The credentials a saved JMAP account signs in with.
+pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: String) -> mailrs_jmap::Auth {
+    match saved.auth {
+        mailrs_store::jmap::JmapAuth::Bearer => mailrs_jmap::Auth::Bearer(secret),
+        mailrs_store::jmap::JmapAuth::Basic => mailrs_jmap::Auth::Basic {
+            user: saved.user_name.clone().unwrap_or_else(|| address.to_string()),
+            password: secret,
+        },
+    }
+}
+
+/// The services for a JMAP account, from its session row and the secret in
+/// `secrets`. Without either, the store records that the account needs to
+/// sign in again before this answers `NeedsReauth`. Nothing here connects;
+/// the client reads the session when sync first asks.
+pub async fn connect_jmap<P: PasswordStore + 'static>(
+    db: &Db,
+    secrets: Arc<P>,
+    account: &Account,
+    window_days: i64,
+) -> Result<AccountServices, SyncError> {
+    connect_jmap_within(db, secrets, account, window_days, STEP_WAIT).await
+}
+
+pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
+    db: &Db,
+    secrets: Arc<P>,
+    account: &Account,
+    window_days: i64,
+    wait: Duration,
+) -> Result<AccountServices, SyncError> {
+    let id = account.id;
+    let saved = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::jmap::load(c, id))).await?;
+    let secret = read_secret(secrets, id, wait).await?;
+    let (Some(saved), Some(secret)) = (saved, secret) else {
+        let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
+        bounded(id, "the mail store", wait, marked).await?;
+        return Err(BackendError::NeedsReauth.into());
+    };
+    let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth_of(&saved, &account.email, secret))
+        .map_err(crate::services::jmap::backend)?;
+    let settings = JmapSettings {
+        address: account.email.clone(),
+        provider_name: account.provider_name().to_string(),
+        window_days,
+        labels: saved.labels,
+    };
+    Ok(AccountServices::jmap(db.clone(), id, client, settings))
 }
 
 /// `services` with the server `service` names put behind the service it
