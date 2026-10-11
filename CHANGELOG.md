@@ -9,6 +9,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 - Sign in to Gmail with a Google client from your own Google Cloud project, named in two environment variables, when Google blocks Penguin Mail's own client. docs/setup.md says how.
 - Give the outgoing server a password of its own in Server Settings, for an IMAP or POP3 account whose SMTP password differs from its incoming one.
+- The tray icon shows how many messages are unread in an orange badge, and "99+" past 99.
 
 ## 1.0.7 (2026-10-10)
 

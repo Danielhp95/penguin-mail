@@ -1,5 +1,7 @@
 //! The StatusNotifierItem shown by Ubuntu's AppIndicator extension.
 
+mod badge;
+
 use crate::APP_ID;
 use mailrs_domain::AccountId;
 use mailrs_domain::translate::{fill, fill_plural, gettext};
@@ -136,6 +138,14 @@ fn argb_from_rgba(width: usize, height: usize, stride: usize, rgba: &[u8]) -> Ve
     argb
 }
 
+/// The name the tray sends for `unread`; see `MailTray::icon_name`.
+fn icon_name(unread: i64) -> &'static str {
+    match unread {
+        ..=0 => "mail-read-symbolic",
+        _ => "",
+    }
+}
+
 /// The tray pictures decoded, for `MailTray::pixmaps`. Runs on the GTK
 /// thread, where GDK decodes PNG itself.
 pub fn pixmaps() -> Vec<ksni::Icon> {
@@ -170,11 +180,24 @@ pub struct MailTray {
     pub update: Option<String>,
     /// The app icon for a host that cannot find `icon_name`; see `pixmaps`.
     pub pixmaps: Vec<ksni::Icon>,
+    /// `pixmaps` with the unread count on them, drawn when the count
+    /// changes rather than at each time the host asks.
+    pub badged: Vec<ksni::Icon>,
 }
 
 impl MailTray {
     fn send(&self, command: TrayCommand) {
         let _ = self.commands.try_send(command);
+    }
+
+    /// Takes a new unread count and draws the badge again when what it
+    /// says changes.
+    pub fn set_unread(&mut self, unread: i64) {
+        let redraw = badge::text(unread) != badge::text(self.unread) || self.badged.is_empty();
+        self.unread = unread;
+        if redraw {
+            self.badged = badge::badged(&self.pixmaps, unread);
+        }
     }
 
     fn summary(&self) -> String {
@@ -194,17 +217,19 @@ impl ksni::Tray for MailTray {
         )
     }
 
+    /// A host draws the icon it finds by this name and passes over the
+    /// pixmap, so with mail unread the name goes empty and every host
+    /// draws the pixmap that carries the count. With none, the name stays
+    /// for a host that draws only themed icons.
     fn icon_name(&self) -> String {
-        if self.unread > 0 {
-            "mail-unread-symbolic"
-        } else {
-            "mail-read-symbolic"
-        }
-        .into()
+        icon_name(self.unread).into()
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        self.pixmaps.clone()
+        match self.badged.is_empty() {
+            true => self.pixmaps.clone(),
+            false => self.badged.clone(),
+        }
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
@@ -290,6 +315,67 @@ impl ksni::Tray for MailTray {
 pub mod checks {
     pub fn run() {
         the_tray_pictures_decode_to_argb();
+        the_badge_sits_on_the_real_icons();
+        if let Some(dir) = std::env::var_os("PENGUIN_MAIL_TRAY_SHOTS") {
+            save_badges(std::path::Path::new(&dir));
+        }
+    }
+
+    fn the_badge_sits_on_the_real_icons() {
+        let plain = super::pixmaps();
+        for icon in super::badge::badged(&plain, 7) {
+            let w = icon.width as usize;
+            // The top right pixel row's last opaque pixel is the badge's.
+            let corner = ((w / 4) * w + w - 2) * 4;
+            let pixel = &icon.data[corner..corner + 4];
+            assert!(pixel[0] == 255 && pixel[1] > 200 && pixel[3] < 60, "{w} px: {pixel:?}");
+        }
+    }
+
+    /// Writes each badged size over a light and a dark panel colour, six
+    /// times larger with no smoothing, as PNGs for a person to look at:
+    /// `PENGUIN_MAIL_TRAY_SHOTS=dir cargo test` writes them.
+    fn save_badges(dir: &std::path::Path) {
+        use gtk::gdk;
+        use gtk::prelude::*;
+        const SCALE: usize = 6;
+        const PANELS: [[u8; 3]; 2] = [[0xf6, 0xf5, 0xf4], [0x24, 0x24, 0x24]];
+        let plain = super::pixmaps();
+        for unread in [0, 7, 42, 120] {
+            for icon in super::badge::badged(&plain, unread) {
+                let side = icon.width as usize;
+                let (width, height) = (side * SCALE * 2 + SCALE * 2, side * SCALE);
+                let mut rgba = vec![0u8; width * height * 4];
+                for (panel, colour) in PANELS.iter().enumerate() {
+                    let left = panel * (side * SCALE + SCALE * 2);
+                    for y in 0..height {
+                        for x in 0..side * SCALE {
+                            let at = (y / SCALE * side + x / SCALE) * 4;
+                            let [a, r, g, b] = [icon.data[at], icon.data[at + 1], icon.data[at + 2], icon.data[at + 3]];
+                            let mix = |c: u8, under: u8| {
+                                ((u32::from(c) * u32::from(a) + u32::from(under) * (255 - u32::from(a))) / 255) as u8
+                            };
+                            let out = (y * width + left + x) * 4;
+                            rgba[out..out + 4].copy_from_slice(&[
+                                mix(r, colour[0]),
+                                mix(g, colour[1]),
+                                mix(b, colour[2]),
+                                255,
+                            ]);
+                        }
+                    }
+                }
+                let texture = gdk::MemoryTexture::new(
+                    width as i32,
+                    height as i32,
+                    gdk::MemoryFormat::R8g8b8a8,
+                    &gtk::glib::Bytes::from_owned(rgba),
+                    width * 4,
+                );
+                let path = dir.join(format!("tray-badge-{unread}-{side}.png"));
+                texture.save_to_png(&path).expect("the picture saves");
+            }
+        }
     }
 
     fn the_tray_pictures_decode_to_argb() {
@@ -338,6 +424,38 @@ mod tests {
             let height = u32::from_be_bytes(png[20..24].try_into().unwrap());
             assert_eq!((width, height), (size, size));
         }
+    }
+
+    #[test]
+    fn with_mail_unread_the_name_steps_aside_for_the_badged_pixmap() {
+        assert_eq!(super::icon_name(0), "mail-read-symbolic");
+        assert_eq!(super::icon_name(5), "");
+    }
+
+    #[test]
+    fn a_new_count_draws_the_badge_and_nothing_unread_takes_it_off() {
+        let (commands, _received) = async_channel::unbounded();
+        let plain = ksni::Icon {
+            width: 16,
+            height: 16,
+            data: vec![255; 16 * 16 * 4],
+        };
+        let mut tray = super::MailTray {
+            unread: 0,
+            accounts: Vec::new(),
+            commands,
+            can_update: false,
+            update: None,
+            pixmaps: vec![plain.clone()],
+            badged: Vec::new(),
+        };
+        tray.set_unread(7);
+        let seven = tray.badged[0].data.clone();
+        assert_ne!(seven, plain.data);
+        tray.set_unread(42);
+        assert_ne!(tray.badged[0].data, seven, "a new number is drawn");
+        tray.set_unread(0);
+        assert_eq!(tray.badged[0].data, plain.data);
     }
 
     #[test]
@@ -426,6 +544,7 @@ mod tests {
             can_update: false,
             update: None,
             pixmaps: Vec::new(),
+            badged: Vec::new(),
         };
         let menu = tray.menu();
         let MenuItem::Standard(line) = &menu[0] else {

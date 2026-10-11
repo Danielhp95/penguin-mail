@@ -1546,6 +1546,7 @@ impl App {
             can_update: self.updater.is_some(),
             update: None,
             pixmaps: crate::tray::pixmaps(),
+            badged: Vec::new(),
         };
         let slot = Arc::clone(&self.tray);
         // The restart that returns memory execs in place and keeps the pid,
@@ -1628,7 +1629,7 @@ impl App {
             this.core.spawn(async move {
                 handle
                     .update(move |tray: &mut MailTray| {
-                        tray.unread = counts.iter().map(|a| a.unread).sum();
+                        tray.set_unread(counts.iter().map(|a| a.unread).sum());
                         tray.accounts = counts;
                     })
                     .await;
