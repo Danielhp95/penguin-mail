@@ -278,3 +278,16 @@ async fn a_refused_envelope_sender_reads_as_a_refused_from() {
     let Err(BackendError::Refused(why)) = refused else { panic!("{refused:?}") };
     assert_eq!(why, "The server does not let this account send from me@example.com.");
 }
+
+/// With no Sent mailbox to look in, only the Message-ID tells a sent copy
+/// apart, and the draft carries the same one: the draft is never taken
+/// for the message that went out.
+#[tokio::test]
+async fn without_sent_the_draft_is_not_taken_for_its_sent_copy() {
+    let h = fastmail().await;
+    h.fake.with(|s| s.mailboxes.retain(|_, m| m.role.as_deref() != Some("sent")));
+    h.mail().save_draft(None, &letter("me@example.com", ""), None).await.unwrap();
+    assert_eq!(h.mail().find_sent("<out-1@example.com>").await.unwrap(), None);
+    let id = h.mail().send(&letter("me@example.com", ""), None).await.unwrap();
+    assert_eq!(h.mail().find_sent("out-1@example.com").await.unwrap(), Some(id));
+}

@@ -13,6 +13,8 @@ mod threads;
 mod window;
 mod writes;
 
+pub(crate) use outbox::message_id_header;
+
 pub use listed::Searched;
 
 use std::collections::BTreeSet;

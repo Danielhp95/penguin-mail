@@ -358,8 +358,14 @@ impl AccountSync {
 /// The `Message-ID` header of RFC 822 bytes, without its angle brackets.
 /// Only the header block is read, and a header folded onto the next line
 /// is unfolded first.
-fn message_id_header(raw: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(raw);
+pub(crate) fn message_id_header(raw: &[u8]) -> Option<String> {
+    // Cut the header block from the bytes before any text is made, so a
+    // large message costs no copy of its body.
+    let end = raw
+        .windows(2)
+        .position(|w| w == b"\n\n" || w == b"\n\r")
+        .unwrap_or(raw.len());
+    let text = String::from_utf8_lossy(&raw[..end]);
     let head = text
         .split("\r\n\r\n")
         .next()

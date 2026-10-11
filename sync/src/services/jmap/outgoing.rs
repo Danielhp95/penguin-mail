@@ -8,15 +8,29 @@
 use mailrs_domain::Role;
 use mailrs_domain::translate::{fill, gettext};
 use mailrs_jmap::{EmailQuery, Identity, JmapError, SUBMISSION, Submission};
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 
 use super::{Jmap, JmapApi, backend};
 use crate::BackendError;
+use crate::account::message_id_header;
 use crate::api::{DraftRef, SavedDraft};
 use crate::services::imap::{envelope_of, without_bcc};
 
 /// The most drafts one listing names.
 const MOST_DRAFTS: usize = 500;
+
+/// The filter for the sent copies of the message `message_id`, with or
+/// without its angle brackets, in `within` when given. A draft carries the
+/// same Message-ID, so drafts are left out: taking one for the sent copy
+/// would leave the message unsent and the draft deleted.
+pub(super) fn sent_copies(message_id: &str, within: Option<&str>) -> Value {
+    let wanted = format!("<{}>", message_id.trim().trim_matches(['<', '>']));
+    let mut conditions = vec![json!({ "header": ["Message-ID", wanted] }), json!({ "notKeyword": "$draft" })];
+    if let Some(mailbox) = within {
+        conditions.push(json!({ "inMailbox": mailbox }));
+    }
+    json!({ "operator": "AND", "conditions": conditions })
+}
 
 /// The identity that sends as `from`: its own address, then a whole-domain
 /// identity (`*@domain`, as Fastmail keeps one for a domain), then the
@@ -161,14 +175,11 @@ impl<J: JmapApi> Jmap<J> {
     /// The sent copy of the draft `draft_id`, found by its Message-ID among
     /// the messages that are no drafts, wherever the copy was filed.
     async fn already_sent(&self, raw: &[u8], draft_id: &str) -> Result<Option<String>, BackendError> {
-        let parts = mailrs_mime::parts(raw).unwrap_or_default();
-        let Some(message_id) = parts.header("Message-ID").map(str::trim).filter(|m| !m.is_empty()) else {
+        let Some(message_id) = message_id_header(raw) else {
             return Ok(None);
         };
-        let header = json!({ "header": ["Message-ID", message_id] });
-        let filter = json!({ "operator": "AND", "conditions": [header, { "notKeyword": "$draft" }] });
         // Two, so a draft that lost its `$draft` elsewhere is passed over.
-        let query = EmailQuery { filter: Some(filter), position: 0, limit: 2, total: false };
+        let query = EmailQuery { filter: Some(sent_copies(&message_id, None)), position: 0, limit: 2, total: false };
         let found = self.api().query(&query).await.map_err(backend)?;
         Ok(found.hits.into_iter().map(|h| h.id).find(|id| id != draft_id))
     }

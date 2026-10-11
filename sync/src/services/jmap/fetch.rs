@@ -233,11 +233,8 @@ impl<J: JmapApi> Jmap<J> {
 
     pub(super) async fn sent_with(&self, message_id: &str) -> Result<Option<String>, BackendError> {
         self.listed().await?;
-        let header = json!({ "header": ["Message-ID", format!("<{}>", message_id.trim().trim_matches(['<', '>']))] });
-        let filter = match self.known().roles.get(&Role::Sent) {
-            Some(sent) => json!({ "operator": "AND", "conditions": [header, { "inMailbox": sent }] }),
-            None => header,
-        };
+        let sent = self.known().roles.get(&Role::Sent).cloned();
+        let filter = super::outgoing::sent_copies(message_id, sent.as_deref());
         let query = EmailQuery { filter: Some(filter), position: 0, limit: 1, total: false };
         let found = self.api().query(&query).await.map_err(backend)?;
         Ok(found.hits.into_iter().next().map(|h| h.id))
