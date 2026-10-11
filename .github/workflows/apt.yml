@@ -3,7 +3,13 @@ name: Package repositories
 # Rebuilds the apt, dnf and Flatpak repositories on GitHub Pages from release
 # assets. It runs after each tagged release, and by hand from the Actions tab
 # to publish again without a new release.
-on:
+#
+# zizmor flags workflow_run because it runs with secrets after a workflow a
+# pull request may have started. Here the trigger is Release, which only a
+# pushed tag or a maintainer starts, and the build job also checks that the
+# run came from a push. Nothing from the triggering run is checked out or
+# read except release assets, which come from the published release.
+on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: ["Release"]
     types: [completed]
@@ -28,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Download the newest packages
         env:
           GH_TOKEN: ${{ github.token }}
@@ -59,15 +67,18 @@ jobs:
           ls -l debs rpms flatpaks
       - name: Install repository tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends createrepo-c flatpak ostree
+      # Both steps name the keyring in their own env rather than through
+      # GITHUB_ENV, which would hand it to every later step.
       - name: Import the signing key
         env:
           APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          GNUPGHOME: ${{ runner.temp }}/gnupg
         run: |
-          export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -m 700 "$GNUPGHOME"
-          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
       - name: Build and sign
+        env:
+          GNUPGHOME: ${{ runner.temp }}/gnupg
         run: |
           scripts/apt-repo.sh debs site
           if compgen -G 'rpms/*.rpm' >/dev/null; then
