@@ -151,6 +151,9 @@ pub fn not_an_address() -> String {
 /// What step 2 signs in to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proposal {
+    /// The address these servers were found or typed for. Server Settings
+    /// takes nothing from a proposal made for another address.
+    pub address: String,
     /// Who runs the servers: the provider table's name, or the address's
     /// domain for a server the table does not list.
     pub provider_name: String,
@@ -356,6 +359,7 @@ fn proposal_from(candidate: Candidate, remaining: Vec<Candidate>, address: &Addr
         (None, None) => return usual_servers(address),
     };
     Proposal {
+        address: address.full(),
         provider_name,
         info: candidate.provider,
         protocol,
@@ -398,6 +402,7 @@ fn usual_servers(address: &Address) -> Proposal {
         user_name: UserName::Address,
     };
     Proposal {
+        address: address.full(),
         provider_name: address.domain.clone(),
         info: None,
         protocol: Protocol::Imap,
@@ -1202,13 +1207,16 @@ pub fn typed_servers(
     let found = std::iter::once(&before.incoming)
         .chain(&before.pop3_offer)
         .find(|server| server.host == imap_host);
-    let same_hosts = found.is_some() && smtp_host == before.smtp.host;
+    // What discovery knew counts only for the address it was found for.
+    let same_address = before.address.eq_ignore_ascii_case(&address.full());
+    let same_hosts = same_address && found.is_some() && smtp_host == before.smtp.host;
     let (provider_name, info) = if same_hosts {
         (before.provider_name.clone(), before.info.clone())
     } else {
         (address.domain.clone(), None)
     };
     Ok(Proposal {
+        address: address.full(),
         provider_name,
         info,
         protocol: before.protocol,
@@ -1265,6 +1273,7 @@ pub fn saved_proposal(account: &Account, kept: &Kept) -> Proposal {
     let (smtp, smtp_user) = restore(smtp);
     let provider_name = mailrs_discover::resolved_provider_name(account.provider_name());
     Proposal {
+        address: account.email.clone(),
         info: mailrs_discover::provider_named(&provider_name),
         provider_name,
         protocol,
@@ -1446,6 +1455,9 @@ pub fn keeps_password(typed_for: Option<&str>, address: &str) -> bool {
 /// What the JMAP sign-in signs in to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JmapProposal {
+    /// The address this session was found or typed for. Server Settings
+    /// takes nothing from a session held for another address.
+    pub address: String,
     /// The provider table's name, or the session's host.
     pub provider_name: String,
     pub session_url: String,
@@ -1486,7 +1498,7 @@ fn host_of(url: &str) -> String {
 pub fn jmap_proposal(
     found: mailrs_discover::JmapFound,
     imap: Option<Proposal>,
-    _address: &Address,
+    address: &Address,
 ) -> JmapProposal {
     let provider_name = found
         .provider
@@ -1494,6 +1506,7 @@ pub fn jmap_proposal(
         .map_or_else(|| host_of(&found.session_url), |p| p.name.clone());
     let token = found.provider.as_ref().is_some_and(|p| p.token_url.is_some());
     JmapProposal {
+        address: address.full(),
         provider_name,
         session_url: found.session_url,
         confirm: found.confirm,
@@ -1642,7 +1655,10 @@ pub fn typed_jmap(
     }
     let user = user.trim();
     let user = (!user.is_empty()).then(|| user.to_string());
-    if let Some(before) = before.filter(|b| host_of(&b.session_url) == host_of(&full)) {
+    let held = before.filter(|b| {
+        b.address.eq_ignore_ascii_case(&address.full()) && host_of(&b.session_url) == host_of(&full)
+    });
+    if let Some(before) = held {
         return Ok(JmapProposal {
             session_url: full,
             user,
@@ -1650,6 +1666,7 @@ pub fn typed_jmap(
         });
     }
     Ok(JmapProposal {
+        address: address.full(),
         provider_name: parsed
             .host_str()
             .map_or_else(|| address.domain.clone(), str::to_string),
@@ -1687,6 +1704,7 @@ pub fn located_jmap(proposal: JmapProposal, target: Option<String>, address: &Ad
 /// The JMAP sign-in for an account signing in again, from its saved row.
 pub fn saved_jmap(account: &Account, saved: &mailrs_store::jmap::JmapSaved) -> JmapProposal {
     JmapProposal {
+        address: account.email.clone(),
         provider_name: account.provider_name().to_string(),
         session_url: saved.session_url.clone(),
         confirm: false,
@@ -1823,7 +1841,7 @@ pub fn jmap_failure(err: &anyhow::Error, proposal: &JmapProposal, token: bool) -
 /// own text: some name the address, or carry the server's words.
 pub fn failure_kind(err: &anyhow::Error) -> &'static str {
     use mailrs_jmap::JmapError;
-    use mailrs_sync::sign_in::{ImapSignInError, JmapSignInError};
+    use mailrs_sync::sign_in::{BrowserSignInError, ImapSignInError, JmapSignInError};
     if let Some(jmap) = err.downcast_ref::<JmapError>() {
         return match jmap {
             JmapError::Unauthorized => "unauthorized",
@@ -1843,6 +1861,17 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::Problem { .. } => "problem",
             JmapError::Decode(_) => "decode",
             JmapError::LocalFile(_) => "local file",
+        };
+    }
+    if let Some(browser) = err.downcast_ref::<BrowserSignInError>() {
+        return match browser {
+            BrowserSignInError::NoClient(_) => "no client",
+            BrowserSignInError::OtherAddress { .. } => "other address",
+            BrowserSignInError::Google(_) => "google",
+            BrowserSignInError::Microsoft(_) => "microsoft",
+            BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) => "keeping the account",
+            BrowserSignInError::Connect(_) => "connect",
+            BrowserSignInError::OwnClient(_) => "own client",
         };
     }
     if let Some(check) = err.downcast_ref::<CheckError>() {
@@ -2132,6 +2161,7 @@ mod tests {
         assert_eq!(
             guess(&address),
             Proposal {
+                address: "me@example.org".into(),
                 provider_name: "example.org".into(),
                 info: None,
                 protocol: Protocol::Imap,
@@ -3592,5 +3622,49 @@ mod tests {
         assert!(!failure_kind(&taken).contains('@'));
         let refused = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
         assert_eq!(failure_kind(&refused), "unauthorized");
+    }
+
+    #[test]
+    fn a_session_found_for_another_address_is_never_carried_over() {
+        let first = Address::parse("me@fastmail.com").unwrap();
+        let held = jmap_proposal(fastmail_jmap(), None, &first);
+        assert_eq!(held.address, "me@fastmail.com");
+        let now = Address::parse("me@example.net").unwrap();
+        let typed = typed_jmap(&held.session_url, "", &now, Some(&held)).unwrap();
+        assert_eq!(typed.address, "me@example.net");
+        assert!(typed.provider.is_none(), "the list's facts were for the other address");
+        assert!(!typed.token);
+        assert_eq!(typed.source, Some(Source::Manual));
+    }
+
+    #[test]
+    fn servers_found_for_another_address_are_never_carried_over() {
+        let first = Address::parse("me@example.org").unwrap();
+        let Next::Password(held) = after_discovery(found(Some(fastmail_info()), Source::Srv, true), None, &first, true)
+        else {
+            panic!("expected the password step");
+        };
+        assert_eq!(held.address, "me@example.org");
+        let now = Address::parse("me@example.net").unwrap();
+        let typed = typed_servers(
+            &typed("imap.example.org", 993, ""),
+            &typed("smtp.example.org", 465, ""),
+            &held,
+            &now,
+        )
+        .unwrap();
+        assert_eq!(typed.address, "me@example.net");
+        assert_eq!(typed.provider_name, "example.net");
+        assert!(typed.info.is_none());
+        assert!(!typed.confirm);
+    }
+
+    #[test]
+    fn a_browser_failure_logs_its_kind_and_never_the_address() {
+        let other = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::OtherAddress {
+            signed_in: "me@example.org".into(),
+            wanted: "you@example.org".into(),
+        });
+        assert_eq!(failure_kind(&other), "other address");
     }
 }

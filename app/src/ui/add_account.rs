@@ -1610,6 +1610,8 @@ struct Dialog {
     jmap: RefCell<Option<JmapProposal>>,
     /// Whether the JMAP sign-in sends a token rather than a password.
     token: Cell<bool>,
+    /// Whether Server Settings is following a typed host's well-known URL.
+    locating: Cell<bool>,
     /// The address the password page last opened for, whose password the
     /// field may hold.
     password_for: RefCell<Option<String>>,
@@ -1697,6 +1699,7 @@ impl Dialog {
             proposal: RefCell::new(None),
             jmap: RefCell::new(None),
             token: Cell::new(false),
+            locating: Cell::new(false),
             password_for: RefCell::new(None),
             smtp_password: RefCell::new(String::new()),
             declined: RefCell::new(None),
@@ -1866,6 +1869,15 @@ impl Dialog {
             }
         });
         self.lookup.banded.page.connect_hidden(move |_| back());
+        // Leaving Server Settings while it follows a typed host drops the
+        // answer, so it cannot push the sign-in over another page.
+        let left = on(|this| {
+            if this.locating.get() {
+                this.asking.forget();
+                this.stop_locating();
+            }
+        });
+        self.manual.page.connect_hidden(move |_| left());
         // Each step opens with the cursor in the field it asks for, so
         // the whole dialog runs from the keyboard.
         let address = self.address.address.clone();
@@ -2009,6 +2021,9 @@ impl Dialog {
         let ticket = self.asking.ask();
         self.address.said.set_visible(false);
         self.address.look.set_sensitive(false);
+        // A new lookup answers afresh; a session held from before must not
+        // reach Server Settings if this one ends there.
+        self.jmap.replace(None);
         self.typed.replace(Some(address.clone()));
         self.checks.replace(Checks::default());
         self.lookup.title.set_text(&fill(
@@ -2153,6 +2168,7 @@ impl Dialog {
     fn address_changed(self: &Rc<Self>) {
         self.asking.forget();
         self.proposal.replace(None);
+        self.jmap.replace(None);
         self.address.said.set_visible(false);
         self.address.suggest.set_visible(false);
         self.address.look.set_sensitive(true);
@@ -2738,6 +2754,9 @@ impl Dialog {
         self.asking.forget();
         self.address.look.set_sensitive(true);
         let same = self.typed.borrow().as_ref() == Some(&address);
+        if !same {
+            self.jmap.replace(None);
+        }
         let found = self.proposal.borrow().clone().filter(|_| same);
         let proposal = found.unwrap_or_else(|| add_account::guess(&address));
         self.typed.replace(Some(address));
@@ -2753,6 +2772,16 @@ impl Dialog {
         if let Some(proposal) = proposal {
             self.show_manual(&proposal, None);
         }
+    }
+
+    /// The JMAP session the dialog holds, when it was found or typed for
+    /// the address signing in now.
+    fn held_jmap(&self) -> Option<JmapProposal> {
+        let address = self.typed.borrow().as_ref().map(Address::full)?;
+        self.jmap
+            .borrow()
+            .clone()
+            .filter(|jmap| jmap.address.eq_ignore_ascii_case(&address))
     }
 
     /// Server Settings with JMAP picked and the session on show.
@@ -2819,7 +2848,7 @@ impl Dialog {
     /// protocol just picked, while they still hold the other one.
     fn follow_protocol(self: &Rc<Self>) {
         let index = self.manual.protocol.active();
-        let jmap = self.jmap.borrow().clone();
+        let jmap = self.held_jmap();
         let host = self.manual.incoming.host.text();
         if add_account::jmap_at(index) {
             // An IMAP host means nothing to JMAP: the session found, or
@@ -2863,7 +2892,7 @@ impl Dialog {
         };
         if add_account::jmap_at(self.manual.protocol.active()) {
             let url = self.manual.incoming.host.text().to_string();
-            let before = self.jmap.borrow().clone();
+            let before = self.held_jmap();
             let typed = add_account::typed_jmap(
                 &url,
                 &self.manual.incoming.user.text(),
@@ -2884,7 +2913,7 @@ impl Dialog {
         }
         // Coming from a JMAP sign-in, the IMAP servers found beside it
         // stand in for the proposal the form started from.
-        let jmap_imap = self.jmap.borrow().as_ref().and_then(|j| j.imap.clone());
+        let jmap_imap = self.held_jmap().and_then(|j| j.imap);
         let before = self
             .proposal
             .borrow()
@@ -2922,6 +2951,7 @@ impl Dialog {
     /// an answer that comes after the person left the form goes nowhere.
     fn locate_jmap(self: &Rc<Self>, proposal: JmapProposal, address: Address) {
         let ticket = self.asking.ask();
+        self.locating.set(true);
         let button = &self.manual.use_them;
         button.set_sensitive(false);
         button.set_label(&gettext("Looking Up…"));
@@ -2930,14 +2960,20 @@ impl Dialog {
         glib::spawn_future_local(async move {
             let url = proposal.session_url.clone();
             let target = this.core.locate_jmap(url).await;
-            this.manual.use_them.set_label(&gettext("Use These Settings"));
-            this.manual.use_them.set_sensitive(true);
+            this.stop_locating();
             if !this.asking.wants(ticket) {
                 return;
             }
             this.asking.forget();
             this.show_jmap(add_account::located_jmap(proposal, target, &address));
         });
+    }
+
+    /// Use These Settings back as it was after a lookup ends.
+    fn stop_locating(&self) {
+        self.locating.set(false);
+        self.manual.use_them.set_label(&gettext("Use These Settings"));
+        self.manual.use_them.set_sensitive(true);
     }
 
     /// The password page for an account signing in again, from the
@@ -3105,7 +3141,10 @@ impl Dialog {
                         None => this.browser_failed(&err.to_string()),
                     }
                 }
-                Err(err) => tracing::info!(error = %err, "a browser sign-in ended after its dialog moved on"),
+                Err(err) => {
+                    let kind = add_account::failure_kind(&err);
+                    tracing::info!(kind, "a browser sign-in ended after its dialog moved on");
+                }
             }
         });
     }
