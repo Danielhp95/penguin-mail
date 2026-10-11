@@ -6,12 +6,14 @@
 //! services every provider shares.
 
 mod auth;
+pub mod blob;
 mod request;
 pub mod error;
 pub mod http;
 pub mod session;
 
 pub use auth::{Auth, AuthKind};
+pub use blob::{MOST_BLOB_BYTES, Uploaded};
 pub use error::JmapError;
 pub use http::JmapClient;
 pub use request::{CallId, Request, Response};
