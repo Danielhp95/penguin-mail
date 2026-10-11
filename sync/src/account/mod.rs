@@ -31,6 +31,24 @@ pub const FETCH_CONCURRENCY: usize = 10;
 pub const DEFAULT_WINDOW_DAYS: i64 = 30;
 pub const DEFAULT_BODY_CACHE_BYTES: i64 = 1 << 30;
 
+/// The window that keeps all mail, whatever its age. Any count of days of
+/// 0 or less reads the same way.
+pub const ALL_MAIL: i64 = 0;
+
+/// How many days back a window of `days` reaches: `None` for all mail.
+pub fn window_reach(days: i64) -> Option<i64> {
+    (days > 0).then_some(days)
+}
+
+/// Whether a window of `days` reaches further back than one of `than`.
+pub fn window_longer(days: i64, than: i64) -> bool {
+    match (window_reach(days), window_reach(than)) {
+        (None, Some(_)) => true,
+        (Some(days), Some(than)) => days > than,
+        (_, None) => false,
+    }
+}
+
 pub struct AccountSync {
     account_id: AccountId,
     services: AccountServices,
@@ -72,6 +90,9 @@ pub struct AccountSync {
     /// Counts the changes to this account's mail, so a search kept to
     /// list a folder can tell it no longer says what the folder holds.
     mail_changes: AtomicU64,
+    /// Set once this run has compared its window with the one the stored
+    /// mail was loaded for; see `follow_window`.
+    window_followed: std::sync::atomic::AtomicBool,
 }
 
 /// How long a finished history replay speaks for the whole mailbox. The
@@ -103,6 +124,7 @@ impl AccountSync {
             moving: tokio::sync::Mutex::new(()),
             pop3_checking: tokio::sync::Mutex::new(None),
             mail_changes: AtomicU64::new(0),
+            window_followed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

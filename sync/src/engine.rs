@@ -417,6 +417,8 @@ pub(crate) async fn tick(
             .unwrap_or(config.poll_interval);
         *next_poll = Instant::now() + every + std::mem::take(stagger);
     }
+    // After the look at new mail, so a longer window never holds it up.
+    sync.follow_window().await?;
     if local {
         return Ok(false);
     }

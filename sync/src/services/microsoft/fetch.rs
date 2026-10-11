@@ -6,7 +6,7 @@ use mailrs_domain::{Address, Memberships, MessageMeta, Role, category};
 use mailrs_graph::{Fields, GraphError, Listing, Message, Recipient};
 use mailrs_mime::{Part, Parts};
 
-use super::{GraphApi, Microsoft, backend, tag_id, tag_name};
+use super::{GraphApi, Microsoft, backend, tag_id, tag_name, window_since};
 use crate::BackendError;
 use crate::services::{Backfill, Found, LIST_PAGE_SIZE, RawMessage, RemoteRef, Want};
 
@@ -132,8 +132,7 @@ impl<G: GraphApi> Microsoft<G> {
     }
 
     pub(super) async fn backfill_page(&self, days: i64, cursor: Option<&str>) -> Result<Backfill, BackendError> {
-        let since = (chrono::Utc::now() - chrono::Duration::days(days.max(1))).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        let listing = Listing { received_since: Some(since), top: LIST_PAGE_SIZE, fields: Fields::Ids, ..Listing::default() };
+        let listing = Listing { received_since: window_since(days), top: LIST_PAGE_SIZE, fields: Fields::Ids, ..Listing::default() };
         let page = match self.graph().list_messages(&listing, cursor).await {
             Ok(page) => page,
             // Graph no longer takes the page link it gave.
@@ -146,7 +145,7 @@ impl<G: GraphApi> Microsoft<G> {
     }
 
     pub(super) async fn ids_in(&self, days: Option<i64>, folder: Option<String>) -> Result<Vec<RemoteRef>, BackendError> {
-        let since = days.map(|d| (chrono::Utc::now() - chrono::Duration::days(d.max(1))).to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        let since = days.and_then(window_since);
         // A category's tag id is no folder: Graph refuses it in a folder's
         // place, so a tag lists the whole mailbox filtered by its name.
         let (folder, category) = match folder.as_deref().and_then(tag_name) {

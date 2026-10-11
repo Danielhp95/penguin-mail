@@ -169,6 +169,14 @@ impl<G> Clone for Microsoft<G> {
 
 /// The tag id for an Outlook category. A message names its categories by
 /// name, so the name is the id; the prefix keeps it apart from a folder's.
+/// The start of a window of `days`, as Graph reads a time in a filter;
+/// `None` for all mail, which needs no filter.
+pub(super) fn window_since(days: i64) -> Option<String> {
+    let days = crate::window_reach(days)?;
+    let start = chrono::Utc::now() - chrono::Duration::days(days);
+    Some(start.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+}
+
 pub(super) fn tag_id(name: &str) -> String {
     format!("category:{name}")
 }

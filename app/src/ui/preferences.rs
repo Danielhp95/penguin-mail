@@ -18,7 +18,8 @@ use crate::autostart;
 use crate::language;
 use crate::offered::missing_lines;
 use crate::settings::{
-    Change, Choice, Settings, cache_choices, nearest, poll_choices, window_choices,
+    Change, Choice, Settings, cache_choices, nearest, nearest_window, poll_choices, window_choices,
+    window_note,
 };
 use crate::ui::window::Notice;
 use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
@@ -760,16 +761,23 @@ fn sync_page(app: &Rc<App>, pending: &Rc<RefCell<SyncConfig>>) -> adw::Preferenc
         .title(gettext("Storage"))
         .build();
     let windows = window_choices();
-    storage.add(&sync_combo(
+    let days = current.window_days.unwrap_or(mailrs_sync::DEFAULT_WINDOW_DAYS);
+    let window = sync_combo(
         &windows,
         &gettext("Keep Mail on This Computer For"),
-        Some(&gettext(
-            "Everything in your inbox stays too, and older mail remains searchable",
-        )),
-        nearest(&windows, current.window_days.unwrap_or(30)),
+        Some(&window_note(days)),
+        nearest_window(&windows, days),
         pending,
         |c, v| c.window_days = Some(v),
-    ));
+    );
+    // The line under the row says what the choice on show costs.
+    let picked: Vec<i64> = windows.iter().map(|(days, _)| *days).collect();
+    window.connect_selected_notify(move |row| {
+        if let Some(days) = picked.get(row.selected() as usize) {
+            row.set_subtitle(&window_note(*days));
+        }
+    });
+    storage.add(&window);
     let caches = cache_choices();
     storage.add(&sync_combo(
         &caches,

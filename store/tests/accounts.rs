@@ -7,10 +7,10 @@ fn migrations_run_once_and_record_the_version() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_connection(&path).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 54);
+    assert_eq!(schema_version(&conn).unwrap(), 55);
     drop(conn);
     let conn = open_connection(&path).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 54);
+    assert_eq!(schema_version(&conn).unwrap(), 55);
 }
 
 #[test]
@@ -73,6 +73,7 @@ fn cursors_start_empty_and_track_progress() {
             state: None,
             backfill_cursor: None,
             backfill_done: false,
+            backfill_extends: false,
             sync_gen: 1
         }
     );
@@ -95,9 +96,38 @@ fn a_new_generation_resets_backfill() {
             state: Some("s99".into()),
             backfill_cursor: None,
             backfill_done: false,
+            backfill_extends: false,
             sync_gen: 2
         }
     );
+}
+
+#[test]
+fn an_account_records_the_window_its_mail_was_loaded_for() {
+    let conn = open_in_memory().unwrap();
+    let id = accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    assert_eq!(accounts::window_days(&conn, id).unwrap(), None);
+    accounts::set_window_days(&conn, id, 365).unwrap();
+    assert_eq!(accounts::window_days(&conn, id).unwrap(), Some(365));
+}
+
+#[test]
+fn extending_the_window_starts_the_backfill_again_in_the_same_generation() {
+    let conn = open_in_memory().unwrap();
+    let id = accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    accounts::set_backfill(&conn, id, None, true).unwrap();
+    accounts::extend_backfill(&conn, id).unwrap();
+    let cursor = accounts::sync_cursor(&conn, id).unwrap();
+    assert!(cursor.backfill_extends && !cursor.backfill_done);
+    assert_eq!(cursor.sync_gen, 1);
+    // A page token on the way keeps the extension.
+    accounts::set_backfill(&conn, id, Some("p2"), false).unwrap();
+    assert!(accounts::sync_cursor(&conn, id).unwrap().backfill_extends);
+    accounts::set_backfill(&conn, id, None, true).unwrap();
+    assert!(!accounts::sync_cursor(&conn, id).unwrap().backfill_extends, "the last page ends it");
+    accounts::extend_backfill(&conn, id).unwrap();
+    accounts::start_generation(&conn, id, "s2").unwrap();
+    assert!(!accounts::sync_cursor(&conn, id).unwrap().backfill_extends, "a new generation fetches everything");
 }
 
 #[test]

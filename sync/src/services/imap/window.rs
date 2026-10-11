@@ -53,15 +53,16 @@ pub(super) fn windows(from: u32, to: u32) -> impl Iterator<Item = RangeInclusive
 const FIRST_SPAN: u32 = 4 * LIST_PAGE_SIZE;
 
 /// The SEARCH keys for the window in `mailbox` on `today`: all of the
-/// Inbox, mail since `days` before today elsewhere, and never a message
-/// marked deleted, which another client or a move on a server without
-/// MOVE left behind.
+/// Inbox, mail since `days` before today elsewhere (all of it for all
+/// mail), and never a message marked deleted, which another client or a
+/// move on a server without MOVE left behind.
 pub(super) fn window_keys(mailbox: &str, days: i64, today: NaiveDate) -> String {
-    if mailbox.eq_ignore_ascii_case("INBOX") {
+    let Some(days) = crate::window_reach(days).filter(|_| !mailbox.eq_ignore_ascii_case("INBOX"))
+    else {
         return "UNDELETED".to_string();
-    }
+    };
     let start = today
-        .checked_sub_days(chrono::Days::new(days.max(0).unsigned_abs()))
+        .checked_sub_days(chrono::Days::new(days.unsigned_abs()))
         .unwrap_or(NaiveDate::MIN);
     format!("SINCE {} UNDELETED", imap_date(start))
 }
@@ -457,6 +458,7 @@ mod tests {
     fn the_window_is_the_whole_inbox_and_recent_mail_elsewhere() {
         let today = NaiveDate::from_ymd_opt(2026, 9, 24).unwrap();
         assert_eq!(window_keys("INBOX", 30, today), "UNDELETED");
+        assert_eq!(window_keys("Archive", crate::ALL_MAIL, today), "UNDELETED");
         assert_eq!(
             window_keys("Archive", 30, today),
             "SINCE 25-Aug-2026 UNDELETED"

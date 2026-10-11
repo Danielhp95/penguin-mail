@@ -14,6 +14,9 @@ pub struct SyncCursor {
     /// Page token for the next window page.
     pub backfill_cursor: Option<String>,
     pub backfill_done: bool,
+    /// The backfill running now lengthens the window over mail the store
+    /// already holds: it keeps what it holds rather than fetching it again.
+    pub backfill_extends: bool,
     pub sync_gen: i64,
 }
 
@@ -239,7 +242,8 @@ pub fn set_checked_at(conn: &Connection, id: AccountId, at: EpochMillis) -> Resu
 
 pub fn sync_cursor(conn: &Connection, id: AccountId) -> Result<SyncCursor> {
     Ok(conn.query_row(
-        "SELECT sync_state, backfill_cursor, backfill_done, sync_gen FROM accounts WHERE id = ?1",
+        "SELECT sync_state, backfill_cursor, backfill_done, sync_gen, backfill_extends \
+         FROM accounts WHERE id = ?1",
         params![id],
         |row| {
             Ok(SyncCursor {
@@ -247,6 +251,7 @@ pub fn sync_cursor(conn: &Connection, id: AccountId) -> Result<SyncCursor> {
                 backfill_cursor: row.get(1)?,
                 backfill_done: row.get(2)?,
                 sync_gen: row.get(3)?,
+                backfill_extends: row.get(4)?,
             })
         },
     )?)
@@ -267,8 +272,40 @@ pub fn set_backfill(
     done: bool,
 ) -> Result<()> {
     conn.execute(
-        "UPDATE accounts SET backfill_cursor = ?2, backfill_done = ?3 WHERE id = ?1",
+        "UPDATE accounts SET backfill_cursor = ?2, backfill_done = ?3, \
+         backfill_extends = backfill_extends AND NOT ?3 WHERE id = ?1",
         params![id, cursor, done],
+    )?;
+    Ok(())
+}
+
+/// Starts the backfill again from the top in the same generation, to
+/// bring in mail a longer window now reaches; see
+/// [`SyncCursor::backfill_extends`].
+pub fn extend_backfill(conn: &Connection, id: AccountId) -> Result<()> {
+    conn.execute(
+        "UPDATE accounts SET backfill_cursor = NULL, backfill_done = 0, backfill_extends = 1 \
+         WHERE id = ?1",
+        params![id],
+    )?;
+    Ok(())
+}
+
+/// The sync window, in days, the account's stored mail was loaded for: 0
+/// for all mail, `None` before an account first ran under a version that
+/// records it.
+pub fn window_days(conn: &Connection, id: AccountId) -> Result<Option<i64>> {
+    Ok(conn.query_row(
+        "SELECT window_days FROM accounts WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?)
+}
+
+pub fn set_window_days(conn: &Connection, id: AccountId, days: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE accounts SET window_days = ?2 WHERE id = ?1",
+        params![id, days],
     )?;
     Ok(())
 }
@@ -278,7 +315,7 @@ pub fn set_backfill(
 pub fn start_generation(conn: &Connection, id: AccountId, state: &str) -> Result<i64> {
     Ok(conn.query_row(
         "UPDATE accounts SET sync_state = ?2, backfill_cursor = NULL, backfill_done = 0, \
-         sync_gen = sync_gen + 1 WHERE id = ?1 RETURNING sync_gen",
+         backfill_extends = 0, sync_gen = sync_gen + 1 WHERE id = ?1 RETURNING sync_gen",
         params![id, state],
         |row| row.get(0),
     )?)

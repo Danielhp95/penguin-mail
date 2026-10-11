@@ -741,14 +741,40 @@ pub fn poll_choices() -> Vec<(i64, String)> {
     ]
 }
 
-/// How many days of mail stay on this computer.
+/// How many days of mail stay on this computer, the last choice all of it.
 pub fn window_choices() -> Vec<(i64, String)> {
     vec![
         (14, gettext("2 weeks")),
         (30, gettext("30 days")),
         (90, gettext("90 days")),
         (365, gettext("1 year")),
+        (730, gettext("2 years")),
+        (1825, gettext("5 years")),
+        (mailrs_sync::ALL_MAIL, gettext("All mail")),
     ]
+}
+
+/// The index of the window choice closest to `days`. All mail reaches
+/// further than any count of days, so a short count is not taken for it.
+pub fn nearest_window(choices: &[(i64, String)], days: i64) -> u32 {
+    let reach = |days: i64| mailrs_sync::window_reach(days).unwrap_or(i64::MAX);
+    let wanted = reach(days);
+    choices
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, (choice, _))| reach(*choice).abs_diff(wanted))
+        .map_or(0, |(i, _)| i as u32)
+}
+
+/// The line under the window row: what all mail costs, or what any other
+/// window keeps besides the days it names.
+pub fn window_note(days: i64) -> String {
+    match mailrs_sync::window_reach(days) {
+        None => gettext(
+            "Every message stays on this computer. A large account takes a lot of disk space and memory, and its older mail downloads in the background.",
+        ),
+        Some(_) => gettext("Everything in your inbox stays too, and older mail remains searchable"),
+    }
 }
 
 /// Body cache limit in megabytes.
@@ -1395,6 +1421,35 @@ mod tests {
         assert_eq!(MarkRead::from_index(99), MarkRead::Immediately);
         assert_eq!(nearest(&poll_choices(), 45), 0);
         assert_eq!(nearest(&window_choices(), 100), 2);
+    }
+
+    #[test]
+    fn the_window_reaches_two_years_five_years_and_all_mail() {
+        let days: Vec<i64> = window_choices().iter().map(|(days, _)| *days).collect();
+        assert_eq!(days, [14, 30, 90, 365, 730, 1825, mailrs_sync::ALL_MAIL]);
+        assert_eq!(window_choices()[6].1, "All mail");
+    }
+
+    #[test]
+    fn a_window_value_picks_its_row_and_all_mail_is_furthest() {
+        let choices = window_choices();
+        assert_eq!(nearest_window(&choices, 0), 6);
+        assert_eq!(nearest_window(&choices, -1), 6, "any count below one day is all mail");
+        assert_eq!(nearest_window(&choices, 5), 0, "five days is near two weeks, not all mail");
+        assert_eq!(nearest_window(&choices, 800), 4);
+        assert_eq!(nearest_window(&choices, 100_000), 5);
+    }
+
+    #[test]
+    fn all_mail_says_what_it_costs() {
+        assert_eq!(
+            window_note(mailrs_sync::ALL_MAIL),
+            "Every message stays on this computer. A large account takes a lot of disk space and memory, and its older mail downloads in the background."
+        );
+        assert_eq!(
+            window_note(30),
+            "Everything in your inbox stays too, and older mail remains searchable"
+        );
     }
 
     #[test]

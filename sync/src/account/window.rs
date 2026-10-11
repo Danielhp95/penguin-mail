@@ -9,8 +9,8 @@ use mailrs_domain::{
 use mailrs_store::messages::Change;
 use mailrs_store::{accounts, mailboxes, messages, window};
 
-use super::AccountSync;
 use super::fetch::store_fetched;
+use super::{AccountSync, window_longer, window_reach};
 use super::refs::stored_id;
 use crate::{BackendError, MailBackend, RemoteRef, SyncError, Want};
 
@@ -43,16 +43,63 @@ impl AccountSync {
         let start = self.services.mail.changes(None).await?.state;
         let listed = self.services.mail.mailboxes().await?;
         let account_id = self.account_id;
+        let window_days = self.window_days;
         let generation = self
             .db
             .write(move |c| {
                 mailboxes::replace_listed(c, account_id, &listed)?;
+                accounts::set_window_days(c, account_id, window_days)?;
                 accounts::start_generation(c, account_id, start.as_str())
             })
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
         self.load_window_page(None, generation).await?;
         self.set_state(AccountState::Ok).await
+    }
+
+    /// Compares the window this run keeps with the one the stored mail
+    /// was loaded for, once a run, and acts on a change. A longer window
+    /// pages through the listing again from the top, in the background
+    /// like any backfill, fetching only the mail the store lacks; a shorter
+    /// one deletes the mail outside it at once, so the disk holds what the
+    /// setting says. An account from before the window was recorded, and a
+    /// POP3 account, whose store is the only copy of its mail, only note
+    /// the window.
+    pub async fn follow_window(&self) -> Result<(), SyncError> {
+        use std::sync::atomic::Ordering;
+        if self.window_followed.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let (account_id, now) = (self.account_id, self.window_days);
+        let local = self.services.mail.capabilities().local_mailboxes;
+        let (stored, cursor) = self
+            .db
+            .read(move |c| Ok((accounts::window_days(c, account_id)?, accounts::sync_cursor(c, account_id)?)))
+            .await?;
+        if let Some(before) = stored
+            && window_reach(before) != window_reach(now)
+            && !local
+            && cursor.state.is_some()
+        {
+            if window_longer(before, now) {
+                self.prune(crate::now_millis()).await?;
+            }
+            // A backfill still on its way pages again too: a page token
+            // belongs to the listing of the old window.
+            if window_longer(now, before) || !cursor.backfill_done {
+                tracing::info!(account = account_id, "the window changed; listing it again for the mail it now reaches");
+                self.db
+                    .write(move |c| accounts::extend_backfill(c, account_id))
+                    .await?;
+            }
+        }
+        if stored != Some(now) {
+            self.db
+                .write(move |c| accounts::set_window_days(c, account_id, now))
+                .await?;
+        }
+        self.window_followed.store(true, Ordering::SeqCst);
+        Ok(())
     }
 
     /// Lists the window again once the server has lost its place, and fetches only what changed in the gap. A full
@@ -217,10 +264,17 @@ impl AccountSync {
         }
     }
 
-    /// Deletes threads that have left the window.
+    /// Deletes threads that have left the window. All mail leaves none,
+    /// and neither does a POP3 account, whose store is the only copy.
     pub async fn prune(&self, now: EpochMillis) -> Result<(), SyncError> {
         let account_id = self.account_id;
-        let cutoff = now - self.window_days * DAY_MILLIS;
+        let Some(days) = window_reach(self.window_days) else {
+            return Ok(());
+        };
+        if self.services.mail.capabilities().local_mailboxes {
+            return Ok(());
+        }
+        let cutoff = now - days * DAY_MILLIS;
         let pruned = self
             .db
             .write(move |c| window::prune_window(c, account_id, cutoff))
@@ -381,6 +435,46 @@ impl AccountSync {
         Ok((listed, members))
     }
 
+    /// Whether the backfill running now lengthens the window over mail the
+    /// store holds.
+    async fn extending(&self) -> Result<bool, SyncError> {
+        let account_id = self.account_id;
+        Ok(self
+            .db
+            .read(move |c| Ok(accounts::sync_cursor(c, account_id)?.backfill_extends))
+            .await?)
+    }
+
+    /// `listed` split into what the store lacks, as the server names it,
+    /// and the store ids of what it holds. On a folder server a held
+    /// message can sit under a name other than its store id, and a name
+    /// that is a moved message's stale id is neither.
+    async fn split_held(
+        &self,
+        listed: Vec<RemoteRef>,
+    ) -> Result<(Vec<RemoteRef>, Vec<String>), SyncError> {
+        let resolved = self
+            .resolve(listed.iter().map(|m| m.id.clone()).collect())
+            .await?;
+        let named: Vec<(RemoteRef, String)> = listed
+            .into_iter()
+            .filter_map(|m| Some((stored_id(&m.id, &resolved)?, m)))
+            .map(|(id, m)| (m, id))
+            .collect();
+        let ids: Vec<String> = named.iter().map(|(_, id)| id.clone()).collect();
+        let account_id = self.account_id;
+        let existing = self
+            .db
+            .read(move |c| messages::existing_ids(c, account_id, &ids))
+            .await?;
+        let (held, missing): (Vec<_>, Vec<_>) =
+            named.into_iter().partition(|(_, id)| existing.contains(id));
+        Ok((
+            missing.into_iter().map(|(m, _)| m).collect(),
+            held.into_iter().map(|(_, id)| id).collect(),
+        ))
+    }
+
     /// Stores one page of the window listing and saves the next page token.
     /// After the last page, deletes messages from earlier generations.
     async fn load_window_page(
@@ -393,16 +487,28 @@ impl AccountSync {
             .mail
             .backfill(self.window_days, page_token.as_deref())
             .await?;
+        let account_id = self.account_id;
+        // A backfill that lengthens the window keeps what the store holds
+        // and fetches the rest; any other fetches the whole page, so a
+        // new generation reads every message as the server has it now.
+        let (refs, held) = match self.extending().await? {
+            true => self.split_held(page.refs).await?,
+            false => (page.refs, Vec::new()),
+        };
         // A listed message deleted since is left out; the sweep and
         // history take care of what the store had of it.
-        let wants = page.refs.into_iter().map(Want::from).collect();
+        let wants = refs.into_iter().map(Want::from).collect();
         let fetched = self.fetch(wants).await?;
         let next = page.next;
-        let account_id = self.account_id;
         let stored_next = next.clone();
         let touched = self
             .db
             .write(move |c| {
+                let kept: Vec<Change> = held
+                    .into_iter()
+                    .map(|message_id| Change::Keep { message_id, generation })
+                    .collect();
+                messages::apply(c, account_id, &kept)?;
                 let mut touched = store_fetched(
                     c,
                     account_id,

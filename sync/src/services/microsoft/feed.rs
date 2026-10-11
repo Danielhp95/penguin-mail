@@ -13,7 +13,7 @@ use mailrs_domain::{Membership, Role, category};
 use mailrs_graph::{GraphError, Message};
 use serde::{Deserialize, Serialize};
 
-use super::{GraphApi, Microsoft, backend, tag_id};
+use super::{GraphApi, Microsoft, backend, tag_id, window_since};
 use crate::BackendError;
 use crate::services::{Changes, RemoteChange, SyncState};
 
@@ -26,6 +26,12 @@ const PAGES_PER_LOOK: usize = 20;
 pub(super) struct MicrosoftState {
     #[serde(default)]
     pub folders: BTreeMap<String, String>,
+    /// The window, in days, the folders' rounds started over. A delta
+    /// link keeps the window it began with, so a round started for 30 days
+    /// never reports a change to older mail; `None` in a state from before
+    /// this was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days: Option<i64>,
 }
 
 impl MicrosoftState {
@@ -55,10 +61,10 @@ impl Left {
 }
 
 impl<G: GraphApi> Microsoft<G> {
-    /// The window's start as Graph reads a time.
+    /// The window's start as Graph reads a time. All mail starts at the
+    /// epoch, since a delta round needs a start to filter on.
     pub(super) fn window_start(&self) -> String {
-        let days = chrono::Duration::days(self.settings().window_days.max(1));
-        (chrono::Utc::now() - days).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        window_since(self.settings().window_days).unwrap_or_else(|| "1970-01-01T00:00:00Z".into())
     }
 
     pub(super) async fn feed(&self, since: Option<&SyncState>) -> Result<Changes, BackendError> {
@@ -91,13 +97,27 @@ impl<G: GraphApi> Microsoft<G> {
             self.slow_poll_done();
         }
         let changes = self.changes_from(removed, present).await?;
-        Ok(Changes { changes, state: state.written() })
+        // The window changed since the rounds began: start them again over
+        // the window now kept, past the changes this look already read, so
+        // later looks report changes to the mail it newly reaches.
+        let days = self.settings().window_days;
+        let state = match state.days {
+            Some(began) if crate::window_reach(began) != crate::window_reach(days) => {
+                tracing::info!("the window changed; starting each folder's delta again");
+                self.feed_start(self.synced().await?).await?.state
+            }
+            _ => {
+                state.days = Some(days);
+                state.written()
+            }
+        };
+        Ok(Changes { changes, state })
     }
 
     /// Where every synced folder stands now, with no changes: each first
     /// round read to its end and thrown away but its link.
     async fn feed_start(&self, synced: Vec<String>) -> Result<Changes, BackendError> {
-        let mut state = MicrosoftState::default();
+        let mut state = MicrosoftState { days: Some(self.settings().window_days), ..MicrosoftState::default() };
         for folder in synced {
             let mut link = None;
             loop {

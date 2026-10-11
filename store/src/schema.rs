@@ -863,6 +863,15 @@ CREATE TABLE contact_offers (
     PRIMARY KEY (account_id, email)
 );
 "#,
+    // The sync window, in days, an account's stored mail was loaded for
+    // (0 for all mail, NULL until the account first runs under this
+    // version), so a longer window brings older mail in and a shorter one
+    // prunes at once. `backfill_extends` marks a backfill that lengthens
+    // the window over mail already stored, which keeps what it holds.
+    r#"
+ALTER TABLE accounts ADD COLUMN window_days INTEGER;
+ALTER TABLE accounts ADD COLUMN backfill_extends INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has

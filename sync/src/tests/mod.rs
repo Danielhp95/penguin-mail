@@ -46,6 +46,7 @@ mod structure;
 mod thread_open;
 mod triage;
 mod undo;
+mod window;
 
 use std::collections::HashMap;
 use std::sync::Arc;

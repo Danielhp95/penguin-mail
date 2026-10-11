@@ -51,7 +51,8 @@ pub const WAIT_CEILING: std::time::Duration = std::time::Duration::from_secs(60)
 pub const WORKER_STACK: usize = 8 << 20;
 
 pub use account::{
-    AccountSync, DEFAULT_BODY_CACHE_BYTES, DEFAULT_WINDOW_DAYS, FETCH_CONCURRENCY, Searched,
+    ALL_MAIL, AccountSync, DEFAULT_BODY_CACHE_BYTES, DEFAULT_WINDOW_DAYS, FETCH_CONCURRENCY,
+    Searched, window_longer, window_reach,
 };
 pub use actions::{
     Accounts, Categorized, Failure, History, MailAction, MailActions, NewLabels, Outcome, Returned,
