@@ -108,7 +108,8 @@ jobs:
     name: macOS apps build and start
     needs: changes
     if: needs.changes.outputs.macos == 'true' || needs.changes.outputs.full == 'true'
-    uses: ./.github/workflows/macos.yml
+    # Kept as ./ rather than zizmor's $/ form, as in release.yml.
+    uses: ./.github/workflows/macos.yml # zizmor: ignore[self-repository]
     with:
       # Scheduled and manual runs build both. Everyday changes build the
       # Apple silicon app only.
@@ -121,8 +122,11 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # GitHub's hosted runners stop short of the GTK, libadwaita and WebKitGTK
-    # the app needs, so the gate runs on the release it targets.
-    container: ubuntu:26.04
+    # the app needs, so the gate runs on the release it targets. Each
+    # container here and in release.yml is pinned by digest, so a changed
+    # image under the same tag cannot slip in. To take a newer one, read its
+    # digest with `docker buildx imagetools inspect <image>:<tag>`.
+    container: ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
     timeout-minutes: 60
     env:
       CARGO_TERM_COLOR: always
@@ -132,12 +136,12 @@ jobs:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: scripts/ci-deps.sh
       - name: Put cargo on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # The release workflow's build starts from this cache, so both jobs
-      # name it the same.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: ubuntu-26.04
@@ -184,6 +188,8 @@ jobs:
       PENGUIN_MAIL_REQUIRE_IMAP: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Rust
         run: scripts/ci-deps.sh --rust-only
       - name: Put cargo on PATH
@@ -222,6 +228,8 @@ jobs:
       PENGUIN_MAIL_REQUIRE_JMAP: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install Rust
         run: scripts/ci-deps.sh --rust-only
       - name: Put cargo on PATH
@@ -245,11 +253,13 @@ jobs:
     # manifest names. flatpak-builder needs the privileges to make its own
     # sandbox inside the container.
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
       options: --privileged
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The build runs offline from packaging/flatpak/cargo-sources.json, so
       # a Cargo.lock change without scripts/flatpak-sources.sh fails here.
       - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6.8

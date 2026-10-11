@@ -23,13 +23,19 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its older analysis. On main each
+# push finishes.
+concurrency:
+  group: codeql-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
-      actions: read
+      security-events: write # uploads the results to code scanning
+      actions: read # lets CodeQL read details of this run
       contents: read
     strategy:
       fail-fast: false
@@ -37,6 +43,8 @@ jobs:
         language: [actions, c-cpp, javascript-typescript, python, rust]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}

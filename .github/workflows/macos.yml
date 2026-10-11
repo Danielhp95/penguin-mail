@@ -8,6 +8,26 @@ on:
       arches:
         type: string
         default: '["arm64","x86_64"]'
+    # A run without them still builds: without the clients the app cannot
+    # sign in to Google or Microsoft, and without the Apple credentials the
+    # zips are marked -unsigned. Pull requests run without any of them.
+    secrets:
+      PENGUIN_MAIL_GOOGLE_CLIENT_ID:
+        required: false
+      PENGUIN_MAIL_GOOGLE_CLIENT_SECRET:
+        required: false
+      MICROSOFT_CLIENT_ID:
+        required: false
+      MACOS_CERTIFICATE_P12:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -33,6 +53,8 @@ jobs:
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: |
           brew install gtk4 libadwaita adwaita-icon-theme gettext librsvg pkgconf
@@ -41,7 +63,10 @@ jobs:
           echo "RUSTUP_TOOLCHAIN=$rust" >> "$GITHUB_ENV"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+      # A tagged release builds without the cache, as the Linux packages do:
+      # another run wrote whatever it holds, and the zips go out signed.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: github.ref_type != 'tag'
         with:
           shared-key: macos-${{ matrix.arch }}
       - name: Check packaging and startup code

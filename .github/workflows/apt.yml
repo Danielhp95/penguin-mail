@@ -101,8 +101,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
+      pages: write # publishes the site
+      id-token: write # proves to Pages which workflow is deploying
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

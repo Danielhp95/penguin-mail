@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# One release at a time per tag or branch, and a running one is never
+# cancelled half-published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   version:
     name: Read the version
@@ -47,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 105
     permissions:
-      actions: read
+      actions: read # reads CI's runs on this commit
     steps:
       - name: Wait for CI
         env:
@@ -79,7 +85,7 @@ jobs:
     name: Build the packages
     needs: version
     runs-on: ubuntu-latest
-    container: ubuntu:26.04
+    container: ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
     timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
@@ -123,7 +129,7 @@ jobs:
     # The oldest Fedora with GTK 4.20 and libadwaita 1.8. rpm requires the
     # libraries the binaries link against, so an rpm built here installs on
     # this release and the ones after it.
-    container: fedora:43
+    container: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
     timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
@@ -231,7 +237,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
       options: --privileged
     timeout-minutes: 90
     env:
@@ -349,11 +355,19 @@ jobs:
 
   macos:
     name: Build the macOS apps
-    uses: $/.github/workflows/macos.yml
-    # macos.yml declares no secrets under workflow_call yet, and GitHub
-    # refuses a named secret the called workflow does not declare. Once it
-    # declares its eight, list them here in place of inherit.
-    secrets: inherit # zizmor: ignore[secrets-inherit]
+    # zizmor suggests the $/ form for a workflow in this repository. It
+    # needs a runner from 2.336.0 on and has not been tried here, and a
+    # call that fails would stop a release, so ./ stays.
+    uses: ./.github/workflows/macos.yml # zizmor: ignore[self-repository]
+    secrets:
+      PENGUIN_MAIL_GOOGLE_CLIENT_ID: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_ID }}
+      PENGUIN_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_SECRET }}
+      MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
   publish:
     name: Publish the release
@@ -363,7 +377,7 @@ jobs:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # creates the release and uploads its files
     steps:
       # Only the public key, to check the signature below against the key
       # the app has compiled in.
