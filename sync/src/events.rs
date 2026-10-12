@@ -26,23 +26,34 @@ struct Waiting {
     flushing: bool,
 }
 
-/// An event waiting for room in the channel. A hint that carries ids keeps
-/// them in a set too, so merging one more hint into it costs the new ids
-/// alone and not a pass over everything held.
+/// An event waiting for room in the channel. A hint that carries ids holds
+/// them in a set alone, so merging one more hint into it costs the new ids
+/// and not a pass over everything held, and no id is kept twice. The
+/// event's own list is empty until the entry leaves the queue; the ids then
+/// go out in no particular order, which the window does not read.
 struct Entry {
     event: ChangeEvent,
     ids: HashSet<String>,
 }
 
 impl Entry {
-    fn new(event: ChangeEvent) -> Self {
-        let ids = match &event {
+    fn new(mut event: ChangeEvent) -> Self {
+        let ids = match &mut event {
             ChangeEvent::ThreadsChanged { thread_ids: ids, .. } | ChangeEvent::NewMail { message_ids: ids, .. } => {
-                ids.iter().cloned().collect()
+                std::mem::take(ids).into_iter().collect()
             }
             _ => HashSet::new(),
         };
         Entry { event, ids }
+    }
+
+    /// The event with the ids it gathered.
+    fn into_event(self) -> ChangeEvent {
+        let Entry { mut event, ids } = self;
+        if let ChangeEvent::ThreadsChanged { thread_ids: list, .. } | ChangeEvent::NewMail { message_ids: list, .. } = &mut event {
+            list.extend(ids);
+        }
+        event
     }
 }
 
@@ -116,7 +127,7 @@ fn next(queue: &Mutex<Waiting>) -> Option<ChangeEvent> {
     if next.is_none() {
         waiting.flushing = false;
     }
-    next.map(|entry| entry.event)
+    next.map(Entry::into_event)
 }
 
 /// Nobody listens any more, so nothing waits either.
@@ -133,13 +144,13 @@ fn merge(events: &mut VecDeque<Entry>, event: ChangeEvent) {
     for held in events.iter_mut() {
         match (&mut held.event, &event) {
             (
-                ChangeEvent::ThreadsChanged { account_id: a, thread_ids: ids },
+                ChangeEvent::ThreadsChanged { account_id: a, .. },
                 ChangeEvent::ThreadsChanged { account_id: b, thread_ids: more },
             )
             | (
-                ChangeEvent::NewMail { account_id: a, message_ids: ids },
+                ChangeEvent::NewMail { account_id: a, .. },
                 ChangeEvent::NewMail { account_id: b, message_ids: more },
-            ) if a == b => return union(ids, &mut held.ids, more),
+            ) if a == b => return held.ids.extend(more.iter().cloned()),
             (ChangeEvent::LabelsChanged { account_id: a }, ChangeEvent::LabelsChanged { account_id: b }) if a == b => {
                 return;
             }
@@ -147,17 +158,6 @@ fn merge(events: &mut VecDeque<Entry>, event: ChangeEvent) {
         }
     }
     events.push_back(Entry::new(event));
-}
-
-/// Adds the ids of `more` that `held` lacks, keeping the order they came
-/// in. `known` holds the same ids as `held`.
-fn union(held: &mut Vec<String>, known: &mut HashSet<String>, more: &[String]) {
-    for id in more {
-        if !known.contains(id) {
-            known.insert(id.clone());
-            held.push(id.clone());
-        }
-    }
 }
 
 #[cfg(test)]
@@ -227,6 +227,27 @@ mod tests {
             }
         }
         assert_eq!(failures, (0..50).map(|n| format!("failure {n}")).collect::<Vec<_>>(), "in order");
+    }
+
+    #[tokio::test]
+    async fn a_thread_named_again_while_waiting_arrives_once() {
+        let (sender, receiver) = async_channel::bounded(1);
+        let out = Outgoing::new(sender);
+        // The first fills the channel; the rest wait and merge.
+        for id in ["t0", "t1", "t2", "t1", "t2", "t1"] {
+            out.send(threads(1, id));
+        }
+        let mut heard = Vec::new();
+        while heard.len() < 3 {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv()).await.expect("an event").unwrap();
+            if let ChangeEvent::ThreadsChanged { thread_ids, .. } = event {
+                heard.extend(thread_ids);
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(receiver.is_empty(), "nothing more arrives");
+        heard.sort();
+        assert_eq!(heard, ["t0", "t1", "t2"]);
     }
 
     #[tokio::test]
