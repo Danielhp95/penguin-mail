@@ -773,8 +773,9 @@ button.invitation-pill buttoncontent > box { border-spacing: 8px; }
 
 /* Space on the Server (phase6_mock.py's `server_space`): the address over
    the amount, a 150 px bar 6 px tall on the `pill` track, then the
-   percentage or a "Full" chip. The bar is the accent with room, the
-   mockup's `warn` past the warning mark and its `bad` once full; the
+   percentage or a "Full" chip. The bar is ink with room, so colour is
+   left for trouble: the mockup's `warn` past the warning mark and its
+   `bad` once full; the
    amount under the address takes the same colour at weight 600. */
 .server-space-row { padding: 12px 16px; min-height: 40px; }
 .server-space-row .title { font-size: 1.02em; }
@@ -795,7 +796,7 @@ levelbar.server-space trough {
 }
 levelbar.server-space block { min-height: 6px; min-width: 6px; border: none; border-radius: 3px; }
 levelbar.server-space block.empty { background: none; }
-levelbar.server-space block.filled { background-color: var(--accent-bg-color); }
+levelbar.server-space block.filled { background-color: alpha(currentColor, 0.55); }
 levelbar.server-space.nearly-full block.filled { background-color: #7f4d00; }
 levelbar.server-space.full block.filled { background-color: #a51d2d; }
 .app-dark levelbar.server-space.nearly-full block.filled { background-color: #f8c65c; }
