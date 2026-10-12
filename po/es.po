@@ -10698,11 +10698,11 @@ msgstr "El servidor ha rechazado esta solicitud."
 msgid "The server could not take this request."
 msgstr "El servidor no ha podido aceptar esta solicitud."
 
-#: sync/src/services/jmap/mod.rs:247
+#: sync/src/services/jmap/mod.rs:251
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
 
-#: sync/src/services/jmap/mod.rs:320
+#: sync/src/services/jmap/mod.rs:324
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 

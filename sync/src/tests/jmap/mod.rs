@@ -5,6 +5,7 @@ mod bodies;
 mod contacts;
 mod feed;
 mod fetch;
+mod held;
 mod identities;
 mod mailboxes;
 mod outgoing;

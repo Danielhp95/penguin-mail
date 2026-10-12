@@ -10157,11 +10157,11 @@ msgstr ""
 msgid "The server could not take this request."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:247
+#: sync/src/services/jmap/mod.rs:251
 msgid "This server keeps no colors for its mailboxes."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:320
+#: sync/src/services/jmap/mod.rs:324
 msgid "This server files sent mail itself."
 msgstr ""
 
