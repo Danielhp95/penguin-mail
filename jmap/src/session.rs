@@ -16,7 +16,7 @@ pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 pub const SIEVE: &str = "urn:ietf:params:jmap:sieve";
-/// A draft; read only to say a server has it.
+/// JMAP Calendars, a draft; offered only in draft 32's shape (`calendars::fits`).
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// Fastmail's Masked Email, documented at fastmail.com/dev.
 pub const MASKED_EMAIL: &str = "https://www.fastmail.com/dev/maskedemail";
@@ -98,6 +98,12 @@ impl Session {
         self.accounts
             .get(id)
             .filter(|account| account.account_capabilities.contains_key(capability))
+            // A calendars capability in an older draft's shape is one this
+            // client cannot read, so it counts as not offered.
+            .filter(|account| {
+                capability != CALENDARS
+                    || account.account_capabilities.get(CALENDARS).is_some_and(crate::calendars::fits)
+            })
             .map(|_| id.as_str())
     }
 
@@ -212,5 +218,33 @@ mod tests {
     #[test]
     fn a_body_that_is_not_a_session_says_so() {
         assert!(matches!(Session::parse(b"<html>"), Err(JmapError::Decode(_))));
+    }
+
+    fn with_calendars(shape: serde_json::Value) -> Session {
+        let mut session = Session::parse(FASTMAIL.as_bytes()).unwrap();
+        session.capabilities.insert(CALENDARS.into(), serde_json::json!({}));
+        session.primary_accounts.insert(CALENDARS.into(), "u1a2b3c4".into());
+        session.accounts.get_mut("u1a2b3c4").unwrap().account_capabilities.insert(CALENDARS.into(), shape);
+        session
+    }
+
+    #[test]
+    fn calendars_in_draft_32_s_shape_are_offered() {
+        let session = with_calendars(serde_json::json!({
+            "maxCalendarsPerEvent": null, "minDateTime": "1900-01-01T00:00:00Z", "maxDateTime": "2200-01-01T00:00:00Z",
+            "maxExpandedQueryDuration": "P366D", "maxParticipantsPerEvent": null, "mayCreateCalendar": true
+        }));
+        assert_eq!(session.account_for(CALENDARS), Some("u1a2b3c4"));
+    }
+
+    #[test]
+    fn an_older_calendars_shape_is_not_offered() {
+        // Draft 20 and earlier wrote these as LocalDateTime.
+        let session = with_calendars(serde_json::json!({
+            "maxCalendarsPerEvent": null, "minDateTime": "1900-01-01T00:00:00", "maxDateTime": "2200-01-01T00:00:00",
+            "maxExpandedQueryDuration": "P366D", "maxParticipantsPerEvent": null, "mayCreateCalendar": true
+        }));
+        assert!(!session.offers(CALENDARS));
+        assert!(!with_calendars(serde_json::json!({})).offers(CALENDARS), "an empty object names nothing");
     }
 }
