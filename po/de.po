@@ -2983,27 +2983,27 @@ msgstr[1] ""
 "{address} nutzt jetzt JMAP. {count} Regeln sind aus, weil ihre Ordner auf "
 "dem Server fehlen."
 
-#: app/src/open_thread/run/receipt.rs:112
+#: app/src/open_thread/run/receipt.rs:120
 msgid "Read receipt sent"
 msgstr "Lesebestätigung gesendet"
 
-#: app/src/open_thread/run/receipt.rs:125
+#: app/src/open_thread/run/receipt.rs:133
 msgid "Could not send the receipt: {reason}"
 msgstr "Die Bestätigung konnte nicht gesendet werden: {reason}"
 
-#: app/src/open_thread/run/receipt.rs:129
+#: app/src/open_thread/run/receipt.rs:137
 msgid "The receipt was not sent, and Penguin Mail will not try again: {reason}"
 msgstr ""
 "Die Bestätigung wurde nicht gesendet, und Penguin Mail versucht es nicht "
 "erneut: {reason}"
 
-#: app/src/open_thread/run/translation.rs:149
+#: app/src/open_thread/run/translation.rs:158
 msgid "The model sent nothing back to put in the message."
 msgstr ""
 "Das Modell hat nichts zurückgegeben, was in die Nachricht eingefügt werden "
 "könnte."
 
-#: app/src/open_thread/run/translation.rs:153
+#: app/src/open_thread/run/translation.rs:162
 msgid "The model could not translate this: {reason}"
 msgstr "Das Modell konnte dies nicht übersetzen: {reason}"
 
@@ -3632,130 +3632,130 @@ msgstr[1] "{count} Nachrichten"
 msgid "Summarize"
 msgstr "Zusammenfassen"
 
-#: app/src/render.rs:261 app/src/ui/thread_row.rs:402
+#: app/src/render.rs:268 app/src/ui/thread_row.rs:402
 msgid "Unknown sender"
 msgstr "Unbekannter Absender"
 
-#: app/src/render.rs:279
+#: app/src/render.rs:286
 msgid "Show or hide this message"
 msgstr "Diese Nachricht ein- oder ausblenden"
 
-#: app/src/render.rs:281 app/src/ui/contact_card.rs:43
+#: app/src/render.rs:288 app/src/ui/contact_card.rs:43
 msgid "Contact"
 msgstr "Kontakt"
 
-#: app/src/render.rs:286
+#: app/src/render.rs:293
 msgid "Contact card for {person}"
 msgstr "Kontaktkarte für {person}"
 
-#: app/src/render.rs:355 app/src/ui/thread_row.rs:164
+#: app/src/render.rs:362 app/src/ui/thread_row.rs:164
 msgid "Invitation"
 msgstr "Einladung"
 
-#: app/src/render.rs:369
+#: app/src/render.rs:376
 msgid "{date}, {time}"
 msgstr "{date}, {time}"
 
-#: app/src/render.rs:384
+#: app/src/render.rs:391
 msgid "Loading…"
 msgstr "Wird geladen …"
 
-#: app/src/render.rs:389
+#: app/src/render.rs:396
 msgid "This message could not be loaded: {reason}"
 msgstr "Diese Nachricht konnte nicht geladen werden: {reason}"
 
-#: app/src/render.rs:444
+#: app/src/render.rs:451
 msgid "Details"
 msgstr "Details"
 
-#: app/src/render.rs:465
+#: app/src/render.rs:472
 msgid "from"
 msgstr "von"
 
-#: app/src/render.rs:476
+#: app/src/render.rs:483
 msgid "to"
 msgstr "an"
 
-#: app/src/render.rs:478
+#: app/src/render.rs:485
 msgid "cc"
 msgstr "cc"
 
-#: app/src/render.rs:480
+#: app/src/render.rs:487
 msgid "date"
 msgstr "Datum"
 
-#: app/src/render.rs:481
+#: app/src/render.rs:488
 msgid "subject"
 msgstr "Betreff"
 
-#: app/src/render.rs:483
+#: app/src/render.rs:490
 msgid "mailed-by"
 msgstr "gesendet über"
 
-#: app/src/render.rs:486
+#: app/src/render.rs:493
 msgid "signed-by"
 msgstr "signiert von"
 
-#: app/src/render.rs:490
+#: app/src/render.rs:497
 msgid "security"
 msgstr "Sicherheit"
 
-#: app/src/render.rs:492
+#: app/src/render.rs:499
 msgid "Standard encryption (TLS)"
 msgstr "Standardverschlüsselung (TLS)"
 
-#: app/src/render.rs:497
+#: app/src/render.rs:504
 msgid "Not encrypted in transit"
 msgstr "Bei der Übertragung nicht verschlüsselt"
 
-#: app/src/render.rs:534 app/src/ui/composer/mod.rs:2015
+#: app/src/render.rs:541 app/src/ui/composer/mod.rs:2015
 msgid "{count} attachment"
 msgid_plural "{count} attachments"
 msgstr[0] "{count} Anhang"
 msgstr[1] "{count} Anhänge"
 
-#: app/src/render.rs:566
+#: app/src/render.rs:573
 msgid "Quick Look"
 msgstr "Schnellansicht"
 
-#: app/src/render.rs:567 app/src/ui/window/attachments.rs:329
+#: app/src/render.rs:574 app/src/ui/window/attachments.rs:329
 #: app/src/ui/window/attachments.rs:335
 msgid "Save to Downloads"
 msgstr "In Downloads speichern"
 
-#: app/src/render.rs:569
+#: app/src/render.rs:576
 msgid "Open {file}, {size}"
 msgstr "{file} öffnen, {size}"
 
-#: app/src/render.rs:576
+#: app/src/render.rs:583
 msgid "Save {file} to Downloads"
 msgstr "{file} in Downloads speichern"
 
-#: app/src/render.rs:583
+#: app/src/render.rs:590
 msgid "Save All ({count})"
 msgid_plural "Save All ({count})"
 msgstr[0] "Alle speichern ({count})"
 msgstr[1] "Alle speichern ({count})"
 
-#: app/src/render.rs:594
+#: app/src/render.rs:601
 msgid "Save every attachment to a folder"
 msgstr "Alle Anhänge in einem Ordner speichern"
 
-#: app/src/render.rs:658
+#: app/src/render.rs:665
 msgid "undisclosed recipients"
 msgstr "Nicht genannte Empfänger"
 
-#: app/src/render.rs:661
+#: app/src/render.rs:668
 msgid "{named}, and {count} other"
 msgid_plural "{named}, and {count} others"
 msgstr[0] "{named} und {count} weitere Person"
 msgstr[1] "{named} und {count} weitere Personen"
 
-#: app/src/render.rs:674
+#: app/src/render.rs:681
 msgid "me"
 msgstr "ich"
 
-#: app/src/render.rs:684 app/src/ui/composer/mod.rs:587
+#: app/src/render.rs:691 app/src/ui/composer/mod.rs:587
 #: app/src/ui/composer/mod.rs:591
 msgid "Show trimmed content"
 msgstr "Gekürzten Inhalt anzeigen"
@@ -6950,7 +6950,7 @@ msgstr "Verschlüsseln"
 msgid "Request Read Receipt"
 msgstr "Lesebestätigung anfordern"
 
-#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1689
+#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1715
 msgid "Choose a Time…"
 msgstr "Zeit wählen …"
 
@@ -7520,7 +7520,7 @@ msgid "Mark as Unread (Ctrl+Shift+U)"
 msgstr "Als ungelesen markieren (Strg+Umschalt+U)"
 
 #: app/src/ui/conversation.rs:479 app/src/ui/conversation.rs:483
-#: app/src/ui/conversation.rs:1729
+#: app/src/ui/conversation.rs:1754
 msgid "Flag (Ctrl+Shift+L)"
 msgstr "Markieren (Strg+Umschalt+L)"
 
@@ -7665,23 +7665,23 @@ msgid_plural "{count} Messages Selected"
 msgstr[0] "{count} Nachricht ausgewählt"
 msgstr[1] "{count} Nachrichten ausgewählt"
 
-#: app/src/ui/conversation.rs:1728
+#: app/src/ui/conversation.rs:1753
 msgid "Unflag (Ctrl+Shift+L)"
 msgstr "Markierung entfernen (Strg+Umschalt+L)"
 
-#: app/src/ui/conversation.rs:1741
+#: app/src/ui/conversation.rs:1766
 msgid "Mark as Read (U)"
 msgstr "Als gelesen markieren (U)"
 
-#: app/src/ui/conversation.rs:1742
+#: app/src/ui/conversation.rs:1767
 msgid "Mark as Unread (U)"
 msgstr "Als ungelesen markieren (U)"
 
-#: app/src/ui/conversation.rs:1970
+#: app/src/ui/conversation.rs:2033
 msgid "{color} (Ctrl+Alt+{number})"
 msgstr "{color} (Strg+Alt+{number})"
 
-#: app/src/ui/conversation.rs:1987 app/src/ui/window/message_menu.rs:258
+#: app/src/ui/conversation.rs:2050 app/src/ui/window/message_menu.rs:258
 msgid "Clear Flag"
 msgstr "Markierung entfernen"
 
@@ -10760,7 +10760,7 @@ msgstr "Speicher prüfen"
 msgid "Hide Storage Warning Until Next Launch"
 msgstr "Speicherwarnung bis zum nächsten Start ausblenden"
 
-#: app/src/ui/window/thread.rs:658
+#: app/src/ui/window/thread.rs:587
 msgid "The account is not connected yet."
 msgstr "Das Konto ist noch nicht verbunden."
 

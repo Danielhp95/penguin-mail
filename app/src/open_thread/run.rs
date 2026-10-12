@@ -26,15 +26,15 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use mailrs_domain::invitation::{Invitation, Method};
 use mailrs_domain::{AccountId, EpochMillis, FlagColor, MessageBody, MessageMeta, Target, ThreadSummary};
 use mailrs_store::outbox::Queued;
 use mailrs_sync::{Opened, Spot, outbox_id};
 
-use super::{Cleaned, InlineImage, OpenThread, Unsent};
+use super::{Cleaned, InlineImage, OpenThread, ToClean, Unsent};
 use crate::protection::Read;
-use crate::translation::{Language, Prose};
 use crate::ui::invitation::strip::Strip;
 use crate::ui::invitation::{AddTo, Showing};
 pub use crate::wanted::Answer;
@@ -51,36 +51,52 @@ pub use receipt::ReceiptCard;
 pub use translation::Card;
 
 /// What the store holds for a thread: its messages, oldest first, and the
-/// bodies already fetched, by message id, with their HTML cleaned.
+/// bodies already fetched, by message id.
 #[derive(Debug, Clone, Default)]
 pub struct Stored {
     pub messages: Vec<MessageMeta>,
     pub bodies: HashMap<String, MessageBody>,
-    /// The cleaned HTML of those bodies. Cleaning forty newsletters takes
-    /// tens of milliseconds, which the effect spends on a worker thread
-    /// rather than the GTK one. A body left out is cleaned when drawn.
-    pub cleaned: HashMap<String, Cleaned>,
     /// The person left the list the newest message's sender writes from,
     /// so the thread has no Unsubscribe to offer.
     pub left: bool,
 }
 
-/// Bodies as Gmail sent them, and their HTML cleaned on a worker thread.
+/// Bodies as Gmail sent them, and their HTML cleaned through
+/// [`Effects::clean`].
 #[derive(Debug, Clone, Default)]
 pub struct Fetched {
-    pub bodies: Vec<(String, Result<MessageBody, String>)>,
+    pub bodies: Vec<(String, Result<Arc<MessageBody>, String>)>,
     pub cleaned: HashMap<String, Cleaned>,
 }
 
 /// Inline pictures by message id, then by content id.
 pub type InlinePictures = HashMap<String, HashMap<String, InlineImage>>;
 
+/// The reader's preferences that shape the thread, read at once.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Preferences {
+    /// Seconds to wait before marking an opened thread read, or `None`
+    /// when the reader marks mail read by hand.
+    pub mark_read_delay: Option<u32>,
+    /// The chosen AI language. `None` when the window has closed.
+    pub translation_language: Option<String>,
+    /// Changes whenever the AI language changes, even if it later returns.
+    pub translation_revision: Option<u64>,
+    /// The languages, by code, the person reads as they are, whose
+    /// messages get no card.
+    pub never_translate: Vec<String>,
+    /// Whether the person wants to be asked about read receipts at all.
+    pub offers_receipts: bool,
+}
+
 /// What the run reads from the window. Every method answers from what the
 /// window already holds, so a test fills one in without a widget. As a
 /// [`Screen`] it also says whether a target is still on screen.
 pub trait Desk: Screen {
-    /// The conversation on screen, if any.
-    fn target(&self) -> Option<Target>;
+    /// Hands the conversation on screen to `read`, and does nothing when
+    /// none is. Everything the run reads off the thread goes through here,
+    /// so the window and the tests read it the same way.
+    fn open_thread(&self, read: &mut dyn FnMut(&OpenThread));
     /// Starts loading a thread and hands back its ticket. Two quick clicks
     /// can have their store reads answer out of order.
     fn start_loading(&self) -> u64;
@@ -93,55 +109,15 @@ pub trait Desk: Screen {
     /// Contact photos for these senders, as `data:` URIs.
     fn photos(&self, senders: &[String]) -> crate::render::Photos;
     fn is_vip(&self, email: &str) -> bool;
-    /// Seconds to wait before marking an opened thread read, or `None`
-    /// when the reader marks mail read by hand.
-    fn mark_read_delay(&self) -> Option<u32>;
-    /// Whether the thread on screen has an unread message.
-    fn unread(&self) -> bool;
-    /// The newest message on screen that carries an invitation, with the
-    /// `text/calendar` part it arrived in.
-    fn invitation(&self) -> Option<(String, String)>;
     /// The invitation on the card while the card offers no Show in
     /// Calendar, which the calendar copy may since have come to hold.
     fn invitation_off_calendar(&self) -> Option<Invitation>;
-    /// Bodies on screen with a picture attached that has no thumbnail.
-    fn wanting_thumbnails(&self) -> Vec<(String, MessageBody)>;
-    /// Bodies on screen that name a picture by `cid:` whose pictures have
-    /// not arrived.
-    fn wanting_images(&self) -> Vec<(String, MessageBody)>;
-    /// The message a translation applies to, with the prose the page
-    /// draws for it.
-    fn prose(&self) -> Option<(String, Prose)>;
-    /// What the sender of `message_id` wrote in the thread's other
-    /// messages, for a note too short to tell its language alone.
-    fn same_writer(&self, message_id: &str) -> String;
-    /// What the card says about a message translated here: the language
-    /// it came from, whether it was cut short, and whether it is shown.
-    fn translation_of(&self, message_id: &str) -> Option<(Option<Language>, bool, bool)>;
-    /// A message's body as it arrived, with the start of the address of
-    /// each picture it names.
-    fn arrived(&self, message_id: &str) -> Option<(MessageBody, String)>;
-    /// The chosen AI language. `None` when the window has closed.
-    fn translation_language(&self) -> Option<String>;
-    /// Changes whenever the AI language changes, even if it later returns.
-    fn translation_revision(&self) -> Option<u64>;
     /// Where a message's words would go to be translated, in the words the
-    /// card uses, or why they have nowhere to go.
+    /// card uses, or why they have nowhere to go. Not a preference: it
+    /// reads the model's key.
     fn translation_destination(&self) -> Result<String, String>;
-    /// The languages, by code, the person reads as they are, whose
-    /// messages get no card.
-    fn never_translate(&self) -> Vec<String>;
-    /// The message on screen that asks for a read receipt nobody answered
-    /// in the thread, with the address it asks at.
-    fn asks_receipt(&self) -> Option<(String, String)>;
-    /// Whether the person wants to be asked at all.
-    fn offers_receipts(&self) -> bool;
-    /// Whether the receipt card's answer is on its way.
-    fn receipt_working(&self) -> bool;
-    /// The read receipts on screen not yet checked against Sent: each
-    /// one's message id, the Message-ID it says it answers, and who it says
-    /// read it.
-    fn unchecked_reports(&self) -> Vec<(String, String, String)>;
+    /// The reader's preferences as they are now.
+    fn preferences(&self) -> Preferences;
 }
 
 /// What the run asks of the store, Gmail and the view. A test answers with
@@ -166,21 +142,28 @@ pub trait Effects {
         thread_id: String,
     ) -> Answer<'_, Result<Vec<MessageMeta>, String>>;
     /// Fetches these bodies.
-    fn bodies(&self, account_id: AccountId, message_ids: Vec<String>) -> Answer<'_, Fetched>;
+    fn bodies(
+        &self,
+        account_id: AccountId,
+        message_ids: Vec<String>,
+    ) -> Answer<'_, Vec<(String, Result<MessageBody, String>)>>;
+    /// Cleans HTML for the page, away from the GTK thread. The one place
+    /// cleaning happens: drawing a page never cleans.
+    fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>>;
     /// The pictures these bodies name by `cid:`, by message and content
     /// id. Every body asked about is in the answer, with nothing for one
     /// whose pictures would not come.
     fn inline_images(
         &self,
         account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, InlinePictures>;
     /// Small pictures for the attachment rows of these bodies, by Gmail's
     /// attachment id, from the background share of the quota.
     fn thumbnails(
         &self,
         account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, HashMap<String, String>>;
     /// Reads an invitation and what the user already said about it.
     fn open_invitation(
@@ -267,6 +250,8 @@ pub trait Effects {
     /// Replaces the messages; answers whether the ids changed.
     fn replace_messages(&self, fresh: Vec<MessageMeta>) -> bool;
     fn bodies_arrived(&self, fetched: Fetched);
+    /// Cleaned copies of bodies the page said were loading.
+    fn cleaned(&self, cleaned: HashMap<String, Cleaned>);
     /// The pictures the bodies name, which the page has been waiting for.
     fn images_arrived(&self, found: InlinePictures);
     fn thumbnails_arrived(&self, found: HashMap<String, String>);
@@ -338,6 +323,9 @@ pub enum Event {
 /// touched.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Stale {
+    /// The cleaned copies of HTML bodies, which the page waits for. First,
+    /// since the translation card reads the cleaned words.
+    pub cleaning: bool,
     /// The translation card, since the words arrive with the body.
     pub translation: bool,
     /// The engine run's claim, which needs a protected body to claim.
@@ -369,6 +357,7 @@ impl Stale {
                 ..Stale::default()
             },
             Event::BodiesArrived => Stale {
+                cleaning: true,
                 translation: true,
                 protection: true,
                 invitation: true,
@@ -389,6 +378,7 @@ impl Stale {
             // its files and the pictures among them came out whole, with
             // nothing to fetch.
             Event::EngineOpened => Stale {
+                cleaning: true,
                 translation: true,
                 invitation: true,
                 receipt: true,
@@ -425,7 +415,24 @@ impl ThreadRun {
 
     /// The target on screen now, as a [`Wanted`].
     fn on_screen(&self) -> Option<Want<'_>> {
-        Some(self.wanted(self.desk.target()?))
+        Some(self.wanted(self.thread(OpenThread::target)?))
+    }
+
+    /// Reads the conversation on screen. `None` when there is none.
+    fn thread<R>(&self, read: impl FnOnce(&OpenThread) -> R) -> Option<R> {
+        let mut read = Some(read);
+        let mut out = None;
+        self.desk.open_thread(&mut |open| {
+            if let Some(read) = read.take() {
+                out = Some(read(open));
+            }
+        });
+        out
+    }
+
+    /// Reads the conversation on screen for something it may not hold.
+    fn find<R>(&self, read: impl FnOnce(&OpenThread) -> Option<R>) -> Option<R> {
+        self.thread(read).flatten()
     }
 
     /// Shows the thread `summary` names: the stored copy first, then the
@@ -446,7 +453,6 @@ impl ThreadRun {
         let Stored {
             mut messages,
             bodies,
-            cleaned,
             left,
         } = stored.unwrap_or_else(|err| {
             tracing::info!(error = %err, "could not read the stored thread");
@@ -460,7 +466,16 @@ impl ThreadRun {
             .map_or_else(|| summary.subject.clone(), |m| m.subject.clone());
         let me = self.desk.me(target.account_id);
         let mut thread = OpenThread::new(&target, subject, messages, bodies, me);
-        thread.take_cleaned(cleaned);
+        // The stored copy goes on screen whole rather than loading, so its
+        // bodies are cleaned first.
+        let html = thread.to_clean();
+        if !html.is_empty() {
+            let cleaned = self.effects.clean(html).await;
+            if !self.desk.still_loading(ticket) {
+                return;
+            }
+            thread.take_cleaned(cleaned);
+        }
         thread.unsubscribed = left;
         let senders = thread.senders();
         let named: Vec<String> = senders.iter().filter(|s| !s.is_empty()).cloned().collect();
@@ -536,7 +551,15 @@ impl ThreadRun {
         };
         let unsent = Unsent::of(&queued, chrono::Local::now());
         let me = self.desk.me(queued.account_id);
-        let thread = OpenThread::queued(&queued, unsent, me);
+        let mut thread = OpenThread::queued(&queued, unsent, me);
+        let html = thread.to_clean();
+        if !html.is_empty() {
+            let cleaned = self.effects.clean(html).await;
+            if !self.desk.still_loading(ticket) {
+                return;
+            }
+            thread.take_cleaned(cleaned);
+        }
         let wanted = self.wanted(thread.target());
         self.effects.show(thread);
         self.follow(&wanted, Event::QueuedShown).await;
@@ -651,12 +674,32 @@ impl ThreadRun {
             self.follow(wanted, Event::NothingMissing).await;
             return;
         }
-        let Some(fetched) = wanted
+        let Some(bodies) = wanted
             .wait(|effects| effects.bodies(account_id, missing))
             .await
         else {
             return;
         };
+        let bodies: Vec<(String, Result<Arc<MessageBody>, String>)> = bodies
+            .into_iter()
+            .map(|(id, body)| (id, body.map(Arc::new)))
+            .collect();
+        // Cleaned before they go on screen, so each article goes from
+        // loading to its body in one patch.
+        let html = ToClean::of(
+            account_id,
+            bodies
+                .iter()
+                .filter_map(|(id, body)| Some((id, body.as_ref().ok()?))),
+        );
+        let cleaned = match html.is_empty() {
+            true => HashMap::new(),
+            false => match wanted.wait(|effects| effects.clean(html)).await {
+                Some(cleaned) => cleaned,
+                None => return,
+            },
+        };
+        let fetched = Fetched { bodies, cleaned };
         if wanted
             .on_screen(|effects| effects.bodies_arrived(fetched))
             .is_some()
@@ -668,6 +711,9 @@ impl ThreadRun {
     /// Brings up to date whatever `event` left stale.
     async fn follow(&self, wanted: &Want<'_>, event: Event) {
         let stale = Stale::after(event);
+        if stale.cleaning {
+            self.clean(wanted).await;
+        }
         if stale.translation {
             let card = self.translation_offer();
             wanted.on_screen(|effects| effects.translation_card(card));
@@ -675,7 +721,8 @@ impl ThreadRun {
         if stale.protection {
             wanted.on_screen(|effects| effects.start_engines());
         }
-        let unread = stale.unread && wanted.on_screen(|_| self.desk.unread()) == Some(true);
+        let unread = stale.unread
+            && wanted.on_screen(|_| self.thread(OpenThread::unread)) == Some(Some(true));
         futures::join!(
             async {
                 if stale.invitation {
@@ -705,10 +752,24 @@ impl ThreadRun {
         );
     }
 
+    /// Cleans the HTML bodies the page says are loading, away from the GTK
+    /// thread, and puts them on screen.
+    async fn clean(&self, wanted: &Want<'_>) {
+        let Some(Some(html)) = wanted.on_screen(|_| self.thread(OpenThread::to_clean)) else {
+            return;
+        };
+        if html.is_empty() {
+            return;
+        }
+        if let Some(cleaned) = wanted.wait(|effects| effects.clean(html)).await {
+            wanted.on_screen(|effects| effects.cleaned(cleaned));
+        }
+    }
+
     /// Marks the conversation read after the delay the setting asks for,
     /// if it is still the one on screen by then.
     async fn mark_read_later(&self, wanted: &Want<'_>) {
-        let Some(delay) = self.desk.mark_read_delay() else {
+        let Some(delay) = self.desk.preferences().mark_read_delay else {
             return;
         };
         if wanted.wait(|effects| effects.sleep(delay)).await.is_none() {
@@ -721,7 +782,7 @@ impl ThreadRun {
     /// Fetches the pictures the bodies name by `cid:`. Their text is on
     /// screen already, and the page waits for these in place.
     async fn images(&self, wanted: &Want<'_>) {
-        let Some(bodies) = wanted.on_screen(|_| self.desk.wanting_images()) else {
+        let Some(Some(bodies)) = wanted.on_screen(|_| self.thread(OpenThread::wanting_images)) else {
             return;
         };
         if bodies.is_empty() {
@@ -739,7 +800,8 @@ impl ThreadRun {
     /// Fetches the pictures for the attachment rows. The message is
     /// already on screen, and reading it never waits on them.
     async fn thumbnails(&self, wanted: &Want<'_>) {
-        let Some(bodies) = wanted.on_screen(|_| self.desk.wanting_thumbnails()) else {
+        let Some(Some(bodies)) = wanted.on_screen(|_| self.thread(OpenThread::wanting_thumbnails))
+        else {
             return;
         };
         if bodies.is_empty() {
@@ -757,10 +819,19 @@ impl ThreadRun {
         }
     }
 
+    /// The newest message on screen that carries an invitation, with the
+    /// `text/calendar` part it arrived in.
+    fn invitation_on_screen(&self) -> Option<(String, String)> {
+        self.find(|open| {
+            open.invitation()
+                .map(|(meta, ics)| (meta.id.clone(), ics.to_string()))
+        })
+    }
+
     /// Reads the invitation in the thread and puts it on the card, or
     /// takes the card down when the thread carries none.
     async fn invitation(&self, wanted: &Want<'_>) {
-        let Some(found) = wanted.on_screen(|_| self.desk.invitation()) else {
+        let Some(found) = wanted.on_screen(|_| self.invitation_on_screen()) else {
             return;
         };
         let Some((message_id, ics)) = found else {
@@ -779,7 +850,7 @@ impl ThreadRun {
         // New bodies may have started a second read while this one ran,
         // and whichever answers last would win. The card shows this answer
         // only while the thread still carries the invitation it read.
-        if wanted.on_screen(|_| self.desk.invitation()) != Some(Some(asked)) {
+        if wanted.on_screen(|_| self.invitation_on_screen()) != Some(Some(asked)) {
             return;
         }
         let showing = match opened {

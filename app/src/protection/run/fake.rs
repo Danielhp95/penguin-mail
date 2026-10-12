@@ -111,7 +111,7 @@ pub fn with_bodies(messages: Vec<(&str, Result<MessageBody, String>)>) -> OpenTh
     );
     open.bodies = messages
         .into_iter()
-        .map(|(id, body)| (id.to_string(), body))
+        .map(|(id, body)| (id.to_string(), body.map(std::sync::Arc::new)))
         .collect();
     // Nothing starts open here: the engine run reads every message.
     open.expanded = HashSet::new();

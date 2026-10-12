@@ -205,7 +205,7 @@ pub type Photos = HashMap<String, Rc<str>>;
 /// A sender's photo as one article draws it.
 #[derive(Debug, Clone, Copy)]
 pub struct Face<'a> {
-    uri: &'a str,
+    uri: &'a Rc<str>,
     /// The class that paints the photo on the avatar.
     class: u64,
     /// Whether this article carries the rule that paints it. Only the
@@ -213,6 +213,13 @@ pub struct Face<'a> {
     /// person holds their photo once; a rule in one article reaches the
     /// avatars in all of them.
     paints: bool,
+}
+
+impl<'a> Face<'a> {
+    /// The photo, and whether this article carries the rule that paints it.
+    pub fn photo(&self) -> (&'a Rc<str>, bool) {
+        (self.uri, self.paints)
+    }
 }
 
 /// The address a message's face stands for.

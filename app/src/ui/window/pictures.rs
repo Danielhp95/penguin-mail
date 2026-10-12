@@ -73,7 +73,7 @@ pub(super) struct Picture {
 }
 
 /// The inline images the HTML bodies name, small enough to show.
-pub(super) fn inline_wanted(bodies: &[(String, MessageBody)]) -> Vec<Picture> {
+pub(super) fn inline_wanted(bodies: &[(String, Arc<MessageBody>)]) -> Vec<Picture> {
     let mut wanted = Vec::new();
     for (message_id, body) in bodies {
         if !body.html.as_deref().is_some_and(|h| h.contains("cid:")) {
@@ -100,7 +100,7 @@ pub(super) fn inline_wanted(bodies: &[(String, MessageBody)]) -> Vec<Picture> {
 
 /// The pictures the attachment rows show: every image attachment under
 /// the limit that the body does not already draw, once each.
-pub(super) fn thumbnails_wanted(bodies: &[(String, MessageBody)]) -> Vec<Picture> {
+pub(super) fn thumbnails_wanted(bodies: &[(String, Arc<MessageBody>)]) -> Vec<Picture> {
     let mut wanted: Vec<Picture> = Vec::new();
     for (message_id, body) in bodies {
         for attachment in &body.attachments {
@@ -185,7 +185,7 @@ impl Pictures {
         &self,
         account_id: AccountId,
         sync: &Arc<Sync>,
-        bodies: &[(String, MessageBody)],
+        bodies: &[(String, Arc<MessageBody>)],
     ) -> Found {
         let mut out: Found = bodies
             .iter()
@@ -226,7 +226,7 @@ impl Pictures {
         &self,
         account_id: AccountId,
         sync: &Arc<Sync>,
-        bodies: &[(String, MessageBody)],
+        bodies: &[(String, Arc<MessageBody>)],
     ) -> HashMap<String, String> {
         let fetch = |picture: Picture| -> LocalBoxFuture<'static, Option<String>> {
             let (core, sync) = (Rc::clone(&self.core), Arc::clone(sync));
@@ -332,12 +332,12 @@ mod tests {
         }
     }
 
-    fn body(html: Option<&str>, attachments: Vec<Attachment>) -> MessageBody {
-        MessageBody {
+    fn body(html: Option<&str>, attachments: Vec<Attachment>) -> Arc<MessageBody> {
+        Arc::new(MessageBody {
             html: html.map(Into::into),
             attachments,
             ..MessageBody::default()
-        }
+        })
     }
 
     #[test]

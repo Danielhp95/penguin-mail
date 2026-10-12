@@ -895,7 +895,7 @@ pub struct Translation {
     pub from: Option<Language>,
     /// The body with its prose translated, beside the one that arrived
     /// rather than in place of it.
-    pub body: MessageBody,
+    pub body: std::sync::Arc<MessageBody>,
     /// The translated HTML after cleaning, which is what the page draws.
     /// `None` for a message with no HTML part.
     pub clean: Option<crate::open_thread::Cleaned>,
