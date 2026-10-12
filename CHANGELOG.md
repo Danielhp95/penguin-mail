@@ -28,6 +28,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
+- Delete Forever on an IMAP account removes a message you had moved, such as one in the Trash, from the server too, where before it stayed there.
 - A calendar event deleted right after a change to it stays deleted, on the calendar and on the server, instead of coming back.
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
