@@ -724,3 +724,48 @@ async fn a_sieve_server_running_the_persons_own_script_leaves_the_rules_here() {
     assert_eq!(rules.filters().await.unwrap().len(), 1);
     assert!(fake.with(|s| s.scripts.get("theirs-id").is_some_and(|(_, _, active)| *active)));
 }
+
+/// A change to a CalDAV event made offline before the switch, to a session
+/// that serves the calendar over JMAP: the change reaches the JMAP event
+/// with the same UID, and never goes out under the CalDAV ids, which the
+/// JMAP server would answer as unknown and the queue would drop.
+#[tokio::test]
+#[ignore = "needs plan 7 ruling 2"]
+async fn an_offline_calendar_change_reaches_the_jmap_calendar_after_a_switch() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let fake = std::sync::Arc::new(fake.with_calendars());
+    let on_jmap = fake.add_event(serde_json::json!({
+        "@type": "Event", "uid": "rota@allotment.example", "title": "Allotment rota", "calendarIds": {"cal-1": true},
+        "start": "2026-10-06T09:00:00", "timeZone": "Europe/Lisbon", "duration": "PT1H"
+    }));
+    let collection = "https://caldav.fastmail.com/dav/calendars/user/me@example.com/Default/";
+    let moved = mailrs_domain::calendar::Event {
+        calendar: collection.into(),
+        id: format!("{collection}rota.ics"),
+        uid: "rota@allotment.example".into(),
+        etag: "\"caldav-1\"".into(),
+        title: "Allotment rota, moved".into(),
+        start: 1_791_277_200_000,
+        end: 1_791_280_800_000,
+        zone: "Europe/Lisbon".into(),
+        ..mailrs_domain::calendar::Event::default()
+    };
+    let id = h.account_id;
+    h.db.write(move |c| mailrs_store::calendar::enqueue(c, id, mailrs_store::calendar::ChangeKind::Save, &moved)).await.unwrap();
+    let account = account(&h).await;
+    let mut calendars = saved();
+    calendars.capabilities.push(mailrs_jmap::CALENDARS.into());
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &*fake, calendars, "fmu1-token".into()).await.unwrap();
+
+    let services = crate::AccountServices::fake_jmap(std::sync::Arc::clone(&fake));
+    let (sender, _events) = async_channel::unbounded();
+    let sync = std::sync::Arc::new(crate::AccountSync::new(id, services, h.db.clone(), sender));
+    let accounts = std::sync::Arc::new(crate::tests::Connected(std::collections::HashMap::from([(id, sync)])));
+    let copy = crate::calendar_copy::CalendarCopy::new(accounts, h.db.clone());
+    copy.refresh(id, crate::now_millis()).await.unwrap();
+    copy.send(id).await.unwrap();
+
+    let title = fake.event(&on_jmap).and_then(|e| e["title"].as_str().map(str::to_string));
+    assert_eq!(title.as_deref(), Some("Allotment rota, moved"), "the change went to the JMAP event with its UID");
+    assert!(h.db.read(move |c| mailrs_store::calendar::queued(c, id)).await.unwrap().is_empty());
+}
