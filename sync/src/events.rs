@@ -6,9 +6,13 @@
 //! Most events are hints to read the store again: some threads changed,
 //! some mail arrived, labels changed. Two hints of one kind for one account
 //! merge into one carrying both sets of ids, so a burst of any length waits
-//! as a few entries. The rest, a failed write or a state change, each say
-//! something once and keep their order, however alike; there are few of
-//! them.
+//! as a few entries. A merged hint goes out where the first of them waited,
+//! so it can reach the window ahead of a notice sent after its later ids;
+//! the window reads the store again either way. A wait for Gmail says only
+//! that an action still waits, so a newer one for the same account takes
+//! the older one's place at the end. The rest, a failed write or a state
+//! change, each say something once and keep their order, however alike;
+//! there are few of them, so a merge's pass over what waits stays short.
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -138,9 +142,15 @@ fn closed(queue: &Mutex<Waiting>) {
 }
 
 /// Adds `event` to `events`: a hint into the entry that already says the
-/// same kind of thing about the same account when there is one, anything
-/// else at the end, since a notice said twice happened twice.
+/// same kind of thing about the same account when there is one, a wait for
+/// Gmail in place of the one it follows, anything else at the end, since a
+/// notice said twice happened twice.
 fn merge(events: &mut VecDeque<Entry>, event: ChangeEvent) {
+    if let ChangeEvent::WaitingOnGmail { account_id, .. } = &event {
+        let account = *account_id;
+        events.retain(|held| !matches!(held.event, ChangeEvent::WaitingOnGmail { account_id, .. } if account_id == account));
+        return events.push_back(Entry::new(event));
+    }
     for held in events.iter_mut() {
         match (&mut held.event, &event) {
             (
@@ -282,6 +292,26 @@ mod tests {
         let wait = std::time::Duration::from_secs(5);
         assert_eq!(got.recv_timeout(wait).unwrap(), threads(1, "t0"));
         assert!(matches!(got.recv_timeout(wait), Ok(ChangeEvent::WriteFailed { .. })), "the waiting event goes on its own");
+    }
+
+    /// Each slow-down says the action is still waiting; only the latest
+    /// for an account is worth keeping while the window is not reading.
+    #[tokio::test]
+    async fn only_the_latest_wait_for_gmail_waits() {
+        let (sender, receiver) = async_channel::bounded(1);
+        let out = Outgoing::new(sender);
+        out.send(threads(1, "t0"));
+        for n in 0..100 {
+            out.send(ChangeEvent::WaitingOnGmail { account_id: 1, message: format!("wait {n}") });
+        }
+        out.send(ChangeEvent::WaitingOnGmail { account_id: 2, message: "other".into() });
+        assert_eq!(out.waiting(), 2, "one for each account");
+        let mut heard = Vec::new();
+        while heard.len() < 3 {
+            heard.push(tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv()).await.expect("an event").unwrap());
+        }
+        assert_eq!(heard[1], ChangeEvent::WaitingOnGmail { account_id: 1, message: "wait 99".into() });
+        assert_eq!(heard[2], ChangeEvent::WaitingOnGmail { account_id: 2, message: "other".into() });
     }
 
     #[tokio::test]
