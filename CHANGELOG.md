@@ -24,7 +24,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Improved
 
-- The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line.
+- The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
 
 ### Fixed
 

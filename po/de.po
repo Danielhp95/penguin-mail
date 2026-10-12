@@ -4888,7 +4888,7 @@ msgstr ""
 "Einstellungen ändern."
 
 #: app/src/ui/assistant.rs:154 app/src/ui/assistant.rs:159
-#: app/src/ui/assistant.rs:490 app/src/ui/calendar/scope.rs:113
+#: app/src/ui/assistant.rs:491 app/src/ui/calendar/scope.rs:113
 #: app/src/ui/composer/mod.rs:347 app/src/ui/window/shortcuts.rs:492
 msgid "Send"
 msgstr "Senden"
@@ -4910,60 +4910,60 @@ msgstr ""
 "Server mit der API von OpenAI. Sie können auch einen Anthropic-API-Schlüssel "
 "oder Ihr Claude-Abonnement verwenden."
 
-#: app/src/ui/assistant.rs:489
+#: app/src/ui/assistant.rs:490
 msgid "Stop"
 msgstr "Anhalten"
 
-#: app/src/ui/assistant.rs:597
+#: app/src/ui/assistant.rs:601
 msgid "Don't Allow"
 msgstr "Nicht erlauben"
 
-#: app/src/ui/assistant.rs:599
+#: app/src/ui/assistant.rs:603
 msgid "Allow"
 msgstr "Erlauben"
 
-#: app/src/ui/assistant.rs:603
+#: app/src/ui/assistant.rs:607
 msgid "Always Allow"
 msgstr "Immer erlauben"
 
-#: app/src/ui/assistant.rs:639
+#: app/src/ui/assistant.rs:643
 msgid "Allowed"
 msgstr "Erlaubt"
 
-#: app/src/ui/assistant.rs:640
+#: app/src/ui/assistant.rs:644
 msgid "Always allowed"
 msgstr "Immer erlaubt"
 
-#: app/src/ui/assistant.rs:641
+#: app/src/ui/assistant.rs:645
 msgid "Not allowed"
 msgstr "Nicht erlaubt"
 
-#: app/src/ui/assistant.rs:719
+#: app/src/ui/assistant.rs:730
 msgid "Ask Penguin Mail…"
 msgstr "Penguin Mail fragen …"
 
-#: app/src/ui/assistant.rs:728
+#: app/src/ui/assistant.rs:739
 msgid "Ask Penguin Mail"
 msgstr "Penguin Mail fragen"
 
-#: app/src/ui/assistant.rs:975
+#: app/src/ui/assistant.rs:986
 msgid "Result"
 msgstr "Ergebnis"
 
-#: app/src/ui/assistant.rs:983
+#: app/src/ui/assistant.rs:994
 msgid "Input"
 msgstr "Eingabe"
 
-#: app/src/ui/assistant.rs:1061
+#: app/src/ui/assistant.rs:1072
 msgid "Running"
 msgstr "Läuft"
 
-#: app/src/ui/assistant.rs:1062 app/src/ui/calendar/editor.rs:263
+#: app/src/ui/assistant.rs:1073 app/src/ui/calendar/editor.rs:263
 #: app/src/ui/hide_my_email.rs:820
 msgid "Done"
 msgstr "Fertig"
 
-#: app/src/ui/assistant.rs:1063
+#: app/src/ui/assistant.rs:1074
 msgid "Failed"
 msgstr "Fehlgeschlagen"
 

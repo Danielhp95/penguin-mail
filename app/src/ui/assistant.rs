@@ -345,15 +345,15 @@ impl AssistantPane {
         self.input.grab_focus();
     }
 
-    /// Asks the question in the box, unless it is blank or a turn is
-    /// still running.
+    /// Asks the question in the box. While a turn runs the question stays
+    /// in the box, to send once it ends.
     fn submit(self: &Rc<Self>) {
         let buffer = self.input.buffer();
         let (start, end) = buffer.bounds();
-        let text = buffer.text(&start, &end, false).trim().to_string();
-        if !text.is_empty() && !self.running.get() {
+        let text = buffer.text(&start, &end, false);
+        if let Some(question) = question_to_send(&text, self.running.get()) {
             buffer.set_text("");
-            self.ask(text);
+            self.ask(question);
         }
     }
 
@@ -478,8 +478,9 @@ impl AssistantPane {
     }
 
     fn set_running(&self, running: bool) {
+        // The box stays open during a turn, so the next question can be
+        // written while the model answers; only sending waits.
         self.running.set(running);
-        self.input.set_sensitive(!running);
         self.send.set_icon_name(if running {
             "media-playback-stop-symbolic"
         } else {
@@ -491,7 +492,10 @@ impl AssistantPane {
         };
         self.send.set_tooltip_text(Some(&said));
         crate::ui::name(&self.send, &said);
-        if !running {
+        // The turn's end takes the focus only from nowhere, such as a
+        // suggestion that hid when it was picked, never from where the
+        // reader went meanwhile.
+        if !running && self.input.root().is_some_and(|root| root.focus().is_none()) {
             self.input.grab_focus();
         }
     }
@@ -710,6 +714,13 @@ fn enter_sends(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
         key,
         gdk::Key::Return | gdk::Key::KP_Enter | gdk::Key::ISO_Enter
     ) && !modifiers.intersects(gdk::ModifierType::SHIFT_MASK | gdk::ModifierType::ALT_MASK)
+}
+
+/// What a send asks: the box's text, trimmed, unless it is blank or a turn
+/// is still running, when the text stays in the box.
+fn question_to_send(text: &str, running: bool) -> Option<String> {
+    let question = text.trim();
+    (!running && !question.is_empty()).then(|| question.to_string())
 }
 
 /// The question box and the text view inside it. The box grows with the
@@ -1159,7 +1170,7 @@ impl Status {
 mod tests {
     use gtk::gdk::{Key, ModifierType};
 
-    use super::enter_sends;
+    use super::{enter_sends, question_to_send};
 
     #[test]
     fn enter_sends_the_question_and_shift_enter_starts_a_line() {
@@ -1170,6 +1181,16 @@ mod tests {
         assert!(enter_sends(Key::Return, ModifierType::CONTROL_MASK));
         assert!(!enter_sends(Key::Return, ModifierType::SHIFT_MASK));
         assert!(!enter_sends(Key::KP_Enter, ModifierType::SHIFT_MASK));
+    }
+
+    #[test]
+    fn enter_during_a_run_keeps_the_question_in_the_box() {
+        assert_eq!(question_to_send("Archive them, (all) please", true), None);
+        assert_eq!(
+            question_to_send("  Archive them, (all) please\n", false).as_deref(),
+            Some("Archive them, (all) please")
+        );
+        assert_eq!(question_to_send(" \n ", false), None);
     }
 
     #[test]

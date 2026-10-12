@@ -4563,7 +4563,7 @@ msgstr ""
 "變更設定。"
 
 #: app/src/ui/assistant.rs:154 app/src/ui/assistant.rs:159
-#: app/src/ui/assistant.rs:490 app/src/ui/calendar/scope.rs:113
+#: app/src/ui/assistant.rs:491 app/src/ui/calendar/scope.rs:113
 #: app/src/ui/composer/mod.rs:347 app/src/ui/window/shortcuts.rs:492
 msgid "Send"
 msgstr "傳送"
@@ -4584,60 +4584,60 @@ msgstr ""
 "可使用 LM Studio、Ollama 或任何提供 OpenAI API 的伺服器上的本機模型。也可使"
 "用 Anthropic API 金鑰或 Claude 訂閱。"
 
-#: app/src/ui/assistant.rs:489
+#: app/src/ui/assistant.rs:490
 msgid "Stop"
 msgstr "停止"
 
-#: app/src/ui/assistant.rs:597
+#: app/src/ui/assistant.rs:601
 msgid "Don't Allow"
 msgstr "不允許"
 
-#: app/src/ui/assistant.rs:599
+#: app/src/ui/assistant.rs:603
 msgid "Allow"
 msgstr "允許"
 
-#: app/src/ui/assistant.rs:603
+#: app/src/ui/assistant.rs:607
 msgid "Always Allow"
 msgstr "一律允許"
 
-#: app/src/ui/assistant.rs:639
+#: app/src/ui/assistant.rs:643
 msgid "Allowed"
 msgstr "已允許"
 
-#: app/src/ui/assistant.rs:640
+#: app/src/ui/assistant.rs:644
 msgid "Always allowed"
 msgstr "已設為一律允許"
 
-#: app/src/ui/assistant.rs:641
+#: app/src/ui/assistant.rs:645
 msgid "Not allowed"
 msgstr "未允許"
 
-#: app/src/ui/assistant.rs:719
+#: app/src/ui/assistant.rs:730
 msgid "Ask Penguin Mail…"
 msgstr "詢問 Penguin Mail…"
 
-#: app/src/ui/assistant.rs:728
+#: app/src/ui/assistant.rs:739
 msgid "Ask Penguin Mail"
 msgstr "詢問 Penguin Mail"
 
-#: app/src/ui/assistant.rs:975
+#: app/src/ui/assistant.rs:986
 msgid "Result"
 msgstr "結果"
 
-#: app/src/ui/assistant.rs:983
+#: app/src/ui/assistant.rs:994
 msgid "Input"
 msgstr "輸入"
 
-#: app/src/ui/assistant.rs:1061
+#: app/src/ui/assistant.rs:1072
 msgid "Running"
 msgstr "執行中"
 
-#: app/src/ui/assistant.rs:1062 app/src/ui/calendar/editor.rs:263
+#: app/src/ui/assistant.rs:1073 app/src/ui/calendar/editor.rs:263
 #: app/src/ui/hide_my_email.rs:820
 msgid "Done"
 msgstr "完成"
 
-#: app/src/ui/assistant.rs:1063
+#: app/src/ui/assistant.rs:1074
 msgid "Failed"
 msgstr "失敗"
 
