@@ -1371,9 +1371,9 @@ impl JmapApi for FakeJmap {
         Ok(self.with(|s| s.vacation.clone()))
     }
 
-    async fn set_vacation(&self, reply: &VacationResponse) -> Answer<()> {
+    async fn set_vacation(&self, reply: &mailrs_jmap::VacationPatch) -> Answer<()> {
         self.called("VacationResponse/set");
-        self.with(|s| s.vacation = reply.clone());
+        self.with(|s| s.vacation = reply.applied_to(&s.vacation));
         Ok(())
     }
 

@@ -9,7 +9,7 @@ use std::time::Duration;
 use mailrs_jmap::{
     AddressBook, CalendarEvents, Canceled, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Hold, HeldSubmission, Identity, Imported, JmapClient, JmapError, Listed,
     ChangesResponse, EventWrite, EventsPage, JmapCalendar, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, SieveScript,
-    Submission, SubmissionState, Threads, VacationResponse,
+    Submission, SubmissionState, Threads, VacationPatch, VacationResponse,
 };
 use serde_json::{Map, Value};
 
@@ -40,7 +40,7 @@ pub trait JmapApi: Send + Sync + 'static {
     fn submit(&self, submission: &Submission) -> impl Future<Output = Answer<Imported>> + Send;
     fn identities(&self) -> impl Future<Output = Answer<Vec<Identity>>> + Send;
     fn vacation(&self) -> impl Future<Output = Answer<VacationResponse>> + Send;
-    fn set_vacation(&self, reply: &VacationResponse) -> impl Future<Output = Answer<()>> + Send;
+    fn set_vacation(&self, reply: &VacationPatch) -> impl Future<Output = Answer<()>> + Send;
     fn address_books(&self) -> impl Future<Output = Answer<Vec<AddressBook>>> + Send;
     fn cards_page(&self, position: u64, limit: usize) -> impl Future<Output = Answer<CardsPage>> + Send;
     fn card_changes(&self, since: &str, max: usize) -> impl Future<Output = Answer<CardChanges>> + Send;
@@ -133,7 +133,7 @@ impl JmapApi for JmapClient {
     async fn vacation(&self) -> Answer<VacationResponse> {
         JmapClient::vacation(self).await
     }
-    async fn set_vacation(&self, reply: &VacationResponse) -> Answer<()> {
+    async fn set_vacation(&self, reply: &VacationPatch) -> Answer<()> {
         JmapClient::set_vacation(self, reply).await
     }
     async fn address_books(&self) -> Answer<Vec<AddressBook>> {

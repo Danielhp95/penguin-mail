@@ -2,7 +2,7 @@
 
 mod common;
 
-use mailrs_jmap::{CardWrite, JmapError, MaskedState, VacationResponse};
+use mailrs_jmap::{CardWrite, JmapError, MaskedState, VacationPatch};
 use serde_json::{Map, Value, json};
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -52,11 +52,10 @@ async fn the_automatic_reply_is_the_singleton() {
 async fn a_reply_change_updates_the_singleton() {
     let server = MockServer::start().await;
     serving(&server, json!({"sessionState": "s1", "methodResponses": [["VacationResponse/set", {"accountId": "A1", "updated": {"singleton": null}}, "c0"]]})).await;
-    let reply = VacationResponse { is_enabled: true, subject: Some("Out".into()), text_body: Some("Back Monday".into()), ..VacationResponse::default() };
+    let reply = VacationPatch { is_enabled: Some(true), subject: Some(Some("Out".into())), ..VacationPatch::default() };
     client(&server).set_vacation(&reply).await.unwrap();
     let update = &sent(&server).await["methodCalls"][0][1]["update"]["singleton"];
-    assert_eq!(update["isEnabled"], true);
-    assert_eq!(update["subject"], "Out");
+    assert_eq!(update, &json!({"isEnabled": true, "subject": "Out"}), "only what changed goes out");
 }
 
 #[tokio::test]

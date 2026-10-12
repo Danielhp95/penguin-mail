@@ -53,3 +53,43 @@ async fn a_token_that_cannot_reach_the_reply_says_why() {
     assert!(!offers.auto_reply);
     assert!(offers.auto_reply_needs_sign_in);
 }
+
+/// A reply written elsewhere in HTML alone shows as its text, and turning
+/// it off and on again sends only the switch, so the HTML stays.
+#[tokio::test]
+async fn an_html_only_reply_survives_off_and_on() {
+    let h = over(FakeJmap::new().with_capability(VACATION)).await;
+    let html = "<p>Away until <b>Monday</b>.</p>";
+    h.fake.with(|s| {
+        s.vacation = mailrs_jmap::VacationResponse {
+            is_enabled: true,
+            subject: Some("Away".into()),
+            html_body: Some(html.into()),
+            to_date: Some("2026-10-20T17:00:00Z".into()),
+            ..Default::default()
+        }
+    });
+    let reply = h.sync.services().auto_reply.clone().unwrap();
+    let shown = reply.vacation().await.unwrap();
+    assert_eq!(shown.body.trim(), "Away until Monday.");
+    reply.set_vacation(&Vacation { enabled: false, ..shown.clone() }).await.unwrap();
+    reply.set_vacation(&Vacation { enabled: true, ..shown }).await.unwrap();
+    let kept = h.fake.with(|s| s.vacation.clone());
+    assert!(kept.is_enabled);
+    assert_eq!(kept.html_body.as_deref(), Some(html));
+    assert_eq!(kept.text_body, None);
+    assert_eq!(kept.to_date.as_deref(), Some("2026-10-20T17:00:00Z"));
+}
+
+/// An edited body replaces both bodies: the HTML would say something else.
+#[tokio::test]
+async fn an_edited_body_replaces_the_html() {
+    let h = over(FakeJmap::new().with_capability(VACATION)).await;
+    h.fake.with(|s| s.vacation = mailrs_jmap::VacationResponse { is_enabled: true, html_body: Some("<p>Old</p>".into()), ..Default::default() });
+    let reply = h.sync.services().auto_reply.clone().unwrap();
+    let shown = reply.vacation().await.unwrap();
+    reply.set_vacation(&Vacation { body: "New words".into(), ..shown }).await.unwrap();
+    let kept = h.fake.with(|s| s.vacation.clone());
+    assert_eq!(kept.text_body.as_deref(), Some("New words"));
+    assert_eq!(kept.html_body, None);
+}

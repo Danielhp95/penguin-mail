@@ -44,7 +44,7 @@ pub use mail::{
 pub use contacts::{AddressBook, CardChanges, CardWrite, CardsPage};
 pub use masked::{MaskedEmail, MaskedState};
 pub use sieve::{MOST_SIEVE_BYTES, SieveScript};
-pub use vacation::VacationResponse;
+pub use vacation::{VacationPatch, VacationResponse};
 pub use submission::{Canceled, HELD, HeldSubmission, Hold, SubmissionState, max_delayed_send};
 pub use mdn::{MDN, MdnOut};
 pub use quota::{QUOTA, Quota, mail_storage};
