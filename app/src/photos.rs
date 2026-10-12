@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use futures::future::LocalBoxFuture;
@@ -127,25 +128,34 @@ enum Face {
 /// thread of its own, as [`texture`] explains.
 fn read_textures(files: Vec<(String, PathBuf)>) -> LocalBoxFuture<'static, Answers<gdk::Texture>> {
     Box::pin(async move {
-        let read = texture::off_thread(texture::WAIT, move || {
+        let asked: Vec<String> = files.iter().map(|(address, _)| address.clone()).collect();
+        let Some(read) = texture::off_thread(texture::WAIT, move || {
             files
                 .into_iter()
                 .map(|(address, path)| (address, face_at(&path)))
                 .collect::<Vec<_>>()
         })
         .await
-        .unwrap_or_default();
+        else {
+            // A slow disk or a dead worker says nothing about the photos.
+            return asked.into_iter().map(|address| (address, Reply::Failed)).collect();
+        };
         let mut answers = Vec::with_capacity(read.len());
         for (address, face) in read {
-            let texture = match face {
-                Face::Decoded(texture) => texture,
-                Face::Elsewhere(bytes) => texture::off_thread(texture::WAIT, move || {
-                    gdk::Texture::from_bytes(&bytes).ok().map(|t| shrunk(&t))
-                })
-                .await
-                .flatten(),
+            let reply = match face {
+                Face::Decoded(texture) => Reply::of(texture),
+                Face::Elsewhere(bytes) => {
+                    match texture::off_thread(texture::WAIT, move || {
+                        gdk::Texture::from_bytes(&bytes).ok().map(|t| shrunk(&t))
+                    })
+                    .await
+                    {
+                        Some(texture) => Reply::of(texture),
+                        None => Reply::Failed,
+                    }
+                }
             };
-            answers.push((address, texture));
+            answers.push((address, reply));
         }
         answers
     })
@@ -183,43 +193,108 @@ fn shrunk(texture: &gdk::Texture) -> gdk::Texture {
     .upcast()
 }
 
-/// Reads photo files as `data:` URIs, on a blocking thread.
+/// A photo file read on a blocking thread for the page: its `data:` URI,
+/// or the bytes of a format only glycin decodes, still to shrink.
+enum Page {
+    Uri(Option<String>),
+    Elsewhere(glib::Bytes),
+}
+
+/// Reads photo files as `data:` URIs. Like the textures, a photo larger
+/// than a face is shrunk to a PNG whatever its format, so none grows past
+/// what the shelf keeps.
 fn read_uris(files: Vec<(String, PathBuf)>) -> LocalBoxFuture<'static, Answers<Rc<str>>> {
     Box::pin(async move {
-        let read = gio::spawn_blocking(move || {
+        let asked: Vec<String> = files.iter().map(|(address, _)| address.clone()).collect();
+        let Ok(read) = gio::spawn_blocking(move || {
             files
                 .into_iter()
-                .map(|(address, path)| (address, uri_at(&path)))
+                .map(|(address, path)| (address, page_at(&path)))
                 .collect::<Vec<_>>()
         })
         .await
-        .unwrap_or_default();
-        read.into_iter()
-            .map(|(address, uri)| (address, uri.map(Rc::from)))
-            .collect()
+        else {
+            return asked.into_iter().map(|address| (address, Reply::Failed)).collect();
+        };
+        let mut answers = Vec::with_capacity(read.len());
+        for (address, page) in read {
+            let reply = match page {
+                Page::Uri(uri) => Reply::of(uri.map(Rc::from)),
+                Page::Elsewhere(bytes) => {
+                    let size = bytes.len();
+                    match texture::off_thread(texture::WAIT, move || {
+                        let small = gdk::Texture::from_bytes(&bytes).ok().and_then(|t| shrunk_uri(&t, size));
+                        small.or_else(|| Some(uri_of("image/jpeg", &bytes)))
+                    })
+                    .await
+                    {
+                        Some(uri) => Reply::of(uri.map(Rc::from)),
+                        None => Reply::Failed,
+                    }
+                }
+            };
+            answers.push((address, reply));
+        }
+        answers
     })
 }
 
-/// The photo at `path` as a `data:` URI. A large PNG or JPEG goes in
-/// shrunk, as a PNG, when that is smaller; anything else as it is.
-fn uri_at(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    let small = (bytes.len() > SMALL_FILE && texture::decoded_in_process(&bytes))
-        .then(|| gdk::Texture::from_bytes(&glib::Bytes::from(&bytes)).ok())
-        .flatten()
-        .map(|t| shrunk(&t).save_to_png_bytes())
-        .filter(|png| png.len() < bytes.len());
-    let (mime, data) = match &small {
-        Some(png) => ("image/png", &png[..]),
-        None => ("image/jpeg", &bytes[..]),
+/// The photo at `path` for the page. A file this small, or one the shrunk
+/// copy would not make smaller, goes in as it is; a large PNG or JPEG goes
+/// in shrunk, as a PNG; any other format is left for glycin.
+fn page_at(path: &Path) -> Page {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Page::Uri(None);
     };
-    let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-    Some(format!("data:{mime};base64,{encoded}"))
+    if bytes.len() <= SMALL_FILE {
+        return Page::Uri(Some(uri_of("image/jpeg", &bytes)));
+    }
+    if !texture::decoded_in_process(&bytes) {
+        return Page::Elsewhere(glib::Bytes::from_owned(bytes));
+    }
+    let small = gdk::Texture::from_bytes(&glib::Bytes::from(&bytes))
+        .ok()
+        .and_then(|t| shrunk_uri(&t, bytes.len()));
+    Page::Uri(Some(small.unwrap_or_else(|| uri_of("image/jpeg", &bytes))))
 }
 
-/// What a background read brings back: each address asked for, with its
-/// photo or `None` when the file would not read.
-type Answers<V> = Vec<(String, Option<V>)>;
+/// `texture` shrunk to the edge, as a PNG `data:` URI, when that is
+/// smaller than the `original` bytes it came from.
+fn shrunk_uri(texture: &gdk::Texture, original: usize) -> Option<String> {
+    let png = shrunk(texture).save_to_png_bytes();
+    (png.len() < original).then(|| uri_of("image/png", &png))
+}
+
+fn uri_of(mime: &str, data: &[u8]) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+    format!("data:{mime};base64,{encoded}")
+}
+
+/// What a read found for one address.
+pub(crate) enum Reply<V> {
+    /// The photo.
+    Photo(V),
+    /// No photo: the file is gone, or no decoder takes it. Not asked again.
+    Absent,
+    /// The read did not finish, on a slow disk or a stuck decoder. Asked
+    /// again later.
+    Failed,
+}
+
+impl<V> Reply<V> {
+    fn of(photo: Option<V>) -> Reply<V> {
+        photo.map_or(Reply::Absent, Reply::Photo)
+    }
+}
+
+/// What a background read brings back: each address asked for, with what
+/// was found.
+type Answers<V> = Vec<(String, Reply<V>)>;
+
+/// How long after a failed read the first retry waits; each further
+/// failure doubles it, up to [`RETRY_MOST`].
+const RETRY_AFTER: Duration = Duration::from_secs(5);
+const RETRY_MOST: Duration = Duration::from_secs(5 * 60);
 
 /// Reads a batch of photo files off the GTK thread.
 type Reader<V> = Rc<dyn Fn(Vec<(String, PathBuf)>) -> LocalBoxFuture<'static, Answers<V>>>;
@@ -238,6 +313,10 @@ struct State<V> {
     files: Rc<Files>,
     kept: Recent<String, V>,
     missing: HashSet<String>,
+    /// Photos whose read failed: when to try again, and how many times
+    /// it failed.
+    failed: HashMap<String, (Instant, u32)>,
+    retry_after: Duration,
     queued: Vec<(String, PathBuf)>,
     reading: HashSet<String>,
     generation: u64,
@@ -256,6 +335,8 @@ impl<V: Weighed + 'static> Shelf<V> {
                 files: Rc::default(),
                 kept: Recent::new(limit),
                 missing: HashSet::new(),
+                failed: HashMap::new(),
+                retry_after: RETRY_AFTER,
                 queued: Vec::new(),
                 reading: HashSet::new(),
                 generation: 0,
@@ -275,6 +356,9 @@ impl<V: Weighed + 'static> Shelf<V> {
             return Some(photo);
         }
         if state.missing.contains(&key) || state.reading.contains(&key) {
+            return None;
+        }
+        if state.failed.get(&key).is_some_and(|(retry, _)| Instant::now() < *retry) {
             return None;
         }
         let path = state.files.get(&key)?.clone();
@@ -297,6 +381,7 @@ impl<V: Weighed + 'static> Shelf<V> {
         state.files = files;
         state.kept.clear();
         state.missing.clear();
+        state.failed.clear();
         state.queued.clear();
         state.reading.clear();
         state.generation += 1;
@@ -388,18 +473,30 @@ async fn read_queued<V: Weighed + 'static>(
         for key in &asked {
             state.reading.remove(key);
         }
-        let mut answered: HashMap<String, Option<V>> = answers.into_iter().collect();
+        let mut answered: HashMap<String, Reply<V>> = answers.into_iter().collect();
         let mut arrived = Vec::new();
         for key in asked {
-            match answered.remove(&key).flatten() {
+            match answered.remove(&key).unwrap_or(Reply::Failed) {
                 // A photo larger than the whole bound would be read again
                 // on every ask, so it counts as missing.
-                Some(photo) if state.kept.fits(&photo) => {
+                Reply::Photo(photo) if state.kept.fits(&photo) => {
+                    state.failed.remove(&key);
                     state.kept.put(key.clone(), photo);
                     arrived.push(key);
                 }
-                _ => {
+                Reply::Photo(_) | Reply::Absent => {
+                    state.failed.remove(&key);
                     state.missing.insert(key);
+                }
+                Reply::Failed => {
+                    // Left unmarked, so the next ask reads it again, but
+                    // not at once: a stuck decoder would be hammered.
+                    let failures = state.failed.get(&key).map_or(0, |(_, n)| *n) + 1;
+                    let wait = state
+                        .retry_after
+                        .saturating_mul(1 << (failures - 1).min(16))
+                        .min(RETRY_MOST.max(state.retry_after));
+                    state.failed.insert(key, (Instant::now() + wait, failures));
                 }
             }
         }
@@ -436,6 +533,8 @@ mod tests {
     struct Disk {
         holds: RefCell<HashMap<PathBuf, Rc<str>>>,
         reads: RefCell<Vec<PathBuf>>,
+        /// Reads fail to finish while this is set.
+        stuck: Cell<bool>,
     }
 
     impl Disk {
@@ -447,7 +546,10 @@ mod tests {
                     .map(|(address, path)| {
                         disk.reads.borrow_mut().push(path.clone());
                         let held = disk.holds.borrow().get(&path).cloned();
-                        (address, held)
+                        match disk.stuck.get() {
+                            true => (address, Reply::Failed),
+                            false => (address, Reply::of(held)),
+                        }
                     })
                     .collect();
                 Box::pin(async move { answers })
@@ -538,6 +640,61 @@ mod tests {
             assert_eq!(disk.reads(), 1, "asked for once");
             assert!(!told.get(), "nothing arrived");
         });
+    }
+
+    #[test]
+    fn a_read_that_did_not_finish_is_tried_again_not_marked_missing() {
+        on_main_context(|settle| {
+            let disk = Rc::new(Disk::default());
+            disk.write("ann.jpg", "ANN");
+            let shelf = disk.shelf(1_000);
+            shelf.state.borrow_mut().retry_after = Duration::ZERO;
+            shelf.set_files(files(&[("ann@example.com", "ann.jpg")]));
+            disk.stuck.set(true);
+            assert_eq!(shelf.get("ann@example.com"), None);
+            settle();
+            disk.stuck.set(false);
+            assert_eq!(shelf.get("ann@example.com"), None, "read again");
+            settle();
+            assert_eq!(shelf.get("ann@example.com").as_deref(), Some("ANN"));
+            assert_eq!(disk.reads(), 2);
+        });
+    }
+
+    #[test]
+    fn a_failed_read_is_not_repeated_on_every_ask() {
+        on_main_context(|settle| {
+            let disk = Rc::new(Disk::default());
+            disk.write("ann.jpg", "ANN");
+            let shelf = disk.shelf(1_000);
+            shelf.set_files(files(&[("ann@example.com", "ann.jpg")]));
+            disk.stuck.set(true);
+            shelf.get("ann@example.com");
+            settle();
+            for _ in 0..5 {
+                shelf.get("ann@example.com");
+                settle();
+            }
+            assert_eq!(disk.reads(), 1, "waits before the next try");
+        });
+    }
+
+    #[test]
+    fn a_photo_in_a_format_only_glycin_reads_still_gets_a_small_page_uri() {
+        // A 600 by 600 picture, as if a large webp had decoded to it.
+        let pixels: Vec<u8> = (0..600 * 600 * 4).map(|n| (n * 7 % 251) as u8).collect();
+        let texture: gdk::Texture = gdk::MemoryTexture::new(
+            600,
+            600,
+            gdk::MemoryFormat::R8g8b8a8Premultiplied,
+            &glib::Bytes::from_owned(pixels),
+            600 * 4,
+        )
+        .upcast();
+        let uri = shrunk_uri(&texture, 3 * 1024 * 1024).expect("smaller than the original");
+        assert!(uri.starts_with("data:image/png;base64,"));
+        assert!(uri.len() < URI_BYTES / 8, "{} bytes", uri.len());
+        assert_eq!(shrunk_uri(&texture, 10), None, "never larger than the original");
     }
 
     #[test]
