@@ -59,6 +59,30 @@ pub struct Cleaned {
     paints: bool,
     /// The quoted history at its end, which the page folds away.
     history: Option<Range<usize>>,
+    /// Cleaning this body failed. The copy stands for that, so the same
+    /// body is not cleaned again, and the page falls back to its text.
+    failed: bool,
+}
+
+impl Cleaned {
+    /// What stands in for a body that could not be cleaned.
+    fn failure(of: Option<Arc<MessageBody>>, version: u32) -> Cleaned {
+        Cleaned {
+            of,
+            version,
+            stamp: STAMPS.fetch_add(1, Ordering::Relaxed),
+            html: String::new(),
+            remote: false,
+            paints: false,
+            history: None,
+            failed: true,
+        }
+    }
+
+    /// Whether cleaning failed, so there is no HTML to draw.
+    pub fn is_failed(&self) -> bool {
+        self.failed
+    }
 }
 
 /// Where the next cleaned copy's stamp comes from. Copies are made on
@@ -78,6 +102,7 @@ fn clean(source: &str, pictures: &str, of: Option<Arc<MessageBody>>, version: u3
         paints: paints_itself(&lower),
         history: quoted::history_in_html(&html),
         html,
+        failed: false,
     }
 }
 
@@ -147,6 +172,16 @@ struct Dirty {
     pictures: String,
 }
 
+impl Dirty {
+    /// The body this is cleaned from, as a copy of it will record.
+    fn of(&self) -> Option<Arc<MessageBody>> {
+        match &self.source {
+            Source::Body(body) => Some(Arc::clone(body)),
+            Source::Words(_) => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Source {
     /// A body as it arrived, shared with the thread rather than copied.
@@ -191,20 +226,37 @@ impl ToClean {
         self.0.is_empty()
     }
 
-    /// Cleans them all. Slow, so not on the GTK thread.
+    /// Cleans them all. Slow, so not on the GTK thread. A body the
+    /// sanitizer panics on comes back as a failed copy, so one bad body
+    /// does not take the others with it.
     pub fn clean(self) -> HashMap<String, Cleaned> {
         self.0
             .into_iter()
             .map(|dirty| {
-                let cleaned = match dirty.source {
+                let (of, version) = (dirty.of(), dirty.version);
+                let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match dirty.source {
                     Source::Body(body) => {
                         let html = html_of(&body).unwrap_or_default().to_string();
                         clean(&html, &dirty.pictures, Some(body), dirty.version)
                     }
                     Source::Words(html) => clean(&html, &dirty.pictures, None, dirty.version),
-                };
+                }));
+                let cleaned = made.unwrap_or_else(|_| {
+                    tracing::warn!(message = %dirty.message_id, "the sanitizer failed on a message body");
+                    Cleaned::failure(of, version)
+                });
                 (dirty.message_id, cleaned)
             })
+            .collect()
+    }
+
+    /// Failed copies for all of them, for a worker that never answered.
+    /// Taken in place of the cleaned ones, they stop the same bodies from
+    /// being sent out again.
+    pub fn failures(&self) -> HashMap<String, Cleaned> {
+        self.0
+            .iter()
+            .map(|dirty| (dirty.message_id.clone(), Cleaned::failure(dirty.of(), dirty.version)))
             .collect()
     }
 }
@@ -419,13 +471,16 @@ impl OpenThread {
         let (body, thumbnails) = match self.showing(&meta.id) {
             Showing::Loading => (Shows::Loading, 0),
             Showing::Failed(reason) => (Shows::Failed(reason.to_string()), 0),
+            Showing::Unreadable => (Shows::Unreadable, 0),
             Showing::Body(body, cleaned) => {
                 let mut hasher = DefaultHasher::new();
+                // Which picture each row has, not only whether it has one:
+                // a replaced picture draws the article again.
                 for attachment in &body.attachments {
                     attachment
                         .attachment_id
                         .as_deref()
-                        .is_some_and(|id| self.thumbnails.contains_key(id))
+                        .and_then(|id| self.thumbnails.get(id))
                         .hash(&mut hasher);
                 }
                 let stamp = cleaned.map(|copy| copy.stamp);
@@ -474,6 +529,13 @@ impl OpenThread {
             (None, Some(Err(reason))) => return Showing::Failed(reason),
             (None, Some(Ok(body))) => (body, self.cleaned_of(id)),
         };
+        if cleaned.is_some_and(Cleaned::is_failed) {
+            // Its text part, when it has one, in place of the HTML.
+            return match body.text.as_deref().is_some_and(|text| !text.trim().is_empty()) {
+                true => Showing::Body(body, None),
+                false => Showing::Unreadable,
+            };
+        }
         match html_of(body).is_some() && cleaned.is_none() {
             true => Showing::Loading,
             false => Showing::Body(body, cleaned),
@@ -485,6 +547,7 @@ impl OpenThread {
         let (body, cleaned) = match self.showing(&meta.id) {
             Showing::Loading => (BodyState::Loading, None),
             Showing::Failed(reason) => (BodyState::Failed(reason), None),
+            Showing::Unreadable => (BodyState::Unreadable, None),
             Showing::Body(body, cleaned) => (BodyState::Loaded(body), cleaned),
         };
         MessageView {
@@ -512,7 +575,7 @@ impl OpenThread {
             self.expanded.contains(&meta.id) && self.bodies.get(&meta.id).is_some_and(Result::is_ok)
         })?;
         let body = self.bodies.get(&meta.id)?.as_ref().ok()?;
-        let prose = match self.cleaned_of(&meta.id) {
+        let prose = match self.cleaned_of(&meta.id).filter(|cleaned| !cleaned.failed) {
             Some(cleaned) => Prose::read(Body::Html(&cleaned.html)),
             None => Prose::read(Body::Text(body.text.as_deref().unwrap_or(""))),
         };
@@ -531,6 +594,8 @@ impl OpenThread {
 enum Showing<'a> {
     Loading,
     Failed(&'a str),
+    /// Cleaning failed and the message has no text to fall back to.
+    Unreadable,
     Body(&'a Arc<MessageBody>, Option<&'a Cleaned>),
 }
 
@@ -657,6 +722,7 @@ impl Inputs {
 enum Shows {
     Loading,
     Failed(String),
+    Unreadable,
     /// A body and the stamp of the cleaned copy drawn for it.
     Body(Arc<MessageBody>, Option<u64>),
 }
@@ -664,7 +730,7 @@ enum Shows {
 impl PartialEq for Shows {
     fn eq(&self, other: &Shows) -> bool {
         match (self, other) {
-            (Shows::Loading, Shows::Loading) => true,
+            (Shows::Loading, Shows::Loading) | (Shows::Unreadable, Shows::Unreadable) => true,
             (Shows::Failed(a), Shows::Failed(b)) => a == b,
             (Shows::Body(a, x), Shows::Body(b, y)) => Arc::ptr_eq(a, b) && x == y,
             _ => false,
@@ -754,6 +820,56 @@ mod tests {
         open.take_cleaned(cleaned);
         assert_eq!(patched(open.page(&theme())), ["m1"]);
         assert!(open.to_clean().is_empty());
+    }
+
+    /// A thread of one message whose body has a text part and one
+    /// attachment, `a1`.
+    fn with_attachment(html: &str, text: Option<&str>) -> OpenThread {
+        let mut open = uncleaned(html);
+        let mut body = MessageBody::clone(open.bodies["m1"].as_ref().unwrap());
+        body.text = text.map(str::to_string);
+        body.attachments = vec![mailrs_domain::Attachment {
+            part_id: "2".to_string(),
+            filename: "kite.png".to_string(),
+            mime_type: "image/png".to_string(),
+            size: 10,
+            attachment_id: Some("a1".to_string()),
+            content_id: None,
+        }];
+        open.bodies.insert("m1".to_string(), Ok(Arc::new(body)));
+        open
+    }
+
+    #[test]
+    fn replacing_an_attachment_picture_draws_its_article_again() {
+        let mut open = with_attachment("<p>Kites</p>", None);
+        let cleaned = open.to_clean().clean();
+        open.take_cleaned(cleaned);
+        open.thumbnails.insert("a1".to_string(), "data:image/png;base64,AAAA".to_string());
+        open.page(&theme());
+        assert!(patched(open.page(&theme())).is_empty(), "nothing changed");
+        open.thumbnails.insert("a1".to_string(), "data:image/png;base64,BBBB".to_string());
+        assert_eq!(patched(open.page(&theme())), ["m1"]);
+    }
+
+    #[test]
+    fn a_body_that_could_not_be_cleaned_shows_its_text_and_is_not_cleaned_again() {
+        let mut open = with_attachment("<p>Kites</p>", Some("Kites at ten"));
+        let failed = open.to_clean().failures();
+        open.take_cleaned(failed);
+        let page = whole(open.page(&theme()));
+        assert!(page.contains("Kites at ten") && !page.contains("Loading…"), "{page}");
+        assert!(open.to_clean().is_empty(), "the same body is not sent out again");
+    }
+
+    #[test]
+    fn a_body_with_no_text_that_could_not_be_cleaned_says_so() {
+        let mut open = with_attachment("<p>Kites</p>", None);
+        let failed = open.to_clean().failures();
+        open.take_cleaned(failed);
+        let page = whole(open.page(&theme()));
+        assert!(page.contains("This message could not be displayed"), "{page}");
+        assert!(!page.contains("Loading…"), "{page}");
     }
 
     /// A thread of messages from Ann and Bo, in turn.

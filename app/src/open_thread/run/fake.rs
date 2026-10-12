@@ -178,6 +178,8 @@ pub struct Screen {
     pub sent: Vec<(String, Vec<String>)>,
     /// The threads that cleaned HTML, one for each time it was asked.
     pub cleaners: Vec<std::thread::ThreadId>,
+    /// Cleaning fails, as it does when the worker panics.
+    pub clean_fails: bool,
 }
 
 pub struct FakeWindow(pub RefCell<Screen>);
@@ -461,6 +463,7 @@ impl FakeWindow {
             receipt_answers: Vec::new(),
             sent: Vec::new(),
             cleaners: Vec::new(),
+            clean_fails: false,
         })))
     }
 
@@ -684,6 +687,10 @@ impl Effects for FakeWindow {
     /// and notes which thread did it.
     fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
         self.reached(Step::Clean);
+        if self.with(|screen| screen.clean_fails) {
+            let failed = html.failures();
+            return Box::pin(async move { failed });
+        }
         let (done, cleaned) = oneshot::channel();
         std::thread::spawn(move || {
             let made = (std::thread::current().id(), html.clean());

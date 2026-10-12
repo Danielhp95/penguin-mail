@@ -3591,140 +3591,144 @@ msgstr "Impossible d’enregistrer : {reason}"
 msgid "Could not open the draft: {reason}"
 msgstr "Impossible d’ouvrir le brouillon : {reason}"
 
-#: app/src/render.rs:179
+#: app/src/render.rs:182
 msgid "{count} message"
 msgid_plural "{count} messages"
 msgstr[0] "{count} message"
 msgstr[1] "{count} messages"
 
-#: app/src/render.rs:187
+#: app/src/render.rs:190
 msgid "Summarize"
 msgstr "Résumer"
 
-#: app/src/render.rs:268 app/src/ui/thread_row.rs:403
+#: app/src/render.rs:271 app/src/ui/thread_row.rs:403
 msgid "Unknown sender"
 msgstr "Expéditeur inconnu"
 
-#: app/src/render.rs:286
+#: app/src/render.rs:289
 msgid "Show or hide this message"
 msgstr "Afficher ou masquer ce message"
 
-#: app/src/render.rs:288 app/src/ui/contact_card.rs:43
+#: app/src/render.rs:291 app/src/ui/contact_card.rs:43
 msgid "Contact"
 msgstr "Contact"
 
-#: app/src/render.rs:293
+#: app/src/render.rs:296
 msgid "Contact card for {person}"
 msgstr "Fiche de contact de {person}"
 
-#: app/src/render.rs:362 app/src/ui/thread_row.rs:165
+#: app/src/render.rs:365 app/src/ui/thread_row.rs:165
 msgid "Invitation"
 msgstr "Invitation"
 
-#: app/src/render.rs:376
+#: app/src/render.rs:379
 msgid "{date}, {time}"
 msgstr "{date}, {time}"
 
-#: app/src/render.rs:391
+#: app/src/render.rs:394
 msgid "Loading…"
 msgstr "Chargement…"
 
-#: app/src/render.rs:396
+#: app/src/render.rs:399
 msgid "This message could not be loaded: {reason}"
 msgstr "Ce message n’a pas pu être chargé : {reason}"
 
-#: app/src/render.rs:451
+#: app/src/render.rs:408
+msgid "This message could not be displayed"
+msgstr "Ce message n’a pas pu être affiché"
+
+#: app/src/render.rs:461
 msgid "Details"
 msgstr "Détails"
 
-#: app/src/render.rs:472
+#: app/src/render.rs:482
 msgid "from"
 msgstr "de"
 
-#: app/src/render.rs:483
+#: app/src/render.rs:493
 msgid "to"
 msgstr "à"
 
-#: app/src/render.rs:485
+#: app/src/render.rs:495
 msgid "cc"
 msgstr "cc"
 
-#: app/src/render.rs:487
+#: app/src/render.rs:497
 msgid "date"
 msgstr "date"
 
-#: app/src/render.rs:488
+#: app/src/render.rs:498
 msgid "subject"
 msgstr "objet"
 
-#: app/src/render.rs:490
+#: app/src/render.rs:500
 msgid "mailed-by"
 msgstr "envoyé par"
 
-#: app/src/render.rs:493
+#: app/src/render.rs:503
 msgid "signed-by"
 msgstr "signé par"
 
-#: app/src/render.rs:497
+#: app/src/render.rs:507
 msgid "security"
 msgstr "sécurité"
 
-#: app/src/render.rs:499
+#: app/src/render.rs:509
 msgid "Standard encryption (TLS)"
 msgstr "Chiffrement standard (TLS)"
 
-#: app/src/render.rs:504
+#: app/src/render.rs:514
 msgid "Not encrypted in transit"
 msgstr "Non chiffré pendant le transfert"
 
-#: app/src/render.rs:541 app/src/ui/composer/mod.rs:2015
+#: app/src/render.rs:551 app/src/ui/composer/mod.rs:2015
 msgid "{count} attachment"
 msgid_plural "{count} attachments"
 msgstr[0] "{count} pièce jointe"
 msgstr[1] "{count} pièces jointes"
 
-#: app/src/render.rs:573
+#: app/src/render.rs:583
 msgid "Quick Look"
 msgstr "Aperçu rapide"
 
-#: app/src/render.rs:574 app/src/ui/window/attachments.rs:329
+#: app/src/render.rs:584 app/src/ui/window/attachments.rs:329
 #: app/src/ui/window/attachments.rs:335
 msgid "Save to Downloads"
 msgstr "Enregistrer dans Téléchargements"
 
-#: app/src/render.rs:576
+#: app/src/render.rs:586
 msgid "Open {file}, {size}"
 msgstr "Ouvrir {file}, {size}"
 
-#: app/src/render.rs:583
+#: app/src/render.rs:593
 msgid "Save {file} to Downloads"
 msgstr "Enregistrer {file} dans Téléchargements"
 
-#: app/src/render.rs:590
+#: app/src/render.rs:600
 msgid "Save All ({count})"
 msgid_plural "Save All ({count})"
 msgstr[0] "Tout enregistrer ({count})"
 msgstr[1] "Tout enregistrer ({count})"
 
-#: app/src/render.rs:601
+#: app/src/render.rs:611
 msgid "Save every attachment to a folder"
 msgstr "Enregistrer toutes les pièces jointes dans un dossier"
 
-#: app/src/render.rs:665
+#: app/src/render.rs:675
 msgid "undisclosed recipients"
 msgstr "destinataires non divulgués"
 
-#: app/src/render.rs:668
+#: app/src/render.rs:678
 msgid "{named}, and {count} other"
 msgid_plural "{named}, and {count} others"
 msgstr[0] "{named}, et {count} autre"
 msgstr[1] "{named}, et {count} autres"
 
-#: app/src/render.rs:681
+#: app/src/render.rs:691
 msgid "me"
 msgstr "moi"
 
-#: app/src/render.rs:691 app/src/ui/composer/mod.rs:587
+#: app/src/render.rs:701 app/src/ui/composer/mod.rs:587
 #: app/src/ui/composer/mod.rs:591
 msgid "Show trimmed content"
 msgstr "Afficher le contenu masqué"
@@ -10718,7 +10722,7 @@ msgstr "Vérifier le stockage"
 msgid "Hide Storage Warning Until Next Launch"
 msgstr "Masquer l’alerte d’espace jusqu’au prochain lancement"
 
-#: app/src/ui/window/thread.rs:587
+#: app/src/ui/window/thread.rs:589
 msgid "The account is not connected yet."
 msgstr "Le compte n’est pas encore connecté."
 

@@ -3345,136 +3345,140 @@ msgstr "無法儲存：{reason}"
 msgid "Could not open the draft: {reason}"
 msgstr "無法開啟草稿：{reason}"
 
-#: app/src/render.rs:179
+#: app/src/render.rs:182
 msgid "{count} message"
 msgid_plural "{count} messages"
 msgstr[0] "{count} 封郵件"
 
-#: app/src/render.rs:187
+#: app/src/render.rs:190
 msgid "Summarize"
 msgstr "摘要"
 
-#: app/src/render.rs:268 app/src/ui/thread_row.rs:403
+#: app/src/render.rs:271 app/src/ui/thread_row.rs:403
 msgid "Unknown sender"
 msgstr "未知寄件者"
 
-#: app/src/render.rs:286
+#: app/src/render.rs:289
 msgid "Show or hide this message"
 msgstr "顯示或隱藏此郵件"
 
-#: app/src/render.rs:288 app/src/ui/contact_card.rs:43
+#: app/src/render.rs:291 app/src/ui/contact_card.rs:43
 msgid "Contact"
 msgstr "聯絡人"
 
-#: app/src/render.rs:293
+#: app/src/render.rs:296
 msgid "Contact card for {person}"
 msgstr "{person} 的聯絡人名片"
 
-#: app/src/render.rs:362 app/src/ui/thread_row.rs:165
+#: app/src/render.rs:365 app/src/ui/thread_row.rs:165
 msgid "Invitation"
 msgstr "邀請"
 
-#: app/src/render.rs:376
+#: app/src/render.rs:379
 msgid "{date}, {time}"
 msgstr "{date} {time}"
 
-#: app/src/render.rs:391
+#: app/src/render.rs:394
 msgid "Loading…"
 msgstr "正在載入…"
 
-#: app/src/render.rs:396
+#: app/src/render.rs:399
 msgid "This message could not be loaded: {reason}"
 msgstr "無法載入此郵件：{reason}"
 
-#: app/src/render.rs:451
+#: app/src/render.rs:408
+msgid "This message could not be displayed"
+msgstr "無法顯示此郵件"
+
+#: app/src/render.rs:461
 msgid "Details"
 msgstr "詳細資料"
 
-#: app/src/render.rs:472
+#: app/src/render.rs:482
 msgid "from"
 msgstr "寄件者"
 
-#: app/src/render.rs:483
+#: app/src/render.rs:493
 msgid "to"
 msgstr "收件者"
 
-#: app/src/render.rs:485
+#: app/src/render.rs:495
 msgid "cc"
 msgstr "副本"
 
-#: app/src/render.rs:487
+#: app/src/render.rs:497
 msgid "date"
 msgstr "日期"
 
-#: app/src/render.rs:488
+#: app/src/render.rs:498
 msgid "subject"
 msgstr "主旨"
 
-#: app/src/render.rs:490
+#: app/src/render.rs:500
 msgid "mailed-by"
 msgstr "郵寄網域"
 
-#: app/src/render.rs:493
+#: app/src/render.rs:503
 msgid "signed-by"
 msgstr "簽署網域"
 
-#: app/src/render.rs:497
+#: app/src/render.rs:507
 msgid "security"
 msgstr "安全性"
 
-#: app/src/render.rs:499
+#: app/src/render.rs:509
 msgid "Standard encryption (TLS)"
 msgstr "標準加密（TLS）"
 
-#: app/src/render.rs:504
+#: app/src/render.rs:514
 msgid "Not encrypted in transit"
 msgstr "傳輸過程未加密"
 
-#: app/src/render.rs:541 app/src/ui/composer/mod.rs:2015
+#: app/src/render.rs:551 app/src/ui/composer/mod.rs:2015
 msgid "{count} attachment"
 msgid_plural "{count} attachments"
 msgstr[0] "{count} 個附件"
 
-#: app/src/render.rs:573
+#: app/src/render.rs:583
 msgid "Quick Look"
 msgstr "快速查看"
 
-#: app/src/render.rs:574 app/src/ui/window/attachments.rs:329
+#: app/src/render.rs:584 app/src/ui/window/attachments.rs:329
 #: app/src/ui/window/attachments.rs:335
 msgid "Save to Downloads"
 msgstr "儲存至下載資料夾"
 
-#: app/src/render.rs:576
+#: app/src/render.rs:586
 msgid "Open {file}, {size}"
 msgstr "開啟 {file}，{size}"
 
-#: app/src/render.rs:583
+#: app/src/render.rs:593
 msgid "Save {file} to Downloads"
 msgstr "將 {file} 儲存至下載資料夾"
 
-#: app/src/render.rs:590
+#: app/src/render.rs:600
 msgid "Save All ({count})"
 msgid_plural "Save All ({count})"
 msgstr[0] "全部儲存（{count}）"
 
-#: app/src/render.rs:601
+#: app/src/render.rs:611
 msgid "Save every attachment to a folder"
 msgstr "將所有附件儲存至資料夾"
 
-#: app/src/render.rs:665
+#: app/src/render.rs:675
 msgid "undisclosed recipients"
 msgstr "未公開的收件者"
 
-#: app/src/render.rs:668
+#: app/src/render.rs:678
 msgid "{named}, and {count} other"
 msgid_plural "{named}, and {count} others"
 msgstr[0] "{named} 與其他 {count} 位"
 
-#: app/src/render.rs:681
+#: app/src/render.rs:691
 msgid "me"
 msgstr "我"
 
-#: app/src/render.rs:691 app/src/ui/composer/mod.rs:587
+#: app/src/render.rs:701 app/src/ui/composer/mod.rs:587
 #: app/src/ui/composer/mod.rs:591
 msgid "Show trimmed content"
 msgstr "顯示省略的內容"
@@ -10176,7 +10180,7 @@ msgstr "檢視儲存空間"
 msgid "Hide Storage Warning Until Next Launch"
 msgstr "隱藏空間警告至下次啟動"
 
-#: app/src/ui/window/thread.rs:587
+#: app/src/ui/window/thread.rs:589
 msgid "The account is not connected yet."
 msgstr "帳號尚未連線。"
 

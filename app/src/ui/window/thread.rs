@@ -317,18 +317,20 @@ impl Effects for Ports {
 
     /// Cleans on a worker thread. Forty newsletters take the GTK thread
     /// tens of milliseconds, during which the window would not draw. A
-    /// body this fails to clean stays loading.
+    /// body this fails to clean comes back as a failed copy, which the
+    /// page draws as its text, so it does not stay loading.
     fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
         Box::pin(async move {
             if html.is_empty() {
                 return HashMap::new();
             }
+            let failed = html.failures();
             self.core
                 .call(async move { tokio::task::spawn_blocking(move || html.clean()).await })
                 .await
                 .unwrap_or_else(|err| {
                     tracing::warn!(error = %err, "could not clean the bodies away from the window");
-                    HashMap::new()
+                    failed
                 })
         })
     }
