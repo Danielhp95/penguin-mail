@@ -3536,8 +3536,6 @@ impl MainWindow {
         shortcuts::dialog(Filing::of(offers)).present(Some(&self.window));
     }
 
-    /// The messages a POP3 account's server would not hand over after
-    /// three tries, each with the server's words.
     /// Opens Switch to JMAP for `account`, when a look found its session.
     fn switch_to_jmap(self: &Rc<Self>, account: Account) {
         let Some(found) = self.core.offer_of(&account) else {
@@ -3576,6 +3574,8 @@ impl MainWindow {
         self.refresh_accounts(Reload::Yes);
     }
 
+    /// The messages a POP3 account's server would not hand over after
+    /// three tries, each with the server's words.
     fn show_not_downloading(self: &Rc<Self>, account: Account) {
         let win = Rc::clone(self);
         glib::spawn_future_local(async move {
