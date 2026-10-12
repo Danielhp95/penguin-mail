@@ -3446,7 +3446,7 @@ msgstr "Claude Subscription"
 
 #. The header in both spaces carries a button for this now (R12);
 #. the menu item stays too, so Ctrl+J shows here as well.
-#: app/src/settings/mod.rs:223 app/src/ui/assistant.rs:99
+#: app/src/settings/mod.rs:223 app/src/ui/assistant.rs:100
 #: app/src/ui/window.rs:3313
 msgid "Assistant"
 msgstr "Assistant"
@@ -4290,86 +4290,86 @@ msgstr "Set an out-of-office reply for next week"
 msgid "Draft a reply to the open conversation"
 msgstr "Draft a reply to the open conversation"
 
-#: app/src/ui/assistant.rs:102 app/src/ui/assistant.rs:104
+#: app/src/ui/assistant.rs:103 app/src/ui/assistant.rs:105
 msgid "New Chat"
 msgstr "New Chat"
 
-#: app/src/ui/assistant.rs:127
+#: app/src/ui/assistant.rs:128
 msgid "Ask about your mail, or tell me what to tidy. I can search, summarize, sort, draft, and change settings."
 msgstr "Ask about your mail, or tell me what to tidy. I can search, summarise, sort, draft, and change settings."
 
-#: app/src/ui/assistant.rs:151
-msgid "Ask Penguin Mail…"
-msgstr "Ask Penguin Mail…"
-
-#: app/src/ui/assistant.rs:156 app/src/ui/assistant.rs:160
-#: app/src/ui/assistant.rs:454 app/src/ui/calendar/scope.rs:113
+#: app/src/ui/assistant.rs:154 app/src/ui/assistant.rs:159
+#: app/src/ui/assistant.rs:490 app/src/ui/calendar/scope.rs:113
 #: app/src/ui/composer/mod.rs:347 app/src/ui/window/shortcuts.rs:492
 msgid "Send"
 msgstr "Send"
 
-#: app/src/ui/assistant.rs:159
-msgid "Ask Penguin Mail"
-msgstr "Ask Penguin Mail"
-
-#: app/src/ui/assistant.rs:175
+#: app/src/ui/assistant.rs:174
 msgid "Choose a Model"
 msgstr "Choose a Model"
 
-#: app/src/ui/assistant.rs:181
+#: app/src/ui/assistant.rs:180
 msgid "Set Up the Assistant"
 msgstr "Set Up the Assistant"
 
-#: app/src/ui/assistant.rs:183
+#: app/src/ui/assistant.rs:182
 msgid "Use a local model from LM Studio, Ollama, or any server with OpenAI's API. You can also use an Anthropic API key or your Claude subscription."
 msgstr "Use a local model from LM Studio, Ollama, or any server with OpenAI's API. You can also use an Anthropic API key or your Claude subscription."
 
-#: app/src/ui/assistant.rs:453
+#: app/src/ui/assistant.rs:489
 msgid "Stop"
 msgstr "Stop"
 
-#: app/src/ui/assistant.rs:561
+#: app/src/ui/assistant.rs:597
 msgid "Don't Allow"
 msgstr "Don't Allow"
 
-#: app/src/ui/assistant.rs:563
+#: app/src/ui/assistant.rs:599
 msgid "Allow"
 msgstr "Allow"
 
-#: app/src/ui/assistant.rs:567
+#: app/src/ui/assistant.rs:603
 msgid "Always Allow"
 msgstr "Always Allow"
 
-#: app/src/ui/assistant.rs:603
+#: app/src/ui/assistant.rs:639
 msgid "Allowed"
 msgstr "Allowed"
 
-#: app/src/ui/assistant.rs:604
+#: app/src/ui/assistant.rs:640
 msgid "Always allowed"
 msgstr "Always allowed"
 
-#: app/src/ui/assistant.rs:605
+#: app/src/ui/assistant.rs:641
 msgid "Not allowed"
 msgstr "Not allowed"
 
-#: app/src/ui/assistant.rs:845
+#: app/src/ui/assistant.rs:719
+msgid "Ask Penguin Mail…"
+msgstr "Ask Penguin Mail…"
+
+#: app/src/ui/assistant.rs:728
+msgid "Ask Penguin Mail"
+msgstr "Ask Penguin Mail"
+
+#: app/src/ui/assistant.rs:975
 msgid "Result"
 msgstr "Result"
 
-#: app/src/ui/assistant.rs:853
+#: app/src/ui/assistant.rs:983
 msgid "Input"
 msgstr "Input"
 
-#: app/src/ui/assistant.rs:931
+#: app/src/ui/assistant.rs:1061
 msgid "Running"
 msgstr "Running"
 
-#: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
+#: app/src/ui/assistant.rs:1062 app/src/ui/calendar/editor.rs:263
 #: app/src/ui/hide_my_email.rs:820
 msgid "Done"
 msgstr "Done"
 
-#: app/src/ui/assistant.rs:933
+#: app/src/ui/assistant.rs:1063
 msgid "Failed"
 msgstr "Failed"
 

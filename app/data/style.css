@@ -539,6 +539,18 @@ toolbarview.sidebar-card.undershoot-bottom > .bottom-bar { box-shadow: none; bor
 .assistant-note.error { color: var(--error-color); }
 .assistant-suggestion { padding: 6px 10px; border-radius: 10px; }
 .assistant-confirm label { font-weight: 600; }
+/* The question box: filled like an entry, with an entry's focus ring, and
+   as round as the Send button beside it while it holds one line. */
+.assistant-input {
+  background-color: alpha(currentColor, 0.1);
+  border-radius: 17px;
+}
+.assistant-input:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
+  outline-offset: -2px;
+}
+.assistant-input textview,
+.assistant-input textview > text { background: none; }
 
 /* Inbox categories as chips that wrap onto up to three lines, 6 px apart
    both ways (strip.rs). The chosen one is a filled accent pill; the
