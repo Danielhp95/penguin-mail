@@ -16,7 +16,7 @@ use mailrs_domain::{Account, AccountId, Address, ChangeEvent, Label, Provider, R
 use mailrs_store::{accounts, labels, messages};
 use mailrs_sync::{History, MovedFrom};
 
-use crate::app::announce::still_news;
+use crate::app::announce::{announced, still_news};
 use crate::compose::Identity;
 use crate::core::Core;
 use crate::notify;
@@ -1519,19 +1519,7 @@ impl App {
         glib::spawn_future_local(async move {
             let found = this
                 .core
-                .read(move |c| {
-                    let mut found = Vec::new();
-                    for id in &message_ids {
-                        if let Some(thread) = messages::thread_id_of(c, account_id, id)? {
-                            found.extend(
-                                messages::thread_messages(c, account_id, &thread)?
-                                    .into_iter()
-                                    .filter(|m| &m.id == id),
-                            );
-                        }
-                    }
-                    Ok(found)
-                })
+                .read(move |c| announced(c, account_id, &message_ids))
                 .await;
             let found = found.map(|found| {
                 found
