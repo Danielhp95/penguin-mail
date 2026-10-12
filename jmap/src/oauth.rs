@@ -96,6 +96,10 @@ pub struct Metadata {
     /// without one did not come from it.
     #[serde(default)]
     pub authorization_response_iss_parameter_supported: bool,
+    /// Where RFC 7009 revokes a token, when the server offers it. Only
+    /// [`revoke`] reads it, and it calls it over https alone.
+    #[serde(default)]
+    pub revocation_endpoint: Option<String>,
 }
 
 #[derive(Clone)]
@@ -311,6 +315,44 @@ async fn register_over(
         .as_str()
         .map(str::to_string)
         .ok_or_else(|| JmapError::Decode("no client_id came back".into()))
+}
+
+/// How long removing an account waits on the server to revoke its grant.
+const REVOKE_WAIT: Duration = Duration::from_secs(5);
+
+/// Revokes `refresh_token`, and the grant with it, at the revocation
+/// endpoint the server beside `session_url` names (RFC 7009). Answers
+/// `false` when it names none. Gives up after five seconds, and an error
+/// carries none of the server's words.
+pub async fn revoke(session_url: &str, client_id: &str, refresh_token: &str) -> Result<bool, JmapError> {
+    revoke_over(session_url, client_id, refresh_token, Transport::HttpsOnly, REVOKE_WAIT).await
+}
+
+async fn revoke_over(
+    session_url: &str,
+    client_id: &str,
+    refresh_token: &str,
+    transport: Transport,
+    wait: Duration,
+) -> Result<bool, JmapError> {
+    let revoking = async {
+        let metadata = metadata_over(session_url, transport).await?;
+        let Some(endpoint) = metadata.revocation_endpoint else { return Ok(false) };
+        revoke_at(&endpoint, client_id, refresh_token, transport).await.map(|()| true)
+    };
+    tokio::time::timeout(wait, revoking)
+        .await
+        .unwrap_or_else(|_| Err(JmapError::Network("the revocation took too long".into())))
+}
+
+async fn revoke_at(endpoint: &str, client_id: &str, refresh_token: &str, transport: Transport) -> Result<(), JmapError> {
+    let endpoint = secure(endpoint, transport)?;
+    let form = [("token", refresh_token), ("token_type_hint", "refresh_token"), ("client_id", client_id)];
+    let (status, body) = read(http()?.post(endpoint).form(&form).send().await.map_err(network)?).await?;
+    match status {
+        200..300 => Ok(()),
+        status => Err(JmapError::Problem { status, kind: error_code(body["error"].as_str()), detail: String::new() }),
+    }
 }
 
 impl OAuthClient {
@@ -885,6 +927,7 @@ mod tests {
             scopes_supported: Vec::new(),
             code_challenge_methods_supported: vec!["S256".into()],
             authorization_response_iss_parameter_supported: false,
+            revocation_endpoint: None,
         };
         assert_eq!(checked(https.clone(), "https://auth.example.com", Transport::HttpsOnly), Ok(https.clone()));
         let http = "http://auth.example.com/x".to_string();
@@ -1465,5 +1508,72 @@ mod tests {
         session.bearer(false).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(saved.lock().unwrap().is_empty(), "save_again ran for a retired session");
+    }
+
+    /// Metadata that names `/revoke` on the mock server.
+    async fn serving_revocation(server: &MockServer) {
+        let mut metadata = metadata_for(server, true);
+        metadata["revocation_endpoint"] = json!(format!("{}/revoke", server.uri()));
+        serving(server, metadata).await;
+    }
+
+    #[tokio::test]
+    async fn revoking_sends_the_refresh_token_with_its_hint() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .and(body_string_contains("token=r1"))
+            .and(body_string_contains("token_type_hint=refresh_token"))
+            .and(body_string_contains("client_id=c1"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let revoked = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await;
+        assert_eq!(revoked, Ok(true));
+    }
+
+    #[tokio::test]
+    async fn a_server_that_names_no_revocation_endpoint_is_left_alone() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, true).await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
+        assert_eq!(revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await, Ok(false));
+    }
+
+    #[tokio::test]
+    async fn a_revocation_that_hangs_is_given_up_soon() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(10)))
+            .mount(&server)
+            .await;
+        let started = std::time::Instant::now();
+        let revoked = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_millis(200)).await;
+        assert!(revoked.is_err());
+        assert!(started.elapsed() < Duration::from_secs(2), "the removal would wait on the server");
+    }
+
+    #[tokio::test]
+    async fn a_refused_revocation_names_nothing_the_server_wrote() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_request", "error_description": "SECRET r1"})))
+            .mount(&server)
+            .await;
+        let err = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await.unwrap_err();
+        let shown = format!("{err} {err:?}");
+        assert!(!shown.contains("SECRET") && !shown.contains("r1"), "{shown}");
+    }
+
+    #[tokio::test]
+    async fn a_revocation_endpoint_off_https_is_never_called() {
+        let refused = revoke_at("http://auth.example.com/revoke", "c1", "r1", Transport::HttpsOnly).await;
+        assert_eq!(refused, Err(JmapError::NotHttps));
     }
 }

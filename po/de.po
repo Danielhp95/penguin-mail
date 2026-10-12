@@ -2138,7 +2138,7 @@ msgstr ""
 "Dieses Konto speichert kein Passwort, das ein Kalender- oder Kontaktserver "
 "annimmt."
 
-#: app/src/core.rs:1318
+#: app/src/core.rs:1327
 msgid "The demo cannot switch accounts."
 msgstr "Im Demo-Modus lassen sich keine Konten umstellen."
 
@@ -11660,7 +11660,9 @@ msgstr "Die Regel ist schreibgeschützt."
 #: sync/src/sign_in.rs:208
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
-msgstr "Sie haben sich bei einem anderen Konto als {address} angemeldet, daher wurde nichts geändert."
+msgstr ""
+"Sie haben sich bei einem anderen Konto als {address} angemeldet, daher wurde "
+"nichts geändert."
 
 #: sync/src/sign_in.rs:215
 msgid "{address} is already in Penguin Mail as a {provider} account."

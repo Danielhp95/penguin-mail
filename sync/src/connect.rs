@@ -564,6 +564,46 @@ impl JmapSessions {
     }
 }
 
+/// What revoking a removed JMAP account's browser sign-in needs. No
+/// `Debug`: it holds the refresh token.
+pub struct JmapGrant {
+    pub(crate) session_url: String,
+    pub(crate) client_id: String,
+    pub(crate) refresh_token: String,
+}
+
+/// The browser grant of `account`, read before the account goes, or
+/// `None` for an account that signs in with a password or a token. The
+/// account's session is retired first, so the token is the newest one it
+/// held and nothing saves a later one; without a session, the keyring's.
+pub async fn jmap_grant(db: &Db, secrets: &Secrets, account: &Account) -> Option<JmapGrant> {
+    if account.provider != Provider::Jmap {
+        return None;
+    }
+    let id = account.id;
+    let saved = db.read(move |c| mailrs_store::jmap::load(c, id)).await.ok()??;
+    let client = saved.oauth.filter(|_| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)?;
+    let held = secrets.jmap_sessions.forget(id).await.filter(|token| !token.is_empty());
+    let refresh_token = match held {
+        Some(token) => token,
+        None => read_secret(Arc::clone(&secrets.jmap), id, STEP_WAIT).await.ok()??,
+    };
+    Some(JmapGrant { session_url: saved.session_url, client_id: client.client_id, refresh_token })
+}
+
+impl JmapGrant {
+    /// Asks the server to revoke the refresh token, and the grant with it
+    /// (RFC 7009), giving up after a few seconds. The log says only how it
+    /// went, never the server's words or the token.
+    pub async fn revoke(self) {
+        match mailrs_jmap::oauth::revoke(&self.session_url, &self.client_id, &self.refresh_token).await {
+            Ok(true) => tracing::info!("revoked the removed account's browser sign-in"),
+            Ok(false) => tracing::info!("the server offers no revocation; the removed account's grant stays until it runs out"),
+            Err(_) => tracing::warn!("could not revoke the removed account's browser sign-in"),
+        }
+    }
+}
+
 /// What a JMAP account signs in with once its secret is read.
 pub(crate) enum JmapSignIn {
     /// A password or a token, as the row's `auth` says.

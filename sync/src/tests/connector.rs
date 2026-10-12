@@ -931,6 +931,30 @@ async fn a_restart_reuses_the_accounts_oauth_session() {
 }
 
 #[tokio::test]
+async fn removing_a_browser_account_hands_its_newest_refresh_token_to_revoke() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
+    crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    let session = secrets.jmap_sessions.held(account.id).unwrap();
+    let grant = crate::jmap_grant(&db, &secrets, &account).await.expect("a browser account has a grant to revoke");
+    assert!(session.retired(), "the session is retired before its token is revoked");
+    assert_eq!(
+        (grant.session_url.as_str(), grant.client_id.as_str(), grant.refresh_token.as_str()),
+        ("https://api.fastmail.com/jmap/session", "c1", "refresh-1")
+    );
+}
+
+#[tokio::test]
+async fn a_token_account_has_no_grant_to_revoke() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "fmu1-token"), 0).await.unwrap();
+    assert!(crate::jmap_grant(&db, &secrets, &account).await.is_none());
+}
+
+#[tokio::test]
 async fn signing_in_again_retires_the_session_it_replaces() {
     let (db, _dir) = store().await;
     let secrets = Secrets::memory();

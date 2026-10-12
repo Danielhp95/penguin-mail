@@ -34,6 +34,7 @@ fn https_metadata() -> Metadata {
         scopes_supported: Vec::new(),
         code_challenge_methods_supported: vec!["S256".into()],
         authorization_response_iss_parameter_supported: false,
+        revocation_endpoint: None,
     }
 }
 
@@ -199,6 +200,7 @@ fn the_authorize_url_names_pkce_the_scopes_and_the_resource() {
         scopes_supported: Vec::new(),
         code_challenge_methods_supported: vec!["S256".into()],
         authorization_response_iss_parameter_supported: false,
+        revocation_endpoint: None,
     };
     let pkce = Pkce::generate();
     let url = oauth::authorize_url(

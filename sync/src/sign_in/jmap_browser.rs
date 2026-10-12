@@ -595,6 +595,7 @@ mod tests {
             scopes_supported: vec!["urn:ietf:params:oauth:scope:mail".into(), "offline_access".into(), "openid".into()],
             code_challenge_methods_supported: vec!["S256".into()],
             authorization_response_iss_parameter_supported: true,
+            revocation_endpoint: None,
         }
     }
 

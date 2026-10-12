@@ -1226,13 +1226,22 @@ impl Core {
         // Nothing is left to reverse the account's actions through, and
         // its mail goes with it.
         self.actions.forget_account(account.id);
-        let (db, secrets) = (self.db.clone(), self.secrets.clone());
+        let (db, secrets, demo) = (self.db.clone(), self.secrets.clone(), self.demo);
         self.call(async move {
             let id = account.id;
+            // Read while the account's row is still there.
+            let grant = match demo {
+                true => None,
+                false => mailrs_sync::jmap_grant(&db, &secrets, &account).await,
+            };
             db.write(move |c| accounts::delete_account(c, id)).await?;
             // The demo's secrets live in memory, so this never reaches the
             // person's keyring.
             secrets.forget(&account).await?;
+            // On its own task: the removal never waits on the server.
+            if let Some(grant) = grant {
+                tokio::spawn(grant.revoke());
+            }
             Ok::<_, anyhow::Error>(())
         })
         .await

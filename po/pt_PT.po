@@ -2089,7 +2089,7 @@ msgstr ""
 "Esta conta não guarda nenhuma palavra-passe que um servidor de calendário ou "
 "de contactos aceite."
 
-#: app/src/core.rs:1318
+#: app/src/core.rs:1327
 msgid "The demo cannot switch accounts."
 msgstr "O modo de demonstração não muda contas."
 
@@ -11528,7 +11528,8 @@ msgstr "A regra é só de leitura."
 #: sync/src/sign_in.rs:208
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
-msgstr "Iniciou sessão numa conta diferente de {address}, por isso nada foi alterado."
+msgstr ""
+"Iniciou sessão numa conta diferente de {address}, por isso nada foi alterado."
 
 #: sync/src/sign_in.rs:215
 msgid "{address} is already in Penguin Mail as a {provider} account."
