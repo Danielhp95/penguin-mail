@@ -6635,9 +6635,9 @@ msgstr "行事曆、聯絡人與規則伺服器"
 
 #: app/src/ui/contacts_prefs.rs:62
 msgid ""
-"Penguin Mail looks for these when you add an account. The login is the "
-"account's own."
-msgstr "新增帳號時，Penguin Mail 會尋找這些伺服器。登入時使用帳號本身的資料。"
+"Penguin Mail looks for these when you add an account, and signs in with the "
+"account's password, or the app password you gave for its calendar."
+msgstr "新增帳號時，Penguin Mail 會尋找這些伺服器，並以帳號的密碼或您為其行事曆提供的應用程式密碼登入。"
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"

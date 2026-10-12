@@ -2069,7 +2069,9 @@ msgstr "Abandon après cinq minutes d’attente du navigateur."
 
 #: app/src/core.rs:1086 app/src/core.rs:1109
 msgid "This account keeps no password a calendar or contacts server takes."
-msgstr "Ce compte ne conserve aucun mot de passe qu’un serveur de calendrier ou de contacts accepte."
+msgstr ""
+"Ce compte ne conserve aucun mot de passe qu’un serveur de calendrier ou de "
+"contacts accepte."
 
 #: app/src/event_reminders/notice.rs:31
 msgid "Join"
@@ -4224,7 +4226,9 @@ msgstr "Mot de passe d’application pour le calendrier"
 msgid ""
 "Optional. Make an app password with calendar access in the provider's "
 "settings."
-msgstr "Facultatif. Créez un mot de passe d’application avec accès au calendrier dans les paramètres du fournisseur."
+msgstr ""
+"Facultatif. Créez un mot de passe d’application avec accès au calendrier "
+"dans les paramètres du fournisseur."
 
 #: app/src/ui/add_account.rs:945 app/src/ui/add_account.rs:1568
 msgid "Server Settings"
@@ -6963,11 +6967,9 @@ msgstr "Serveurs d’agenda, de contacts et de règles"
 
 #: app/src/ui/contacts_prefs.rs:62
 msgid ""
-"Penguin Mail looks for these when you add an account. The login is the "
-"account's own."
-msgstr ""
-"Penguin Mail les recherche quand vous ajoutez un compte. La connexion est "
-"celle du compte."
+"Penguin Mail looks for these when you add an account, and signs in with the "
+"account's password, or the app password you gave for its calendar."
+msgstr "Penguin Mail cherche ces serveurs quand vous ajoutez un compte, et s’y connecte avec le mot de passe du compte ou avec le mot de passe d’application indiqué pour son calendrier."
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"

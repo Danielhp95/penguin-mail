@@ -59,7 +59,7 @@ fn servers(app: &Rc<App>, accounts: &[(Account, Offers)]) -> Option<adw::Prefere
     }
     let group = adw::PreferencesGroup::builder()
         .title(gettext("Calendar, Contacts and Rules Servers"))
-        .description(gettext("Penguin Mail looks for these when you add an account. The login is the account's own."))
+        .description(gettext("Penguin Mail looks for these when you add an account, and signs in with the account's password, or the app password you gave for its calendar."))
         .build();
     for account in found_for {
         let row = adw::ExpanderRow::builder().use_markup(false).title(&account.email).build();
