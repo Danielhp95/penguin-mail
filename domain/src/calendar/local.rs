@@ -2,14 +2,39 @@
 //! no zone repeats in it, and so does one whose zone name nothing here
 //! reads, since the readers place its first occurrence there.
 
+use std::cell::Cell;
 use std::path::Path;
 use std::sync::OnceLock;
 
+use chrono::{LocalResult, NaiveDateTime, Offset, TimeDelta, TimeZone};
 use chrono_tz::Tz;
 
+use crate::EpochMillis;
+
+thread_local! {
+    static PINNED: Cell<Option<Tz>> = const { Cell::new(None) };
+}
+
 /// The computer's zone, read once on first use. UTC when nothing names a
-/// zone this build knows.
+/// zone this build knows. A zone set with [`pinned`] wins on its thread.
 pub fn zone() -> Tz {
+    PINNED.get().unwrap_or_else(system)
+}
+
+/// Runs `f` as though the computer were in `zone`, on this thread only.
+/// Tests use it to fix the zone a reader or writer uses deep inside.
+pub fn pinned<T>(zone: Tz, f: impl FnOnce() -> T) -> T {
+    struct Unpin(Option<Tz>);
+    impl Drop for Unpin {
+        fn drop(&mut self) {
+            PINNED.set(self.0);
+        }
+    }
+    let _unpin = Unpin(PINNED.replace(Some(zone)));
+    f()
+}
+
+fn system() -> Tz {
     static ZONE: OnceLock<Tz> = OnceLock::new();
     *ZONE.get_or_init(|| {
         let link = std::fs::read_link("/etc/localtime").ok();
@@ -18,6 +43,21 @@ pub fn zone() -> Tz {
         tracing::debug!(zone = zone.name(), "the computer's time zone");
         zone
     })
+}
+
+/// The instant clock time `naive` names in `zone`. A time the clocks
+/// repeat takes the first; one they skip, as 01:30 the night they go
+/// forward, moves forward by the gap (RFC 5545 section 3.3.5), read with
+/// the offset in force a day earlier.
+pub fn instant(zone: Tz, naive: NaiveDateTime) -> Option<EpochMillis> {
+    match zone.from_local_datetime(&naive) {
+        LocalResult::Single(at) | LocalResult::Ambiguous(at, _) => Some(at.timestamp_millis()),
+        LocalResult::None => {
+            let day_before = naive.checked_sub_signed(TimeDelta::days(1))?;
+            let offset = zone.offset_from_local_datetime(&day_before).earliest()?.fix().local_minus_utc();
+            Some(naive.and_utc().timestamp_millis() - i64::from(offset) * 1000)
+        }
+    }
 }
 
 /// The zone the `TZ` variable, the `/etc/localtime` link target and the

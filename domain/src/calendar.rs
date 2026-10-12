@@ -838,7 +838,17 @@ fn rule_set(event: &Event, here: chrono_tz::Tz) -> Option<RRuleSet> {
     // A zone `rrule` cannot read, such as Outlook's Windows names in rows
     // stored before the readers renamed them, reads as the series' own.
     let iana = |tzid: &str| Some(crate::invitation::zone::named(tzid).map_or_else(|| name.clone(), |tz| tz.name().to_string()));
-    let rules: Vec<String> = event.rules.iter().map(|rule| dates_in_utc(&until_in_utc(&rename_zone(rule, &iana)))).collect();
+    let rules: Vec<String> = event
+        .rules
+        .iter()
+        .map(|rule| {
+            let rule = dates_in_utc(&until_in_utc(&rename_zone(rule, &iana)));
+            match tz {
+                rrule::Tz::Tz(zone) => floating_in(&rule, zone),
+                rrule::Tz::Local(_) => rule,
+            }
+        })
+        .collect();
     let text = format!(
         "DTSTART;TZID={name}:{}\n{}",
         start.format("%Y%m%dT%H%M%S"),
@@ -851,6 +861,42 @@ fn rule_set(event: &Event, here: chrono_tz::Tz) -> Option<RRuleSet> {
             None
         }
     }
+}
+
+/// `line` with its floating date-times (neither TZID nor Z) read in
+/// `zone`, the series' own. `rrule` reads them in the machine's zone, and
+/// refuses a floating `UNTIL` once `DTSTART` names a zone, which loses the
+/// whole series. A floating series' lines are floating (RFC 5545 3.3.10),
+/// so these come with every one another app writes.
+fn floating_in(line: &str, zone: chrono_tz::Tz) -> String {
+    let floating = |value: &str| value.contains('T') && !value.ends_with(['Z', 'z']);
+    if is_date_line(line) {
+        let Some((head, values)) = line.split_once(':') else {
+            return line.to_string();
+        };
+        let zoned = head.split(';').any(|p| p.to_ascii_uppercase().starts_with("TZID="));
+        if zoned || !values.split(',').all(floating) {
+            return line.to_string();
+        }
+        return format!("{head};TZID={}:{values}", zone.name());
+    }
+    let Some(at) = line.to_ascii_uppercase().find("UNTIL=") else {
+        return line.to_string();
+    };
+    let start = at + "UNTIL=".len();
+    let end = line[start..].find(';').map_or(line.len(), |offset| start + offset);
+    let value = &line[start..end];
+    if !floating(value) {
+        return line.to_string();
+    }
+    let Some(utc) = chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S")
+        .ok()
+        .and_then(|naive| local::instant(zone, naive))
+        .and_then(DateTime::<Utc>::from_timestamp_millis)
+    else {
+        return line.to_string();
+    };
+    format!("{}{}{}", &line[..start], utc.format("%Y%m%dT%H%M%SZ"), &line[end..])
 }
 
 /// Google writes an all-day series' `UNTIL` as a bare date
@@ -1402,6 +1448,34 @@ mod computer_zone_tests {
         };
         let got = expand_in(&event, midnight(1), midnight(31), New_York);
         assert_eq!(got, vec![(midnight(19), midnight(20)), (midnight(26), midnight(27))]);
+    }
+
+    /// `rrule` reads a date-time with neither TZID nor Z in the machine's
+    /// own zone; it must read in the series' zone. New York is not where
+    /// the test machine runs.
+    #[test]
+    fn a_floating_exclusion_leaves_out_its_occurrence_in_the_computers_zone() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;COUNT=3".into(), "EXDATE:20261028T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        let starts: Vec<EpochMillis> = got.iter().map(|(start, _)| *start).collect();
+        assert_eq!(starts, vec![at(New_York, 10, 21, 9), at(New_York, 11, 4, 9)]);
+    }
+
+    #[test]
+    fn a_floating_extra_date_lands_at_its_clock_time_in_the_computers_zone() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;COUNT=1".into(), "RDATE:20261105T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        assert_eq!(hours_in(New_York, &got), vec![9, 9]);
+    }
+
+    #[test]
+    fn a_floating_until_stops_the_series_at_its_clock_time() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;UNTIL=20261104T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        assert_eq!(hours_in(New_York, &got), vec![9, 9, 9]);
     }
 
     #[test]
