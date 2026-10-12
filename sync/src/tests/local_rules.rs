@@ -236,3 +236,24 @@ async fn a_new_rule_gets_a_local_id_and_a_deleted_one_is_gone() {
     assert!(rules.filters().await.unwrap().is_empty());
     assert!(matches!(rules.delete_filter(&id).await, Err(BackendError::NotFound)));
 }
+
+#[tokio::test]
+async fn a_rule_that_is_off_does_not_run() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (engine, rules) = engine_for(&h).await;
+    rules.create_filter(&Filter { off: true, ..archive_from("news@example.com") }).await.unwrap();
+    h.imap.deliver("INBOX", letter(1, "news@example.com"), crate::now_millis() + 1_000);
+    h.sync.incremental().await.unwrap();
+    assert!(engine.run_due(h.account_id).await.unwrap().acted_on.is_empty());
+    assert!(h.imap.messages_in("INBOX").iter().any(|m| m.contains("Note 1")));
+}
+
+#[tokio::test]
+async fn saving_a_rule_that_is_off_turns_it_on() {
+    let h = imap_harness().await;
+    let (_, rules) = engine_for(&h).await;
+    let off = rules.create_filter(&Filter { off: true, ..archive_from("a@example.com") }).await.unwrap();
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &off).await.unwrap();
+    assert!(!edited.off);
+}

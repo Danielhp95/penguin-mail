@@ -566,6 +566,11 @@ pub struct Filter {
     /// The Rules dialog lists it and never rewrites or deletes it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
+    /// The rule is kept but does not run. A switch to JMAP turns off a
+    /// local rule that names a mailbox the server lacks; saving the rule
+    /// again from the Rules dialog turns it back on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub off: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -627,6 +632,7 @@ impl Filter {
                 forward: None,
             },
             read_only: false,
+            off: false,
         }
     }
 }

@@ -92,7 +92,7 @@ impl RulesService for LocalRules {
     /// still runs before the one that archives it.
     async fn replace_filter(&self, old_id: &str, new: &Filter) -> Result<Filter, BackendError> {
         let (account_id, old_id) = (self.account_id, old_id.to_string());
-        let made = Filter { id: Some(new_id()), read_only: false, ..new.clone() };
+        let made = Filter { id: Some(new_id()), read_only: false, off: false, ..new.clone() };
         let kept = made.clone();
         let wrote = self
             .db
