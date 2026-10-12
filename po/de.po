@@ -10809,11 +10809,11 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail kann diese Wiederholung nicht in einem JMAP-Kalender speichern."
 
-#: sync/src/services/jmap/mod.rs:258
+#: sync/src/services/jmap/mod.rs:259
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Dieser Server speichert keine Farben für seine Postfächer."
 
-#: sync/src/services/jmap/mod.rs:331
+#: sync/src/services/jmap/mod.rs:332
 msgid "This server files sent mail itself."
 msgstr "Dieser Server legt gesendete E-Mails selbst ab."
 
@@ -10872,6 +10872,10 @@ msgid ""
 msgstr ""
 "Der Server bewahrt genau diese Nachricht bereits außerhalb der Entwürfe auf "
 "und kann sie deshalb nicht zusätzlich als Entwurf speichern."
+
+#: sync/src/services/jmap/sieve.rs:32
+msgid "The server did not take the rules."
+msgstr "Der Server hat die Regeln nicht angenommen."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
@@ -11021,7 +11025,7 @@ msgstr "Geben Sie an, für welche E-Mails die Regel gilt"
 msgid "Choose what the rule does"
 msgstr "Wählen Sie, was die Regel tut"
 
-#: sync/src/services/sieve.rs:196
+#: sync/src/services/sieve.rs:201
 msgid "The rule is read-only."
 msgstr "Die Regel ist schreibgeschützt."
 

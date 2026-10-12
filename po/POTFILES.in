@@ -172,6 +172,7 @@ sync/src/services/jmap/held.rs
 sync/src/services/jmap/jscal.rs
 sync/src/services/jmap/mod.rs
 sync/src/services/jmap/outgoing.rs
+sync/src/services/jmap/sieve.rs
 sync/src/services/jmap/writes.rs
 sync/src/services/caldav.rs
 sync/src/services/finding.rs

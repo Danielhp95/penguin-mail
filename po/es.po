@@ -10718,11 +10718,11 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail no puede guardar esta repetición en un calendario JMAP."
 
-#: sync/src/services/jmap/mod.rs:258
+#: sync/src/services/jmap/mod.rs:259
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
 
-#: sync/src/services/jmap/mod.rs:331
+#: sync/src/services/jmap/mod.rs:332
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 
@@ -10783,6 +10783,10 @@ msgid ""
 msgstr ""
 "El servidor ya guarda este mismo mensaje fuera de Borradores, así que no "
 "puede guardarlo también como borrador."
+
+#: sync/src/services/jmap/sieve.rs:32
+msgid "The server did not take the rules."
+msgstr "El servidor no ha aceptado las reglas."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
@@ -10927,7 +10931,7 @@ msgstr "Indica a qué correo se aplica la regla"
 msgid "Choose what the rule does"
 msgstr "Elige qué hace la regla"
 
-#: sync/src/services/sieve.rs:196
+#: sync/src/services/sieve.rs:201
 msgid "The rule is read-only."
 msgstr "La regla es de solo lectura."
 

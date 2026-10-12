@@ -9882,11 +9882,11 @@ msgstr "Penguin Mail cannot read how this event repeats, so it cannot change the
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail cannot save this repeat to a JMAP calendar."
 
-#: sync/src/services/jmap/mod.rs:258
+#: sync/src/services/jmap/mod.rs:259
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:331
+#: sync/src/services/jmap/mod.rs:332
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 
@@ -9933,6 +9933,10 @@ msgstr "The server has no Drafts mailbox."
 #: sync/src/services/jmap/outgoing.rs:149
 msgid "The server already keeps this exact message outside Drafts, so it cannot also keep it as a draft."
 msgstr "The server already keeps this exact message outside Drafts, so it cannot also keep it as a draft."
+
+#: sync/src/services/jmap/sieve.rs:32
+msgid "The server did not take the rules."
+msgstr "The server did not take the rules."
 
 #: sync/src/services/jmap/writes.rs:95
 msgid "The server has no mailbox for this."
@@ -10052,7 +10056,7 @@ msgstr "Say which mail the rule is for"
 msgid "Choose what the rule does"
 msgstr "Choose what the rule does"
 
-#: sync/src/services/sieve.rs:196
+#: sync/src/services/sieve.rs:201
 msgid "The rule is read-only."
 msgstr "The rule is read-only."
 

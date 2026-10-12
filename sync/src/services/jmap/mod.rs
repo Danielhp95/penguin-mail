@@ -35,6 +35,7 @@ use mailrs_jmap::{Identity, Mailbox};
 use mailrs_mime::Parts;
 
 pub use api::JmapApi;
+pub use sieve::JmapSieve;
 pub(crate) use errors::backend;
 pub(crate) use fetch::received_millis;
 pub(crate) use outgoing::{bare_message_id, has_message_id};

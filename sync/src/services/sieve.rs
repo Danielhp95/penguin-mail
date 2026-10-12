@@ -131,14 +131,19 @@ impl<M: ManageSieveApi> SieveRules<M> {
         BackendError::Refused(text)
     }
 
-    /// The UTF-8 name of the folder a set files into.
+    /// The UTF-8 name of the folder a set files into: an IMAP mailbox's
+    /// decoded path, or a JMAP mailbox's path, `Parent/Child`, since a
+    /// JMAP id names nothing a Sieve script can file into.
     fn folder(&self, set: &MailSet) -> Option<String> {
         let id = match set {
             MailSet::Role(role) => self.mail.mailbox_for(*role)?,
             MailSet::Mailbox(id) => id.clone(),
             _ => return None,
         };
-        Some(mailrs_imap::utf7::decode(&id))
+        match &self.mail {
+            AnyMail::Jmap(jmap) => jmap.mailbox_path(&id),
+            _ => Some(mailrs_imap::utf7::decode(&id)),
+        }
     }
 
     async fn load(&self) -> Result<(Script, Extensions, Running), BackendError> {
