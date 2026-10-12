@@ -8,6 +8,7 @@ use mailrs_store::{Db, accounts};
 
 use crate::fake::{FakeGmail, fill_store, meta};
 use crate::{AccountServices, AccountSync, EngineConfig, SyncEngine, now_millis};
+use crate::MailBackend;
 
 struct Setup {
     engine: SyncEngine,
@@ -197,4 +198,28 @@ async fn a_check_asks_gmail_while_the_network_seems_gone() {
     wait_for(&s.events, reached(AccountState::Offline)).await;
     s.engine.poke(1);
     wait_for(&s.events, reached(AccountState::Ok)).await;
+}
+
+#[tokio::test]
+async fn gmail_looks_less_often_while_only_the_tray_runs() {
+    let s = setup().await;
+    let services = AccountServices::google(Arc::clone(&s.fake));
+    assert_eq!(services.mail.poll_interval(), None, "the engine's own pace while the window is open");
+    services.mail.set_window_open(false);
+    assert_eq!(services.mail.poll_interval(), Some(Duration::from_secs(5 * 60)));
+    services.mail.set_window_open(true);
+    assert_eq!(services.mail.poll_interval(), None);
+}
+
+#[tokio::test]
+async fn opening_the_window_looks_for_mail_at_once() {
+    let s = setup().await;
+    s.engine.start_account(1, AccountServices::google(Arc::clone(&s.fake)));
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+    s.engine.set_window_open(false);
+    s.fake
+        .deliver(meta("n", "tn", now_millis(), &["INBOX", "UNREAD"]));
+    // The tray's next look is minutes away; showing the window cannot wait for it.
+    s.engine.set_window_open(true);
+    wait_for(&s.events, |e| matches!(e, ChangeEvent::NewMail { .. })).await;
 }

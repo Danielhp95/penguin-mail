@@ -59,7 +59,7 @@ pub struct AccountSync {
     account_id: AccountId,
     services: AccountServices,
     db: Db,
-    events: async_channel::Sender<ChangeEvent>,
+    events: crate::events::Outgoing,
     window_days: i64,
     body_cache_bytes: i64,
     retry_max: Duration,
@@ -117,7 +117,7 @@ impl AccountSync {
             account_id,
             services,
             db,
-            events,
+            events: crate::events::Outgoing::new(events),
             window_days: DEFAULT_WINDOW_DAYS,
             body_cache_bytes: DEFAULT_BODY_CACHE_BYTES,
             retry_max: Duration::from_secs(8),
@@ -297,8 +297,7 @@ impl AccountSync {
         ) {
             self.mail_changed();
         }
-        // The channel is unbounded, so this only fails when nobody listens.
-        let _ = self.events.try_send(event);
+        self.events.send(event);
     }
 
     fn emit_threads(&self, thread_ids: BTreeSet<String>) {

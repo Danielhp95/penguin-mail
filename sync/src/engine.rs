@@ -80,7 +80,7 @@ struct Running {
 
 impl SyncEngine {
     pub fn new(db: Db, config: EngineConfig) -> (Self, async_channel::Receiver<ChangeEvent>) {
-        let (events, receiver) = async_channel::unbounded();
+        let (events, receiver) = async_channel::bounded(crate::events::CHANNEL_EVENTS);
         (
             SyncEngine {
                 db,
@@ -172,9 +172,14 @@ impl SyncEngine {
     /// tray running, an account looks at mailboxes other than its Inbox
     /// less often.
     pub fn set_window_open(&self, open: bool) {
-        self.window_open.store(open, Ordering::SeqCst);
+        let was_open = self.window_open.swap(open, Ordering::SeqCst);
         for running in self.lock().values() {
             running.sync.services().mail.set_window_open(open);
+            // The tray looks every few minutes; a window that opens now
+            // should not show mail from before the last look.
+            if open && !was_open {
+                running.poke.notify_one();
+            }
         }
     }
 
