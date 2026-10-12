@@ -7,8 +7,8 @@
 //! pick its own handful of redraws: search forgot the selection and the
 //! Outbox actions, and a mailbox that vanished was listed twice. Every
 //! transition here changes the state and answers with a [`Redraw`] naming
-//! what went stale, the way `Aftermath` does for a mail action, and
-//! `MainWindow::redraw` carries it out. Nothing here touches GTK.
+//! what went stale, the way `Aftermath` does for a mail action, and the
+//! listing run carries it out. Nothing here touches GTK.
 
 use mailrs_domain::{AccountId, Category, SmartMailbox};
 
