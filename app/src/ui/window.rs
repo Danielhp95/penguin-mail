@@ -934,6 +934,18 @@ impl MainWindow {
                 room.rearrange();
             }
         });
+        // Rows ask for photos as they bind and redraw themselves; an open
+        // conversation is drawn again once its senders' photos arrive.
+        let photos = app.photos();
+        window.list.set_photos(Rc::clone(&photos));
+        let weak = Rc::downgrade(&window);
+        photos.on_uri(move |_| match weak.upgrade() {
+            Some(win) => {
+                win.reopen_for_photos();
+                true
+            }
+            None => false,
+        });
         let weak = Rc::downgrade(&window);
         window.list.connect_open(move |row| {
             if let Some(win) = weak.upgrade() {
@@ -2105,13 +2117,10 @@ impl MainWindow {
         });
     }
 
-    /// Hands the list the contact photos that are now on disk, so rows
-    /// show faces instead of initials.
+    /// Draws the rows and open conversations again once the contact photos
+    /// on disk are known, so they show faces instead of initials.
     fn contacts_loaded(self: &Rc<Self>) {
-        let Some(app) = self.app.upgrade() else {
-            return;
-        };
-        self.list.set_photos(&app.photos());
+        self.list.photos_changed();
         self.reopen_for_photos();
     }
 
@@ -3772,9 +3781,7 @@ impl MainWindow {
                 }
             }
             Effect::Contacts => {
-                if let Some(app) = self.app.upgrade() {
-                    self.list.set_photos(&app.photos());
-                }
+                self.list.photos_changed();
                 self.reopen_for_photos();
             }
             // The app follows the light or dark choice; no window to redraw.

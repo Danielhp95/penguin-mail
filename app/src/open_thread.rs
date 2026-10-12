@@ -69,9 +69,9 @@ pub struct OpenThread {
     /// The messages that arrived encrypted and were opened here. A reply
     /// to one starts encrypted.
     pub sealed: HashSet<String>,
-    /// Contact photos by lower-case sender address, as `data:` URIs. A
-    /// sender with none keeps the initials avatar.
-    pub photos: HashMap<String, String>,
+    /// Contact photos by lower-case sender address, as `data:` URIs shared
+    /// with the photo cache. A sender with none keeps the initials avatar.
+    pub photos: crate::render::Photos,
     /// Set once the user unsubscribed from this thread's list.
     pub unsubscribed: bool,
     /// What the engine made of each protected message in this thread, by

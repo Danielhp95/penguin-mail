@@ -35,6 +35,7 @@ mod open_thread;
 mod packaging;
 mod permission;
 mod pgp;
+mod photos;
 mod quoted;
 mod recent;
 mod protection;

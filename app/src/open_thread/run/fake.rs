@@ -585,7 +585,7 @@ impl Desk for FakeWindow {
         false
     }
 
-    fn photos(&self, _senders: &[String]) -> HashMap<String, String> {
+    fn photos(&self, _senders: &[String]) -> crate::render::Photos {
         HashMap::new()
     }
 

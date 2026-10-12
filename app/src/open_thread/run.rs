@@ -91,7 +91,7 @@ pub trait Desk: Screen {
     /// Whether mail from all of these senders may load remote images.
     fn images_allowed(&self, senders: &[String]) -> bool;
     /// Contact photos for these senders, as `data:` URIs.
-    fn photos(&self, senders: &[String]) -> HashMap<String, String>;
+    fn photos(&self, senders: &[String]) -> crate::render::Photos;
     fn is_vip(&self, email: &str) -> bool;
     /// Seconds to wait before marking an opened thread read, or `None`
     /// when the reader marks mail read by hand.

@@ -190,7 +190,7 @@ impl Desk for Ports {
             .is_some_and(|window| window.images_allowed_for(senders))
     }
 
-    fn photos(&self, senders: &[String]) -> HashMap<String, String> {
+    fn photos(&self, senders: &[String]) -> crate::render::Photos {
         self.window()
             .and_then(|window| window.app.upgrade())
             .map(|app| app.sender_photos(senders.iter().cloned()))

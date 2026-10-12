@@ -1373,7 +1373,7 @@ impl ConversationView {
 
     /// The senders' photos, and the redraw that puts them in the message
     /// headers.
-    pub fn set_photos(&self, photos: HashMap<String, String>) {
+    pub fn set_photos(&self, photos: crate::render::Photos) {
         self.change(|open| open.photos = photos);
         self.render(false);
     }
