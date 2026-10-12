@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::error::method_error;
+use crate::error::{method_error, refuses_submission, unclear_after_send};
 use crate::identity::EmailAddress;
 use crate::session::{MAIL, SUBMISSION};
 use crate::{JmapClient, JmapError, Request, Session};
@@ -294,6 +294,13 @@ struct ImportAnswer {
     created: Option<BTreeMap<String, Imported>>,
     #[serde(default)]
     not_created: Option<BTreeMap<String, ImportRefusal>>,
+}
+
+/// Where a copy the server holds stands after a send whose answer was
+/// unclear.
+struct Look {
+    draft: bool,
+    submitted: Option<bool>,
 }
 
 /// What one import did.
@@ -668,10 +675,14 @@ impl JmapClient {
 
     /// Imports the message, submits it, and moves the copy from Drafts to
     /// Sent without `$draft` once the submission is made, in one request
-    /// (RFC 8621 section 7.5). When the submission is refused, by a `notCreated`
-    /// entry or a method-level error, the imported copy is destroyed in a
-    /// second request and the submission's error is returned; if that
-    /// destroy fails too, the copy stays in Drafts and the error is the same.
+    /// (RFC 8621 section 7.5). When the submission is refused outright, by a
+    /// `notCreated` entry or a refusal of a known kind, the imported copy is
+    /// destroyed in a second request and the submission's error is
+    /// returned; if that destroy fails too, the copy stays in Drafts and the
+    /// error is the same. Any other answer may follow a submission the
+    /// server made, so a look settles it: a submission found files the
+    /// copy, none found destroys it, and a look that cannot tell keeps the
+    /// copy and answers [`JmapError::SubmitUnknown`].
     pub async fn submit(&self, submission: &Submission) -> Result<Imported, JmapError> {
         let session = self.session().await?;
         let account = account(&session)?;
@@ -708,8 +719,17 @@ impl JmapClient {
             args["onSuccessUpdateEmail"] = json!({ "#s": moved });
         }
         let submitted = request.call(SUBMISSION, "EmailSubmission/set", args.clone());
-        let mut answer = self.send(&request).await?;
-        let email = match answer.take::<ImportAnswer>(&import, "Email/import")?.one("m")? {
+        let mut answer = self.send(&request).await.map_err(|e| unclear_after_send(e, JmapError::SubmitUnknown))?;
+        let imported = answer
+            .take::<ImportAnswer>(&import, "Email/import")
+            .map_err(|e| if refuses_submission(&e) { e } else { JmapError::SubmitUnknown })?;
+        let made = match imported.one("m") {
+            // An import that names neither a copy nor a refusal hides
+            // whether `#m` was made and sent.
+            Err(JmapError::Decode(_)) => return Err(JmapError::SubmitUnknown),
+            made => made?,
+        };
+        let email = match made {
             Outcome::Made(email) => email,
             // The submission named a copy that was never made, so nothing
             // went out. Send the server's own copy instead, and leave it be
@@ -725,20 +745,48 @@ impl JmapClient {
                 return self.submit_existing(&account, &existing, args, submission).await;
             }
         };
-        let refused = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
-            Ok(set) => set.not_created.as_ref().and_then(|n| n.get("s")).map(SetError::error),
-            Err(error) => Some(error),
+        let error = match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
+            Ok(set) if set.created.as_ref().is_some_and(|c| c.contains_key("s")) => return Ok(email),
+            Ok(set) => match set.not_created.as_ref().and_then(|n| n.get("s")) {
+                Some(refused) => refused.error(),
+                None => JmapError::Decode("the submission's answer names neither a submission nor a refusal".into()),
+            },
+            Err(error) => error,
         };
-        if let Some(error) = refused {
-            // Nothing went out, and the copy would wait in Drafts. If this
-            // cleanup fails too, the submission's error still wins and the
-            // copy stays; the log says so without naming it.
-            if self.destroy_email(&email.id).await.is_err() {
-                tracing::warn!("a refused submission left its imported copy on the server");
+        if !refuses_submission(&error) {
+            match self.look_at_copy(&account, &sender, &email.id).await {
+                Ok(Look { submitted: Some(true), .. } | Look { draft: false, .. }) => {
+                    // It went. A filing the server refuses does not undo that.
+                    return Ok(self.file_sent_copy(&account, &email.id, submission).await.unwrap_or(email));
+                }
+                Ok(Look { submitted: Some(false), .. }) => {}
+                Ok(_) | Err(_) => return Err(JmapError::SubmitUnknown),
             }
-            return Err(error);
         }
-        Ok(email)
+        // Nothing went out, and the copy would wait in Drafts. If this
+        // cleanup fails too, the submission's error still wins and the
+        // copy stays; the log says so without naming it.
+        if self.destroy_email(&email.id).await.is_err() {
+            tracing::warn!("a refused submission left its imported copy on the server");
+        }
+        Err(error)
+    }
+
+    /// Where the copy the server has as `id` stands: whether it is still a
+    /// draft, and whether a submission names it. `submitted` is `None` on a
+    /// server without `EmailSubmission/query`, which leaves the keyword to
+    /// answer.
+    async fn look_at_copy(&self, account: &str, sender: &str, id: &str) -> Result<Look, JmapError> {
+        let mut request = Request::new();
+        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "keywords"] }));
+        let asked = request.call(SUBMISSION, "EmailSubmission/query", json!({ "accountId": sender, "filter": { "emailIds": [id] } }));
+        let mut answer = self.send(&request).await?;
+        let email = answer.take::<Got<Email>>(&got, "Email/get")?.list.into_iter().next().ok_or(JmapError::NotFound)?;
+        let submitted = answer
+            .take::<Value>(&asked, "EmailSubmission/query")
+            .ok()
+            .and_then(|found| found["ids"].as_array().map(|ids| !ids.is_empty()));
+        Ok(Look { draft: email.keywords.get("$draft").copied().unwrap_or(false), submitted })
     }
 
     /// Whether an earlier try already sent the copy the server has as `id`,
@@ -747,15 +795,8 @@ impl JmapClient {
     /// `EmailSubmission/query` is not on every server, so a refusal of it
     /// leaves the keyword to answer.
     async fn went_out_before(&self, account: &str, sender: &str, id: &str) -> Result<bool, JmapError> {
-        let mut request = Request::new();
-        let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "keywords"] }));
-        let asked = request.call(SUBMISSION, "EmailSubmission/query", json!({ "accountId": sender, "filter": { "emailIds": [id] } }));
-        let mut answer = self.send(&request).await?;
-        let email = answer.take::<Got<Email>>(&got, "Email/get")?.list.into_iter().next().ok_or(JmapError::NotFound)?;
-        let submitted = answer
-            .take::<Value>(&asked, "EmailSubmission/query")
-            .is_ok_and(|found| found["ids"].as_array().is_some_and(|ids| !ids.is_empty()));
-        Ok(submitted || !email.keywords.get("$draft").copied().unwrap_or(false))
+        let look = self.look_at_copy(account, sender, id).await?;
+        Ok(look.submitted == Some(true) || !look.draft)
     }
 
     /// Submits the message the server already has as `id`, with the same
@@ -766,12 +807,20 @@ impl JmapClient {
         let mut request = Request::new();
         let got = request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": [id], "properties": ["id", "threadId"] }));
         let submitted = request.call(SUBMISSION, "EmailSubmission/set", args);
-        let mut answer = self.send(&request).await?;
-        let email = self.found_copy(answer.take(&got, "Email/get")?)?;
-        let set: SetResponse = answer.take(&submitted, "EmailSubmission/set")?;
-        if let Some(refused) = set.not_created.as_ref().and_then(|n| n.get("s")) {
-            return Err(refused.error());
+        let mut answer = self.send(&request).await.map_err(|e| unclear_after_send(e, JmapError::SubmitUnknown))?;
+        let copy = answer.take(&got, "Email/get");
+        // The copy is the server's own and stays either way; an answer
+        // that is no clear refusal leaves the caller to look in Sent.
+        match answer.take::<SetResponse>(&submitted, "EmailSubmission/set") {
+            Ok(set) if set.created.as_ref().is_some_and(|c| c.contains_key("s")) => {}
+            Ok(set) => match set.not_created.as_ref().and_then(|n| n.get("s")) {
+                Some(refused) => return Err(refused.error()),
+                None => return Err(JmapError::SubmitUnknown),
+            },
+            Err(error) if refuses_submission(&error) => return Err(error),
+            Err(_) => return Err(JmapError::SubmitUnknown),
         }
-        Ok(email)
+        // It went; a copy the answer does not describe is still the one sent.
+        Ok(copy.and_then(|got| self.found_copy(got)).unwrap_or_else(|_| Imported { id: id.to_string(), thread_id: String::new() }))
     }
 }

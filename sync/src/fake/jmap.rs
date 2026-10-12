@@ -114,6 +114,9 @@ pub struct JmapState {
     /// The next submission goes out, and then its answer is lost on the
     /// way back, as a dropped connection does.
     pub lose_submission_answer: bool,
+    /// The next submission goes out, and the client cannot tell from the
+    /// answer or a look whether it did.
+    pub unclear_submission_answer: bool,
     /// Keeps one copy of the same bytes, as Cyrus and Fastmail do: an
     /// import of a message already there answers that message.
     pub one_copy: bool,
@@ -448,6 +451,7 @@ impl FakeJmap {
             refused: BTreeSet::new(),
             submission_refusal: None,
             lose_submission_answer: false,
+            unclear_submission_answer: false,
             one_copy: false,
             total_override: None,
             vanish_after_query: None,
@@ -1263,6 +1267,9 @@ impl JmapApi for FakeJmap {
             }
             if std::mem::take(&mut s.lose_submission_answer) {
                 return Err(JmapError::Network("the answer was lost".into()));
+            }
+            if std::mem::take(&mut s.unclear_submission_answer) {
+                return Err(JmapError::SubmitUnknown);
             }
             Ok(made)
         })

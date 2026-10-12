@@ -332,6 +332,39 @@ async fn an_outbox_retry_keeps_the_sent_copy_that_was_the_draft() {
     assert_eq!(kept.map(|m| m.into_iter().collect::<Vec<_>>()), Some(vec![h.fake.mailbox("sent")]), "the sent copy stays");
 }
 
+/// A submission whose outcome no answer or look settles is no refusal: the
+/// outbox keeps the message, looks in Sent on the retry, and sends once.
+#[tokio::test]
+async fn an_unclear_submission_is_retried_with_a_look_and_goes_once() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use mailrs_store::outbox::{self, Queued};
+
+    use crate::tests::Connected;
+    use crate::{Outbox, Posted, now_millis};
+
+    let h = fastmail().await;
+    h.sync.refresh_labels().await.unwrap();
+    h.fake.with(|s| s.unclear_submission_answer = true);
+    let queue = Outbox::new(Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone());
+    let message = Queued {
+        account_id: h.account_id,
+        subject: "Hi".into(),
+        recipients: "ada@example.com".into(),
+        send_at: now_millis(),
+        raw: Some(letter("me@example.com", "")),
+        composer: "{}".into(),
+        ..Queued::default()
+    };
+    let posted = queue.post(message).await.unwrap();
+    assert!(matches!(posted, Posted::Waiting(_)), "{posted:?}");
+    h.db.write(|c| outbox::try_now(c, now_millis())).await.unwrap();
+    let drained = queue.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1, "the retry finds it sent");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1, "and sends it once");
+}
+
 /// Deleting a draft by an id that names a message without `$draft`, such
 /// as the sent copy a one-copy server made of it, leaves that message and
 /// counts the draft as gone.

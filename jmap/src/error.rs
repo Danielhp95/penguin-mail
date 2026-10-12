@@ -57,6 +57,11 @@ pub enum JmapError {
     /// taken it. Not a refusal: look in Drafts before sending again.
     #[error("the server may have taken the hold; no answer came back")]
     HoldUnknown,
+    /// A submission went out and no clear answer came back, and a look
+    /// could not tell whether the server sent it. Not a refusal: look in
+    /// Sent before sending again. The imported copy stays where it was.
+    #[error("the server may have sent the message; no clear answer came back")]
+    SubmitUnknown,
     /// A local file could not be written. Only the io error kind is kept,
     /// never the path. A retry would hit the same full disk.
     #[error("local file: {0}")]
@@ -101,6 +106,48 @@ pub(crate) fn decode(what: &str, err: &serde_json::Error) -> JmapError {
 impl JmapError {
     pub fn is_transient(&self) -> bool {
         matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. } | JmapError::SignInLocked)
+    }
+}
+
+/// Whether `err`, answered for a call that creates a submission, proves the
+/// server made none: a refusal of a kind that names what was wrong.
+/// Anything else, such as `serverFail`, an answer that would not read or
+/// one that is missing, may follow a submission the server queued.
+pub(crate) fn refuses_submission(err: &JmapError) -> bool {
+    match err {
+        JmapError::Forbidden(_)
+        | JmapError::RequestTooLarge
+        | JmapError::UnknownCapability(_)
+        | JmapError::NotFound
+        | JmapError::StateMismatch => true,
+        JmapError::Method { kind, .. } => matches!(
+            kind.as_str(),
+            "invalidArguments"
+                | "invalidProperties"
+                | "invalidResultReference"
+                | "forbiddenFrom"
+                | "forbiddenMailFrom"
+                | "forbiddenToSend"
+                | "tooManyRecipients"
+                | "noRecipients"
+                | "invalidRecipients"
+                | "invalidEmail"
+                | "overQuota"
+                | "blobNotFound"
+        ),
+        _ => false,
+    }
+}
+
+/// A failed `send` of a request that creates a submission: when the
+/// request may have reached the server (a 5xx, an unreadable answer), the
+/// server may have taken it, so the caller must not read it as refused. A
+/// lost connection stays `Network`, which callers already retry with a look.
+pub(crate) fn unclear_after_send(err: JmapError, unknown: JmapError) -> JmapError {
+    match err {
+        JmapError::Decode(_) => unknown,
+        JmapError::Problem { status, .. } if status >= 500 => unknown,
+        other => other,
     }
 }
 

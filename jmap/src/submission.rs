@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use crate::error::refuses_submission;
 use crate::mail::{SetError, pointer};
 use crate::session::{MAIL, SUBMISSION};
 use crate::{JmapClient, JmapError, Request, Session};
@@ -167,10 +168,11 @@ fn submission_account(session: &Session) -> Result<String, JmapError> {
 
 impl JmapClient {
     /// Imports the message into Drafts and asks the server to send it
-    /// `hold.hold_for` seconds from now, in one request. A refused hold
-    /// destroys the copy, so nothing waits in Drafts that will not go. When
-    /// no answer comes back the outcome is [`JmapError::HoldUnknown`]: the
-    /// server may hold the message, and there is no id to clean up.
+    /// `hold.hold_for` seconds from now, in one request. A hold refused
+    /// outright destroys the copy, so nothing waits in Drafts that will not
+    /// go. When no clear answer comes back the outcome is
+    /// [`JmapError::HoldUnknown`] and the copy stays: the server may hold
+    /// the message, and the look for it reads that copy.
     pub async fn hold(&self, hold: &Hold) -> Result<HeldSubmission, JmapError> {
         let session = self.session().await?;
         let sender = submission_account(&session)?;
@@ -197,23 +199,33 @@ impl JmapClient {
             } }
         }));
         let mut answer = self.send(&request).await.map_err(unknown_if_sent)?;
-        let email = one(answer.take(&import, "Email/import")?, "m")?;
-        let email_id = id_of(&email, "the imported message")?;
-        let thread_id = string(&email, "threadId");
-        let held = answer
-            .take(&submitted, "EmailSubmission/set")
-            .and_then(|set| one(set, "s"))
-            .and_then(|created| id_of(&created, "the submission"));
-        match held {
-            Ok(id) => Ok(HeldSubmission { id, email_id, thread_id }),
-            Err(refused) => {
-                // Nothing will go out, so the copy must not wait in Drafts.
-                if self.set_emails(&Map::new(), std::slice::from_ref(&email_id)).await.is_err() {
-                    tracing::warn!("could not remove the Drafts copy of a hold the server refused");
-                }
-                Err(refused)
-            }
+        // An answer that is no clear refusal may follow a hold the server
+        // made, and the look for it reads the copy in Drafts.
+        let unclear = |e: JmapError| if refuses_submission(&e) { e } else { JmapError::HoldUnknown };
+        let made: Created = answer.take(&import, "Email/import").map_err(unclear)?;
+        // A refused import leaves `#m` naming nothing, so nothing went.
+        if let Some(refused) = made.not_created.as_ref().and_then(|n| n.get("m")) {
+            return Err(refused.error());
         }
+        let email = one(made, "m").map_err(unclear)?;
+        let email_id = id_of(&email, "the imported message").map_err(unclear)?;
+        let thread_id = string(&email, "threadId");
+        let refused = match answer.take::<Created>(&submitted, "EmailSubmission/set") {
+            Ok(set) => match set.not_created.as_ref().and_then(|n| n.get("s")) {
+                Some(refused) => refused.error(),
+                None => {
+                    let made = one(set, "s").and_then(|created| id_of(&created, "the submission"));
+                    return made.map(|id| HeldSubmission { id, email_id, thread_id }).map_err(unclear);
+                }
+            },
+            Err(error) if refuses_submission(&error) => error,
+            Err(_) => return Err(JmapError::HoldUnknown),
+        };
+        // Nothing will go out, so the copy must not wait in Drafts.
+        if self.set_emails(&Map::new(), std::slice::from_ref(&email_id)).await.is_err() {
+            tracing::warn!("could not remove the Drafts copy of a hold the server refused");
+        }
+        Err(refused)
     }
 
     /// The submissions `ids` name, as the server holds them now.

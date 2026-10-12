@@ -558,3 +558,110 @@ async fn a_query_page_stays_within_the_servers_get_limit() {
     let asked = calls_named(&server, "Email/query").await;
     assert_eq!(asked[0]["limit"], json!(2));
 }
+
+/// The import made `M9` and the submission's answer says nothing sure.
+fn made_then(submission: Value) -> Value {
+    json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "blobId": "G1", "threadId": "T9", "size": 10}}}, "c0"],
+        submission]})
+}
+
+fn destroys(sent: &[Value]) -> usize {
+    sent.iter().flat_map(|p| p["methodCalls"].as_array().unwrap().clone()).filter(|c| c[1].get("destroy").is_some()).count()
+}
+
+/// A `serverFail` may follow a submission the server queued: a look finds
+/// it, so the copy is filed and nothing is sent again.
+#[tokio::test]
+async fn a_server_failure_after_a_submission_it_made_files_the_copy() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        made_then(json!(["error", {"type": "serverFail"}, "c1"])),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "M9", "threadId": "T9", "keywords": {"$draft": true}}]}, "c0"],
+            ["EmailSubmission/query", {"accountId": "A1", "ids": ["S1"]}, "c1"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/set", {"accountId": "A1", "updated": {"M9": null}}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "M9", "threadId": "T9"}]}, "c1"]]}),
+    ]).await;
+    let sent_copy = client(&server).submit(&a_submission()).await.unwrap();
+    assert_eq!(sent_copy.id, "M9");
+    let sent = posts(&server).await;
+    assert_eq!(destroys(&sent), 0);
+    assert_eq!(submissions(&sent), 1);
+    assert_eq!(sent[2]["methodCalls"][0][1]["update"]["M9"]["mailboxIds/sent"], true);
+}
+
+/// A look that finds no submission and the copy still a draft proves
+/// nothing went: the copy goes and the failure is the answer.
+#[tokio::test]
+async fn a_server_failure_with_no_submission_behind_it_destroys_the_copy() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        made_then(json!(["error", {"type": "serverFail"}, "c1"])),
+        still_a_draft("M9"),
+        json!({"sessionState": "s1", "methodResponses": [["Email/set", {"accountId": "A1", "destroyed": ["M9"]}, "c0"]]}),
+    ]).await;
+    let failed = client(&server).submit(&a_submission()).await.unwrap_err();
+    assert!(matches!(failed, mailrs_jmap::JmapError::Method { ref kind, .. } if kind == "serverFail"), "{failed:?}");
+    assert_eq!(destroys(&posts(&server).await), 1);
+}
+
+/// When the look cannot tell, the copy stays and the outcome is unknown,
+/// so the caller looks in Sent before it sends again.
+#[tokio::test]
+async fn a_server_failure_a_look_cannot_settle_keeps_the_copy_and_is_unknown() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        made_then(json!(["error", {"type": "serverFail"}, "c1"])),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "M9", "threadId": "T9", "keywords": {"$draft": true}}]}, "c0"],
+            ["error", {"type": "unknownMethod"}, "c1"]]}),
+    ]).await;
+    assert_eq!(client(&server).submit(&a_submission()).await.unwrap_err(), mailrs_jmap::JmapError::SubmitUnknown);
+    assert_eq!(destroys(&posts(&server).await), 0);
+}
+
+/// An answer that names no submission at all is no refusal either.
+#[tokio::test]
+async fn an_answer_without_the_submission_keeps_the_copy_when_a_look_cannot_settle_it() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "blobId": "G1", "threadId": "T9", "size": 10}}}, "c0"]]}),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "M9", "threadId": "T9", "keywords": {"$draft": true}}]}, "c0"],
+            ["error", {"type": "unknownMethod"}, "c1"]]}),
+    ]).await;
+    assert_eq!(client(&server).submit(&a_submission()).await.unwrap_err(), mailrs_jmap::JmapError::SubmitUnknown);
+    assert_eq!(destroys(&posts(&server).await), 0);
+}
+
+/// A 5xx after the request went may hide a sent message, and there is no
+/// id to look at.
+#[tokio::test]
+async fn a_server_error_on_the_send_request_is_an_unknown_outcome() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxCallsInRequest": 8}))))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(502)).mount(&server).await;
+    assert_eq!(client(&server).submit(&a_submission()).await.unwrap_err(), mailrs_jmap::JmapError::SubmitUnknown);
+    assert_eq!(posts(&server).await.len(), 1);
+}
+
+/// The server's own copy sent again: a `serverFail` there is no refusal.
+#[tokio::test]
+async fn a_server_failure_on_resending_the_server_s_copy_is_unknown() {
+    let server = MockServer::start().await;
+    answering_in_turn(&server, vec![
+        exists_and_not_submitted(),
+        still_a_draft("D1"),
+        json!({"sessionState": "s1", "methodResponses": [
+            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "D1", "threadId": "T1"}]}, "c0"],
+            ["error", {"type": "serverFail"}, "c1"]]}),
+    ]).await;
+    assert_eq!(client(&server).submit(&a_submission()).await.unwrap_err(), mailrs_jmap::JmapError::SubmitUnknown);
+}
