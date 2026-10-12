@@ -2,6 +2,9 @@
 //! on demand rather than as part of the sync loop.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
+
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use mailrs_domain::Role;
 use mailrs_store::messages::Change;
@@ -321,8 +324,8 @@ impl AccountSync {
     /// The message as it arrived, for View Source, a signature check and
     /// saving one message as an `.eml` file. A large message comes whole
     /// here too, since each of these needs every byte.
-    pub async fn raw_message(&self, id: &str) -> Result<Vec<u8>, SyncError> {
-        Ok(self.raw(id).await?.as_ref().clone())
+    pub async fn raw_message(&self, id: &str) -> Result<Arc<Vec<u8>>, SyncError> {
+        self.raw(id).await
     }
 
     /// A conversation as an mbox file, oldest message first, or the one
@@ -335,16 +338,37 @@ impl AccountSync {
         thread_id: &str,
         message_id: Option<&str>,
     ) -> Result<Vec<u8>, SyncError> {
+        let mut mbox = Vec::new();
+        self.export_mbox_to(thread_id, message_id, &mut mbox).await?;
+        Ok(mbox)
+    }
+
+    /// `export_mbox`, written to `out` one message at a time: each message
+    /// is fetched, written and dropped before the next is fetched, so a
+    /// long conversation costs two copies of its largest message and not
+    /// of the whole thread.
+    pub async fn export_mbox_to<W: AsyncWrite + Unpin>(
+        &self,
+        thread_id: &str,
+        message_id: Option<&str>,
+        out: &mut W,
+    ) -> Result<(), SyncError> {
         let ids: Vec<String> = match message_id {
             Some(id) => vec![id.to_string()],
             None => self.thread_ids(thread_id).await?,
         };
         let names = self.remotes(&ids).await?;
-        let mut mbox = Vec::new();
-        for raw in self.services.mail.fetch_raw(&names).await? {
-            crate::export::append(&mut mbox, &raw.bytes);
+        let mut entry = Vec::new();
+        for name in names {
+            for raw in self.services.mail.fetch_raw(&[name]).await? {
+                entry.clear();
+                crate::export::append(&mut entry, &raw.bytes);
+                drop(raw);
+                out.write_all(&entry).await.map_err(SyncError::io)?;
+            }
         }
-        Ok(mbox)
+        out.flush().await.map_err(SyncError::io)?;
+        Ok(())
     }
 
     /// The messages of a conversation, oldest first. A server that keeps
@@ -389,30 +413,7 @@ impl AccountSync {
 /// Only the header block is read, and a header folded onto the next line
 /// is unfolded first.
 pub(crate) fn message_id_header(raw: &[u8]) -> Option<String> {
-    // Cut the header block from the bytes before any text is made, so a
-    // large message costs no copy of its body.
-    let end = raw
-        .windows(2)
-        .position(|w| w == b"\n\n" || w == b"\n\r")
-        .unwrap_or(raw.len());
-    let text = String::from_utf8_lossy(&raw[..end]);
-    let head = text
-        .split("\r\n\r\n")
-        .next()
-        .and_then(|h| h.split("\n\n").next())
-        .unwrap_or_default();
-    let mut unfolded: Vec<String> = Vec::new();
-    for line in head.lines() {
-        match (line.starts_with([' ', '\t']), unfolded.last_mut()) {
-            (true, Some(previous)) => previous.push_str(line),
-            _ => unfolded.push(line.to_string()),
-        }
-    }
-    unfolded.iter().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        let id = value.trim().trim_matches(['<', '>']).trim();
-        (name.trim().eq_ignore_ascii_case("message-id") && !id.is_empty()).then(|| id.to_string())
-    })
+    mailrs_mime::head::message_id(raw)
 }
 
 #[cfg(test)]

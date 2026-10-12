@@ -113,7 +113,7 @@ impl<J: JmapApi> Jmap<J> {
         let drafts = self.known().roles.get(&Role::Drafts).cloned().ok_or(BackendError::Unsupported)?;
         let (from, to) = envelope_of(raw, &self.settings().address)?;
         let identity = self.identity(&from).await?;
-        let blob = self.api().upload(without_bcc(raw)).await.map_err(backend)?;
+        let blob = self.api().upload(without_bcc(raw).into_owned()).await.map_err(backend)?;
         // Counted again after the upload, which can take a while, so the
         // message goes at the hour picked and not that much later.
         let seconds = seconds_until(at, now_millis());
