@@ -10723,9 +10723,11 @@ msgstr ""
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
-msgstr "Le serveur retient encore ce message et n’a pas pu être prié de le libérer. Réessayez plus tard."
+msgstr ""
+"Le serveur retient encore ce message et n’a pas pu être prié de le libérer. "
+"Réessayez plus tard."
 
-#: sync/src/outbox.rs:1014
+#: sync/src/outbox.rs:1033
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 

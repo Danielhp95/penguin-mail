@@ -10674,9 +10674,11 @@ msgstr "Este mensaje se canceló en otra aplicación y ya no está en Borradores
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
-msgstr "El servidor aún retiene este mensaje y no se le pudo pedir que lo liberara. Inténtalo más tarde."
+msgstr ""
+"El servidor aún retiene este mensaje y no se le pudo pedir que lo liberara. "
+"Inténtalo más tarde."
 
-#: sync/src/outbox.rs:1014
+#: sync/src/outbox.rs:1033
 msgid "The server could not be asked to let go of the message."
 msgstr "No se pudo pedir al servidor que liberara el mensaje."
 

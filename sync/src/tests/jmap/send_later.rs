@@ -476,3 +476,73 @@ async fn a_hold_the_server_forgot_asks_the_person_to_check_sent() {
     queue(&h).drop_one(id).await.unwrap();
     assert!(row(&h, id).await.is_none(), "the person can dismiss it");
 }
+
+#[tokio::test]
+async fn a_hold_the_server_refuses_to_report_on_stays_held_and_deleting_waits_for_it() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    // The server stops answering for its submissions, as a refusal that
+    // is not about the network does.
+    h.fake.with(|s| s.submission_get = false);
+    let outbox = queue(&h);
+    let drained = outbox.send_due(now_millis() + 2 * HOUR).await.unwrap();
+    assert!(drained.stuck.is_empty(), "no Outbox row while the hold is alive");
+    let kept = row(&h, id).await.unwrap();
+    assert!(kept.held.is_some() && kept.problem.is_none(), "{kept:?}");
+    let looks = asked(&h);
+    outbox.send_due(now_millis() + 2 * HOUR + 2 * MINUTE).await.unwrap();
+    assert_eq!(asked(&h), looks + 1, "the hold is still asked about");
+    assert!(queue(&h).drop_one(id).await.is_err(), "Delete refuses while the server cannot be asked");
+    assert!(row(&h, id).await.is_some());
+    h.fake.with(|s| s.submission_get = true);
+    queue(&h).drop_one(id).await.unwrap();
+    assert!(row(&h, id).await.is_none());
+    h.fake.release_due(i64::MAX);
+    assert_eq!(sent(&h), 0, "nothing goes after the delete");
+}
+
+#[tokio::test]
+async fn cancel_after_a_new_hour_whose_hold_was_never_found_keeps_the_bcc() {
+    let h = holding().await;
+    let id = put(&h, blind(&h, now_millis() + HOUR)).await;
+    // The new hold's answer is lost and the server never kept it.
+    h.fake.with(|s| s.hold_failure = Some(JmapError::Network("connection reset".into())));
+    let moved = queue(&h).reschedule(id, now_millis() + 2 * HOUR).await.unwrap().unwrap();
+    assert!(moved.held.as_deref().is_some_and(|held| held.starts_with("unconfirmed:")) && moved.draft_id.is_some());
+    // Old enough that an empty look counts.
+    h.db.write(move |c| {
+        let mut row = outbox::find(c, id)?.unwrap();
+        let mark = row.held.take().unwrap();
+        let id_part = mark.splitn(3, ':').nth(2).unwrap().to_string();
+        row.held = Some(format!("unconfirmed:0:{id_part}"));
+        outbox::put(c, &row)?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let target = Target::thread(h.account_id, moved.thread_id.clone().unwrap());
+    assert_eq!(queue(&h).cancel_scheduled(&[target]).await.unwrap().in_drafts, 1);
+    let drafts = h.fake.with(|s| {
+        let box_id = s.role_id("drafts").unwrap();
+        s.emails.values().filter(|e| e.mailbox_ids.contains(&box_id)).map(|e| String::from_utf8_lossy(&e.raw).into_owned()).collect::<Vec<_>>()
+    });
+    assert_eq!(drafts.len(), 1, "{drafts:?}");
+    assert!(drafts[0].contains("Bcc: grace@example.com"), "{}", drafts[0]);
+}
+
+#[tokio::test]
+async fn a_lost_hold_days_away_is_not_looked_for_every_minute() {
+    let h = holding().await;
+    h.fake.with(|s| s.hold_failure = Some(JmapError::Network("connection reset".into())));
+    let at = now_millis() + 20 * HOUR;
+    scheduled(&h, at).await;
+    let queries = || h.fake.with(|s| s.calls.iter().filter(|c| *c == "Email/query").count());
+    let outbox = queue(&h);
+    outbox.send_due(now_millis() + 2 * MINUTE).await.unwrap();
+    let after_first = queries();
+    outbox.send_due(now_millis() + 4 * MINUTE).await.unwrap();
+    outbox.send_due(now_millis() + HOUR).await.unwrap();
+    assert_eq!(queries(), after_first, "no look until the hour comes near");
+    outbox.send_due(at).await.unwrap();
+    assert_eq!(sent(&h), 1, "looked for once more at the hour, then sent from here");
+}
