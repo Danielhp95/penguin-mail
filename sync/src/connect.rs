@@ -723,9 +723,15 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
             .filter(|(account, _, miss)| *account == id && *miss == Miss::Refused)
             .map(|(_, kind, _)| kind)
             .collect::<Vec<_>>();
-        Ok((mailrs_store::services::load(c, id)?, refused))
+        let local = !mailrs_store::local_rules::list(c, id)?.is_empty();
+        Ok((mailrs_store::services::load(c, id)?, refused, local))
     });
-    let (found, refused) = bounded(id, "the mail store", wait, read).await?;
+    let (found, refused, local) = bounded(id, "the mail store", wait, read).await?;
+    // Local rules a switch from IMAP could not move into the script go on
+    // running here, beside it, and the Rules dialog lists both.
+    if local && let Some(AnyRules::JmapSieve(server)) = services.rules.clone() {
+        services = services.with_rules(AnyRules::Beside(crate::RulesBeside::new(server, LocalRules::new(db.clone(), id))));
+    }
     for (service, sign) in dav_plan(found, &saved, bearer.is_some(), app_password, basic_password, &refused) {
         services = match (sign, &bearer) {
             (DavSign::Password(password), _) => attach(services, &service, &password, None, account, account.provider_name()),

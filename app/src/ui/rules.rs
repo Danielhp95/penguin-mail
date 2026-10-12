@@ -227,6 +227,15 @@ impl Rules {
                 self.shown.borrow_mut().push(row.upcast());
                 continue;
             }
+            if list.here.iter().any(|here| filter.id.as_ref() == Some(here)) {
+                // Kept from before a switch to JMAP: the server runs a
+                // script of the person's own that it cannot include.
+                row.set_subtitle(&glib::markup_escape_text(&format!(
+                    "{}\n{}",
+                    describe_action(&filter.action, |id| self.label_name(id)),
+                    gettext("On this computer, while Penguin Mail is open"),
+                )));
+            }
             if filter.off {
                 // The switch to JMAP, or the folder's deletion, turned it
                 // off: the server lacks a folder it names. Saving it with

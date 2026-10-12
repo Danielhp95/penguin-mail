@@ -668,3 +668,59 @@ async fn a_row_with_bytes_and_an_imap_draft_place_sends_from_its_bytes() {
     assert_eq!(drained.sent.len(), 1, "{drained:?}");
     assert_eq!(h.fake.with(|s| s.sent.len()), 1, "the bytes reached the server");
 }
+
+/// The account's JMAP services once switched, over `fake`, with the rules
+/// as the connector attaches them: the script, and beside it the local
+/// rules the store still holds.
+async fn switched_services(h: &ImapHarness, fake: std::sync::Arc<FakeJmap>) -> crate::AccountServices {
+    use crate::services::{AnyJmap, JmapSieve, LocalRules, RulesBeside, SieveRules};
+
+    let services = crate::AccountServices::fake_jmap(std::sync::Arc::clone(&fake));
+    let api = std::sync::Arc::new(JmapSieve::new(std::sync::Arc::new(AnyJmap::from(fake))));
+    let server = SieveRules::new(api, services.mail.clone(), "me@example.com".into(), "Fastmail".into());
+    let beside = RulesBeside::new(server, LocalRules::new(h.db.clone(), h.account_id));
+    services.with_rules(crate::AnyRules::Beside(beside))
+}
+
+#[tokio::test]
+async fn a_switch_to_a_sieve_session_moves_the_local_rules_into_the_script() {
+    use crate::services::RulesService;
+
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let fake = std::sync::Arc::new(fake.with_sieve(&["fileinto", "vacation", "include", "imap4flags"]));
+    let id = h.account_id;
+    let rule = mailrs_domain::Filter { id: Some("local-1".into()), ..mailrs_domain::Filter::block("pest@example.com") };
+    h.db.write(move |c| mailrs_store::local_rules::add(c, id, &rule)).await.unwrap();
+    let account = account(&h).await;
+    let mut sieve = saved();
+    sieve.capabilities.push(mailrs_jmap::SIEVE.into());
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &*fake, sieve, "fmu1-token".into()).await.unwrap();
+    let mut services = switched_services(&h, std::sync::Arc::clone(&fake)).await;
+    assert!(crate::switch::move_rules(&mut services).await);
+    let rules = services.rules.expect("rules");
+    assert!(matches!(rules, crate::AnyRules::JmapSieve(_)), "nothing runs here any more");
+    assert_eq!(rules.filters().await.unwrap().len(), 1, "the script holds the rule");
+    assert!(h.db.read(move |c| mailrs_store::local_rules::list(c, id)).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_sieve_server_running_the_persons_own_script_leaves_the_rules_here() {
+    use crate::services::RulesService;
+
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let fake = std::sync::Arc::new(fake.with_sieve(&["fileinto"]));
+    fake.with(|s| s.scripts.insert("theirs-id".into(), ("work".into(), "keep;".into(), true)));
+    let id = h.account_id;
+    let rule = mailrs_domain::Filter { id: Some("local-1".into()), ..mailrs_domain::Filter::block("pest@example.com") };
+    h.db.write(move |c| mailrs_store::local_rules::add(c, id, &rule)).await.unwrap();
+    let account = account(&h).await;
+    let mut sieve = saved();
+    sieve.capabilities.push(mailrs_jmap::SIEVE.into());
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &*fake, sieve, "fmu1-token".into()).await.unwrap();
+    let mut services = switched_services(&h, std::sync::Arc::clone(&fake)).await;
+    assert!(!crate::switch::move_rules(&mut services).await);
+    let rules = services.rules.expect("rules");
+    assert!(rules.runs_here(), "the rule runs here beside the person's script");
+    assert_eq!(rules.filters().await.unwrap().len(), 1);
+    assert!(fake.with(|s| s.scripts.get("theirs-id").is_some_and(|(_, _, active)| *active)));
+}

@@ -1,6 +1,7 @@
 //! The JMAP adapter over `FakeJmap`, through the same engine a real
 //! account runs.
 
+mod beside;
 mod bodies;
 mod calendar;
 mod contacts;

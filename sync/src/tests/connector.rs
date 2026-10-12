@@ -1028,3 +1028,44 @@ async fn a_calendar_that_refuses_a_new_grant_too_asks_for_the_app_password_again
     let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     assert!(services.calendar.is_none(), "the calendar waits for an app password again");
 }
+
+/// A JMAP account over Basic whose session offers Sieve, as one switched
+/// from IMAP is, with `local` rules kept in the store.
+async fn sieve_account_with(local: &[mailrs_domain::Filter]) -> (crate::AccountServices, tempfile::TempDir) {
+    use mailrs_store::jmap::{JmapAuth, JmapSaved};
+
+    let (db, dir) = store().await;
+    let id = db.write(|c| accounts::insert_jmap_account(c, "me@example.com", "Stalwart", 0)).await.unwrap().unwrap();
+    let local = local.to_vec();
+    db.write(move |c| local.iter().try_for_each(|rule| mailrs_store::local_rules::add(c, id, rule))).await.unwrap();
+    let account = db.read(move |c| accounts::account(c, id)).await.unwrap().unwrap();
+    let saved = JmapSaved {
+        session_url: "https://127.0.0.1:9/jmap/session".into(),
+        auth: JmapAuth::Basic,
+        user_name: None,
+        labels: true,
+        capabilities: vec![mailrs_jmap::MAIL.into(), mailrs_jmap::SIEVE.into()],
+        oauth: None,
+    };
+    let sign_in = crate::connect::JmapSignIn::Secret("pw".into());
+    let services = crate::connect::jmap_services(&db, Arc::clone(&Secrets::memory().passwords), &account, saved, sign_in, 30, crate::connect::STEP_WAIT)
+        .await
+        .unwrap();
+    (services, dir)
+}
+
+#[tokio::test]
+async fn a_sieve_session_keeps_local_rules_beside_its_script() {
+    let rule = mailrs_domain::Filter { id: Some("local-1".into()), ..mailrs_domain::Filter::block("pest@example.com") };
+    let (services, _dir) = sieve_account_with(&[rule]).await;
+    let rules = services.rules.expect("rules");
+    assert!(matches!(rules, crate::AnyRules::Beside(_)));
+    assert!(rules.runs_here(), "the local rules still run on this computer");
+    assert!(matches!(services.auto_reply, Some(crate::AnyAutoReply::JmapSieve(_))), "the reply stays in the script");
+}
+
+#[tokio::test]
+async fn a_sieve_session_with_no_local_rules_runs_the_script_alone() {
+    let (services, _dir) = sieve_account_with(&[]).await;
+    assert!(matches!(services.rules, Some(crate::AnyRules::JmapSieve(_))));
+}

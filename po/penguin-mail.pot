@@ -1909,24 +1909,24 @@ msgstr ""
 msgid "Penguin Mail could not update its mail store, and kept the old one."
 msgstr ""
 
-#: app/src/core.rs:737 app/src/core.rs:812 app/src/core.rs:865
-#: app/src/core.rs:930 app/src/core.rs:1022
+#: app/src/core.rs:738 app/src/core.rs:813 app/src/core.rs:866
+#: app/src/core.rs:931 app/src/core.rs:1023
 msgid "Demo mode cannot add real accounts."
 msgstr ""
 
-#: app/src/core.rs:751
+#: app/src/core.rs:752
 msgid "Canceled."
 msgstr ""
 
-#: app/src/core.rs:755
+#: app/src/core.rs:756
 msgid "Gave up waiting for the browser after five minutes."
 msgstr ""
 
-#: app/src/core.rs:1172 app/src/core.rs:1195
+#: app/src/core.rs:1173 app/src/core.rs:1196
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 
-#: app/src/core.rs:1319
+#: app/src/core.rs:1320
 msgid "The demo cannot switch accounts."
 msgstr ""
 
@@ -2179,7 +2179,7 @@ msgstr ""
 
 #: app/src/notify.rs:63 app/src/ui/conversation.rs:388
 #: app/src/ui/conversation.rs:1095 app/src/ui/preferences.rs:140
-#: app/src/ui/rules.rs:381 app/src/ui/window/message_menu.rs:128
+#: app/src/ui/rules.rs:390 app/src/ui/window/message_menu.rs:128
 msgid "Mark as Read"
 msgstr ""
 
@@ -3434,7 +3434,7 @@ msgstr ""
 msgid "Delete it"
 msgstr ""
 
-#: app/src/rules.rs:257 app/src/ui/rules.rs:380
+#: app/src/rules.rs:257 app/src/ui/rules.rs:389
 msgid "Skip the Inbox"
 msgstr ""
 
@@ -3513,7 +3513,7 @@ msgstr ""
 msgid "Rules"
 msgstr ""
 
-#: app/src/servers.rs:39
+#: app/src/servers.rs:39 app/src/ui/rules.rs:236
 msgid "On this computer, while Penguin Mail is open"
 msgstr ""
 
@@ -4091,7 +4091,7 @@ msgstr ""
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
 #: app/src/ui/composer/mod.rs:1777 app/src/ui/composer/mod.rs:1852
 #: app/src/ui/composer/mod.rs:2175 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:456 app/src/ui/rules.rs:636
+#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:465 app/src/ui/rules.rs:645
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
 #: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
 #: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
@@ -4596,7 +4596,7 @@ msgstr ""
 #: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/calendar/editor.rs:179
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:449
+#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:458
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
@@ -5683,7 +5683,7 @@ msgid "New Calendar"
 msgstr ""
 
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:675
-#: app/src/ui/rules.rs:450 app/src/ui/smart_editor.rs:146
+#: app/src/ui/rules.rs:459 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
 msgid "Create"
@@ -6446,11 +6446,11 @@ msgid "Masked"
 msgstr ""
 
 #: app/src/ui/composer/mod.rs:496 app/src/ui/composer/mod.rs:497
-#: app/src/ui/rules.rs:364
+#: app/src/ui/rules.rs:373
 msgid "From"
 msgstr ""
 
-#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:365
+#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:374
 msgid "To"
 msgstr ""
 
@@ -6462,7 +6462,7 @@ msgstr ""
 msgid "Bcc"
 msgstr ""
 
-#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:366
+#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:375
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr ""
@@ -8174,7 +8174,7 @@ msgstr ""
 msgid "This message is waiting to be sent"
 msgstr ""
 
-#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:450
+#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:459
 msgid "New Rule"
 msgstr ""
 
@@ -8194,135 +8194,135 @@ msgstr ""
 msgid "Made elsewhere. Change it where you made it."
 msgstr ""
 
-#: app/src/ui/rules.rs:237
+#: app/src/ui/rules.rs:246
 msgid "Off: its folder is not on this server"
 msgstr ""
 
-#: app/src/ui/rules.rs:247
+#: app/src/ui/rules.rs:256
 msgid "Edit the rule for {mail}"
 msgstr ""
 
-#: app/src/ui/rules.rs:258
+#: app/src/ui/rules.rs:267
 msgid "Delete Rule"
 msgstr ""
 
-#: app/src/ui/rules.rs:265
+#: app/src/ui/rules.rs:274
 msgid "Delete the rule for {mail}"
 msgstr ""
 
-#: app/src/ui/rules.rs:282
+#: app/src/ui/rules.rs:291
 msgid "Rules Written Elsewhere"
 msgstr ""
 
-#: app/src/ui/rules.rs:284
+#: app/src/ui/rules.rs:293
 msgid ""
 "Penguin Mail keeps these as they are. Change them where they were written."
 msgstr ""
 
-#: app/src/ui/rules.rs:315
+#: app/src/ui/rules.rs:324
 msgid "Rule deleted"
 msgstr ""
 
-#: app/src/ui/rules.rs:319
+#: app/src/ui/rules.rs:328
 msgid "Could not delete the rule: {reason}"
 msgstr ""
 
-#: app/src/ui/rules.rs:327
+#: app/src/ui/rules.rs:336
 msgid "Could Not Load the Rules"
 msgstr ""
 
-#: app/src/ui/rules.rs:336
+#: app/src/ui/rules.rs:345
 msgid "Allow Rules"
 msgstr ""
 
-#: app/src/ui/rules.rs:367
+#: app/src/ui/rules.rs:376
 msgid "Has the Words"
 msgstr ""
 
-#: app/src/ui/rules.rs:368
+#: app/src/ui/rules.rs:377
 msgid "Doesn't Have"
 msgstr ""
 
-#: app/src/ui/rules.rs:370
+#: app/src/ui/rules.rs:379
 msgid "Has an Attachment"
 msgstr ""
 
-#: app/src/ui/rules.rs:372
+#: app/src/ui/rules.rs:381
 msgid "When Mail Matches"
 msgstr ""
 
-#: app/src/ui/rules.rs:382
+#: app/src/ui/rules.rs:391
 msgid "Star It"
 msgstr ""
 
-#: app/src/ui/rules.rs:383
+#: app/src/ui/rules.rs:392
 msgid "Never Send to Spam"
 msgstr ""
 
-#: app/src/ui/rules.rs:384
+#: app/src/ui/rules.rs:393
 msgid "Delete It"
 msgstr ""
 
-#: app/src/ui/rules.rs:387
+#: app/src/ui/rules.rs:396
 msgid "Apply Label"
 msgstr ""
 
-#: app/src/ui/rules.rs:387
+#: app/src/ui/rules.rs:396
 msgid "Don't Apply a Label"
 msgstr ""
 
-#: app/src/ui/rules.rs:388
+#: app/src/ui/rules.rs:397
 msgid "Don't Move"
 msgstr ""
 
-#: app/src/ui/rules.rs:388
+#: app/src/ui/rules.rs:397
 msgid "Move to Folder"
 msgstr ""
 
-#: app/src/ui/rules.rs:398
+#: app/src/ui/rules.rs:407
 msgid "Do This"
 msgstr ""
 
-#: app/src/ui/rules.rs:438
+#: app/src/ui/rules.rs:447
 msgid "This rule also does things this form can't show. Saving keeps them."
 msgstr ""
 
-#: app/src/ui/rules.rs:449
+#: app/src/ui/rules.rs:458
 msgid "Edit Rule"
 msgstr ""
 
-#: app/src/ui/rules.rs:522
+#: app/src/ui/rules.rs:531
 msgid "Rule added"
 msgstr ""
 
-#: app/src/ui/rules.rs:537 app/src/ui/rules.rs:609
+#: app/src/ui/rules.rs:546 app/src/ui/rules.rs:618
 msgid "Could not add the rule: {reason}"
 msgstr ""
 
-#: app/src/ui/rules.rs:555
+#: app/src/ui/rules.rs:564
 msgid "Rule saved"
 msgstr ""
 
-#: app/src/ui/rules.rs:560
+#: app/src/ui/rules.rs:569
 msgid "Saved, but Gmail kept the old rule too, so both run now: {reason}"
 msgstr ""
 
-#: app/src/ui/rules.rs:580
+#: app/src/ui/rules.rs:589
 msgid "Could not save the rule: {reason}"
 msgstr ""
 
-#: app/src/ui/rules.rs:630
+#: app/src/ui/rules.rs:639
 msgid "Replace “{script}”?"
 msgstr ""
 
-#: app/src/ui/rules.rs:632
+#: app/src/ui/rules.rs:641
 msgid ""
 "{provider} runs one set of rules at a time, and it runs “{script}” now. "
 "Penguin Mail's rules would take its place; “{script}” stays on the server, "
 "switched off."
 msgstr ""
 
-#: app/src/ui/rules.rs:636
+#: app/src/ui/rules.rs:645
 msgid "Replace"
 msgstr ""
 
@@ -10899,44 +10899,44 @@ msgstr ""
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 
-#: sync/src/services/sieve.rs:195
+#: sync/src/services/sieve.rs:140 sync/src/services/sieve.rs:333
+msgid "The rule is read-only."
+msgstr ""
+
+#: sync/src/services/sieve.rs:215
 msgid ""
 "{provider} offers no encrypted connection for rules, so Penguin Mail does "
 "not send your password there."
 msgstr ""
 
-#: sync/src/services/sieve.rs:208
+#: sync/src/services/sieve.rs:228
 msgid ""
 "{provider} cannot run this rule: its server lacks the Sieve extension "
 "“{extension}”."
 msgstr ""
 
-#: sync/src/services/sieve.rs:213
+#: sync/src/services/sieve.rs:233
 msgid "The folder this rule files into is not on the server yet."
 msgstr ""
 
-#: sync/src/services/sieve.rs:216
+#: sync/src/services/sieve.rs:236
 msgid "A rule on {provider} cannot keep mail out of Spam."
 msgstr ""
 
-#: sync/src/services/sieve.rs:220
+#: sync/src/services/sieve.rs:240
 msgid "{provider} does not mark mail as important."
 msgstr ""
 
-#: sync/src/services/sieve.rs:224
+#: sync/src/services/sieve.rs:244
 msgid "A rule can file mail into one folder."
 msgstr ""
 
-#: sync/src/services/sieve.rs:227
+#: sync/src/services/sieve.rs:247
 msgid "Say which mail the rule is for"
 msgstr ""
 
-#: sync/src/services/sieve.rs:229
+#: sync/src/services/sieve.rs:249
 msgid "Choose what the rule does"
-msgstr ""
-
-#: sync/src/services/sieve.rs:313
-msgid "The rule is read-only."
 msgstr ""
 
 #: sync/src/sign_in.rs:207

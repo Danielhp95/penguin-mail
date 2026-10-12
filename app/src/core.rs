@@ -546,11 +546,12 @@ impl Core {
         self.engine.account(account_id)
     }
 
-    /// Whether the account's rules run on this computer.
+    /// Whether the account's rules, or some of them, run on this
+    /// computer.
     pub fn rules_here(&self, account_id: AccountId) -> bool {
         self.account(account_id)
-            .and_then(|sync| sync.services().rules.as_ref().map(|r| r.place()))
-            == Some(mailrs_sync::RulesPlace::ThisComputer)
+            .and_then(|sync| sync.services().rules.as_ref().map(|r| r.runs_here()))
+            .unwrap_or(false)
     }
 
     /// Runs the account's local rules over its new Inbox mail.
@@ -1326,7 +1327,8 @@ impl Core {
                     Ok(switched) => Some(switched.account.clone()),
                     Err(_) => db.read(move |c| accounts::account(c, id)).await.ok().flatten(),
                 };
-                if let Err(err) = start_again(&reach, &engine, &db, &now.unwrap_or(account)).await {
+                let moved = switched.is_ok();
+                if let Err(err) = start_again(&reach, &engine, &db, &now.unwrap_or(account), moved).await {
                     tracing::warn!(account = id, error = %err, "could not start the account again after the switch");
                 }
                 switched
@@ -1342,10 +1344,17 @@ impl Core {
 }
 
 /// Starts `account`'s loop on the services the store names for it now,
-/// or marks it as needing a sign-in when nothing signs it in.
-async fn start_again(reach: &Reach, engine: &SyncEngine, db: &Db, account: &Account) -> Result<()> {
+/// or marks it as needing a sign-in when nothing signs it in. Once a
+/// switch went through, its local rules move into the server's Sieve
+/// script first, where the server runs one and takes them.
+async fn start_again(reach: &Reach, engine: &SyncEngine, db: &Db, account: &Account, switched: bool) -> Result<()> {
     match reach.connect(account).await? {
-        Connected::Ready(services) => engine.start_account(account.id, services),
+        Connected::Ready(mut services) => {
+            if switched {
+                mailrs_sync::switch::move_rules(&mut services).await;
+            }
+            engine.start_account(account.id, services);
+        }
         Connected::NeedsSignIn => {
             let id = account.id;
             db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth)).await?;

@@ -130,6 +130,26 @@ impl<M: ManageSieveApi> SieveRules<M> {
         Ok(())
     }
 
+    /// Adds `rules` to the script in one write, keeping each as it is,
+    /// off or on, and leaving out one the script already holds, so a
+    /// second try after a lost answer adds nothing twice. The script
+    /// becomes the running one as any rule write makes it, and answers
+    /// `WouldReplace` where that write would.
+    pub async fn take_in(&self, rules: &[Filter]) -> Result<(), BackendError> {
+        if rules.iter().any(|r| r.read_only) {
+            return Err(BackendError::Refused(gettext("The rule is read-only.")));
+        }
+        let _writing = self.writing.lock().await;
+        let (mut script, ext, running) = self.load().await?;
+        for rule in rules {
+            if !script.rules.iter().any(|held| held.criteria == rule.criteria && held.action == rule.action) {
+                let id = format!("sieve-{:016x}", rand::random::<u64>());
+                script.rules.push(Filter { id: Some(id), ..rule.clone() });
+            }
+        }
+        self.store(script, &ext, running, None).await
+    }
+
     /// Lists a JMAP account's mailboxes when nothing has yet, or again when
     /// `fresh`, so a rule saved before the first listing waits for it
     /// rather than failing on a folder the adapter has not seen.

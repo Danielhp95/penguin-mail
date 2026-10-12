@@ -31,7 +31,7 @@ use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
-use crate::{AccountSync, AnyJmap, BackendError, SyncError};
+use crate::{AccountServices, AccountSync, AnyJmap, AnyRules, BackendError, SyncError};
 
 /// Message-IDs one search asks for.
 const IDS_PER_QUERY: usize = 100;
@@ -588,6 +588,27 @@ async fn forget_imap_passwords(db: &Db, secrets: &Secrets, id: AccountId) {
     let passwords = Arc::clone(&secrets.passwords);
     if let Err(err) = keyring(move || first_error([passwords.delete_outgoing(id), passwords.delete(id)])).await {
         tracing::warn!(account = id, %err, "the switch is done, and the keyring kept the IMAP password");
+    }
+}
+
+/// Moves the local rules of an account just switched into its Sieve
+/// script, once its JMAP services are up and before they run. A server
+/// that will not take them (the person runs a script of their own that it
+/// cannot include) leaves them beside the script, running here as before.
+/// Answers whether they moved.
+pub async fn move_rules(services: &mut AccountServices) -> bool {
+    let Some(AnyRules::Beside(beside)) = services.rules.clone() else {
+        return false;
+    };
+    match beside.move_in().await {
+        Ok(()) => {
+            services.rules = Some(AnyRules::JmapSieve(beside.server().clone()));
+            true
+        }
+        Err(err) => {
+            tracing::info!(%err, "the local rules stay on this computer beside the server's");
+            false
+        }
     }
 }
 
