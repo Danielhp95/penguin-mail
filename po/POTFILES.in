@@ -169,6 +169,7 @@ sync/src/services/sieve.rs
 sync/src/services/microsoft/errors.rs
 sync/src/services/jmap/errors.rs
 sync/src/services/jmap/held.rs
+sync/src/services/jmap/jscal.rs
 sync/src/services/jmap/mod.rs
 sync/src/services/jmap/outgoing.rs
 sync/src/services/jmap/writes.rs
