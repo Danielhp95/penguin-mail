@@ -1107,7 +1107,7 @@ fn migration_56_adds_jmap_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 58);
+    assert_eq!(schema_version(&conn).unwrap(), 59);
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
          INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
@@ -1134,7 +1134,7 @@ fn migration_58_takes_oauth_jmap_accounts() {
     .unwrap();
     drop(conn);
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 58);
+    assert_eq!(schema_version(&conn).unwrap(), 59);
     let auth: String = conn.query_row("SELECT auth FROM jmap_accounts WHERE account_id = 4", [], |r| r.get(0)).unwrap();
     assert_eq!(auth, "basic");
     conn.execute(
@@ -1142,4 +1142,22 @@ fn migration_58_takes_oauth_jmap_accounts() {
         [],
     )
     .unwrap();
+}
+
+/// Migration 59 indexes every message's Message-ID, so finding the Sent copy
+/// a read receipt names no longer walks the whole Sent mailbox.
+#[test]
+fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), 59);
+    let plan: Vec<String> = conn
+        .prepare("EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = 1 AND rfc822_msgid IN ('a@x', '<a@x>')")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(plan.iter().any(|step| step.contains("messages_by_msgid")), "{plan:?}");
 }

@@ -257,14 +257,16 @@ impl ClaudeCodeChat {
         let config = mcp_config(&bridge_command, &bridge.socket);
 
         tracing::debug!(command = %self.command.display(), resume = self.session_id.is_some(), "starting Claude Code");
-        let mut child = Command::new(&self.command)
+        let mut command = Command::new(&self.command);
+        command
             .args(self.args(&config))
             .current_dir(&self.work_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+        let mut child = spawn_when_free(&mut command)
+            .await
             .map_err(|e| io(&format!("could not run {}", self.command.display()), e))?;
 
         // The prompt goes in on stdin, so text that starts with a dash never
@@ -514,12 +516,12 @@ fn final_result(message: &Value) -> Result<String, String> {
 /// The installed CLI's version, such as `2.1.278`, or an error saying why it
 /// did not answer. The CLI prints "2.1.278 (Claude Code)".
 async fn version_output(command: &Path) -> Result<String, AiError> {
-    let run = Command::new(command)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .kill_on_drop(true)
-        .output();
-    let output = tokio::time::timeout(Duration::from_secs(10), run)
+    let mut run = Command::new(command);
+    run.arg("--version").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    let child = spawn_when_free(&mut run)
+        .await
+        .map_err(|e| AiError::Other(format!("could not run {}: {e}", command.display())))?;
+    let output = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
         .await
         .map_err(|_| AiError::Other(format!("{} --version took too long", command.display())))?
         .map_err(|e| AiError::Other(format!("could not run {}: {e}", command.display())))?;
@@ -563,4 +565,22 @@ pub(crate) async fn test(command: &Path) -> Result<String, AiError> {
         ));
     }
     Ok(format!("Claude Code {version}"))
+}
+
+/// Starts `command`, trying again a few times while the file is still open
+/// for writing somewhere ("Text file busy"). A process forked elsewhere in
+/// the app keeps such a handle until it starts its own program, so a CLI
+/// that was just installed or updated can refuse to start for a moment.
+async fn spawn_when_free(command: &mut Command) -> std::io::Result<tokio::process::Child> {
+    const TEXT_FILE_BUSY: i32 = 26;
+    let mut tries = 0;
+    loop {
+        match command.spawn() {
+            Err(err) if err.raw_os_error() == Some(TEXT_FILE_BUSY) && tries < 10 => {
+                tries += 1;
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            other => return other,
+        }
+    }
 }

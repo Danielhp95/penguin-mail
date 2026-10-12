@@ -928,6 +928,12 @@ INSERT INTO jmap_accounts_new (account_id, session_url, auth, user_name, labels,
 DROP TABLE jmap_accounts;
 ALTER TABLE jmap_accounts_new RENAME TO jmap_accounts;
 "#,
+    // Every message's Message-ID, not only those threaded here: a read
+    // receipt names the message it answers, and finding that copy in Sent
+    // otherwise walks the whole mailbox. Adds an index; changes no row.
+    r#"
+CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
