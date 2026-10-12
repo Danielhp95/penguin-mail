@@ -168,7 +168,9 @@ impl ThreadList {
                 return;
             };
             let thread = object.borrow::<Row>();
-            let sender = thread.from_email.to_lowercase();
+            // The face the row shows: on a Follow Up or Outbox row, the
+            // recipient's, not the sender's own.
+            let sender = super::thread_row::person(&thread).1.to_lowercase();
             let vip = starred_people.borrow().contains(&sender);
             let faces = faces.borrow();
             let avatar = if faces.is_empty() {

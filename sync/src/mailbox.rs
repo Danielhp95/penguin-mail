@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Local, TimeZone};
 use mailrs_domain::translate::{date_locale, fill, fill_plural, gettext, pgettext};
 use mailrs_domain::{
-    Account, AccountId, Category, EpochMillis, FlagColor, Folder, MailSet, MessageMeta, Role,
+    Account, AccountId, Address, Category, EpochMillis, FlagColor, Folder, MailSet, MessageMeta, Role,
     SmartMailbox, ThreadSummary,
 };
 use mailrs_store::threads::ThreadFilter;
@@ -1344,7 +1344,7 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
-                recipient: first_recipient(item),
+                recipient: first_recipient(item).map(Box::new),
                 message_count: 1,
                 scheduled: true,
                 held: crate::outbox::server_holds(item),
@@ -1376,7 +1376,7 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
-                recipient: first_recipient(item),
+                recipient: first_recipient(item).map(Box::new),
                 message_count: 1,
                 ..ThreadSummary::default()
             })
@@ -1470,7 +1470,7 @@ impl<A: Accounts> Mailboxes<A> {
                         &[("recipients", &names.join(", "))],
                     )
                 };
-                row.recipient = names.first().map(|name| name.to_string()).unwrap_or_default();
+                row.recipient = item.to.first().cloned().map(Box::new);
                 row.snippet = waited(now - item.sent_at);
                 row.last_message_at = item.sent_at;
                 row
@@ -1555,8 +1555,17 @@ fn recipients_of(message: &outbox::Queued) -> String {
 }
 
 /// The first person a waiting message goes to, for its row's avatar.
-fn first_recipient(message: &outbox::Queued) -> String {
-    message.recipients.split(", ").next().unwrap_or_default().trim().to_string()
+/// Read from the message's own To header, so a name holding a comma
+/// stays whole. A message the server holds has no bytes here, and its
+/// row takes the list's words as the name.
+fn first_recipient(message: &outbox::Queued) -> Option<Address> {
+    if let Some(found) = message.raw.as_deref().and_then(mailrs_mime::first_recipient) {
+        return Some(found);
+    }
+    (!message.recipients.is_empty()).then(|| Address {
+        name: Some(message.recipients.clone()),
+        email: String::new(),
+    })
 }
 
 /// What a queued message's row says under the subject, and what the
@@ -1724,7 +1733,7 @@ fn row_of(hit: &MessageMeta, alone: bool) -> ThreadSummary {
         invitation: false,
         scheduled: false,
         held: false,
-        recipient: String::new(),
+        recipient: None,
     }
 }
 
@@ -1739,11 +1748,16 @@ mod tests {
     #[test]
     fn a_waiting_message_is_drawn_for_its_first_recipient() {
         let message = super::outbox::Queued {
-            recipients: "Theo Brandt, Ines Duarte".into(),
+            recipients: "Doe, Jane, Ines Duarte".into(),
+            raw: Some(b"To: \"Doe, Jane\" <jane@example.org>, ines@example.org\r\n\r\nHi".to_vec()),
             ..Default::default()
         };
-        assert_eq!(super::first_recipient(&message), "Theo Brandt");
-        assert_eq!(super::first_recipient(&super::outbox::Queued::default()), "");
+        let jane = super::first_recipient(&message).expect("a recipient");
+        assert_eq!((jane.name.as_deref(), jane.email.as_str()), (Some("Doe, Jane"), "jane@example.org"));
+        // Held on the server, with no bytes here: the list's words, whole.
+        let held = super::outbox::Queued { recipients: "Theo Brandt".into(), ..Default::default() };
+        assert_eq!(super::first_recipient(&held).and_then(|a| a.name), Some("Theo Brandt".into()));
+        assert!(super::first_recipient(&super::outbox::Queued::default()).is_none());
     }
 
     #[test]
