@@ -114,10 +114,11 @@ pub fn message_id(raw: &[u8]) -> Option<String> {
 /// appended once.
 pub fn without_header<'a>(raw: &'a [u8], name: &str) -> Cow<'a, [u8]> {
     let (block, body) = raw.split_at(header_end(raw));
+    // Obsolete syntax (RFC 5322 section 4.2) allows blanks before the colon.
     let named = |line: &[u8]| {
         line.len() > name.len()
             && line[..name.len()].eq_ignore_ascii_case(name.as_bytes())
-            && line[name.len()] == b':'
+            && line[name.len()..].iter().find(|b| !matches!(b, b' ' | b'\t')) == Some(&b':')
     };
     let mut skipping = false;
     let mut out: Option<Vec<u8>> = None;
@@ -232,5 +233,17 @@ mod tests {
     fn the_first_and_last_header_lines_can_be_the_bcc() {
         let raw = b"Bcc: b@example.com\nTo: a@example.com\nBcc: c@example.com\n\nx";
         assert_eq!(&*without_header(raw, "Bcc"), b"To: a@example.com\n\nx");
+    }
+
+    #[test]
+    fn blanks_before_the_colon_still_name_the_header() {
+        let raw = b"To: a@example.com\r\nBcc : b@example.com\r\nBcc\t:c@example.com\r\nBcc \t : d@example.com\r\nSubject: s\r\n\r\nx";
+        assert_eq!(&*without_header(raw, "Bcc"), b"To: a@example.com\r\nSubject: s\r\n\r\nx");
+    }
+
+    #[test]
+    fn a_longer_header_name_is_not_the_bcc() {
+        let raw = b"Bccx: b@example.com\r\nBcc-list : c@example.com\r\n\r\nx";
+        assert!(matches!(without_header(raw, "Bcc"), Cow::Borrowed(_)));
     }
 }
