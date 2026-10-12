@@ -21,6 +21,11 @@ const CHUNK: usize = 64 << 10;
 /// The most a header block may take before the part is read whole instead.
 const HEAD_LIMIT: usize = 1 << 20;
 
+/// The most of one text part's encoded bytes the outline keeps to show. The
+/// part's size and span still cover all of it, so saving it or showing the
+/// original reads the stored message and loses nothing.
+const TEXT_KEPT: usize = 8 << 20;
+
 /// [`super::outline`] of the `len` bytes `source` holds. A part that cannot
 /// be walked from the stream, one with no headers or an enormous header
 /// block, is read whole and walked in memory.
@@ -123,9 +128,20 @@ impl<R: Read + Seek> Walk<'_, R> {
             let wanted = (is_readable(&skimmed.mime_type) && !is_attachment(&skimmed))
                 || is_calendar(&skimmed.mime_type, name);
             if wanted {
-                let body = self.read(body_start, end)?;
-                skimmed.data = undo_transfer_encoding(encoding, &body);
-                skimmed.size = skimmed.data.as_ref().map_or(0, |d| d.len() as i64);
+                if end - body_start > TEXT_KEPT as u64 {
+                    // Keep whole lines of the start, so a transfer encoding
+                    // decodes cleanly; the size counts all of the part.
+                    let mut body = self.read(body_start, body_start + TEXT_KEPT as u64)?;
+                    if let Some(newline) = body.iter().rposition(|b| *b == b'\n') {
+                        body.truncate(newline + 1);
+                    }
+                    skimmed.data = undo_transfer_encoding(encoding, &body);
+                    skimmed.size = self.size(encoding, body_start, end)? as i64;
+                } else {
+                    let body = self.read(body_start, end)?;
+                    skimmed.data = undo_transfer_encoding(encoding, &body);
+                    skimmed.size = skimmed.data.as_ref().map_or(0, |d| d.len() as i64);
+                }
             } else {
                 skimmed.size = self.size(encoding, body_start, end)? as i64;
             }
@@ -647,5 +663,26 @@ mod tests {
         let mut scan = Scan::new(&mut cursor, 0, len);
         assert!(!scan.seek_next_part(b"zz").unwrap());
         assert_eq!(scan.peek().unwrap(), Some(b'x'));
+    }
+
+    #[test]
+    fn a_huge_text_part_keeps_a_capped_preview_and_its_whole_span() {
+        let line = "a".repeat(76) + "\r\n";
+        let text = line.repeat(TEXT_KEPT / line.len() + 1000);
+        let raw = format!(
+            "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{text}\r\n--b\r\nContent-Type: text/plain\r\n\r\nsecond\r\n--b--\r\n"
+        )
+        .into_bytes();
+        let (parts, spans) = outline_from(&mut Cursor::new(raw.clone()), raw.len() as u64).unwrap().unwrap();
+        let first = parts.find("1").expect("the long text");
+        let kept = first.data.as_ref().expect("a preview");
+        assert!(kept.len() <= TEXT_KEPT && kept.len() > TEXT_KEPT / 2, "{} bytes kept", kept.len());
+        assert!(text.as_bytes().starts_with(kept));
+        assert_eq!(first.size, text.len() as i64, "the size is the whole part's");
+        let span = spans.get("1").expect("its span");
+        assert_eq!(span.size, text.len() as u64);
+        let whole = super::super::decode_span(&mut Cursor::new(raw), span).unwrap().expect("the whole part");
+        assert_eq!(whole, text.as_bytes());
+        assert_eq!(parts.find("2").and_then(|p| p.data.clone()), Some(b"second".to_vec()));
     }
 }
