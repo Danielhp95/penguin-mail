@@ -1379,11 +1379,20 @@ impl<A: Accounts> Outbox<A> {
             }
             Ok(Handed::Unconfirmed(mark)) => message.held = Some(mark),
             Ok(Handed::Kept) => {}
-            Err(err) => tracing::info!(error = %err, "the server would not hold the message again; the app sends it"),
+            Err(err) => tracing::info!(error = %quiet_text(err), "the server would not hold the message again; the app sends it"),
         }
         let kept = message.clone();
         self.db.write(move |c| outbox::put(c, &message)).await?;
         Ok(Some(kept))
+    }
+}
+
+/// `err` for the log, without the words a server put in it, which can
+/// name an address.
+fn quiet_text(err: SyncError) -> String {
+    match err {
+        SyncError::Backend(err) => crate::account::quiet(err).to_string(),
+        other => other.to_string(),
     }
 }
 

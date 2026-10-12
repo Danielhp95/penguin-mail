@@ -17,6 +17,7 @@ mod window;
 mod writes;
 
 pub(crate) use outbox::message_id_header;
+pub(crate) use space::quiet;
 
 pub use listed::Searched;
 
