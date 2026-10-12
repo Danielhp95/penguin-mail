@@ -327,11 +327,11 @@ async fn a_jmap_account_connects_from_its_session_row_and_its_secret() {
     let new = new_jmap("me@fastmail.com", "fmu1-token");
     let account = crate::sign_in::jmap_signed_in(&db, &secrets, new, 0).await.unwrap();
     assert_eq!(account.provider, Provider::Jmap);
-    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     assert!(matches!(services.mail, AnyMail::Jmap(_)));
     assert!(matches!(services.rules, Some(crate::AnyRules::Local(_))), "a session without Sieve keeps its rules here");
     secrets.forget(&account).await.unwrap();
-    let missing = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await;
+    let missing = crate::connect_jmap(&db, &secrets, &account, 30).await;
     assert!(matches!(missing, Err(crate::SyncError::Backend(crate::BackendError::NeedsReauth))));
     assert_eq!(state(&db, &account).await, AccountState::NeedsReauth);
 }
@@ -420,7 +420,7 @@ async fn jmap_contacts_win_over_a_found_carddav_server() {
     })
     .await
     .unwrap();
-    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     assert!(matches!(services.contacts, Some(crate::AnyContacts::Jmap(_))));
     assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "the calendar comes from CalDAV, with the account password");
     assert!(matches!(services.rules, Some(crate::AnyRules::JmapSieve(_))));
@@ -443,7 +443,7 @@ async fn jmap_calendars_win_over_a_found_caldav_server() {
         })
         .await
         .unwrap();
-        let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+        let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
         if jmap {
             assert!(matches!(services.calendar, Some(crate::AnyCalendar::Jmap(_))), "JMAP Calendars, and CalDAV left alone");
         } else {
@@ -467,11 +467,11 @@ async fn a_token_account_reaches_dav_only_with_its_app_password() {
     })
     .await
     .unwrap();
-    let without = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+    let without = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     assert!(without.calendar.is_none(), "a token goes nowhere but JMAP");
     assert!(matches!(without.rules, Some(crate::AnyRules::Local(_))));
     let with = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL], JmapAuth::Bearer), Some("app-password")).await;
-    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &with, 30).await.unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &with, 30).await.unwrap();
     assert!(services.calendar.is_some());
 }
 
@@ -598,4 +598,240 @@ async fn forgetting_an_imap_or_pop3_account_deletes_a_jmap_secret_too() {
         reach.forget(&account).await.unwrap();
         assert_eq!(reach.secrets.jmap.load(account.id).unwrap(), None, "{:?}", account.provider);
     }
+}
+
+fn oauth_row(session_url: &str, capabilities: &[&str]) -> mailrs_store::jmap::JmapSaved {
+    use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
+
+    JmapSaved {
+        session_url: session_url.into(),
+        auth: JmapAuth::OAuth,
+        user_name: None,
+        labels: true,
+        capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
+        oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+    }
+}
+
+fn new_oauth(saved: mailrs_store::jmap::JmapSaved) -> crate::sign_in::NewJmap {
+    crate::sign_in::NewJmap {
+        address: "me@fastmail.com".into(),
+        provider_name: "Fastmail".into(),
+        saved,
+        secret: "refresh-1".into(),
+        dav_password: None,
+    }
+}
+
+#[tokio::test]
+async fn an_oauth_jmap_account_connects_from_its_refresh_token() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.mail, AnyMail::Jmap(_)));
+}
+
+#[tokio::test]
+async fn an_oauth_row_without_its_client_asks_for_a_sign_in() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let mut saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    saved.oauth = None;
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
+    let refused = crate::connect_jmap(&db, &secrets, &account, 30).await;
+    assert!(matches!(refused, Err(crate::SyncError::Backend(crate::BackendError::NeedsReauth))));
+    assert_eq!(state(&db, &account).await, AccountState::NeedsReauth);
+}
+
+#[tokio::test]
+async fn an_oauth_sign_in_the_keyring_refuses_keeps_nothing() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let crate::passwords::Passwords::Memory(jmap) = &*secrets.jmap else { unreachable!("tests keep secrets in memory") };
+    jmap.refuse_saves();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await;
+    assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::Password(_))));
+    let left = db.read(|c| accounts::account_by_email(c, "me@fastmail.com")).await.unwrap();
+    assert!(left.is_none(), "no account without its refresh token");
+    assert_eq!(db.read(|c| mailrs_store::jmap::load(c, 1)).await.unwrap(), None);
+}
+
+/// A session that signed in a moment ago, whose access token `a1` lives
+/// another hour, so nothing in the test asks the token endpoint.
+fn signed_in_session(session_url: &str, refresh_token: Option<&str>) -> Arc<mailrs_jmap::oauth::OAuthSession> {
+    use mailrs_jmap::oauth::{OAuthClient, OAuthSession, Tokens};
+
+    let client = OAuthClient {
+        client_id: "c1".into(),
+        token_endpoint: "https://127.0.0.1:9/oauth/refresh".into(),
+        resource: session_url.into(),
+    };
+    let tokens = Tokens { access_token: "a1".into(), expires_in: 3600, refresh_token: refresh_token.map(str::to_string) };
+    Arc::new(OAuthSession::signed_in(client, tokens))
+}
+
+#[tokio::test]
+async fn one_oauth_session_signs_in_mail_and_the_calendar() {
+    use crate::services::MailBackend;
+    use mailrs_dav::{DavApi, DavClient, Kind, Login};
+    use mailrs_store::services::{FoundService, ServiceKind};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+    let server = MockServer::start().await;
+    Mock::given(any()).respond_with(ResponseTemplate::new(500)).mount(&server).await;
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let session_url = format!("{}/jmap/session", server.uri());
+    let saved = oauth_row(&session_url, &[mailrs_jmap::MAIL, mailrs_jmap::CONTACTS]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    let id = account.id;
+    db.write(move |c| {
+        mailrs_store::services::save(c, id, &FoundService { kind: ServiceKind::CalDav, url: "https://127.0.0.1/dav/".into(), user_name: "me@fastmail.com".into(), confirmed: true, source: "table".into() })
+    })
+    .await
+    .unwrap();
+    let session = signed_in_session(&session_url, Some("r1"));
+    let sign_in = crate::connect::JmapSignIn::OAuth(Arc::clone(&session));
+    let services = crate::connect::jmap_services(&db, Arc::clone(&secrets.passwords), &account, saved, sign_in, 30, crate::connect::STEP_WAIT)
+        .await
+        .unwrap();
+    assert!(matches!(services.contacts, Some(crate::AnyContacts::Jmap(_))));
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "CalDAV serves the calendar the session lacks");
+    let _ = services.mail.mailboxes().await;
+    // The calendar's client takes the session as its token source. Only a
+    // client over plain http can reach the mock, so the test builds one.
+    let calendar = DavClient::over(format!("{}/cal/", server.uri()).parse().unwrap(), Kind::Calendar, Login::new("me@fastmail.com", ""))
+        .unwrap()
+        .with_bearer(crate::connect::session_tokens(session));
+    let _ = calendar.homes().await;
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests.iter().any(|r| r.url.path() == "/jmap/session"), "mail asked the session");
+    assert!(requests.iter().any(|r| r.url.path().starts_with("/cal")), "the calendar asked its server");
+    for request in &requests {
+        let auth = request.headers.get("authorization").map(|v| v.to_str().unwrap().to_string());
+        assert_eq!(auth.as_deref(), Some("Bearer a1"), "{}", request.url.path());
+    }
+}
+
+#[tokio::test]
+async fn a_rotated_refresh_token_is_written_to_the_keyring_once() {
+    let secrets = Secrets::memory();
+    let keep = crate::connect::keep_rotations(Arc::clone(&secrets.jmap), 7);
+    keep("r2".into()).await.unwrap();
+    assert_eq!(secrets.jmap.load(7).unwrap().as_deref(), Some("r2"));
+}
+
+#[tokio::test]
+async fn an_oauth_account_the_server_still_refuses_stops_and_asks_for_a_sign_in() {
+    use std::time::Duration;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+    let server = MockServer::start().await;
+    Mock::given(any()).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let (db, _dir) = store().await;
+    let id = db.write(|c| accounts::insert_jmap_account(c, "me@fastmail.com", "Fastmail", 0)).await.unwrap().unwrap();
+    let session_url = format!("{}/jmap/session", server.uri());
+    // No refresh token stands in for a grant the server revoked: the
+    // session answers `Unauthorized` once the access token is refused.
+    let auth = mailrs_jmap::Auth::OAuth(signed_in_session(&session_url, None));
+    let client = mailrs_jmap::JmapClient::new(&session_url, auth).unwrap();
+    let settings = crate::JmapSettings {
+        address: "me@fastmail.com".into(),
+        provider_name: "Fastmail".into(),
+        window_days: 30,
+        labels: true,
+        capabilities: vec![mailrs_jmap::MAIL.into()],
+        auto_reply_needs_sign_in: false,
+    };
+    let config = crate::EngineConfig {
+        max_backoff: Duration::from_millis(20),
+        restart_after: Duration::from_millis(20),
+        ..crate::EngineConfig::default()
+    };
+    let (engine, events) = crate::SyncEngine::new(db.clone(), config);
+    engine.start_account(id, crate::AccountServices::jmap(client, settings));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Ok(event) = events.recv().await {
+            if matches!(event, mailrs_domain::ChangeEvent::AccountStateChanged { state: AccountState::NeedsReauth, .. }) {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("the account never asked for a sign-in");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while engine.is_running(id) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the account kept syncing");
+    let asked = server.received_requests().await.unwrap().len();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(server.received_requests().await.unwrap().len(), asked, "nothing calls the server after the stop");
+}
+
+#[tokio::test]
+async fn a_dav_server_on_another_site_never_sees_the_oauth_token() {
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
+    let id = account.id;
+    db.write(move |c| {
+        for (kind, url) in [(ServiceKind::CalDav, "https://dav.example.org/cal/"), (ServiceKind::CardDav, "https://fastmail.com@dav.example.org/card/")] {
+            mailrs_store::services::save(c, id, &FoundService { kind, url: url.into(), user_name: "me@fastmail.com".into(), confirmed: true, source: "table".into() })?;
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(services.calendar.is_none(), "a calendar server on another site is left out");
+    assert!(services.contacts.is_none(), "a contacts server on another site is left out");
+    db.write(move |c| {
+        mailrs_store::services::save(c, id, &FoundService { kind: ServiceKind::CalDav, url: "https://caldav.fastmail.com/dav/".into(), user_name: "me@fastmail.com".into(), confirmed: true, source: "table".into() })
+    })
+    .await
+    .unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "the session's own site gets the token");
+}
+
+#[tokio::test]
+async fn calendar_calls_refused_together_share_the_sessions_refresh() {
+    let session = signed_in_session("https://api.fastmail.com/jmap/session", Some("r1"));
+    let tokens = crate::connect::session_tokens(session);
+    assert_eq!(tokens.token(None).await.unwrap(), "a1");
+    // Another call already moved past the refused token: no refresh.
+    assert_eq!(tokens.token(Some("a0")).await.unwrap(), "a1");
+    // The held token itself was refused: only now does a refresh go out,
+    // here to a token endpoint nothing answers.
+    assert!(tokens.token(Some("a1")).await.is_err());
+}
+
+#[test]
+fn an_oauth_row_never_sends_its_refresh_token_as_an_access_token() {
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    assert!(crate::auth_of(&saved, "me@fastmail.com", "refresh-1".into()).is_err());
+}
+
+#[tokio::test]
+async fn a_restart_reuses_the_accounts_oauth_session() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
+    crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    let first = secrets.jmap_sessions.held(account.id).expect("the start keeps its session");
+    crate::connect_jmap(&db, &secrets.clone(), &account, 30).await.unwrap();
+    let again = secrets.jmap_sessions.held(account.id).unwrap();
+    assert!(Arc::ptr_eq(&first, &again), "a second session would race the first to rotate");
+    secrets.forget(&account).await.unwrap();
+    assert!(secrets.jmap_sessions.held(account.id).is_none(), "a removed account leaves no session");
 }

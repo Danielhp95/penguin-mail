@@ -61,6 +61,8 @@ pub(crate) struct JmapEntry {
     pub(crate) token_access: Vec<String>,
     #[serde(default)]
     pub(crate) token_lacks: Vec<String>,
+    #[serde(default)]
+    pub(crate) oauth_scopes: Vec<String>,
 }
 
 impl Entry {
@@ -73,6 +75,7 @@ impl Entry {
             token_plan_above: jmap.token_plan_above.clone(),
             token_access: jmap.token_access.clone(),
             token_lacks: jmap.token_lacks.clone(),
+            oauth_scopes: jmap.oauth_scopes.clone(),
             imap_host: self.imap.as_ref().map(|s| s.host.clone()),
         })
     }

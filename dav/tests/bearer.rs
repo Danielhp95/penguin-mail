@@ -8,12 +8,19 @@ use mailrs_dav::{DavApi, DavClient, Kind, Login, TokenSource};
 use wiremock::matchers::{header, method};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-struct Counting(AtomicU32);
+struct Counting(AtomicU32, std::sync::Mutex<Vec<Option<String>>>);
+
+impl Counting {
+    fn new() -> Counting {
+        Counting(AtomicU32::new(0), std::sync::Mutex::new(Vec::new()))
+    }
+}
 
 impl TokenSource for Counting {
-    fn token(&self, force: bool) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
+    fn token<'a>(&'a self, refused: Option<&'a str>) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         let n = self.0.fetch_add(1, Ordering::Relaxed);
-        Box::pin(async move { Ok(if force { "fresh".to_string() } else { format!("stale{n}") }) })
+        self.1.lock().unwrap().push(refused.map(str::to_string));
+        Box::pin(async move { Ok(if refused.is_some() { "fresh".to_string() } else { format!("stale{n}") }) })
     }
 }
 
@@ -28,7 +35,7 @@ async fn the_calendar_takes_the_oauth_token() {
         .mount(&server)
         .await;
     Mock::given(method("PROPFIND")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
-    let source = Arc::new(Counting(AtomicU32::new(0)));
+    let source = Arc::new(Counting::new());
     let client = DavClient::over(url::Url::parse(&server.uri()).unwrap(), Kind::Calendar, Login::new("me", ""))
         .unwrap()
         .with_bearer(source);
@@ -42,11 +49,45 @@ async fn the_calendar_takes_the_oauth_token() {
 async fn a_second_refusal_is_unauthorized_after_one_fresh_token() {
     let server = MockServer::start().await;
     Mock::given(method("PROPFIND")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
-    let source = Arc::new(Counting(AtomicU32::new(0)));
+    let source = Arc::new(Counting::new());
     let client = DavClient::over(url::Url::parse(&server.uri()).unwrap(), Kind::Calendar, Login::new("me", ""))
         .unwrap()
         .with_bearer(source.clone());
     assert!(client.homes().await.is_err());
     let asked_for_fresh = server.received_requests().await.unwrap().iter().filter(|r| r.headers.get("Authorization").is_some_and(|v| v == "Bearer fresh")).count();
     assert_eq!(asked_for_fresh, 1);
+}
+
+#[tokio::test]
+async fn a_refused_token_goes_back_to_its_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("PROPFIND")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let source = Arc::new(Counting::new());
+    let client = DavClient::over(url::Url::parse(&server.uri()).unwrap(), Kind::Calendar, Login::new("me", ""))
+        .unwrap()
+        .with_bearer(source.clone());
+    let _ = client.homes().await;
+    let asked = source.1.lock().unwrap().clone();
+    assert_eq!(asked[..2], [None, Some("stale0".to_string())]);
+}
+
+#[test]
+fn only_addresses_on_one_site_share_it() {
+    use mailrs_dav::shares_site;
+
+    assert!(shares_site("https://api.fastmail.com/jmap/session", "https://caldav.fastmail.com/dav/"));
+    assert!(!shares_site("https://api.fastmail.com/jmap/session", "https://dav.example.org/cal/"));
+    assert!(!shares_site("https://api.fastmail.com/jmap/session", "https://fastmail.com@dav.example.org/"));
+    assert!(!shares_site("https://api.fastmail.com/jmap/session", "not a url"));
+}
+
+#[test]
+fn ip_addresses_share_a_site_only_with_themselves() {
+    use mailrs_dav::shares_site;
+
+    // The Public Suffix List would read both as the "domain" 2.10.
+    assert!(!shares_site("https://192.0.2.10/jmap/session", "https://198.51.2.10/dav/"));
+    assert!(shares_site("https://192.0.2.10/jmap/session", "https://192.0.2.10:8443/dav/"));
+    assert!(!shares_site("https://192.0.2.10/jmap/session", "https://10.2.10/dav/"));
+    assert!(!shares_site("https://[2001:db8::1]/jmap/session", "https://[2001:db8::2]/dav/"));
 }

@@ -10822,26 +10822,44 @@ msgstr "請選擇規則執行的操作"
 msgid "The rule is read-only."
 msgstr "此為唯讀規則。"
 
-#: sync/src/sign_in.rs:205
+#: sync/src/sign_in.rs:207
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} 已是 Penguin Mail 中的 {provider} 帳號。"
 
-#: sync/src/sign_in/browser.rs:113
+#. The JMAP server publishes no sign-in a browser can run.
+#: sync/src/sign_in/browser.rs:97
+msgid "This server does not offer a sign-in in the browser."
+msgstr "此伺服器不提供在瀏覽器中登入。"
+
+#. The JMAP server signed in without a refresh token, so the account
+#. could not stay signed in.
+#: sync/src/sign_in/browser.rs:101
+msgid ""
+"The server did not let Penguin Mail stay signed in. Sign in with a password "
+"or a token instead."
+msgstr "伺服器未讓 Penguin Mail 保持登入。請改用密碼或權杖登入。"
+
+#. Nobody came back from the browser within the wait.
+#: sync/src/sign_in/browser.rs:104
+msgid "Gave up waiting for the browser after ten minutes."
+msgstr "已等候瀏覽器十分鐘，停止等候。"
+
+#: sync/src/sign_in/browser.rs:132
 msgid "You signed in as {account}. Choose {wanted} to reconnect that account."
 msgstr "已以 {account} 登入。請選擇 {wanted} 以重新連線至該帳號。"
 
-#: sync/src/sign_in/browser.rs:123
+#: sync/src/sign_in/browser.rs:142
 msgid ""
 "Penguin Mail cannot work without access to your mail. Sign in again and "
 "leave the Gmail permission ticked."
 msgstr ""
 "Penguin Mail 需要郵件存取權才能運作。請重新登入，並保留勾選 Gmail 權限。"
 
-#: sync/src/sign_in/browser.rs:132
+#: sync/src/sign_in/browser.rs:151
 msgid "Your organization's administrator must approve Penguin Mail."
 msgstr "所屬組織的管理員必須核准 Penguin Mail。"
 
-#: sync/src/sign_in/browser.rs:134
+#: sync/src/sign_in/browser.rs:153
 msgid ""
 "Penguin Mail cannot work without access to your mail. Sign in again and "
 "allow it."

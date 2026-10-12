@@ -981,7 +981,7 @@ impl Core {
                 dav_password,
             };
             let account = jmap_signed_in(&db, &secrets, new, now_millis()).await?;
-            let services = connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, window_days).await?;
+            let services = connect_jmap(&db, &secrets, &account, window_days).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)
         })

@@ -32,6 +32,9 @@ pub struct JmapProvider {
     /// Capabilities a token never carries, such as Fastmail's automatic
     /// reply. Words only; features follow the session.
     pub token_lacks: Vec<String>,
+    /// The scopes a sign-in in the browser asks for. Empty when the table
+    /// names none, and the server's metadata then decides.
+    pub oauth_scopes: Vec<String>,
     /// The provider's IMAP host, which finds its CalDAV and CardDAV
     /// servers in the table.
     pub imap_host: Option<String>,
@@ -193,6 +196,13 @@ mod tests {
         let fastmail = jmap_named("Fastmail").unwrap();
         assert_eq!(fastmail.token_lacks, ["urn:ietf:params:jmap:vacationresponse"]);
         assert!(jmap_named("iCloud Mail").is_none());
+    }
+
+    #[test]
+    fn the_table_names_the_scopes_a_fastmail_sign_in_asks_for() {
+        let fastmail = jmap_named("Fastmail").unwrap();
+        assert!(fastmail.oauth_scopes.contains(&"offline_access".to_string()));
+        assert!(fastmail.oauth_scopes.contains(&"urn:ietf:params:oauth:scope:mail".to_string()));
     }
 
     #[test]

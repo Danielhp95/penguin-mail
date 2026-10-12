@@ -25,7 +25,7 @@ impl<J> JmapSieve<J> {
 /// carries fixed text.
 fn sieve_error(err: JmapError) -> SieveError {
     match err {
-        JmapError::Unauthorized => SieveError::Auth(String::new()),
+        JmapError::Unauthorized | JmapError::UnknownClient => SieveError::Auth(String::new()),
         JmapError::Network(detail) => SieveError::Network(detail),
         JmapError::NotFound => SieveError::NotFound,
         JmapError::AnswerTooLarge { .. } => SieveError::TooLarge,

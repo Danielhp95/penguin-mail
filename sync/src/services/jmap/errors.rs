@@ -10,7 +10,7 @@ use crate::BackendError;
 
 pub(crate) fn backend(err: JmapError) -> BackendError {
     match err {
-        JmapError::Unauthorized | JmapError::BadCredential => BackendError::NeedsReauth,
+        JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient => BackendError::NeedsReauth,
         JmapError::Network(detail) => BackendError::Offline(detail),
         JmapError::RateLimited { retry_after } => BackendError::RateLimited(retry_after),
         JmapError::NotFound => BackendError::NotFound,

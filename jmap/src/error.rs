@@ -84,6 +84,11 @@ pub enum JmapError {
     /// (RFC 6750), which the client cannot present.
     #[error("the sign-in server handed out a token that is not a Bearer token")]
     NotBearer,
+    /// The sign-in server does not know the app's registered client, or
+    /// no longer lets it sign in (`invalid_client`, `unauthorized_client`).
+    /// A new registration helps; for a kept account, so does a new sign-in.
+    #[error("the sign-in server does not know this app's client")]
+    UnknownClient,
 }
 
 /// A decode failure for `what`, keeping the error's category and position

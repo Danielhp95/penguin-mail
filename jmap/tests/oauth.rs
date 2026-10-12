@@ -166,6 +166,14 @@ fn a_redirect_error_keeps_no_server_text() {
     assert!(!said.contains("SECRET"), "{said}");
 }
 
+#[test]
+fn a_redirect_naming_an_unknown_client_says_so() {
+    for error in ["invalid_client", "unauthorized_client"] {
+        let err = parse_redirect(&redirect(&format!("error={error}&state=mine")), "mine", &https_metadata()).unwrap().unwrap_err();
+        assert_eq!(err, JmapError::UnknownClient, "{error}");
+    }
+}
+
 #[tokio::test]
 async fn a_session_url_with_a_password_is_refused_without_echo() {
     let err = oauth::metadata("https://me:hunter2@api.example.com/jmap/session").await.unwrap_err();
