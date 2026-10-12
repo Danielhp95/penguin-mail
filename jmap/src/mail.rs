@@ -408,10 +408,13 @@ impl JmapClient {
 
     async fn query_from(&self, query: &EmailQuery, anchor: Option<&str>) -> Result<Queried, JmapError> {
         let account = self.mail_account().await?;
+        // The page's ids feed one Email/get, which the server refuses whole
+        // past maxObjectsInGet. A shorter page only means one more call.
+        let most = self.session().await?.limits().max_objects_in_get.clamp(1, 500);
         let mut args = json!({
             "accountId": account,
             "sort": [{ "property": "receivedAt", "isAscending": false }],
-            "limit": query.limit,
+            "limit": query.limit.min(most),
             "calculateTotal": query.total,
         });
         match anchor {

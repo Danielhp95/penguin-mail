@@ -547,3 +547,14 @@ async fn saving_bytes_another_message_holds_is_refused_and_leaves_it_alone() {
     let sent = posts(&server).await;
     assert_eq!(sent.len(), 2, "no patch and no destroy");
 }
+
+#[tokio::test]
+async fn a_query_page_stays_within_the_servers_get_limit() {
+    // The query's ids feed a back-referenced Email/get, so a page longer
+    // than maxObjectsInGet would be refused whole.
+    let server = holding_threads(2, &[("a", &["ma", "mb", "mc"])]).await;
+    let query = EmailQuery { filter: None, position: 0, limit: 1000, total: false };
+    let _ = client(&server).query(&query).await;
+    let asked = calls_named(&server, "Email/query").await;
+    assert_eq!(asked[0]["limit"], json!(2));
+}
