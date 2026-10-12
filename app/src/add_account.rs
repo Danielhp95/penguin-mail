@@ -1781,12 +1781,22 @@ pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowse
     }
 }
 
-/// The line under Sign In With Browser.
+/// The line under Sign In With Browser. Where the table's token card
+/// lists Masked Email, it says that only a token gives it: Fastmail grants
+/// no Masked Email scope to an app that signs in through the browser.
 pub fn browser_line(proposal: &JmapProposal) -> String {
-    fill(
+    let line = fill(
         &gettext("Sign in on {provider}'s own page instead of making a token."),
         &[("provider", &post::short_name(&proposal.provider_name))],
-    )
+    );
+    let masked = proposal
+        .provider
+        .as_ref()
+        .is_some_and(|p| p.token_access.iter().any(|access| access == "Masked Email"));
+    match masked {
+        true => format!("{line} {}", gettext("Masked Email needs an API token.")),
+        false => line,
+    }
 }
 
 /// Whether Sign In With Browser can start: nothing else is signing in, and
@@ -3427,7 +3437,19 @@ mod tests {
     fn the_browser_button_names_the_provider() {
         let address = Address::parse("me@fastmail.com").unwrap();
         let proposal = jmap_proposal(fastmail_jmap(), None, &address);
-        assert_eq!(browser_line(&proposal), "Sign in on Fastmail's own page instead of making a token.");
+        assert!(browser_line(&proposal).starts_with("Sign in on Fastmail's own page instead of making a token."));
+    }
+
+    #[test]
+    fn the_browser_line_says_masked_email_needs_a_token() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(
+            browser_line(&proposal),
+            "Sign in on Fastmail's own page instead of making a token. Masked Email needs an API token."
+        );
+        let elsewhere = jmap_proposal(hoster_jmap(), None, &Address::parse("me@example.org").unwrap());
+        assert!(!browser_line(&elsewhere).contains("Masked Email"), "only a provider whose tokens give Masked Email says so");
     }
 
     #[test]

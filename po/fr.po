@@ -332,9 +332,9 @@ msgid_plural "{count} conversations"
 msgstr[0] "{count} conversation"
 msgstr[1] "{count} conversations"
 
-#: app/src/add_account.rs:787 app/src/add_account.rs:1815
-#: app/src/add_account.rs:1840 app/src/add_account.rs:1864
-#: app/src/add_account.rs:1926
+#: app/src/add_account.rs:787 app/src/add_account.rs:1825
+#: app/src/add_account.rs:1850 app/src/add_account.rs:1874
+#: app/src/add_account.rs:1936
 msgid "Could not sign in"
 msgstr "Connexion impossible"
 
@@ -460,7 +460,7 @@ msgstr ""
 msgid "Connect Your Keyring"
 msgstr "Connecter votre trousseau"
 
-#: app/src/add_account.rs:980 app/src/add_account.rs:1875
+#: app/src/add_account.rs:980 app/src/add_account.rs:1885
 msgid "{provider} refused the password"
 msgstr "{provider} a refusé le mot de passe"
 
@@ -477,7 +477,7 @@ msgstr ""
 "votre compte en ligne. Créez-en un, collez-le ci-dessus, puis choisissez Se "
 "connecter."
 
-#: app/src/add_account.rs:995 app/src/add_account.rs:1876
+#: app/src/add_account.rs:995 app/src/add_account.rs:1886
 msgid "Check the password, then choose Sign In."
 msgstr "Vérifiez le mot de passe, puis choisissez Se connecter."
 
@@ -682,112 +682,116 @@ msgstr "Saisissez l’adresse du serveur ou son URL de session JMAP."
 msgid "Penguin Mail reaches JMAP servers over HTTPS only."
 msgstr "Penguin Mail n’accède aux serveurs JMAP qu’en HTTPS."
 
-#: app/src/add_account.rs:1787
+#: app/src/add_account.rs:1789
 msgid "Sign in on {provider}'s own page instead of making a token."
 msgstr "Connectez-vous sur la page de {provider} au lieu de créer un jeton."
 
-#: app/src/add_account.rs:1803
+#: app/src/add_account.rs:1797
+msgid "Masked Email needs an API token."
+msgstr "Masked Email nécessite un jeton d’API."
+
+#: app/src/add_account.rs:1813
 msgid "Sign in to {provider} if it asks."
 msgstr "Connectez-vous à {provider} s’il le demande."
 
-#: app/src/add_account.rs:1804
+#: app/src/add_account.rs:1814
 msgid "Read what Penguin Mail asks for and allow it."
 msgstr "Lisez ce que demande Penguin Mail et autorisez-le."
 
-#: app/src/add_account.rs:1822
+#: app/src/add_account.rs:1832
 msgid "{provider} refused the sign-in"
 msgstr "{provider} a refusé la connexion"
 
-#: app/src/add_account.rs:1823
+#: app/src/add_account.rs:1833
 msgid "Choose Sign In With Browser to try again."
 msgstr "Choisissez Se connecter avec le navigateur pour réessayer."
 
-#: app/src/add_account.rs:1826
+#: app/src/add_account.rs:1836
 msgid "The sign-in was declined"
 msgstr "La connexion a été refusée"
 
-#: app/src/add_account.rs:1827
+#: app/src/add_account.rs:1837
 msgid "Choose Sign In With Browser and allow access on {provider}'s page."
 msgstr ""
 "Choisissez Se connecter avec le navigateur et autorisez l’accès sur la page "
 "de {provider}."
 
-#: app/src/add_account.rs:1830 app/src/add_account.rs:1916
+#: app/src/add_account.rs:1840 app/src/add_account.rs:1926
 msgid "{provider} does not answer"
 msgstr "{provider} ne répond pas"
 
-#: app/src/add_account.rs:1831
+#: app/src/add_account.rs:1841
 msgid "Check your connection, then choose Sign In With Browser."
 msgstr ""
 "Vérifiez votre connexion, puis choisissez Se connecter avec le navigateur."
 
-#: app/src/add_account.rs:1834 app/src/add_account.rs:1920
+#: app/src/add_account.rs:1844 app/src/add_account.rs:1930
 msgid "{provider} asked Penguin Mail to wait"
 msgstr "{provider} a demandé à Penguin Mail de patienter"
 
-#: app/src/add_account.rs:1835
+#: app/src/add_account.rs:1845
 msgid "Wait a minute, then choose Sign In With Browser."
 msgstr "Patientez une minute, puis choisissez Se connecter avec le navigateur."
 
-#: app/src/add_account.rs:1841 app/src/add_account.rs:1932
+#: app/src/add_account.rs:1851 app/src/add_account.rs:1942
 msgid "{provider} gave an answer Penguin Mail cannot use. Try again later."
 msgstr ""
 "{provider} a donné une réponse que Penguin Mail ne peut pas utiliser. "
 "Réessayez plus tard."
 
-#: app/src/add_account.rs:1871
+#: app/src/add_account.rs:1881
 msgid "{provider} refused the token"
 msgstr "{provider} a refusé le jeton"
 
-#: app/src/add_account.rs:1872
+#: app/src/add_account.rs:1882
 msgid "Check the token and the access it was made with, then choose Sign In."
 msgstr ""
 "Vérifiez le jeton et l’accès avec lequel il a été créé, puis choisissez Se "
 "connecter."
 
-#: app/src/add_account.rs:1881
+#: app/src/add_account.rs:1891
 msgid "The token holds a character that cannot be sent"
 msgstr "Le jeton contient un caractère impossible à envoyer"
 
-#: app/src/add_account.rs:1882
+#: app/src/add_account.rs:1892
 msgid "The password holds a character that cannot be sent"
 msgstr "Le mot de passe contient un caractère impossible à envoyer"
 
-#: app/src/add_account.rs:1884
+#: app/src/add_account.rs:1894
 msgid "Paste it again without the line break, then choose Sign In."
 msgstr ""
 "Collez-le de nouveau sans le saut de ligne, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:1887
+#: app/src/add_account.rs:1897
 msgid "No JMAP server at {host}"
 msgstr "Aucun serveur JMAP à {host}"
 
-#: app/src/add_account.rs:1889
+#: app/src/add_account.rs:1899
 msgid "Check the session URL in Server Settings, or use IMAP instead."
 msgstr ""
 "Vérifiez l’URL de session dans Paramètres du serveur, ou utilisez IMAP."
 
-#: app/src/add_account.rs:1890
+#: app/src/add_account.rs:1900
 msgid "Check the session URL in Server Settings."
 msgstr "Vérifiez l’URL de session dans Paramètres du serveur."
 
-#: app/src/add_account.rs:1894
+#: app/src/add_account.rs:1904
 msgid "{provider} offers no mail over JMAP"
 msgstr "{provider} ne propose pas le courrier par JMAP"
 
-#: app/src/add_account.rs:1896
+#: app/src/add_account.rs:1906
 msgid "Use IMAP for this account instead."
 msgstr "Utilisez IMAP pour ce compte."
 
-#: app/src/add_account.rs:1897
+#: app/src/add_account.rs:1907
 msgid "Choose IMAP in Server Settings to add this account."
 msgstr "Choisissez IMAP dans Paramètres du serveur pour ajouter ce compte."
 
-#: app/src/add_account.rs:1904
+#: app/src/add_account.rs:1914
 msgid "{host} sends the sign-in elsewhere"
 msgstr "{host} renvoie la connexion ailleurs"
 
-#: app/src/add_account.rs:1909
+#: app/src/add_account.rs:1919
 msgid ""
 "It tried to pass your sign-in on to {other}, and Penguin Mail refused. If "
 "you trust {other}, enter its session URL in Server Settings."
@@ -796,15 +800,15 @@ msgstr ""
 "refusé. Si vous faites confiance à {other}, saisissez son URL de session "
 "dans Paramètres du serveur."
 
-#: app/src/add_account.rs:1917
+#: app/src/add_account.rs:1927
 msgid "Check your connection, then choose Sign In."
 msgstr "Vérifiez votre connexion, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:1921
+#: app/src/add_account.rs:1931
 msgid "Wait a minute, then choose Sign In."
 msgstr "Patientez une minute, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:1930
+#: app/src/add_account.rs:1940
 msgid ""
 "{provider} gave an answer Penguin Mail cannot use. Try again later, or use "
 "IMAP instead."
@@ -2644,13 +2648,19 @@ msgstr "{provider} ne peut pas envoyer de réponses automatiques."
 msgid ""
 "{provider}'s calendar server refused the browser sign-in. Choose Sign In "
 "Again and give an app password for the calendar."
-msgstr "Le serveur de calendrier de {provider} a refusé la connexion avec le navigateur. Choisissez Se reconnecter et saisissez un mot de passe d’application pour le calendrier."
+msgstr ""
+"Le serveur de calendrier de {provider} a refusé la connexion avec le "
+"navigateur. Choisissez Se reconnecter et saisissez un mot de passe "
+"d’application pour le calendrier."
 
 #: app/src/offered.rs:474
 msgid ""
 "{provider}'s contacts server refused the browser sign-in. Choose Sign In "
 "Again and give an app password for the calendar."
-msgstr "Le serveur de contacts de {provider} a refusé la connexion avec le navigateur. Choisissez Se reconnecter et saisissez un mot de passe d’application pour le calendrier."
+msgstr ""
+"Le serveur de contacts de {provider} a refusé la connexion avec le "
+"navigateur. Choisissez Se reconnecter et saisissez un mot de passe "
+"d’application pour le calendrier."
 
 #: app/src/offered.rs:479
 msgid "Penguin Mail cannot show {provider}'s calendar over JMAP yet."

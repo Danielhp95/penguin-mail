@@ -309,9 +309,9 @@ msgid "{count} conversation"
 msgid_plural "{count} conversations"
 msgstr[0] "{count} 個對話"
 
-#: app/src/add_account.rs:787 app/src/add_account.rs:1815
-#: app/src/add_account.rs:1840 app/src/add_account.rs:1864
-#: app/src/add_account.rs:1926
+#: app/src/add_account.rs:787 app/src/add_account.rs:1825
+#: app/src/add_account.rs:1850 app/src/add_account.rs:1874
+#: app/src/add_account.rs:1936
 msgid "Could not sign in"
 msgstr "無法登入"
 
@@ -423,7 +423,7 @@ msgstr ""
 msgid "Connect Your Keyring"
 msgstr "連結鑰匙圈"
 
-#: app/src/add_account.rs:980 app/src/add_account.rs:1875
+#: app/src/add_account.rs:980 app/src/add_account.rs:1885
 msgid "{provider} refused the password"
 msgstr "{provider} 拒絕此密碼"
 
@@ -439,7 +439,7 @@ msgstr ""
 "{provider} 在此需要應用程式密碼，而非網站密碼。請建立一組密碼並貼在上方，再選"
 "擇 [登入]。"
 
-#: app/src/add_account.rs:995 app/src/add_account.rs:1876
+#: app/src/add_account.rs:995 app/src/add_account.rs:1886
 msgid "Check the password, then choose Sign In."
 msgstr "請檢查密碼，再選擇 [登入]。"
 
@@ -618,103 +618,107 @@ msgstr "請輸入伺服器位址或其 JMAP 工作階段網址。"
 msgid "Penguin Mail reaches JMAP servers over HTTPS only."
 msgstr "Penguin Mail 只透過 HTTPS 存取 JMAP 伺服器。"
 
-#: app/src/add_account.rs:1787
+#: app/src/add_account.rs:1789
 msgid "Sign in on {provider}'s own page instead of making a token."
 msgstr "直接在 {provider} 的頁面登入，不必建立權杖。"
 
-#: app/src/add_account.rs:1803
+#: app/src/add_account.rs:1797
+msgid "Masked Email needs an API token."
+msgstr "Masked Email 需要 API 權杖。"
+
+#: app/src/add_account.rs:1813
 msgid "Sign in to {provider} if it asks."
 msgstr "若有要求，請登入 {provider}。"
 
-#: app/src/add_account.rs:1804
+#: app/src/add_account.rs:1814
 msgid "Read what Penguin Mail asks for and allow it."
 msgstr "請閱讀 Penguin Mail 要求的權限，然後允許。"
 
-#: app/src/add_account.rs:1822
+#: app/src/add_account.rs:1832
 msgid "{provider} refused the sign-in"
 msgstr "{provider} 拒絕此登入"
 
-#: app/src/add_account.rs:1823
+#: app/src/add_account.rs:1833
 msgid "Choose Sign In With Browser to try again."
 msgstr "請選擇 [使用瀏覽器登入] 再試一次。"
 
-#: app/src/add_account.rs:1826
+#: app/src/add_account.rs:1836
 msgid "The sign-in was declined"
 msgstr "登入遭到拒絕"
 
-#: app/src/add_account.rs:1827
+#: app/src/add_account.rs:1837
 msgid "Choose Sign In With Browser and allow access on {provider}'s page."
 msgstr "請選擇 [使用瀏覽器登入]，並在 {provider} 的頁面上允許存取。"
 
-#: app/src/add_account.rs:1830 app/src/add_account.rs:1916
+#: app/src/add_account.rs:1840 app/src/add_account.rs:1926
 msgid "{provider} does not answer"
 msgstr "{provider} 沒有回應"
 
-#: app/src/add_account.rs:1831
+#: app/src/add_account.rs:1841
 msgid "Check your connection, then choose Sign In With Browser."
 msgstr "請檢查網路連線，再選擇 [使用瀏覽器登入]。"
 
-#: app/src/add_account.rs:1834 app/src/add_account.rs:1920
+#: app/src/add_account.rs:1844 app/src/add_account.rs:1930
 msgid "{provider} asked Penguin Mail to wait"
 msgstr "{provider} 要求 Penguin Mail 稍候"
 
-#: app/src/add_account.rs:1835
+#: app/src/add_account.rs:1845
 msgid "Wait a minute, then choose Sign In With Browser."
 msgstr "請等候一分鐘，再選擇 [使用瀏覽器登入]。"
 
-#: app/src/add_account.rs:1841 app/src/add_account.rs:1932
+#: app/src/add_account.rs:1851 app/src/add_account.rs:1942
 msgid "{provider} gave an answer Penguin Mail cannot use. Try again later."
 msgstr "{provider} 的回應無法供 Penguin Mail 使用。請稍後再試。"
 
-#: app/src/add_account.rs:1871
+#: app/src/add_account.rs:1881
 msgid "{provider} refused the token"
 msgstr "{provider} 拒絕此權杖"
 
-#: app/src/add_account.rs:1872
+#: app/src/add_account.rs:1882
 msgid "Check the token and the access it was made with, then choose Sign In."
 msgstr "請檢查權杖及建立時設定的存取權，再選擇 [登入]。"
 
-#: app/src/add_account.rs:1881
+#: app/src/add_account.rs:1891
 msgid "The token holds a character that cannot be sent"
 msgstr "權杖含有無法傳送的字元"
 
-#: app/src/add_account.rs:1882
+#: app/src/add_account.rs:1892
 msgid "The password holds a character that cannot be sent"
 msgstr "密碼含有無法傳送的字元"
 
-#: app/src/add_account.rs:1884
+#: app/src/add_account.rs:1894
 msgid "Paste it again without the line break, then choose Sign In."
 msgstr "請去掉換行後重新貼上，再選擇 [登入]。"
 
-#: app/src/add_account.rs:1887
+#: app/src/add_account.rs:1897
 msgid "No JMAP server at {host}"
 msgstr "{host} 沒有 JMAP 伺服器"
 
-#: app/src/add_account.rs:1889
+#: app/src/add_account.rs:1899
 msgid "Check the session URL in Server Settings, or use IMAP instead."
 msgstr "請在 [伺服器設定] 中檢查工作階段網址，或改用 IMAP。"
 
-#: app/src/add_account.rs:1890
+#: app/src/add_account.rs:1900
 msgid "Check the session URL in Server Settings."
 msgstr "請在 [伺服器設定] 中檢查工作階段網址。"
 
-#: app/src/add_account.rs:1894
+#: app/src/add_account.rs:1904
 msgid "{provider} offers no mail over JMAP"
 msgstr "{provider} 未透過 JMAP 提供郵件"
 
-#: app/src/add_account.rs:1896
+#: app/src/add_account.rs:1906
 msgid "Use IMAP for this account instead."
 msgstr "請改用 IMAP 設定此帳號。"
 
-#: app/src/add_account.rs:1897
+#: app/src/add_account.rs:1907
 msgid "Choose IMAP in Server Settings to add this account."
 msgstr "請在 [伺服器設定] 中選擇 IMAP 以新增此帳號。"
 
-#: app/src/add_account.rs:1904
+#: app/src/add_account.rs:1914
 msgid "{host} sends the sign-in elsewhere"
 msgstr "{host} 將登入轉往他處"
 
-#: app/src/add_account.rs:1909
+#: app/src/add_account.rs:1919
 msgid ""
 "It tried to pass your sign-in on to {other}, and Penguin Mail refused. If "
 "you trust {other}, enter its session URL in Server Settings."
@@ -722,15 +726,15 @@ msgstr ""
 "它試圖將您的登入轉交給 {other}，Penguin Mail 已拒絕。若您信任 {other}，請在 "
 "[伺服器設定] 中輸入其工作階段網址。"
 
-#: app/src/add_account.rs:1917
+#: app/src/add_account.rs:1927
 msgid "Check your connection, then choose Sign In."
 msgstr "請檢查網路連線，再選擇 [登入]。"
 
-#: app/src/add_account.rs:1921
+#: app/src/add_account.rs:1931
 msgid "Wait a minute, then choose Sign In."
 msgstr "請等候一分鐘，再選擇 [登入]。"
 
-#: app/src/add_account.rs:1930
+#: app/src/add_account.rs:1940
 msgid ""
 "{provider} gave an answer Penguin Mail cannot use. Try again later, or use "
 "IMAP instead."
@@ -2477,13 +2481,17 @@ msgstr "{provider} 無法傳送自動回覆。"
 msgid ""
 "{provider}'s calendar server refused the browser sign-in. Choose Sign In "
 "Again and give an app password for the calendar."
-msgstr "{provider} 的行事曆伺服器拒絕了瀏覽器登入。請選擇 [重新登入]，並輸入行事曆的應用程式密碼。"
+msgstr ""
+"{provider} 的行事曆伺服器拒絕了瀏覽器登入。請選擇 [重新登入]，並輸入行事曆的"
+"應用程式密碼。"
 
 #: app/src/offered.rs:474
 msgid ""
 "{provider}'s contacts server refused the browser sign-in. Choose Sign In "
 "Again and give an app password for the calendar."
-msgstr "{provider} 的聯絡人伺服器拒絕了瀏覽器登入。請選擇 [重新登入]，並輸入行事曆的應用程式密碼。"
+msgstr ""
+"{provider} 的聯絡人伺服器拒絕了瀏覽器登入。請選擇 [重新登入]，並輸入行事曆的"
+"應用程式密碼。"
 
 #: app/src/offered.rs:479
 msgid "Penguin Mail cannot show {provider}'s calendar over JMAP yet."
