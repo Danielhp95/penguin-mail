@@ -321,3 +321,34 @@ async fn a_refusal_that_only_the_page_without_an_anchor_gets_past_turns_anchors_
     assert_eq!(h.mail().window_ids(30, None).await.unwrap().len(), 5);
     assert_eq!(h.fake.with(|s| s.anchored_queries), 0);
 }
+
+#[tokio::test]
+async fn a_window_past_the_listing_cap_keeps_every_message_after_the_server_loses_its_place() {
+    let h = fastmail().await;
+    let count = crate::services::jmap::MOST_IDS + 20;
+    let ids: Vec<String> = (0..count)
+        .map(|n| h.fake.deliver("inbox", &raw(&format!("cap{n}@x"), "Many"), days_ago(1) + n as i64))
+        .collect();
+    h.bootstrap_all().await;
+    while h.sync.backfill_step().await.unwrap() {}
+    let later = h.fake.deliver("inbox", &raw("cap-later@x", "Later"), days_ago(0));
+    h.fake.forget_changes();
+    h.look().await;
+    while h.sync.backfill_step().await.unwrap() {}
+    assert!(h.stored(&later).await);
+    let (account, wanted) = (h.account_id, ids.clone());
+    let held = h.db.read(move |c| mailrs_store::messages::existing_ids(c, account, &wanted)).await.unwrap();
+    assert_eq!(held.len(), count, "the relist dropped mail it could not list");
+}
+
+#[tokio::test]
+async fn a_listing_past_the_cap_is_refused_rather_than_cut() {
+    let h = fastmail().await;
+    for n in 0..crate::services::jmap::MOST_IDS + 1 {
+        h.fake.deliver("archive", &raw(&format!("cut{n}@x"), "Many"), days_ago(1));
+    }
+    h.mail().mailboxes().await.unwrap();
+    assert!(matches!(h.mail().window_ids(30, None).await, Err(crate::BackendError::Unsupported)));
+    let archive = h.fake.mailbox("archive");
+    assert!(matches!(h.mail().window_ids(30, Some(&archive)).await, Err(crate::BackendError::Unsupported)));
+}

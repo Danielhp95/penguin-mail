@@ -1109,7 +1109,9 @@ pub trait MailBackend: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Backfill, BackendError>> + Send;
 
     /// Every message in the sync window, or the ones of it in `mailbox`,
-    /// ids only.
+    /// ids only. A backend that caps its listings answers `Unsupported`
+    /// past the cap rather than a cut list, which a caller would read as
+    /// mail gone from the server.
     fn window_ids(
         &self,
         days: i64,

@@ -114,7 +114,8 @@ impl AccountSync {
     /// change made while this runs arrives through the next replay.
     ///
     /// A store that never finished loading the window bootstraps instead,
-    /// since there is too little in it to compare against.
+    /// since there is too little in it to compare against, and so does a
+    /// window too large for the server to list whole.
     pub async fn rebootstrap(&self) -> Result<(), SyncError> {
         let account_id = self.account_id;
         let cursor = self
@@ -140,18 +141,18 @@ impl AccountSync {
         // The server's own names, since on a folder server each one says
         // which mailbox holds the message; `listing_as_stored` reads them
         // back as store ids below.
-        let server = self.mail.untranslated();
-        let listed = server.window_ids(self.window_days, None).await?;
-        let members = match self.renames() {
-            true => mailboxes_holding(&listed),
-            false => {
-                let mut members: HashMap<String, HashSet<String>> = HashMap::new();
-                for label in &listed_ids {
-                    let carrying = server.window_ids(self.window_days, Some(label)).await?;
-                    members.insert(label.clone(), carrying.into_iter().map(|m| m.id).collect());
-                }
-                members
+        let (listed, members) = match self.list_window(&listed_ids).await {
+            Err(SyncError::Backend(BackendError::Unsupported)) => {
+                // Too much to list in one go: a cut listing would sweep the
+                // rest away, so the window loads again a page at a time and
+                // sweeps only after its last page.
+                tracing::info!(
+                    account = account_id,
+                    "the window is too large to compare; loading it again"
+                );
+                return self.bootstrap().await;
             }
+            listed => listed?,
         };
         // What each compared mailbox stands for, so the stored copy of a
         // message can be asked whether it is in it.
@@ -226,6 +227,27 @@ impl AccountSync {
             .await?;
         self.emit_threads(touched);
         self.set_state(AccountState::Ok).await
+    }
+
+    /// The window's ids as the server names them, and the ids each of
+    /// `labels` holds. `Unsupported` when a listing is too large to take
+    /// whole.
+    async fn list_window(
+        &self,
+        labels: &[String],
+    ) -> Result<(Vec<RemoteRef>, HashMap<String, HashSet<String>>), SyncError> {
+        let server = self.mail.untranslated();
+        let listed = server.window_ids(self.window_days, None).await?;
+        if self.renames() {
+            let members = mailboxes_holding(&listed);
+            return Ok((listed, members));
+        }
+        let mut members: HashMap<String, HashSet<String>> = HashMap::new();
+        for label in labels {
+            let carrying = server.window_ids(self.window_days, Some(label)).await?;
+            members.insert(label.clone(), carrying.into_iter().map(|m| m.id).collect());
+        }
+        Ok((listed, members))
     }
 
     /// Loads the next window page. Returns true while pages remain.
