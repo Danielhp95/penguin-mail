@@ -1211,3 +1211,39 @@ fn migration_61_keeps_the_correspondents_tally_in_the_store() {
     conn.execute("UPDATE messages SET from_addr = 'bo@example.org' WHERE id = 'm1'", []).unwrap();
     assert_eq!(marks(&conn), (true, 0));
 }
+
+/// Migration 64 narrows the trigger on a filing that moves: only a move
+/// into or out of a Sent folder changes what the tally counts.
+#[test]
+fn migration_64_marks_the_tally_stale_only_for_a_move_into_or_out_of_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_with(&dir.path().join("mail.db"), MIGRATIONS).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO mailboxes (account_id, id, name, kind, role) VALUES
+             (1, 'INBOX', 'Inbox', 'system', 'inbox'),
+             (1, 'ARCHIVE', 'Archive', 'system', 'archive'),
+             (1, 'SENT', 'Sent', 'system', 'sent');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);
+         INSERT INTO message_mailboxes (account_id, message_id, mailbox)
+             SELECT 1, 'm1', key FROM mailboxes WHERE id = 'INBOX';",
+    )
+    .unwrap();
+    let marks = |conn: &Connection| -> (bool, i64) {
+        conn.query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    let move_to = |id: &str| {
+        conn.execute(
+            "UPDATE message_mailboxes SET mailbox = (SELECT key FROM mailboxes WHERE id = ?1) WHERE message_id = 'm1'",
+            [id],
+        )
+        .unwrap();
+    };
+    crate::contacts::catch_up(&conn).unwrap();
+    assert_eq!(marks(&conn), (false, 1));
+    move_to("ARCHIVE");
+    assert_eq!(marks(&conn), (false, 1), "a move between two folders that are not Sent");
+    move_to("SENT");
+    assert_eq!(marks(&conn), (true, 0), "a move into Sent");
+}

@@ -13,7 +13,7 @@ use crate::{Result, StoreError};
 ///
 /// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
 /// `local_messages_follow`, which takes a POP3 message's bytes with its
-/// row, and the contact triggers of migrations 61 to 63. Such a migration must
+/// row, and the contact triggers of migrations 61 to 64. Such a migration must
 /// create them again. It also renumbers the implicit rowids the
 /// correspondents tally counts by, as a VACUUM may, so either must mark
 /// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
@@ -1085,6 +1085,21 @@ END;
 CREATE TRIGGER contacts_message_gone_many BEFORE DELETE ON messages
 WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
     AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) >= 5000
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
+    // A filing that moved marked the tally stale whatever the folders were.
+    // Only a move into or out of a Sent folder changes what it counts, and
+    // only for a message it already counted, as the other filing triggers
+    // check.
+    r#"
+DROP TRIGGER contacts_filing_moved;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes
+WHEN (EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+        OR EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent'))
+    AND (SELECT rowid FROM messages WHERE account_id = OLD.account_id AND id = OLD.message_id)
+        <= (SELECT counted_row FROM contact_marks)
 BEGIN
     UPDATE contact_marks SET stale = 1, counted_row = 0;
 END;
