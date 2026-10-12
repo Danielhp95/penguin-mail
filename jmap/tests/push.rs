@@ -144,8 +144,8 @@ async fn a_silent_stream_ends_the_watch_after_the_idle_limit() {
 /// POSTs are answered at once anyway, standing in for a server that
 /// blocks only some of the time. When `state_first` is set the stream
 /// sends one state change for A1 before it falls silent. Answers its
-/// base URL.
-async fn blocking_server(free_posts: usize, state_first: bool) -> String {
+/// base URL and the count of streams it has opened.
+async fn blocking_server(free_posts: usize, state_first: bool) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -156,11 +156,14 @@ async fn blocking_server(free_posts: usize, state_first: bool) -> String {
     let (open_tx, open_rx) = watch::channel(0usize);
     let open_tx = Arc::new(open_tx);
     let posts = Arc::new(AtomicUsize::new(0));
+    let opened = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&opened);
     let session_base = base.clone();
     tokio::spawn(async move {
         loop {
             let Ok((mut stream, _)) = listener.accept().await else { return };
             let (open_tx, mut open_rx, posts, base) = (Arc::clone(&open_tx), open_rx.clone(), Arc::clone(&posts), session_base.clone());
+            let counted = Arc::clone(&counted);
             tokio::spawn(async move {
                 let mut seen = Vec::new();
                 let mut buf = [0u8; 4096];
@@ -176,6 +179,7 @@ async fn blocking_server(free_posts: usize, state_first: bool) -> String {
                 let head = String::from_utf8_lossy(&seen[..head_end]).to_string();
                 let first = head.lines().next().unwrap_or_default().to_string();
                 if first.starts_with("GET /events/") {
+                    counted.fetch_add(1, Ordering::SeqCst);
                     open_tx.send_modify(|n| *n += 1);
                     let mut out = String::from("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
                     let hello = match state_first {
@@ -218,7 +222,7 @@ async fn blocking_server(free_posts: usize, state_first: bool) -> String {
             });
         }
     });
-    base
+    (base, opened)
 }
 
 fn echo() -> mailrs_jmap::Request {
@@ -233,7 +237,7 @@ fn raw_client(base: &str) -> mailrs_jmap::JmapClient {
 
 #[tokio::test]
 async fn a_server_that_answers_nothing_while_the_stream_is_open_gets_no_push() {
-    let base = blocking_server(0, false).await;
+    let (base, _) = blocking_server(0, false).await;
     let client = raw_client(&base);
     let started = std::time::Instant::now();
     assert_eq!(client.push(Duration::from_secs(120)).await.unwrap(), Pushed::NoPush);
@@ -246,19 +250,21 @@ async fn a_server_that_answers_nothing_while_the_stream_is_open_gets_no_push() {
 async fn a_call_stalled_behind_a_held_stream_drops_the_stream_and_completes() {
     // The probe passes; the stream then reports a change and stays open
     // while the engine looks, and that look is the call Cyrus holds.
-    let base = blocking_server(1, true).await;
+    let (base, opened) = blocking_server(1, true).await;
     let client = raw_client(&base);
     assert_eq!(client.push(Duration::from_secs(120)).await.unwrap(), Pushed::Changed);
     let started = std::time::Instant::now();
     tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
     assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
+    assert!(client.push_paused().is_some(), "push was not paused");
     let next = tokio::time::timeout(Duration::from_secs(1), client.push(Duration::from_secs(120))).await;
     assert!(next.is_err(), "push came back at once: {next:?}");
+    assert_eq!(opened.load(std::sync::atomic::Ordering::SeqCst), 1, "a second stream opened during the pause");
 }
 
 #[tokio::test]
 async fn a_call_stalled_while_the_watch_waits_ends_the_watch_and_completes() {
-    let base = blocking_server(1, false).await;
+    let (base, _) = blocking_server(1, false).await;
     let client = raw_client(&base);
     let watching = client.clone();
     let watch = tokio::spawn(async move { watching.push(Duration::from_secs(120)).await });
@@ -280,7 +286,7 @@ async fn poll_for<F: std::future::Future + Unpin>(watch: &mut F, long: Duration)
 
 #[tokio::test]
 async fn a_call_stalled_while_the_watch_sits_unpolled_drops_the_stream_and_completes() {
-    let base = blocking_server(1, false).await;
+    let (base, _) = blocking_server(1, false).await;
     let client = raw_client(&base);
     let mut watch = Box::pin(client.push(Duration::from_secs(120)));
     // The stream opens and the probe passes; then nobody polls the watch.
@@ -294,7 +300,7 @@ async fn a_call_stalled_while_the_watch_sits_unpolled_drops_the_stream_and_compl
 
 #[tokio::test]
 async fn a_call_stalled_while_the_watch_sits_unpolled_in_its_probe_completes() {
-    let base = blocking_server(0, false).await;
+    let (base, _) = blocking_server(0, false).await;
     let client = raw_client(&base);
     let mut watch = Box::pin(client.push(Duration::from_secs(120)));
     // The stream opens and the probe goes out; then nobody polls the watch.
