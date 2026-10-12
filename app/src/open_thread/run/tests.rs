@@ -1364,11 +1364,11 @@ async fn a_failed_send_puts_the_question_back() {
         window.with(|s| s.receipt_cards.last().cloned()),
         Some(ReceiptCard::Asked { .. })
     ));
-    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Could not send the receipt: offline")));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "The receipt was not sent, and you can try again: offline")));
 }
 
-/// The answer is kept before the receipt goes, so a send that failed
-/// after that is not tried again, and the card does not offer it.
+/// A send that may have gone keeps its answer, so it is not tried again,
+/// and the card does not offer it.
 #[tokio::test]
 async fn a_failed_send_already_recorded_takes_the_card_down() {
     let window = FakeWindow::with_body(asking());
@@ -1382,7 +1382,7 @@ async fn a_failed_send_already_recorded_takes_the_card_down() {
         window.with(|s| s
             .toasts
             .iter()
-            .any(|t| t == "The receipt was not sent, and Penguin Mail will not try again: offline")),
+            .any(|t| t == "The receipt may have gone out, so Penguin Mail will not send it again: offline")),
         "{:?}",
         window.with(|s| s.toasts.clone())
     );
