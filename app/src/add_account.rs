@@ -2002,6 +2002,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::Problem { .. } => "problem",
             JmapError::Decode(_) => "decode",
             JmapError::HoldUnknown => "hold unknown",
+            JmapError::SubmitUnknown => "submit unknown",
             JmapError::LocalFile(_) => "local file",
             JmapError::SignInLocked => "sign-in locked",
             JmapError::Declined => "declined",

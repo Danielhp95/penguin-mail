@@ -79,41 +79,62 @@ impl<A: Accounts> MailActions<A> {
 /// A file written beside `path` under a temporary name and renamed over
 /// it once whole, so a failed or interrupted write leaves what was there.
 /// Dropped before [`Replacing::finish`], it takes the temporary file away.
+///
+/// A link at `path` is written through, so the file it names takes the
+/// bytes and the link stays. A path that names no regular file, such as
+/// `/dev/stdout` or a pipe, is written to as it is: there is nothing to
+/// rename over.
 pub struct Replacing {
-    file: Option<tokio::fs::File>,
-    partial: PathBuf,
+    file: Option<Counted>,
+    /// The temporary file, or `None` when the bytes go straight to `path`.
+    partial: Option<PathBuf>,
     path: PathBuf,
 }
 
 impl Replacing {
     pub async fn create(path: &Path) -> std::io::Result<Replacing> {
+        let path = through_links(path).await;
+        let found = tokio::fs::metadata(&path).await;
+        if let Ok(meta) = &found
+            && !meta.is_file()
+        {
+            let file = tokio::fs::OpenOptions::new().write(true).open(&path).await?;
+            return Ok(Replacing { file: Some(Counted::new(file)), partial: None, path });
+        }
         let mut partial = path.as_os_str().to_owned();
         partial.push(".part");
         let partial = PathBuf::from(partial);
-        let file = tokio::fs::File::create(&partial).await?;
-        Ok(Replacing { file: Some(file), partial, path: path.to_path_buf() })
+        let file = create_new(&partial).await?;
+        // The new file reads and writes as the old one did.
+        if let Ok(meta) = found {
+            file.set_permissions(meta.permissions()).await?;
+        }
+        Ok(Replacing { file: Some(Counted::new(file)), partial: Some(partial), path })
     }
 
-    /// The file to write to.
-    pub fn file(&mut self) -> &mut tokio::fs::File {
+    /// Where to write.
+    pub fn file(&mut self) -> &mut (impl tokio::io::AsyncWrite + Unpin + use<>) {
         self.file.as_mut().expect("a file until finish")
     }
 
     /// Puts the written file in the place of the old one, once its bytes
     /// are on the disk: a rename that reached the disk before them would
-    /// leave an empty file after a crash. Answers the file's length.
+    /// leave an empty file after a crash. Answers how many bytes went.
     pub async fn finish(mut self) -> std::io::Result<u64> {
-        let mut file = self.file.take().expect("a file until finish");
+        let mut out = self.file.take().expect("a file until finish");
+        let Some(partial) = self.partial.take() else {
+            out.flush().await?;
+            return Ok(out.written);
+        };
         let finished = async {
-            file.flush().await?;
-            file.sync_all().await?;
-            let length = file.metadata().await?.len();
-            tokio::fs::rename(&self.partial, &self.path).await?;
-            Ok(length)
+            out.flush().await?;
+            out.file.sync_all().await?;
+            tokio::fs::rename(&partial, &self.path).await?;
+            Ok(out.written)
         }
         .await;
         if finished.is_err() {
-            let _ = std::fs::remove_file(&self.partial);
+            let _ = std::fs::remove_file(&partial);
         }
         finished
     }
@@ -121,9 +142,79 @@ impl Replacing {
 
 impl Drop for Replacing {
     fn drop(&mut self) {
-        if self.file.take().is_some() {
-            let _ = std::fs::remove_file(&self.partial);
+        if self.file.take().is_some()
+            && let Some(partial) = &self.partial
+        {
+            let _ = std::fs::remove_file(partial);
         }
+    }
+}
+
+/// The file a chain of links at `path` ends at, or `path` itself when it is
+/// no link. A link that leads nowhere yet names the file to make.
+async fn through_links(path: &Path) -> PathBuf {
+    let mut path = path.to_path_buf();
+    // Past this many, a loop of links answers the last one read.
+    for _ in 0..32 {
+        let Ok(meta) = tokio::fs::symlink_metadata(&path).await else { break };
+        if !meta.file_type().is_symlink() {
+            break;
+        }
+        let Ok(next) = tokio::fs::read_link(&path).await else { break };
+        path = match path.parent() {
+            Some(parent) if next.is_relative() => parent.join(next),
+            _ => next,
+        };
+    }
+    path
+}
+
+/// A new file at `path`, made by this call and by no link: a part file a
+/// crash left, or a link planted under its name, goes first.
+async fn create_new(path: &Path) -> std::io::Result<tokio::fs::File> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    match options.open(path).await {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            tokio::fs::remove_file(path).await?;
+            options.open(path).await
+        }
+        opened => opened,
+    }
+}
+
+/// A file that counts the bytes written to it, which a device or a pipe
+/// cannot say afterwards.
+struct Counted {
+    file: tokio::fs::File,
+    written: u64,
+}
+
+impl Counted {
+    fn new(file: tokio::fs::File) -> Self {
+        Counted { file, written: 0 }
+    }
+}
+
+impl tokio::io::AsyncWrite for Counted {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let polled = std::pin::Pin::new(&mut self.file).poll_write(cx, buf);
+        if let std::task::Poll::Ready(Ok(n)) = &polled {
+            self.written += *n as u64;
+        }
+        polled
+    }
+
+    fn poll_flush(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.file).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.file).poll_shutdown(cx)
     }
 }
 

@@ -115,6 +115,9 @@ pub struct GraphState {
     pub mail_log: Vec<Logged>,
     /// The ids of each metadata fetch, one entry a call.
     pub meta_fetches: Vec<Vec<String>>,
+    /// Mail that arrives right after the next delta read, in the folder
+    /// named: how a test lands a message between two reads of one look.
+    pub deliver_after_delta: Option<(String, mail::FakeMail)>,
     pub sent: Vec<Vec<u8>>,
     pub uploads: HashMap<String, Upload>,
     pub calendars: Vec<GraphCalendar>,
@@ -401,7 +404,11 @@ impl GraphApi for FakeGraph {
     }
 
     async fn message_delta(&self, folder: &str, link: Option<&str>, received_since: &str) -> Answer<DeltaPage<Message>> {
-        self.with(|s| mail::message_delta(s, folder, link, received_since))
+        let page = self.with(|s| mail::message_delta(s, folder, link, received_since));
+        if let Some((into, mail)) = self.with(|s| s.deliver_after_delta.take()) {
+            self.deliver(&into, mail);
+        }
+        page
     }
 
     async fn list_messages(&self, listing: &Listing, next: Option<&str>) -> Answer<Page<Message>> {

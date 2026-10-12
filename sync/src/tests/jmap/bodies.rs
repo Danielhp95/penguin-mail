@@ -46,6 +46,22 @@ async fn a_message_past_the_cap_says_it_is_too_large() {
     }
 }
 
+/// Several raw messages in one call hold no more than the call's budget
+/// between them, whatever each may hold alone.
+#[tokio::test]
+async fn raw_messages_asked_together_share_one_budget() {
+    let h = fastmail().await;
+    let ids: Vec<String> = (0..2).map(|n| h.fake.deliver("inbox", &raw(&format!("b{n}@x"), "Budget"), 1_000)).collect();
+    assert_eq!(h.mail().fetch_raw(&ids).await.unwrap().len(), 2);
+    let many: Vec<String> = (0..12).map(|n| h.fake.deliver("inbox", &raw(&format!("m{n}@x"), "Budget"), 1_000)).collect();
+    let one = raw("m0@x", "Budget").len();
+    assert!(one * many.len() > crate::services::jmap::RAWS_BUDGET, "the test messages must pass the budget together");
+    match h.mail().fetch_raw(&many).await {
+        Err(crate::BackendError::Refused(said)) => assert_eq!(said, "This message is too large to open."),
+        other => panic!("{:?}", other.map(|r| r.len())),
+    }
+}
+
 #[tokio::test]
 async fn a_structure_carries_the_text_and_leaves_the_file_on_the_server() {
     let h = fastmail().await;

@@ -60,15 +60,30 @@ fn handles_of(part: &Part, source: &BodyPart, out: &mut Vec<(String, String)>) {
     }
 }
 
+/// The most bytes one `raws` call holds, all its messages together. A
+/// message alone may take `MOST_BLOB_BYTES`; an export asks for a batch
+/// whose stored sizes add up to far less, so only sizes that lied reach
+/// this.
+#[cfg(not(test))]
+pub(crate) const RAWS_BUDGET: usize = 2 * MOST_BLOB_BYTES;
+/// Small in tests, so a few short messages pass it.
+#[cfg(test)]
+pub(crate) const RAWS_BUDGET: usize = 1000;
+
 impl<J: JmapApi> Jmap<J> {
+    /// The messages `ids` name, whole and in order. Each download may take
+    /// what the call's budget has left, and one past it is refused as too
+    /// large.
     pub(super) async fn raws(&self, ids: &[String]) -> Result<Vec<RawMessage>, BackendError> {
         let got = self.api().emails(ids, &["id", "blobId"]).await.map_err(backend)?;
         let mut out = Vec::with_capacity(got.list.len());
+        let mut left = RAWS_BUDGET;
         for id in ids {
             let Some(email) = got.list.iter().find(|e| &e.id == id) else {
                 return Err(BackendError::NotFound);
             };
-            let bytes = self.api().download(&email.blob_id, MOST_BLOB_BYTES).await.map_err(backend)?;
+            let bytes = self.api().download(&email.blob_id, MOST_BLOB_BYTES.min(left)).await.map_err(backend)?;
+            left = left.saturating_sub(bytes.len());
             out.push(RawMessage { id: id.clone(), bytes });
         }
         Ok(out)

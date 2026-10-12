@@ -144,6 +144,64 @@ async fn a_file_given_up_part_way_leaves_the_old_one() {
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no part file left");
 }
 
+/// A link to the file is written through: the file it names takes the new
+/// bytes, and the link stays a link.
+#[tokio::test]
+async fn a_link_to_the_file_is_written_through() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("kept.mbox");
+    std::fs::write(&real, b"old").unwrap();
+    let link = dir.path().join("Lunch.mbox");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut file = Replacing::create(&link).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read(&real).unwrap(), b"new mail");
+}
+
+/// A device or a pipe, such as /dev/stdout, takes the bytes as they come.
+#[tokio::test]
+async fn a_special_file_is_written_straight_to() {
+    use tokio::io::AsyncWriteExt;
+    let mut file = Replacing::create(std::path::Path::new("/dev/null")).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert!(!std::path::Path::new("/dev/null.part").exists());
+}
+
+#[tokio::test]
+async fn the_new_file_keeps_the_old_one_s_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    file.finish().await.unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+/// A part file already there, even a link someone planted, is no file to
+/// write into: it goes, and a new one is made.
+#[tokio::test]
+async fn a_part_file_already_there_is_never_written_through() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    let victim = dir.path().join("victim");
+    std::fs::write(&victim, b"keep me").unwrap();
+    std::os::unix::fs::symlink(&victim, dir.path().join("Lunch.mbox.part")).unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    file.finish().await.unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep me");
+    assert_eq!(std::fs::read(&path).unwrap(), b"new mail");
+}
+
 mod conversations {
     use mailrs_gmail::cost;
 

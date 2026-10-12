@@ -37,6 +37,11 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
+- A message no longer goes out twice when Penguin Mail stops while sending it; the next try finds it in Sent.
+- Exporting mail over a file you already have keeps that file's permissions, and a shortcut (symlink) to it stays a shortcut. The command-line export can also write to standard output.
+- On IMAP and POP3, a sent message whose copy the Sent folder would not take gets a second try, and you hear when it still has no copy there.
+- Canceling a Send Later message at the moment it goes out says it had already gone, instead of also leaving a copy in Drafts.
+- On an Outlook account keeping more than 20,000 messages on this computer, mail no longer disappears from the list when Outlook loses track of what changed; Penguin Mail downloads the mail again instead.
 - A mail list left open while a new account downloads its mail for the first time keeps loading older mail as you scroll, instead of stopping at the first few messages.
 - Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
 - A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.

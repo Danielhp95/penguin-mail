@@ -281,10 +281,27 @@ impl JmapClient {
         }
     }
 
-    /// A request with the account's credentials.
-    pub(crate) async fn authorized(&self, method: reqwest::Method, url: Url) -> Result<reqwest::RequestBuilder, JmapError> {
-        let header = self.inner.auth.header(None).await?;
-        Ok(self.inner.http.request(method, url).header(AUTHORIZATION, header))
+    /// A request with the account's credentials, and the header it
+    /// carries. With `refused`, the header a server just answered 401 to,
+    /// an OAuth account's token is refreshed first.
+    pub(crate) async fn authorized(
+        &self,
+        method: reqwest::Method,
+        url: Url,
+        refused: Option<&HeaderValue>,
+    ) -> Result<(reqwest::RequestBuilder, HeaderValue), JmapError> {
+        let header = self.inner.auth.header(refused).await?;
+        Ok((self.inner.http.request(method, url).header(AUTHORIZATION, header.clone()), header))
+    }
+
+    /// The HTTP client every call shares.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.inner.http
+    }
+
+    /// Whether a 401 is worth one more try with a refreshed token.
+    pub(crate) fn refreshes(&self) -> bool {
+        self.inner.auth.kind() == AuthKind::OAuth
     }
 
     /// What `send` answers when it goes out with the account's credentials,
@@ -292,7 +309,7 @@ impl JmapClient {
     /// 401. A 401 means the server acted on nothing, so even a write goes
     /// again safely; any other answer, or none, comes back as it is, and
     /// a second 401 too.
-    async fn with_credentials<F, Fut>(&self, send: F) -> Result<reqwest::Response, JmapError>
+    pub(crate) async fn with_credentials<F, Fut>(&self, send: F) -> Result<reqwest::Response, JmapError>
     where
         F: Fn(HeaderValue) -> Fut,
         Fut: Future<Output = Result<reqwest::Response, JmapError>>,
@@ -449,15 +466,26 @@ impl JmapClient {
 }
 
 fn retry_after(response: &reqwest::Response) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse::<u64>()
-        .ok()
-        .map(Duration::from_secs)
+    wait_of(response.headers().get(RETRY_AFTER)?.to_str().ok()?, chrono::Utc::now())
+}
+
+/// The longest wait a `Retry-After` gets: a server's clock or a typo should
+/// not stop an account for a day.
+const MOST_RETRY_AFTER: Duration = Duration::from_secs(30 * 60);
+
+/// What a `Retry-After` value asks for at `now`: seconds, or an HTTP date
+/// (RFC 9110 section 10.2.3), capped at `MOST_RETRY_AFTER`. A date already
+/// past asks for no wait.
+fn wait_of(value: &str, now: chrono::DateTime<chrono::Utc>) -> Option<Duration> {
+    let value = value.trim();
+    let wait = match value.parse::<u64>() {
+        Ok(seconds) => Duration::from_secs(seconds),
+        Err(_) => {
+            let at = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+            (at.with_timezone(&chrono::Utc) - now).to_std().unwrap_or_default()
+        }
+    };
+    Some(wait.min(MOST_RETRY_AFTER))
 }
 
 /// The error a failed answer stands for: a rate limit with its wait, or
@@ -497,6 +525,17 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+
+    #[test]
+    fn a_retry_after_reads_seconds_or_an_http_date_and_is_capped() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-12T09:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        assert_eq!(wait_of(" 7 ", now), Some(Duration::from_secs(7)));
+        assert_eq!(wait_of("Mon, 12 Oct 2026 09:02:00 GMT", now), Some(Duration::from_secs(120)));
+        assert_eq!(wait_of("Mon, 12 Oct 2026 08:00:00 GMT", now), Some(Duration::ZERO), "a date past asks for no wait");
+        assert_eq!(wait_of("Tue, 13 Oct 2026 09:00:00 GMT", now), Some(MOST_RETRY_AFTER));
+        assert_eq!(wait_of("86400", now), Some(MOST_RETRY_AFTER));
+        assert_eq!(wait_of("soon", now), None);
+    }
 
     /// A client whose session allows `most` requests at once, with the
     /// server that answers it. The caller keeps the server: once dropped,

@@ -153,7 +153,12 @@ impl<G: GraphApi> Microsoft<G> {
             None => (folder, None),
         };
         let listing = Listing { folder, category, received_since: since, top: 1000, fields: Fields::Ids, ..Listing::default() };
-        self.list_all(&listing, MOST_IDS, remote_ref).await
+        // Refused rather than cut, since a relist sweeps what it lacks.
+        let ids = self.list_all(&listing, MOST_IDS + 1, remote_ref).await?;
+        match ids.len() > MOST_IDS {
+            true => Err(BackendError::Unsupported),
+            false => Ok(ids),
+        }
     }
 
     /// Every id in the Inbox, or `Unsupported` for an Inbox larger than a

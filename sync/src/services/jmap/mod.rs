@@ -13,6 +13,10 @@ mod errors;
 mod feed;
 pub(crate) mod jscal;
 mod fetch;
+#[cfg(test)]
+pub(crate) use bodies::RAWS_BUDGET;
+#[cfg(test)]
+pub(crate) use fetch::MOST_IDS;
 mod held;
 mod identities;
 mod mailboxes;

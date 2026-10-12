@@ -2,7 +2,8 @@
 //! `$mdnsent`. A session without it answers `Unsupported`, and the account
 //! sends the receipt as ordinary mail.
 
-use mailrs_jmap::{MDN, MdnOut};
+use mailrs_jmap::error::refused_outright;
+use mailrs_jmap::{JmapError, MDN, MdnOut};
 
 use super::outgoing::sends_as;
 use super::{Jmap, JmapApi, backend};
@@ -29,6 +30,12 @@ impl<J: JmapApi> Jmap<J> {
             subject: receipt.subject.clone(),
             text_body: receipt.text.clone(),
         };
-        self.api().send_mdn(&mdn).await.map_err(backend)
+        self.api().send_mdn(&mdn).await.map_err(|err| match err {
+            JmapError::Unauthorized | JmapError::RateLimited { .. } | JmapError::Network(_) => backend(err),
+            err if refused_outright(&err) => backend(err),
+            // `serverFail`, or an answer that would not read, may follow a
+            // receipt the server sent: no refusal, so it is not sent again.
+            _ => BackendError::Offline("the server may have sent the receipt; no clear answer came back".into()),
+        })
     }
 }

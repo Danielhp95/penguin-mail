@@ -466,7 +466,8 @@ async fn export_mail(
         }
     };
     // Written beside the target and renamed over it when whole, so a
-    // failed export leaves what was there.
+    // failed export leaves what was there. `--out /dev/stdout` and other
+    // devices take the bytes as they come.
     let mut file = export::Replacing::create(&path)
         .await
         .with_context(|| format!("could not write {}", path.display()))?;
@@ -481,7 +482,8 @@ async fn export_mail(
         .finish()
         .await
         .with_context(|| format!("could not write {}", path.display()))?;
-    println!("Wrote {length} bytes to {}", path.display());
+    // On stderr, so an export to stdout stays the mail alone.
+    eprintln!("Wrote {length} bytes to {}", path.display());
     Ok(())
 }
 

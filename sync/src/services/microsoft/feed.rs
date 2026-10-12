@@ -73,40 +73,56 @@ impl<G: GraphApi> Microsoft<G> {
             return self.feed_start(synced).await;
         };
         let mut state = MicrosoftState::read(since)?;
-        let (due, slow, requested) = self.due(synced);
+        // The window changed since the rounds began: they start again over
+        // the window now kept, so later looks report changes to the mail it
+        // newly reaches. They start before this look reads the old rounds,
+        // so mail arriving meanwhile is in the old rounds' changes or the
+        // new rounds' next ones. Every folder's old round is then read to
+        // its end, since its link goes after this look.
+        let days = self.settings().window_days;
+        let restarted = match state.days {
+            Some(began) if crate::window_reach(began) != crate::window_reach(days) => {
+                tracing::info!("the window changed; starting each folder's delta again");
+                Some(self.feed_start(synced.clone()).await?.state)
+            }
+            _ => None,
+        };
+        let (due, slow, requested) = match restarted {
+            Some(_) => (synced, true, self.known().full_check_requested),
+            None => self.due(synced),
+        };
         let inbox = self.known().roles.get(&Role::Inbox).cloned();
         let (mut removed, mut present) = (Vec::new(), Vec::new());
         for folder in due {
-            let start = state.folders.get(&folder).cloned();
-            match self.read_folder(&folder, start, &mut removed, &mut present).await {
-                Ok(left) => {
-                    state.folders.insert(folder, left.link());
+            let mut start = state.folders.get(&folder).cloned();
+            let to_the_end = restarted.is_some() && start.is_some();
+            loop {
+                match self.read_folder(&folder, start, &mut removed, &mut present).await {
+                    Ok(Left::Next(next)) if to_the_end => start = Some(next),
+                    Ok(left) => {
+                        state.folders.insert(folder, left.link());
+                        break;
+                    }
+                    // A folder deleted elsewhere: stop following it and
+                    // list the folders again, so the store drops it.
+                    Err(BackendError::NotFound) if Some(&folder) != inbox.as_ref() => {
+                        tracing::warn!("a synced folder is gone; no longer following it");
+                        state.folders.remove(&folder);
+                        self.known().followed.remove(&folder);
+                        self.list_mailboxes().await?;
+                        break;
+                    }
+                    Err(err) => return Err(err),
                 }
-                // A folder deleted elsewhere: stop following it and list
-                // the folders again, so the store drops it.
-                Err(BackendError::NotFound) if Some(&folder) != inbox.as_ref() => {
-                    tracing::warn!("a synced folder is gone; no longer following it");
-                    state.folders.remove(&folder);
-                    self.known().followed.remove(&folder);
-                    self.list_mailboxes().await?;
-                }
-                Err(err) => return Err(err),
             }
         }
         if slow {
             self.slow_poll_done(requested);
         }
         let changes = self.changes_from(removed, present).await?;
-        // The window changed since the rounds began: start them again over
-        // the window now kept, past the changes this look already read, so
-        // later looks report changes to the mail it newly reaches.
-        let days = self.settings().window_days;
-        let state = match state.days {
-            Some(began) if crate::window_reach(began) != crate::window_reach(days) => {
-                tracing::info!("the window changed; starting each folder's delta again");
-                self.feed_start(self.synced().await?).await?.state
-            }
-            _ => {
+        let state = match restarted {
+            Some(state) => state,
+            None => {
                 state.days = Some(days);
                 state.written()
             }

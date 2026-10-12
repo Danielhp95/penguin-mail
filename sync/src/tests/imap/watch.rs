@@ -78,8 +78,11 @@ async fn without_idle_the_watch_never_ends_and_the_inbox_is_polled_each_minute()
     h.imap
         .deliver_flagged("INBOX", &message("b", "Moss", ""), &[], days_ago(0));
 
+    // Paused, the clock runs on as soon as nothing else can, so an hour
+    // passes at once and a watch that never ends is told from a slow one.
+    tokio::time::pause();
     let woke =
-        tokio::time::timeout(Duration::from_millis(50), h.sync.services().mail.watch()).await;
+        tokio::time::timeout(Duration::from_secs(3600), h.sync.services().mail.watch()).await;
 
     assert!(woke.is_err());
     assert_eq!(
@@ -346,7 +349,15 @@ fn check_for_mail_takes_mail_moved_away_elsewhere_out_of_the_inbox_at_once() {
         };
         assert_eq!(stored(db.clone()).await, 1);
         // Let the first look finish, so the poke is what finds the change.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // It lists the mailboxes a third time and ends at Archive.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while imap.calls_to("list") < 3 || imap.calls().last().map(String::as_str) != Some("select Archive") {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the first look never finished");
+        let before_poke = imap.calls_to("select");
 
         imap.remote_expunge("INBOX", 1);
         engine.poke(1);
@@ -358,6 +369,7 @@ fn check_for_mail_takes_mail_moved_away_elsewhere_out_of_the_inbox_at_once() {
         })
         .await
         .expect("Check for Mail took the moved message out of the store");
+        assert!(imap.calls_to("select") > before_poke, "the poke looked");
         engine.shutdown();
     });
 }

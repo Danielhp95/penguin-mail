@@ -114,6 +114,9 @@ pub struct JmapState {
     /// The next submission goes out, and then its answer is lost on the
     /// way back, as a dropped connection does.
     pub lose_submission_answer: bool,
+    /// The next submission goes out, and the client cannot tell from the
+    /// answer or a look whether it did.
+    pub unclear_submission_answer: bool,
     /// Keeps one copy of the same bytes, as Cyrus and Fastmail do: an
     /// import of a message already there answers that message.
     pub one_copy: bool,
@@ -149,6 +152,10 @@ pub struct JmapState {
     pub quotas: Vec<Quota>,
     /// Receipts sent with `MDN/send`.
     pub mdns: Vec<MdnOut>,
+    /// What the next `MDN/send` answers in place of its answer, once. A
+    /// `Network` error is the lost answer: the receipt went. Any other
+    /// is a refusal, and nothing went.
+    pub mdn_failure: Option<JmapError>,
     /// Whether `EmailSubmission/get` answers; Apache James's does not.
     pub submission_get: bool,
     /// The answer the next hold gets in place of a hold, once. A refusal
@@ -448,6 +455,7 @@ impl FakeJmap {
             refused: BTreeSet::new(),
             submission_refusal: None,
             lose_submission_answer: false,
+            unclear_submission_answer: false,
             one_copy: false,
             total_override: None,
             vanish_after_query: None,
@@ -465,6 +473,7 @@ impl FakeJmap {
             holds: BTreeMap::new(),
             quotas: Vec::new(),
             mdns: Vec::new(),
+            mdn_failure: None,
             submission_get: true,
             hold_failure: None,
             submission_query_failure: None,
@@ -1264,6 +1273,9 @@ impl JmapApi for FakeJmap {
             if std::mem::take(&mut s.lose_submission_answer) {
                 return Err(JmapError::Network("the answer was lost".into()));
             }
+            if std::mem::take(&mut s.unclear_submission_answer) {
+                return Err(JmapError::SubmitUnknown);
+            }
             Ok(made)
         })
     }
@@ -1604,11 +1616,15 @@ impl JmapApi for FakeJmap {
             if !s.session.offers(MDN) {
                 return Err(JmapError::UnknownCapability(MDN.into()));
             }
+            let failure = s.mdn_failure.take();
+            if let Some(refused) = failure.clone().filter(|e| !matches!(e, JmapError::Network(_))) {
+                return Err(refused);
+            }
             let email = s.emails.get_mut(&mdn.for_email_id).ok_or(JmapError::NotFound)?;
             email.keywords.insert("$mdnsent".into());
             s.mdns.push(mdn.clone());
             s.record("Email", &mdn.for_email_id, Op::Updated);
-            Ok(())
+            failure.map_or(Ok(()), Err)
         })
     }
 

@@ -287,6 +287,14 @@ pub fn try_now(conn: &Connection, now: EpochMillis) -> Result<()> {
     Ok(())
 }
 
+/// Counts a try at the message `id` as it starts, so a try the app never
+/// heard back from, because it stopped, still makes the next one look in
+/// Sent first.
+pub fn count_try(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("UPDATE outbox SET attempts = attempts + 1 WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 /// Takes the message `id` for sending at `now` and gives it back, or
 /// `None` when it has gone or another caller claimed it after
 /// `lapsed_before`. One statement checks and sets the claim, so of two

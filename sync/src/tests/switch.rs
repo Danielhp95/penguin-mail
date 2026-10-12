@@ -87,6 +87,24 @@ async fn a_server_that_clamps_its_query_pages_loses_no_match() {
     assert_eq!(to, want);
 }
 
+/// The swap drops every stored message left unmatched, so the matching
+/// must reach the whole store, however far past a window listing's cap.
+#[tokio::test]
+async fn more_mail_than_a_window_listing_takes_still_matches_whole() {
+    let fake = FakeJmap::new();
+    let count = crate::services::jmap::MOST_IDS + 1;
+    let ids: Vec<String> = (0..count).map(|n| format!("big{n}@x")).collect();
+    let jmap: Vec<String> = ids.iter().map(|id| fake.deliver("archive", &raw(id), 1_000_000)).collect();
+    let kept: Vec<StoredMessage> =
+        ids.iter().enumerate().map(|(n, id)| stored(&format!("Archive/7/{n}"), Some(id), 1_000_000)).collect();
+    let moved = match_messages(&fake, &kept).await.unwrap();
+    let mut to: Vec<_> = moved.into_iter().map(|m| m.to).collect();
+    to.sort();
+    let mut want = jmap;
+    want.sort();
+    assert_eq!(to, want);
+}
+
 #[test]
 fn mailboxes_match_by_role_then_by_path() {
     let listed = vec![

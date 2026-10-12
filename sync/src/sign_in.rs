@@ -130,22 +130,70 @@ pub async fn google_signed_in(
         Some(_) => SignInClient::Own,
         None => SignInClient::BuiltIn,
     };
+    let address = email.to_string();
+    let before = db
+        .read(move |c| match accounts::account_by_email(c, &address)? {
+            Some(held) if held.provider == Provider::Gmail => Ok(Some((held.id, accounts::sign_in_client(c, held.id)?))),
+            _ => Ok(None),
+        })
+        .await?;
     let account = signed_in(db, email, now, granted, asked, kind).await?;
-    let tokens = Arc::clone(&secrets.google);
-    let (email, refresh) = (email.to_string(), refresh_token.to_string());
-    tokio::task::spawn_blocking(move || tokens.save(&email, &refresh))
-        .await
-        .map_err(|e| SignInError::Token(e.to_string()))?
-        .map_err(|e| SignInError::Token(e.to_string()))?;
-    let (clients, id, kept) = (Arc::clone(&secrets.google_clients), account.id, own.map(OwnClient::encode));
-    tokio::task::spawn_blocking(move || match kept {
-        Some(kept) => clients.save(id, &kept),
-        None => clients.delete(id),
+    // The client goes in before the token: a token kept beside the wrong
+    // client cannot refresh. On a failure the account signs in as it did,
+    // and a new one is not kept.
+    let kept = keep_google_secrets(secrets, account.id, email, refresh_token, own).await;
+    if let Err(err) = kept {
+        let id = account.id;
+        db.write(move |c| match before {
+            Some((_, client)) => accounts::set_sign_in_client(c, id, client),
+            None => accounts::delete_account(c, id),
+        })
+        .await?;
+        return Err(err);
+    }
+    Ok(account)
+}
+
+/// Keeps the own client (or drops a kept one for the built-in client)
+/// and then the refresh token. When the token fails, the client kept
+/// before is put back.
+async fn keep_google_secrets(
+    secrets: &Secrets,
+    id: AccountId,
+    email: &str,
+    refresh_token: &str,
+    own: Option<&OwnClient>,
+) -> Result<(), SignInError> {
+    let token = |e: &dyn std::fmt::Display| SignInError::Token(e.to_string());
+    let clients = Arc::clone(&secrets.google_clients);
+    let kept = own.map(OwnClient::encode);
+    let earlier = tokio::task::spawn_blocking(move || {
+        let earlier = clients.load(id)?;
+        match kept {
+            Some(kept) => clients.save(id, &kept),
+            None => clients.delete(id),
+        }
+        .map(|()| earlier)
     })
     .await
-    .map_err(|e| SignInError::Token(e.to_string()))?
-    .map_err(|e| SignInError::Token(e.to_string()))?;
-    Ok(account)
+    .map_err(|e| token(&e))?
+    .map_err(|e| token(&e))?;
+    let tokens = Arc::clone(&secrets.google);
+    let (email, refresh) = (email.to_string(), refresh_token.to_string());
+    let saved = tokio::task::spawn_blocking(move || tokens.save(&email, &refresh)).await.map_err(|e| token(&e))?;
+    if let Err(err) = saved {
+        let clients = Arc::clone(&secrets.google_clients);
+        let restored = tokio::task::spawn_blocking(move || match earlier {
+            Some(earlier) => clients.save(id, &earlier),
+            None => clients.delete(id),
+        })
+        .await;
+        if !matches!(restored, Ok(Ok(()))) {
+            tracing::warn!(account = id, "could not put back the Google client kept before a failed sign-in");
+        }
+        return Err(token(&err));
+    }
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1025,6 +1073,33 @@ mod tests {
         assert_eq!(again.id, first.id);
         assert_eq!(kind(&db, again.id).await, SignInClient::BuiltIn);
         assert_eq!(kept_id(&secrets, again.id), None);
+    }
+
+    /// The keyring will not take the own client: the account goes on
+    /// signing in as it did, with its client and its token.
+    #[tokio::test]
+    async fn a_sign_in_whose_own_client_the_keyring_refuses_changes_nothing() {
+        let (_dir, db) = store();
+        let secrets = Secrets::memory();
+        let first = google_signed_in(&db, &secrets, "me@gmail.com", "refresh", 0, None, "", None).await.unwrap();
+        let crate::passwords::Passwords::Memory(clients) = &*secrets.google_clients else { unreachable!("tests keep secrets in memory") };
+        clients.refuse_saves();
+        let refused = google_signed_in(&db, &secrets, "me@gmail.com", "refresh-2", 1, None, "", Some(&own_client())).await;
+        assert!(matches!(refused, Err(SignInError::Token(_))), "{refused:?}");
+        assert_eq!(kind(&db, first.id).await, SignInClient::BuiltIn);
+        assert_eq!(secrets.google.load("me@gmail.com").unwrap().as_deref(), Some("refresh"));
+    }
+
+    #[tokio::test]
+    async fn a_new_account_whose_own_client_the_keyring_refuses_is_not_kept() {
+        let (_dir, db) = store();
+        let secrets = Secrets::memory();
+        let crate::passwords::Passwords::Memory(clients) = &*secrets.google_clients else { unreachable!("tests keep secrets in memory") };
+        clients.refuse_saves();
+        let refused = google_signed_in(&db, &secrets, "me@gmail.com", "refresh", 0, None, "", Some(&own_client())).await;
+        assert!(refused.is_err());
+        assert!(db.read(|c| accounts::account_by_email(c, "me@gmail.com")).await.unwrap().is_none());
+        assert_eq!(secrets.google.load("me@gmail.com").unwrap(), None);
     }
 
     #[tokio::test]

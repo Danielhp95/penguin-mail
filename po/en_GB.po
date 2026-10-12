@@ -10107,19 +10107,23 @@ msgstr "Is unread"
 msgid "Is flagged"
 msgstr "Is flagged"
 
-#: sync/src/account/outbox.rs:149
+#: sync/src/account/outbox.rs:93
+msgid "The message was sent, but Penguin Mail could not keep a copy in Sent."
+msgstr "The message was sent, but Penguin Mail could not keep a copy in Sent."
+
+#: sync/src/account/outbox.rs:163
 msgid "The server holds this message to send at its hour. Cancel Send before you change it."
 msgstr "The server holds this message to send at its hour. Cancel Send before you change it."
 
-#: sync/src/account/receipts.rs:29
+#: sync/src/account/receipts.rs:31
 msgid "Read: {subject}"
 msgstr "Read: {subject}"
 
-#: sync/src/account/receipts.rs:36
+#: sync/src/account/receipts.rs:38
 msgid "Your message to {address} was shown on screen. This receipt does not say whether it was read or understood."
 msgstr "Your message to {address} was shown on screen. This receipt does not say whether it was read or understood."
 
-#: sync/src/account/receipts.rs:143
+#: sync/src/account/receipts.rs:163
 msgid "This message asks for no read receipt."
 msgstr "This message asks for no read receipt."
 
@@ -10414,7 +10418,7 @@ msgstr "The server still holds this message and sends it at its hour. Try again 
 msgid "The server still holds this message and could not be asked to let it go. Try again later."
 msgstr "The server still holds this message and could not be asked to let it go. Try again later."
 
-#: sync/src/outbox.rs:1458
+#: sync/src/outbox.rs:1484
 msgid "The server could not be asked to let go of the message."
 msgstr "The server could not be asked to let go of the message."
 
@@ -10522,15 +10526,15 @@ msgstr "This JMAP calendar has no files to share."
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail cannot change the calendar list of a JMAP server."
 
-#: sync/src/services/jmap/errors.rs:21
+#: sync/src/services/jmap/errors.rs:23
 msgid "The server does not allow this."
 msgstr "The server does not allow this."
 
-#: sync/src/services/jmap/errors.rs:22
+#: sync/src/services/jmap/errors.rs:24
 msgid "The server refused this request."
 msgstr "The server refused this request."
 
-#: sync/src/services/jmap/errors.rs:23
+#: sync/src/services/jmap/errors.rs:25
 msgid "The server could not take this request."
 msgstr "The server could not take this request."
 
@@ -10542,15 +10546,15 @@ msgstr "Penguin Mail cannot read how this event repeats, so it cannot change the
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail cannot save this repeat to a JMAP calendar."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:271
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:344
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 
-#: sync/src/services/jmap/mod.rs:458
+#: sync/src/services/jmap/mod.rs:462
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "The server made an address Penguin Mail cannot read."
 
@@ -10724,11 +10728,11 @@ msgstr "Say which mail the rule is for"
 msgid "Choose what the rule does"
 msgstr "Choose what the rule does"
 
-#: sync/src/sign_in.rs:210
+#: sync/src/sign_in.rs:258
 msgid "You signed in to a different account than {address}, so nothing changed."
 msgstr "You signed in to a different account than {address}, so nothing changed."
 
-#: sync/src/sign_in.rs:217
+#: sync/src/sign_in.rs:265
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} is already in Penguin Mail as a {provider} account."
 
