@@ -1638,56 +1638,56 @@ msgstr "Já existe um ficheiro com esse nome, e a exportação substitui-o."
 msgid "the message “{subject}”"
 msgstr "a mensagem “{subject}”"
 
-#: app/src/assistant/run/queue.rs:17 app/src/assistant/run/writing.rs:224
+#: app/src/assistant/run/queue.rs:60 app/src/assistant/run/writing.rs:224
 msgid "(no subject)"
 msgstr "(sem assunto)"
 
-#: app/src/assistant/run/queue.rs:91
+#: app/src/assistant/run/queue.rs:134
 msgid "Send “{subject}” now?"
 msgstr "Enviar “{subject}” agora?"
 
-#: app/src/assistant/run/queue.rs:94
+#: app/src/assistant/run/queue.rs:137
 msgid "Send {count} waiting message now?"
 msgid_plural "Send {count} waiting messages now?"
 msgstr[0] "Enviar agora {count} mensagem em espera?"
 msgstr[1] "Enviar agora {count} mensagens em espera?"
 
-#: app/src/assistant/run/queue.rs:146
+#: app/src/assistant/run/queue.rs:189
 msgid "Cancel sending “{subject}”? It goes back to Drafts."
 msgstr "Cancelar o envio de “{subject}”? Volta para os rascunhos."
 
-#: app/src/assistant/run/queue.rs:152
+#: app/src/assistant/run/queue.rs:195
 msgid "Cancel {count} scheduled message? It goes back to Drafts."
 msgid_plural "Cancel {count} scheduled messages? They go back to Drafts."
 msgstr[0] "Cancelar {count} mensagem agendada? Volta para os rascunhos."
 msgstr[1] "Cancelar {count} mensagens agendadas? Voltam para os rascunhos."
 
-#: app/src/assistant/run/queue.rs:223
+#: app/src/assistant/run/queue.rs:252
 msgid "Delete “{subject}” from the Outbox? It will not be sent."
 msgstr "Eliminar “{subject}” da caixa de saída? Não será enviada."
 
-#: app/src/assistant/run/queue.rs:229
+#: app/src/assistant/run/queue.rs:258
 msgid "Delete {count} message from the Outbox? It will not be sent."
 msgid_plural "Delete {count} messages from the Outbox? They will not be sent."
 msgstr[0] "Eliminar {count} mensagem da caixa de saída? Não será enviada."
 msgstr[1] "Eliminar {count} mensagens da caixa de saída? Não serão enviadas."
 
-#: app/src/assistant/run/queue.rs:261
+#: app/src/assistant/run/queue.rs:290
 msgid "Send “{subject}” {when} instead?"
 msgstr "Enviar “{subject}” {when}, em vez da hora marcada?"
 
-#: app/src/assistant/run/queue.rs:267
+#: app/src/assistant/run/queue.rs:296
 msgid "Send {count} scheduled message {when} instead?"
 msgid_plural "Send {count} scheduled messages {when} instead?"
 msgstr[0] "Enviar {count} mensagem agendada {when}, em vez da hora marcada?"
 msgstr[1] "Enviar {count} mensagens agendadas {when}, em vez da hora marcada?"
 
-#: app/src/assistant/run/queue.rs:345
+#: app/src/assistant/run/queue.rs:374
 msgid "Cancel the reminder on “{subject}” and put it back in the Inbox?"
 msgstr ""
 "Cancelar o lembrete de “{subject}” e devolver a conversa à caixa de entrada?"
 
-#: app/src/assistant/run/queue.rs:351
+#: app/src/assistant/run/queue.rs:380
 msgid "Cancel {count} reminder and put its conversation back in the Inbox?"
 msgid_plural ""
 "Cancel {count} reminders and put their conversations back in the Inbox?"
@@ -1695,17 +1695,17 @@ msgstr[0] "Cancelar {count} lembrete e devolver a conversa à caixa de entrada?"
 msgstr[1] ""
 "Cancelar {count} lembretes e devolver as conversas à caixa de entrada?"
 
-#: app/src/assistant/run/queue.rs:385
+#: app/src/assistant/run/queue.rs:414
 msgid "Bring “{subject}” back {when} instead?"
 msgstr "Trazer “{subject}” de volta {when}, em vez da hora marcada?"
 
-#: app/src/assistant/run/queue.rs:391
+#: app/src/assistant/run/queue.rs:420
 msgid "Bring {count} conversation back {when} instead?"
 msgid_plural "Bring {count} conversations back {when} instead?"
 msgstr[0] "Trazer {count} conversa de volta {when}, em vez da hora marcada?"
 msgstr[1] "Trazer {count} conversas de volta {when}, em vez da hora marcada?"
 
-#: app/src/assistant/run/queue.rs:426
+#: app/src/assistant/run/queue.rs:455
 msgid "Undo “{action}”?"
 msgstr "Anular “{action}”?"
 
@@ -3292,7 +3292,7 @@ msgstr[1] "{count} mensagens"
 msgid "Summarize"
 msgstr "Resumir"
 
-#: app/src/render.rs:211 app/src/ui/thread_row.rs:359
+#: app/src/render.rs:211 app/src/ui/thread_row.rs:389
 msgid "Unknown sender"
 msgstr "Remetente desconhecido"
 
@@ -3308,7 +3308,7 @@ msgstr "Contacto"
 msgid "Contact card for {person}"
 msgstr "Ficha de contacto de {person}"
 
-#: app/src/render.rs:289 app/src/ui/thread_row.rs:143
+#: app/src/render.rs:289 app/src/ui/thread_row.rs:164
 msgid "Invitation"
 msgstr "Convite"
 
@@ -3558,7 +3558,7 @@ msgstr "Regras"
 msgid "On this computer, while Penguin Mail is open"
 msgstr "Neste computador, enquanto o Penguin Mail estiver aberto"
 
-#: app/src/servers.rs:40
+#: app/src/servers.rs:40 app/src/ui/thread_row.rs:145
 msgid "On the server"
 msgstr "No servidor"
 
@@ -6914,7 +6914,10 @@ msgstr "Servidores de calendário, contactos e regras"
 msgid ""
 "Penguin Mail looks for these when you add an account, and signs in with the "
 "account's password, or the app password you gave for its calendar."
-msgstr "O Penguin Mail procura estes servidores quando adiciona uma conta e inicia sessão com a palavra-passe da conta ou com a palavra-passe de aplicação que indicou para o calendário."
+msgstr ""
+"O Penguin Mail procura estes servidores quando adiciona uma conta e inicia "
+"sessão com a palavra-passe da conta ou com a palavra-passe de aplicação que "
+"indicou para o calendário."
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"
@@ -8758,29 +8761,33 @@ msgstr "Pesquisar (/)"
 msgid "Search mail"
 msgstr "Pesquisar correio"
 
-#: app/src/ui/thread_row.rs:96
+#: app/src/ui/thread_row.rs:101
 msgid "VIP"
 msgstr "VIP"
 
-#: app/src/ui/thread_row.rs:121 app/src/ui/window.rs:402
+#: app/src/ui/thread_row.rs:126 app/src/ui/window.rs:402
 msgid "Muted"
 msgstr "Silenciadas"
 
-#: app/src/ui/thread_row.rs:286
+#: app/src/ui/thread_row.rs:316
 msgid "Unread invitation, {sender}, {subject}, {snippet}"
 msgstr "Convite por ler, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:287
+#: app/src/ui/thread_row.rs:317
 msgid "Unread, {sender}, {subject}, {snippet}"
 msgstr "Por ler, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:288
+#: app/src/ui/thread_row.rs:318
 msgid "Invitation, {sender}, {subject}, {snippet}"
 msgstr "Convite, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:289
+#: app/src/ui/thread_row.rs:319
 msgid "{sender}, {subject}, {snippet}"
 msgstr "{sender}, {subject}, {snippet}"
+
+#: app/src/ui/thread_row.rs:461
+msgid "On the server, {lines}"
+msgstr "No servidor, {lines}"
 
 #: app/src/ui/translation.rs:60 app/src/ui/translation.rs:123
 #: app/src/ui/translation.rs:165
@@ -9744,7 +9751,53 @@ msgstr "A enviar…"
 msgid "Could not cancel: {reason}"
 msgstr "Não foi possível cancelar: {reason}"
 
-#: app/src/ui/window/scheduled.rs:255
+#: app/src/ui/window/scheduled.rs:264
+msgid "This message was canceled in another app."
+msgstr "Esta mensagem foi cancelada noutra aplicação."
+
+#: app/src/ui/window/scheduled.rs:266
+msgid "{count} message was canceled in another app."
+msgid_plural "{count} messages were canceled in another app."
+msgstr[0] "{count} mensagem foi cancelada noutra aplicação."
+msgstr[1] "{count} mensagens foram canceladas noutra aplicação."
+
+#: app/src/ui/window/scheduled.rs:275
+msgid ""
+"Penguin Mail could not confirm whether this message went out. Check Sent."
+msgstr ""
+"O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. "
+"Verifique as Enviadas."
+
+#: app/src/ui/window/scheduled.rs:278
+msgid ""
+"Penguin Mail could not confirm whether {count} message went out. Check Sent."
+msgid_plural ""
+"Penguin Mail could not confirm whether {count} messages went out. Check Sent."
+msgstr[0] ""
+"O Penguin Mail não conseguiu confirmar se {count} mensagem foi enviada. "
+"Verifique as Enviadas."
+msgstr[1] ""
+"O Penguin Mail não conseguiu confirmar se {count} mensagens foram enviadas. "
+"Verifique as Enviadas."
+
+#: app/src/ui/window/scheduled.rs:288
+msgid ""
+"The server did not answer, so {count} message still goes out at its hour."
+msgid_plural ""
+"The server did not answer, so {count} messages still go out at their hour."
+msgstr[0] ""
+"O servidor não respondeu, por isso {count} mensagem ainda sai à hora marcada."
+msgstr[1] ""
+"O servidor não respondeu, por isso {count} mensagens ainda saem à hora "
+"marcada."
+
+#: app/src/ui/window/scheduled.rs:301
+msgid "{count} message had already gone out."
+msgid_plural "{count} messages had already gone out."
+msgstr[0] "{count} mensagem já tinha saído."
+msgstr[1] "{count} mensagens já tinham saído."
+
+#: app/src/ui/window/scheduled.rs:314
 msgid ""
 "Gmail is out of reach and Penguin Mail cannot reopen a message, so it stays "
 "in Send Later."
@@ -9752,14 +9805,14 @@ msgstr ""
 "O Gmail está inacessível e o Penguin Mail não consegue reabrir uma mensagem, "
 "por isso ela continua em Enviar mais tarde."
 
-#: app/src/ui/window/scheduled.rs:258
+#: app/src/ui/window/scheduled.rs:317
 msgid ""
 "Won't be sent. Gmail is out of reach, so the message is open for you to save."
 msgstr ""
 "Não vai ser enviada. O Gmail está inacessível, por isso a mensagem ficou "
 "aberta para a guardar."
 
-#: app/src/ui/window/scheduled.rs:261
+#: app/src/ui/window/scheduled.rs:320
 msgid ""
 "Won't be sent. Gmail is out of reach, so the messages are open for you to "
 "save."
@@ -9767,15 +9820,15 @@ msgstr ""
 "Não vão ser enviadas. O Gmail está inacessível, por isso as mensagens "
 "ficaram abertas para as guardar."
 
-#: app/src/ui/window/scheduled.rs:263
+#: app/src/ui/window/scheduled.rs:322
 msgid "Won't be sent. The message is in Drafts."
 msgstr "Não vai ser enviada. A mensagem está nos rascunhos."
 
-#: app/src/ui/window/scheduled.rs:264
+#: app/src/ui/window/scheduled.rs:323
 msgid "Won't be sent. The messages are in Drafts."
 msgstr "Não vão ser enviadas. As mensagens estão nos rascunhos."
 
-#: app/src/ui/window/scheduled.rs:266
+#: app/src/ui/window/scheduled.rs:325
 msgid ""
 "Won't be sent. Some are in Drafts, and the ones Gmail could not take are "
 "open for you to save."
@@ -10591,73 +10644,74 @@ msgstr ""
 msgid "Could not load mail for {account}: {reason}"
 msgstr "Não foi possível carregar o correio de {account}: {reason}"
 
-#: sync/src/mailbox.rs:1419
+#: sync/src/mailbox.rs:1420
 msgid "Returns {when}"
 msgstr "Volta {when}"
 
-#: sync/src/mailbox.rs:1462 sync/src/mailbox.rs:1544
+#: sync/src/mailbox.rs:1463 sync/src/mailbox.rs:1545
 msgid "No recipients"
 msgstr "Sem destinatários"
 
-#: sync/src/mailbox.rs:1465 sync/src/mailbox.rs:1547
+#: sync/src/mailbox.rs:1466 sync/src/mailbox.rs:1548
 msgid "To {recipients}"
 msgstr "Para {recipients}"
 
-#: sync/src/mailbox.rs:1507
+#: sync/src/mailbox.rs:1508
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} por ler · {category}"
 msgstr[1] "{count} por ler · {category}"
 
-#: sync/src/mailbox.rs:1512
+#: sync/src/mailbox.rs:1513
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} por ler"
 msgstr[1] "{count} por ler"
 
-#: sync/src/mailbox.rs:1519
+#: sync/src/mailbox.rs:1520
 msgid "Sent yesterday, no reply yet"
 msgstr "Enviada ontem, ainda sem resposta"
 
-#: sync/src/mailbox.rs:1521
+#: sync/src/mailbox.rs:1522
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Enviada há {days} dia, ainda sem resposta"
 msgstr[1] "Enviada há {days} dias, ainda sem resposta"
 
-#: sync/src/mailbox.rs:1564
+#: sync/src/mailbox.rs:1565
 msgid "The server has not sent this message yet."
 msgstr "O servidor ainda não enviou esta mensagem."
 
-#: sync/src/mailbox.rs:1568
+#: sync/src/mailbox.rs:1574
+msgid "Sends {when}."
+msgstr "Envia {when}."
+
+#: sync/src/mailbox.rs:1575
+msgid "The server sends it even if Penguin Mail is closed."
+msgstr "O servidor envia-a mesmo com o Penguin Mail fechado."
+
+#: sync/src/mailbox.rs:1577
 msgid "Sends {when}"
 msgstr "Envia {when}"
 
-#: sync/src/mailbox.rs:1572
+#: sync/src/mailbox.rs:1586
 msgid "Not sent"
 msgstr "Não enviada"
 
-#: sync/src/mailbox.rs:1579
+#: sync/src/mailbox.rs:1593
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Nova tentativa {when}"
 
-#: sync/src/mailbox.rs:1586
+#: sync/src/mailbox.rs:1600
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. O Penguin Mail deixou de tentar"
 
-#: sync/src/outbox.rs:58
-msgid ""
-"Penguin Mail could not confirm whether this message went out. Check Sent."
-msgstr ""
-"O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. "
-"Verifique as Enviadas."
-
-#: sync/src/outbox.rs:79
+#: sync/src/outbox.rs:86
 msgid "This message was canceled in another app and is no longer in Drafts."
 msgstr ""
 "Esta mensagem foi cancelada noutra aplicação e já não está nos Rascunhos."
 
-#: sync/src/outbox.rs:85
+#: sync/src/outbox.rs:92
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -10665,7 +10719,7 @@ msgstr ""
 "O servidor ainda tem esta mensagem e não foi possível pedir-lhe que a "
 "libertasse. Tente mais tarde."
 
-#: sync/src/outbox.rs:1041
+#: sync/src/outbox.rs:1048
 msgid "The server could not be asked to let go of the message."
 msgstr "Não foi possível pedir ao servidor que libertasse a mensagem."
 

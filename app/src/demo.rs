@@ -1953,6 +1953,7 @@ async fn queue_samples(
              Street takes bookings for eight.\n\nDana",
             Some("Could not reach Gmail"),
             now + 20 * 60 * 1000,
+            None,
         ),
         (
             "Book club in October",
@@ -1961,9 +1962,21 @@ async fn queue_samples(
              at seven.\n\nDana",
             None,
             tomorrow_at_eight(now),
+            None,
+        ),
+        // A message the server holds. The demo's account never settles a
+        // hold, so it sits three days out, past any demo session.
+        (
+            "Seeds for the spring beds",
+            "Ines Duarte <ines@allotment.example>",
+            "Ines,\n\nI ordered the broad beans and the peas. They arrive on the first of \
+             the month.\n\nDana",
+            None,
+            tomorrow_at_eight(now) + 3 * 24 * 60 * 60 * 1000,
+            Some("demo-hold"),
         ),
     ];
-    for (subject, to, words, problem, send_at) in letters {
+    for (subject, to, words, problem, send_at, held) in letters {
         let mut draft = Draft::new(
             account_id,
             Address {
@@ -1989,6 +2002,7 @@ async fn queue_samples(
             composer: serde_json::to_string(&draft).unwrap_or_default(),
             attempts: u32::from(problem.is_some()) * 3,
             problem: problem.map(str::to_string),
+            held: held.map(str::to_string),
             ..Queued::default()
         };
         db.write(move |c| outbox::put(c, &queued)).await?;

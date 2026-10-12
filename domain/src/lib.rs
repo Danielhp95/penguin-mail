@@ -407,6 +407,10 @@ pub struct ThreadSummary {
     /// metadata does not say whether a message has a calendar part.
     #[serde(default)]
     pub invitation: bool,
+    /// A Send Later row whose message the server holds and sends at its
+    /// hour, whether or not this app is running.
+    #[serde(default)]
+    pub held: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -35,6 +35,11 @@ mod imp {
         pub subject: OnceCell<gtk::Label>,
         pub count: OnceCell<gtk::Label>,
         pub snippet: OnceCell<gtk::Label>,
+        /// "On the server", in place of the date on a Send Later row the
+        /// server holds.
+        pub held: OnceCell<gtk::Box>,
+        /// The held row's second line, under the hour it goes.
+        pub note: OnceCell<gtk::Label>,
         /// The calendar mark beside the subject, on while an open message
         /// of the thread carried a live invitation.
         pub invite: OnceCell<gtk::Image>,
@@ -123,6 +128,21 @@ mod imp {
             star.add_css_class("starred");
             let date = text_label("date");
             date.set_ellipsize(pango::EllipsizeMode::None);
+            // The chip says what the date would: the row's own lines give
+            // the hour, and the chip who sends it.
+            let held = gtk::Box::builder()
+                .spacing(4)
+                .valign(gtk::Align::Center)
+                .visible(false)
+                .css_classes(["held-chip"])
+                .build();
+            held.append(
+                &gtk::Image::builder()
+                    .icon_name("penguin-mail-cloud-symbolic")
+                    .pixel_size(14)
+                    .build(),
+            );
+            held.append(&gtk::Label::new(Some(&gettext("On the server"))));
             for widget in [
                 account.upcast_ref::<gtk::Widget>(),
                 vip.upcast_ref(),
@@ -131,6 +151,7 @@ mod imp {
                 mute.upcast_ref(),
                 star.upcast_ref(),
                 date.upcast_ref(),
+                held.upcast_ref(),
             ] {
                 top.append(widget);
             }
@@ -154,10 +175,17 @@ mod imp {
             snippet.set_wrap_mode(pango::WrapMode::WordChar);
             snippet.set_lines(2);
             snippet.set_yalign(0.0);
+            let note = text_label("snippet");
+            note.add_css_class("held-note");
+            note.set_wrap(true);
+            note.set_wrap_mode(pango::WrapMode::WordChar);
+            note.set_lines(2);
+            note.set_visible(false);
 
             content.append(&top);
             content.append(&middle);
             content.append(&snippet);
+            content.append(&note);
             row.append(&dot);
             row.append(&avatar);
             row.append(&content);
@@ -175,6 +203,8 @@ mod imp {
             let _ = self.invite.set(invite);
             let _ = self.count.set(count);
             let _ = self.snippet.set(snippet);
+            let _ = self.held.set(held);
+            let _ = self.note.set(note);
         }
     }
 
@@ -364,6 +394,8 @@ impl ThreadRow {
         get(&imp.from_name).set_text(&name);
         imp.floor.replace(address_floor_markup(&name, &thread.from_email));
         let date = get(&imp.date);
+        date.set_visible(!thread.held);
+        imp.held.get().expect("held chip exists").set_visible(thread.held);
         date.set_label(&relative_date(thread.last_message_at, Local::now()));
         if thread.unread {
             date.add_css_class("unread");
@@ -378,7 +410,21 @@ impl ThreadRow {
         let count = get(&imp.count);
         count.set_visible(thread.message_count > 1);
         count.set_label(&thread.message_count.to_string());
-        get(&imp.snippet).set_label(&one_line(&thread.snippet));
+        let note = get(&imp.note);
+        match thread.held {
+            true => {
+                self.add_css_class("held");
+                let (when, server) = held_lines(&thread.snippet);
+                get(&imp.snippet).set_label(when);
+                note.set_label(server.unwrap_or_default());
+                note.set_visible(server.is_some());
+            }
+            false => {
+                self.remove_css_class("held");
+                get(&imp.snippet).set_label(&one_line(&thread.snippet));
+                note.set_visible(false);
+            }
+        }
         let flag = imp.star.get().expect("flag exists");
         flag.set_visible(thread.starred);
         let wanted = flag_class(thread.flag_color.unwrap_or(FlagColor::Red));
@@ -410,12 +456,19 @@ impl ThreadRow {
             }
             account.add_css_class(wanted);
         }
+        let snippet = match thread.held {
+            true => fill(
+                &gettext("On the server, {lines}"),
+                &[("lines", &one_line(&thread.snippet))],
+            ),
+            false => thread.snippet.clone(),
+        };
         let described = spoken(
             thread.unread,
             thread.invitation,
             &thread.from,
             &thread.subject,
-            &thread.snippet,
+            &snippet,
         );
         self.update_property(&[gtk::accessible::Property::Label(&described)]);
         // The keyboard focus sits on the list item GTK wraps the row in,
@@ -453,6 +506,15 @@ fn address_floor_markup(name: &str, address: &str) -> Option<String> {
     Some(sender_markup(name, &format!("{local}@")))
 }
 
+/// A held Send Later row's lines: the hour it goes, and under it the line
+/// that says the server sends it, when the row has one.
+fn held_lines(snippet: &str) -> (&str, Option<&str>) {
+    match snippet.split_once('\n') {
+        Some((when, server)) => (when, Some(server)),
+        None => (snippet, None),
+    }
+}
+
 /// `text` as one paragraph. A label clamps its lines within each
 /// paragraph, so a preview that kept the body's line breaks would show
 /// every line of it.
@@ -462,7 +524,19 @@ fn one_line(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{address_floor_markup, one_line, sender_markup, spoken};
+    use super::{address_floor_markup, held_lines, one_line, sender_markup, spoken};
+
+    #[test]
+    fn a_held_row_puts_the_servers_line_under_the_hour() {
+        assert_eq!(
+            held_lines("Sends Mon 19 Oct at 08:30.\nThe server sends it even if Penguin Mail is closed."),
+            ("Sends Mon 19 Oct at 08:30.", Some("The server sends it even if Penguin Mail is closed."))
+        );
+        assert_eq!(
+            held_lines("The server has not sent this message yet."),
+            ("The server has not sent this message yet.", None)
+        );
+    }
 
     #[test]
     fn a_preview_shows_as_one_paragraph() {

@@ -1345,6 +1345,7 @@ impl<A: Accounts> Mailboxes<A> {
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
                 message_count: 1,
+                held: crate::outbox::server_holds(item),
                 ..ThreadSummary::default()
             })
             .collect();
@@ -1564,11 +1565,24 @@ pub fn waiting_line(message: &outbox::Queued, now: DateTime<Local>) -> String {
         return gettext("The server has not sent this message yet.");
     }
     let Some(problem) = message.problem.as_deref() else {
-        return fill(
-            &gettext("Sends {when}"),
-            &[("when", &future_date(message.send_at, now))],
-        );
+        let when = future_date(message.send_at, now);
+        return match crate::outbox::server_holds(message) {
+            // The server sends it at the hour whether or not this computer
+            // is on. The list row shows the second line under the first.
+            true => format!(
+                "{}\n{}",
+                fill(&gettext("Sends {when}."), &[("when", &when)]),
+                gettext("The server sends it even if Penguin Mail is closed."),
+            ),
+            false => fill(&gettext("Sends {when}"), &[("when", &when)]),
+        };
     };
+    // A hold whose fate nobody could learn: the problem already tells the
+    // person what to do, and the app never tried to send it, so neither
+    // "trying again" nor "stopped trying" is true.
+    if message.held.is_some() {
+        return problem.to_string();
+    }
     let unsent = gettext("Not sent");
     let problem = match problem.trim_end_matches(['.', ' ']) {
         "" => unsent.as_str(),
@@ -1679,6 +1693,7 @@ fn row_of(hit: &MessageMeta, alone: bool) -> ThreadSummary {
             .map(|a| a.email.clone())
             .unwrap_or_default(),
         invitation: false,
+        held: false,
     }
 }
 

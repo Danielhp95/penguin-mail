@@ -272,6 +272,102 @@ async fn send_later_lists_scheduled_drafts() {
     );
 }
 
+#[test]
+fn a_message_the_server_holds_says_the_server_sends_it() {
+    let now = chrono::Local::now();
+    let held = Queued {
+        held: Some("S1".into()),
+        send_at: now.timestamp_millis() + 3_600_000,
+        ..Queued::default()
+    };
+    let line = crate::mailbox::waiting_line(&held, now);
+    let (when, note) = line.split_once('\n').expect("a held row has a second line");
+    assert!(when.starts_with("Sends ") && when.ends_with('.'), "{line}");
+    assert_eq!(note, "The server sends it even if Penguin Mail is closed.");
+    let local = Queued { held: None, ..held };
+    let line = crate::mailbox::waiting_line(&local, now);
+    assert!(!line.contains("server") && !line.contains('\n'), "{line}");
+}
+
+#[test]
+fn a_hold_whose_answer_was_lost_does_not_promise_the_server_sends_it() {
+    // Until the outbox finds the server's copy, the message may yet go
+    // from here, so the row says no more than when it goes.
+    let now = chrono::Local::now();
+    let lost = Queued {
+        held: Some("unconfirmed:1700000000000:<m1@example.com>".into()),
+        send_at: now.timestamp_millis() + 3_600_000,
+        ..Queued::default()
+    };
+    let line = crate::mailbox::waiting_line(&lost, now);
+    assert!(!line.contains("server"), "{line}");
+}
+
+#[test]
+fn a_late_hold_says_so_on_one_line() {
+    let now = chrono::Local::now();
+    let late = Queued {
+        held: Some("S1".into()),
+        send_at: now.timestamp_millis() - 20 * 60_000,
+        ..Queued::default()
+    };
+    assert_eq!(
+        crate::mailbox::waiting_line(&late, now),
+        "The server has not sent this message yet."
+    );
+}
+
+#[test]
+fn a_row_that_asks_to_check_sent_says_only_that() {
+    let now = chrono::Local::now();
+    let unknown = Queued {
+        held: Some("S1".into()),
+        problem: Some("Penguin Mail could not confirm whether this message went out. Check Sent.".into()),
+        attempts: crate::MOST_TRIES,
+        send_at: now.timestamp_millis(),
+        ..Queued::default()
+    };
+    assert_eq!(
+        crate::mailbox::waiting_line(&unknown, now),
+        "Penguin Mail could not confirm whether this message went out. Check Sent."
+    );
+}
+
+#[tokio::test]
+async fn send_later_marks_the_rows_the_server_holds() {
+    let h = harness().await;
+    let account_id = h.account_id;
+    let at = now_millis() + DAY;
+    for (subject, held) in [
+        ("Held", Some("S1")),
+        ("Here", None),
+        ("Lost", Some("unconfirmed:1700000000000:<m1@example.com>")),
+    ] {
+        h.db.write(move |c| {
+            outbox::put(
+                c,
+                &Queued {
+                    account_id,
+                    subject: subject.into(),
+                    recipients: "ann@example.com".into(),
+                    send_at: at,
+                    raw: Some(b"bytes".to_vec()),
+                    held: held.map(str::to_string),
+                    ..Queued::default()
+                },
+            )
+            .map(|_| ())
+        })
+        .await
+        .unwrap();
+    }
+
+    let listing = list(&h, &Mailbox::Scheduled, &view()).await;
+    let held: Vec<(&str, bool)> =
+        listing.rows.iter().map(|r| (r.subject.as_str(), r.held)).collect();
+    assert_eq!(held, [("Held", true), ("Here", false), ("Lost", false)]);
+}
+
 #[tokio::test]
 async fn the_outbox_lists_what_is_stuck_and_says_why_and_when() {
     let h = harness().await;
