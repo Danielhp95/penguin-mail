@@ -20,9 +20,9 @@ use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnyS
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    IdentityService, Imap, Jmap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, Refused,
-    Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, SieveRules, SyncState, Unapplied,
-    Want, Withheld,
+    Held, IdentityService, Imap, Jmap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
+    Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, Settled, SieveRules, Storage, SyncState, Unapplied,
+    Unheld, Want, Withheld,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -283,6 +283,26 @@ impl MailBackend for AnyMail {
 
     async fn list_drafts(&self) -> Result<Vec<DraftRef>, BackendError> {
         forward_all!(AnyMail, self, list_drafts())
+    }
+
+    async fn schedule(&self, raw: &[u8], at: EpochMillis) -> Result<Held, BackendError> {
+        forward_all!(AnyMail, self, schedule(raw, at))
+    }
+
+    async fn unschedule(&self, handle: &str) -> Result<Unheld, BackendError> {
+        forward_all!(AnyMail, self, unschedule(handle))
+    }
+
+    async fn settle(&self, handle: &str) -> Result<Settled, BackendError> {
+        forward_all!(AnyMail, self, settle(handle))
+    }
+
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        forward_all!(AnyMail, self, storage())
+    }
+
+    async fn send_receipt(&self, receipt: &ReceiptOut) -> Result<(), BackendError> {
+        forward_all!(AnyMail, self, send_receipt(receipt))
     }
 
     fn made_by_person(&self, id: &str) -> bool {
