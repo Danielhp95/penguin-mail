@@ -269,12 +269,12 @@ async fn a_submission_the_server_does_not_have_is_left_out() {
 }
 
 #[tokio::test]
-async fn cancelling_a_hold_the_server_no_longer_has_counts_as_canceled() {
+async fn cancelling_a_hold_the_server_no_longer_has_says_it_is_gone() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
         ["EmailSubmission/set", {"accountId": "A1", "notUpdated": {"S1": {"type": "notFound"}}}, "c0"]
     ]})).await;
-    assert_eq!(client(&server).cancel_submission("S1").await.unwrap(), Canceled::Canceled);
+    assert_eq!(client(&server).cancel_submission("S1").await.unwrap(), Canceled::Gone);
 }
 
 #[tokio::test]

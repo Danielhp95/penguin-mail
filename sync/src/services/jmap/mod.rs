@@ -374,11 +374,11 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
         self.hold_message(raw, at).await
     }
 
-    async fn unschedule(&self, handle: &str) -> Result<Unheld, BackendError> {
-        self.release(handle).await
+    async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
+        self.release(handle, message_id, send_at).await
     }
 
-    async fn settle(&self, handle: &str) -> Result<Settled, BackendError> {
-        self.settle_hold(handle).await
+    async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
+        self.settle_hold(handle, message_id, send_at).await
     }
 }
