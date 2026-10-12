@@ -139,7 +139,23 @@ fn restore(button: &gtk::Button, saved: Saved) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hold_is_not_running_before_it_starts() {
+        assert!(!Hold::default().is_running());
+    }
+}
+
+/// Checks that need the default main context, which the GTK checks' thread
+/// owns. A timer set from a test's own thread fires on that thread instead.
+#[cfg(test)]
+pub(crate) mod checks {
+    use super::*;
     use std::cell::Cell;
+
+    pub fn run() {
+        restarting_the_hold_runs_only_the_last_expiry();
+    }
 
     fn wait(context: &glib::MainContext, until: impl Fn() -> bool) {
         let end = std::time::Instant::now() + Duration::from_secs(3);
@@ -149,7 +165,6 @@ mod tests {
         }
     }
 
-    #[test]
     fn restarting_the_hold_runs_only_the_last_expiry() {
         let context = glib::MainContext::default();
         let hold = Rc::new(Hold::default());
@@ -161,10 +176,5 @@ mod tests {
         assert!(hold.is_running());
         wait(&context, || !hold.is_running());
         assert_eq!(ran.get(), 2);
-    }
-
-    #[test]
-    fn a_hold_is_not_running_before_it_starts() {
-        assert!(!Hold::default().is_running());
     }
 }
