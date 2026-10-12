@@ -81,6 +81,22 @@ async fn a_query_sorts_newest_first_and_fetches_threads_by_back_reference() {
 }
 
 #[tokio::test]
+async fn a_page_after_an_anchor_names_the_anchor_and_no_position() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/query", {"accountId": "A1", "queryState": "q", "canCalculateChanges": false, "position": 7, "ids": ["M1"]}, "c0"],
+        ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": [{"id": "M1", "threadId": "T1"}]}, "c1"]
+    ]})).await;
+    let query = EmailQuery { filter: None, position: 7, limit: 50, total: false };
+    let found = client(&server).query_after(&query, "M2").await.unwrap();
+    assert_eq!(found.position, 7);
+    let body = sent(&server).await;
+    assert_eq!(body["methodCalls"][0][1]["anchor"], "M2");
+    assert_eq!(body["methodCalls"][0][1]["anchorOffset"], 1);
+    assert!(body["methodCalls"][0][1].get("position").is_none());
+}
+
+#[tokio::test]
 async fn sending_imports_submits_and_files_the_copy_in_one_request() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
@@ -121,6 +137,18 @@ async fn a_refused_submission_says_why() {
     };
     let refused = client(&server).submit(&submission).await.unwrap_err();
     assert_eq!(refused, mailrs_jmap::JmapError::Method { kind: "forbiddenFrom".into(), description: "not yours".into() });
+}
+
+#[tokio::test]
+async fn a_new_mailbox_names_its_role_only_when_given() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Mailbox/set", {"accountId": "A1", "created": {"b": {"id": "B9"}}}, "c0"]
+    ]})).await;
+    let made = MailboxWrite::Create { name: "Archive".into(), parent_id: None, role: Some("archive".into()) };
+    assert_eq!(client(&server).set_mailbox(&made).await.unwrap(), "B9");
+    let body = sent(&server).await;
+    assert_eq!(body["methodCalls"][0][1]["create"]["b"], json!({"name": "Archive", "parentId": null, "role": "archive"}));
 }
 
 #[tokio::test]

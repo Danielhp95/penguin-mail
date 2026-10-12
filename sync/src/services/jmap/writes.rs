@@ -138,15 +138,18 @@ impl<J: JmapApi> Jmap<J> {
             return Ok(update);
         }
         let got = self.api().emails(chunk, &["id", "mailboxIds"]).await.map_err(backend)?;
-        let archive = self.known().roles.get(&Role::Archive).cloned();
+        let mut archive = self.known().roles.get(&Role::Archive).cloned();
         for email in got.list {
             let now: BTreeSet<String> = email.mailbox_ids.iter().filter(|(_, on)| **on).map(|(id, _)| id.clone()).collect();
             let mut fields = patch.fields.clone();
             if patch.end_in(&now).is_empty() {
-                let archive = archive.clone().ok_or_else(|| {
+                if archive.is_none() {
+                    archive = self.ensure_archive().await?;
+                }
+                let archive = archive.as_deref().ok_or_else(|| {
                     BackendError::Refused(gettext("A message must stay in at least one mailbox, and this server has no Archive."))
                 })?;
-                put_mailbox(&mut fields, &archive, true);
+                put_mailbox(&mut fields, archive, true);
             }
             update.insert(email.id, Value::Object(fields));
         }
@@ -156,6 +159,9 @@ impl<J: JmapApi> Jmap<J> {
     pub(super) async fn write(&self, messages: &[String], ops: &[MailOp]) -> Result<Vec<Relocated>, Unapplied> {
         self.listed().await.map_err(|e| unapplied(0, e))?;
         let destroy = ops.iter().any(|op| matches!(op, MailOp::Destroy));
+        if ops.iter().any(|op| matches!(op, MailOp::MoveToRole(Role::Archive))) {
+            self.ensure_archive().await.map_err(|e| unapplied(0, e))?;
+        }
         let patch = match destroy {
             true => None,
             false => Some(self.patch_of(ops).map_err(|e| unapplied(0, e))?),

@@ -130,3 +130,31 @@ async fn a_large_change_set_is_read_in_pages_across_looks() {
     let gained = next.changes.iter().filter(|c| matches!(c, crate::services::RemoteChange::Gained { .. })).count();
     assert_eq!(gained, 1100);
 }
+
+#[tokio::test]
+async fn a_look_stops_paging_once_its_restatements_pass_the_budget() {
+    use crate::services::RemoteChange;
+    let h = fastmail().await;
+    for n in 0..60 {
+        h.fake.add_mailbox(&format!("Folder {n}"), None);
+    }
+    let first = h.sync.services().mail.changes(None).await.unwrap();
+    let now = chrono::Utc::now().timestamp_millis();
+    for n in 0..1100 {
+        h.fake.deliver("inbox", &raw(&format!("b{n}@x"), "Bulk"), now);
+    }
+    let gained = |changes: &[RemoteChange]| changes.iter().filter(|c| matches!(c, RemoteChange::Gained { .. })).count();
+    let next = h.sync.services().mail.changes(Some(&first.state)).await.unwrap();
+    let memberships: usize = next
+        .changes
+        .iter()
+        .map(|c| match c {
+            RemoteChange::Gained { memberships, .. } | RemoteChange::Lost { memberships, .. } => memberships.len(),
+            _ => 0,
+        })
+        .sum();
+    assert!(memberships <= 50_000, "{memberships}");
+    let rest = h.sync.services().mail.changes(Some(&next.state)).await.unwrap();
+    assert!(gained(&next.changes) < 1100, "the budget ends the look early");
+    assert_eq!(gained(&next.changes) + gained(&rest.changes), 1100, "the next look carries on from the state reached");
+}

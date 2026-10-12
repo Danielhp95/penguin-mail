@@ -191,26 +191,37 @@ impl<'a> Run<'a> {
         assert_eq!(keywords.get("$flagged"), Some(&true), "{:?}", self.kind());
     }
 
-    /// Archive on a label account takes the message out of the Inbox. It
-    /// lands in Archive, or, on a server without one, the adapter refuses
-    /// and the message stays where it was.
+    /// Archive on a label account takes the message out of the Inbox and
+    /// into Archive. A server without an Archive mailbox, as a new Stalwart
+    /// account is, gets one made by the adapter.
     async fn archive_keeps_the_message_in_a_mailbox(&self) {
         let (id, thread) = self.stored(&self.id("later")).await.expect("stored");
-        let (inbox, archive) = (self.role("inbox").await.expect("an Inbox"), self.role("archive").await);
-        let archived = self.sync.triage_all(&[Target::thread(self.account_id, thread)], &TriageAction::Archive, None).await;
+        let had = self.role("archive").await.is_some();
+        self.sync.triage_all(&[Target::thread(self.account_id, thread)], &TriageAction::Archive, None).await.expect("archive");
+        let archive = match self.role("archive").await {
+            Some(archive) => archive,
+            None => self.top_level("Archive").await.unwrap_or_else(|| panic!("{:?}: no Archive was made", self.kind())),
+        };
+        if !had {
+            eprintln!("{:?}: the adapter made the Archive mailbox", self.kind());
+        }
         let (mailboxes, _) = self.on_server(&id).await.expect("still there");
         let mailboxes: Vec<String> = mailboxes.into_keys().collect();
-        match archive {
-            Some(archive) => {
-                archived.expect("archive");
-                assert_eq!(mailboxes, [archive], "{:?}: out of the Inbox, into Archive", self.kind());
-            }
-            None => {
-                eprintln!("{:?}: no Archive mailbox, so Archive is refused", self.kind());
-                assert!(archived.is_err(), "{:?}: Archive without an Archive mailbox", self.kind());
-                assert_eq!(mailboxes, [inbox], "{:?}: the message stays in the Inbox", self.kind());
-            }
-        }
+        assert_eq!(mailboxes, [archive], "{:?}: out of the Inbox, into Archive", self.kind());
+    }
+
+    /// The id of the top-level mailbox called `name`, if there is one.
+    async fn top_level(&self, name: &str) -> Option<String> {
+        let account = self.server.mail_account(self.password).await;
+        let got = self
+            .server
+            .call(self.password, &MAIL, json!([["Mailbox/get", {"accountId": account, "ids": null, "properties": ["name", "parentId"]}, "0"]]))
+            .await;
+        got["methodResponses"][0][1]["list"]
+            .as_array()
+            .and_then(|list| list.iter().find(|m| m["name"] == name && m["parentId"].is_null()))
+            .and_then(|m| m["id"].as_str())
+            .map(str::to_string)
     }
 
     async fn search_finds_by_subject(&self) {

@@ -2960,10 +2960,12 @@ impl Dialog {
         glib::spawn_future_local(async move {
             let url = proposal.session_url.clone();
             let target = this.core.locate_jmap(url).await;
-            this.stop_locating();
+            // A stale answer leaves the button alone: leaving the page
+            // already put it back, and a newer lookup may own it now.
             if !this.asking.wants(ticket) {
                 return;
             }
+            this.stop_locating();
             this.asking.forget();
             this.show_jmap(add_account::located_jmap(proposal, target, &address));
         });

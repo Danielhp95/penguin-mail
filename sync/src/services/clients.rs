@@ -329,6 +329,7 @@ either_client! {
         fn mail_changes(email: &str, mailbox: &str, max: usize) -> Jmapped<MailChanges>;
         fn email_state() -> Jmapped<String>;
         fn query(query: &EmailQuery) -> Jmapped<Queried>;
+        fn query_after(query: &EmailQuery, anchor: &str) -> Jmapped<Queried>;
         fn emails(ids: &[String], properties: &[&str]) -> Jmapped<Got<Email>>;
         fn threads(ids: &[String]) -> Jmapped<Threads>;
         fn set_emails(update: &serde_json::Map<String, Value>, destroy: &[String]) -> Jmapped<SetResponse>;

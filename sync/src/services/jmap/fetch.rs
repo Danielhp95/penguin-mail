@@ -1,8 +1,10 @@
 //! The window, ids, metadata and whole threads. A listing is `Email/query`,
-//! newest first, a page or an id batch a request.
+//! newest first, a page or an id batch a request. Each page goes on after
+//! the last id the one before it named, so a message another client
+//! removes meanwhile does not shift the rest past the listing.
 
 use mailrs_domain::{Address, Memberships, MessageMeta, Role};
-use mailrs_jmap::{Email, EmailAddress, EmailQuery, META};
+use mailrs_jmap::{Email, EmailAddress, EmailQuery, Hit, JmapError, META, Queried};
 use serde_json::{Value, json};
 
 use super::{Jmap, JmapApi, backend};
@@ -17,6 +19,10 @@ const MOST_IDS: usize = 20_000;
 
 /// Ids one call of an id listing asks for.
 const IDS_PER_CALL: usize = 1000;
+
+/// How many hits a listing goes back when it cannot go on from the last id
+/// it named: a few repeats beat a skipped message.
+const OVERLAP: u64 = 50;
 
 /// The most messages of one thread a whole-thread fetch keeps.
 const MOST_IN_THREAD: usize = 500;
@@ -53,20 +59,36 @@ fn window_start(days: i64) -> Option<String> {
     (days > 0).then(|| (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
-/// A backfill cursor: which of the window's filters, and the position in
-/// its listing. The first filter's cursor is the bare position.
-fn cursor_of(filter: usize, position: u64) -> String {
-    match filter {
-        0 => position.to_string(),
-        _ => format!("{filter}:{position}"),
-    }
+/// Where a listing stands: how many hits in, and the id of the last one,
+/// which the next page goes on after.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(super) struct Mark {
+    pub position: u64,
+    pub last: Option<String>,
 }
 
-fn parse_cursor(text: &str) -> Option<(usize, u64)> {
-    match text.split_once(':') {
-        Some((filter, position)) => Some((filter.parse().ok()?, position.parse().ok()?)),
-        None => Some((0, text.parse().ok()?)),
-    }
+/// The hits of `found` and the mark after them.
+fn marked(found: Queried, mark: &Mark) -> (Vec<Hit>, Mark) {
+    let next = Mark {
+        position: found.position + found.hits.len() as u64,
+        last: found.hits.last().map(|h| h.id.clone()).or_else(|| mark.last.clone()),
+    };
+    (found.hits, next)
+}
+
+/// A backfill cursor: which of the window's filters, and the mark in its
+/// listing, `filter:position:last`. A JMAP id holds no colon (RFC 8620
+/// section 1.2).
+fn cursor_of(filter: usize, mark: &Mark) -> String {
+    format!("{filter}:{}:{}", mark.position, mark.last.as_deref().unwrap_or_default())
+}
+
+fn parse_cursor(text: &str) -> Option<(usize, Mark)> {
+    let mut fields = text.splitn(3, ':');
+    let filter = fields.next()?.parse().ok()?;
+    let position = fields.next()?.parse().ok()?;
+    let last = fields.next()?;
+    Some((filter, Mark { position, last: (!last.is_empty()).then(|| last.to_string()) }))
 }
 
 fn address(from: &EmailAddress) -> Option<Address> {
@@ -113,11 +135,51 @@ impl<J: JmapApi> Jmap<J> {
         self.known().roles.get(&Role::Inbox).cloned()
     }
 
+    /// The next page of `filter`'s listing after `mark`, at most `limit`
+    /// hits, and the mark after it. The page goes on right after the last
+    /// id the mark names. When that message is gone, or the server takes no
+    /// anchor (Apache James 3.9), the page starts `OVERLAP` hits before the
+    /// mark's position and drops what came up to the last id, so it skips
+    /// none and repeats a few only when the last id itself went.
+    pub(super) async fn page_after(&self, filter: &Option<Value>, mark: &Mark, limit: usize) -> Result<(Vec<Hit>, Mark), JmapError> {
+        let query = EmailQuery { filter: filter.clone(), position: mark.position, limit, total: false };
+        let Some(last) = &mark.last else {
+            return Ok(marked(self.api().query(&query).await?, mark));
+        };
+        if !self.known().no_anchor {
+            match self.api().query_after(&query, last).await {
+                Err(JmapError::Method { kind, .. }) if kind == "anchorNotFound" => {}
+                Err(JmapError::Method { kind, .. }) if kind == "invalidArguments" => self.known().no_anchor = true,
+                answer => return Ok(marked(answer?, mark)),
+            }
+        }
+        let back = mark.position.saturating_sub(OVERLAP);
+        let wider = limit.saturating_add(usize::try_from(mark.position - back).unwrap_or(usize::MAX));
+        let found = self.api().query(&EmailQuery { position: back, limit: wider, ..query.clone() }).await?;
+        let Some(at) = found.hits.iter().position(|h| &h.id == last) else {
+            // A server that answers fewer hits than asked may stop short of
+            // the mark; going on from there would never move forward.
+            if found.position + (found.hits.len() as u64) < mark.position {
+                return Ok(marked(self.api().query(&query).await?, mark));
+            }
+            return Ok(marked(found, mark));
+        };
+        let position = found.position + at as u64 + 1;
+        let mut hits = found.hits;
+        hits.drain(..=at);
+        if hits.is_empty() {
+            // A server may answer fewer hits than asked, so a page that ends
+            // at the last id does not end the listing.
+            return Ok(marked(self.api().query(&EmailQuery { position, ..query }).await?, mark));
+        }
+        Ok(marked(Queried { hits, position, total: None }, mark))
+    }
+
     pub(super) async fn backfill_page(&self, days: i64, cursor: Option<&str>) -> Result<Backfill, BackendError> {
         self.listed().await?;
-        let (mut at, mut position) = match cursor {
+        let (mut at, mut mark) = match cursor {
             Some(text) => parse_cursor(text).ok_or(BackendError::StateLost)?,
-            None => (0, 0),
+            None => (0, Mark::default()),
         };
         let filters = window_filters(days, self.inbox_id().as_deref());
         let mut refs = Vec::new();
@@ -125,17 +187,16 @@ impl<J: JmapApi> Jmap<J> {
         // still brings the Inbox's older mail in the first page.
         while let Some(filter) = filters.get(at) {
             if refs.len() >= PAGE {
-                return Ok(Backfill { refs, next: Some(cursor_of(at, position)) });
+                return Ok(Backfill { refs, next: Some(cursor_of(at, &mark)) });
             }
-            let query = EmailQuery { filter: filter.clone(), position, limit: PAGE - refs.len(), total: false };
-            let found = self.api().query(&query).await.map_err(backend)?;
+            let (hits, next) = self.page_after(filter, &mark, PAGE - refs.len()).await.map_err(backend)?;
             // A server may answer fewer hits than asked, so only an empty
             // answer ends a filter's listing.
-            match found.hits.is_empty() {
-                true => (at, position) = (at + 1, 0),
+            match hits.is_empty() {
+                true => (at, mark) = (at + 1, Mark::default()),
                 false => {
-                    position += found.hits.len() as u64;
-                    refs.extend(found.hits.into_iter().map(remote_ref));
+                    mark = next;
+                    refs.extend(hits.into_iter().map(remote_ref));
                 }
             }
         }
@@ -144,15 +205,24 @@ impl<J: JmapApi> Jmap<J> {
 
     /// Every id `filter` matches, up to `most`, `IDS_PER_CALL` a call.
     async fn every_id(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, BackendError> {
-        let mut out = Vec::new();
+        self.every_id_of(filter, most).await.map_err(backend)
+    }
+
+    async fn every_id_of(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, JmapError> {
+        let mut out: Vec<RemoteRef> = Vec::new();
+        let mut mark = Mark::default();
         while out.len() < most {
             let limit = IDS_PER_CALL.min(most - out.len());
-            let query = EmailQuery { filter: filter.clone(), position: out.len() as u64, limit, total: false };
-            let found = self.api().query(&query).await.map_err(backend)?;
-            if found.hits.is_empty() {
+            let (hits, next) = self.page_after(&filter, &mark, limit).await?;
+            if hits.is_empty() {
                 break;
             }
-            out.extend(found.hits.into_iter().take(most - out.len()).map(remote_ref));
+            mark = next;
+            // A page that went back after a lost anchor repeats only what
+            // the last `OVERLAP` hits named.
+            let recent = out.len().saturating_sub(OVERLAP as usize);
+            let fresh: Vec<Hit> = hits.into_iter().filter(|h| !out[recent..].iter().any(|r| r.id == h.id)).collect();
+            out.extend(fresh.into_iter().take(most - out.len()).map(remote_ref));
         }
         Ok(out)
     }
@@ -180,14 +250,25 @@ impl<J: JmapApi> Jmap<J> {
         };
         // A mailbox other than the Inbox lists what the window holds of it:
         // its recent mail, and its older mail that is also in the Inbox,
-        // which is stored whatever its age. Apache James takes one mailbox
-        // condition a filter, so the older part lists the Inbox's older mail
-        // and keeps what also sits in `mailbox`.
+        // which is stored whatever its age.
         let mut out = self.every_id(Some(json!({ "inMailbox": mailbox, "after": start })), MOST_IDS).await?;
         let Some(inbox) = inbox else {
             return Ok(out);
         };
         let left = MOST_IDS - out.len();
+        if !self.known().one_mailbox_a_filter {
+            let both = json!({ "operator": "AND", "conditions": [{ "inMailbox": mailbox, "before": start }, { "inMailbox": inbox }] });
+            match self.every_id_of(Some(both), left).await {
+                Err(JmapError::Method { kind, .. }) if kind == "unsupportedFilter" => self.known().one_mailbox_a_filter = true,
+                listed => {
+                    out.extend(listed.map_err(backend)?);
+                    return Ok(out);
+                }
+            }
+        }
+        // Apache James takes one mailbox condition a filter, so the older
+        // part lists the Inbox's older mail and keeps what also sits in
+        // `mailbox`.
         let older = self.every_id(Some(json!({ "inMailbox": inbox, "before": start })), left).await?;
         let ids: Vec<String> = older.iter().map(|r| r.id.clone()).collect();
         let got = self.api().emails(&ids, &["id", "mailboxIds"]).await.map_err(backend)?;

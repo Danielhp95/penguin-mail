@@ -4329,11 +4329,11 @@ msgid "Leave the user name empty to sign in with your address."
 msgstr ""
 "Deixe o nome de utilizador vazio para iniciar sessão com o seu endereço."
 
-#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2975
+#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2977
 msgid "Use These Settings"
 msgstr "Usar estas definições"
 
-#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3514
+#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3516
 msgid "Looking up {domain}"
 msgstr "A procurar {domain}"
 
@@ -4350,7 +4350,7 @@ msgstr ""
 "nas definições de {provider} e cole-a aqui."
 
 #: app/src/ui/add_account.rs:2521 app/src/ui/add_account.rs:2614
-#: app/src/ui/add_account.rs:3584
+#: app/src/ui/add_account.rs:3586
 msgid "Signing In…"
 msgstr "A iniciar sessão…"
 
@@ -4366,11 +4366,11 @@ msgstr "A sua palavra-passe não foi enviada."
 msgid "Looking Up…"
 msgstr "A procurar…"
 
-#: app/src/ui/add_account.rs:3046
+#: app/src/ui/add_account.rs:3048
 msgid "Sign in with {provider} in your browser"
 msgstr "Inicie sessão com {provider} no navegador"
 
-#: app/src/ui/add_account.rs:3051
+#: app/src/ui/add_account.rs:3053
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
@@ -4378,7 +4378,7 @@ msgstr ""
 "A página de início de sessão de {provider} está aberta no navegador. Quando "
 "terminar lá, esta janela avança."
 
-#: app/src/ui/add_account.rs:3071
+#: app/src/ui/add_account.rs:3073
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4386,7 +4386,7 @@ msgstr ""
 "Esta cópia do Penguin Mail foi compilada sem início de sessão Google. "
 "Obtenha uma versão em github.com/c9dev/penguin-mail/releases."
 
-#: app/src/ui/add_account.rs:3074
+#: app/src/ui/add_account.rs:3076
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4394,7 +4394,7 @@ msgstr ""
 "Esta cópia do Penguin Mail foi compilada sem início de sessão da Microsoft. "
 "Obtenha uma versão em github.com/c9dev/penguin-mail/releases."
 
-#: app/src/ui/add_account.rs:3085
+#: app/src/ui/add_account.rs:3087
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
@@ -4403,19 +4403,19 @@ msgstr ""
 "sessão da Google está aberta no navegador. Quando terminar lá, esta janela "
 "avança."
 
-#: app/src/ui/add_account.rs:3256
+#: app/src/ui/add_account.rs:3258
 msgid "Link copied"
 msgstr "Ligação copiada"
 
-#: app/src/ui/add_account.rs:3283
+#: app/src/ui/add_account.rs:3285
 msgid "{account} is added"
 msgstr "{account} foi adicionada"
 
-#: app/src/ui/add_account.rs:3303
+#: app/src/ui/add_account.rs:3305
 msgid "{account} is ready"
 msgstr "{account} está pronta"
 
-#: app/src/ui/add_account.rs:3587
+#: app/src/ui/add_account.rs:3589
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."
@@ -10656,11 +10656,23 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
-#: sync/src/services/jmap/mod.rs:230
+#: sync/src/services/jmap/errors.rs:21
+msgid "The server does not allow this."
+msgstr "O servidor não permite isto."
+
+#: sync/src/services/jmap/errors.rs:22
+msgid "The server refused this request."
+msgstr "O servidor recusou este pedido."
+
+#: sync/src/services/jmap/errors.rs:23
+msgid "The server could not take this request."
+msgstr "O servidor não conseguiu aceitar este pedido."
+
+#: sync/src/services/jmap/mod.rs:236
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor não guarda cores para as caixas de correio."
 
-#: sync/src/services/jmap/mod.rs:303
+#: sync/src/services/jmap/mod.rs:309
 msgid "This server files sent mail itself."
 msgstr "Este servidor arquiva o correio enviado por si próprio."
 
@@ -10729,7 +10741,7 @@ msgstr "O servidor não tem uma caixa de correio para isto."
 msgid "This server does not sort mail into categories."
 msgstr "Este servidor não ordena o correio por categorias."
 
-#: sync/src/services/jmap/writes.rs:147
+#: sync/src/services/jmap/writes.rs:150
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr ""

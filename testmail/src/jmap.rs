@@ -159,12 +159,18 @@ fn endpoint(session_url: &str, template: &str, account: &str) -> reqwest::Url {
         .unwrap_or_else(|_| panic!("{template} does not resolve against {session_url}"))
 }
 
-/// Whether Cyrus's start script has made its users. It answers before the
-/// script is done, then deletes and remakes `user1` to `user5` and grants
-/// each its rights mailbox by mailbox, so an early write can land in a
-/// mailbox about to go or be refused as `invalidProperties`. `user5` comes
-/// last: once every one of its mailboxes takes mail, every user is ready.
-async fn cyrus_users_made(session_url: &str, password: &str) -> bool {
+/// Whether Cyrus's start script has made its users. Cyrus answers before
+/// the script is done, then `make5.pl` deletes and remakes `user1` to
+/// `user5` and grants each its rights mailbox by mailbox, so an early write
+/// can land in a mailbox about to go or be refused as `invalidProperties`.
+/// A `user5` left from an earlier pass can look ready before the script
+/// deletes it, so the wait is for what the script starts once `make5.pl`
+/// has returned: the user API on `web_url`. `user5`'s mailboxes are then
+/// checked as well.
+async fn cyrus_users_made(session_url: &str, web_url: &str, password: &str) -> bool {
+    if !answers(web_url, None).await {
+        return false;
+    }
     let http = reqwest::Client::new();
     let deadline = Instant::now() + READY_WITHIN;
     while Instant::now() < deadline {
@@ -217,10 +223,13 @@ impl JmapServer {
 
     async fn cyrus(password: &str) -> Option<JmapServer> {
         let port = free_port();
+        let web = std::iter::repeat_with(free_port).find(|p| *p != port).unwrap_or_default();
         let base = format!("http://localhost:{port}");
         let options = vec![
             "-p".to_string(),
             format!("127.0.0.1:{port}:8080"),
+            "-p".into(),
+            format!("127.0.0.1:{web}:8001"),
             "-e".into(),
             format!("JMAPBASEURL={base}"),
             "-e".into(),
@@ -231,7 +240,7 @@ impl JmapServer {
         // there.
         let session_url = format!("{base}/jmap");
         if !answers(&session_url, Some(("user1", password))).await
-            || !cyrus_users_made(&session_url, password).await
+            || !cyrus_users_made(&session_url, &format!("http://localhost:{web}/"), password).await
         {
             return container
                 .not_ready(REQUIRE_JMAP, "Cyrus", READY_WITHIN)

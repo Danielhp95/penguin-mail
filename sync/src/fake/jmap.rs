@@ -108,6 +108,16 @@ pub struct JmapState {
     /// A mailbox id and the message count it claims, for a mailbox too big
     /// to fill in a test.
     pub total_override: Option<(String, u64)>,
+    /// A message destroyed right after the next `Email/query` answers, as
+    /// another client deletes it while a listing pages on.
+    pub vanish_after_query: Option<String>,
+    /// Refuses `anchor` in a query, as Apache James 3.9 does
+    /// (`invalidArguments`).
+    pub refuse_anchors: bool,
+    /// Refuses a new mailbox that names a role, as `invalidProperties`.
+    pub refuse_mailbox_roles: bool,
+    /// Refuses every new mailbox, as `forbidden`.
+    pub refuse_mailbox_creates: bool,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -379,6 +389,10 @@ impl FakeJmap {
             lose_submission_answer: false,
             one_copy: false,
             total_override: None,
+            vanish_after_query: None,
+            refuse_anchors: false,
+            refuse_mailbox_roles: false,
+            refuse_mailbox_creates: false,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -405,6 +419,15 @@ impl FakeJmap {
     /// `OR` or `NOT`, as Apache James does.
     pub fn one_mailbox_per_filter(self) -> FakeJmap {
         self.with(|s| s.flat_mailbox_filters = true);
+        self
+    }
+
+    /// Apache James 3.9: one mailbox condition a filter, and no `anchor`.
+    pub fn like_james(self) -> FakeJmap {
+        self.with(|s| {
+            s.flat_mailbox_filters = true;
+            s.refuse_anchors = true;
+        });
         self
     }
 
@@ -592,6 +615,48 @@ impl FakeJmap {
         self.pushed.notify_one();
     }
 
+    /// The query's page: from `position`, or right after `anchor` when
+    /// given (`anchorOffset` 1), which a server that no longer lists it
+    /// answers with `anchorNotFound`.
+    fn listing(&self, query: &EmailQuery, anchor: Option<&str>) -> Answer<Queried> {
+        self.with(|s| {
+            if s.flat_mailbox_filters && query.filter.as_ref().is_some_and(mailbox_filter_james_refuses) {
+                return Err(JmapError::Method {
+                    kind: "unsupportedFilter".into(),
+                    description: "Nested inMailbox filters are not supported".into(),
+                });
+            }
+            let mut found: Vec<(&String, &FakeEmail)> = Vec::new();
+            for (id, e) in &s.emails {
+                if query.filter.as_ref().map_or(Ok(true), |f| s.matches(e, f))? {
+                    found.push((id, e));
+                }
+            }
+            found.sort_by(|a, b| b.1.received_at.cmp(&a.1.received_at).then(b.0.cmp(a.0)));
+            let total = found.len() as u64;
+            let start = match anchor {
+                None => query.position as usize,
+                Some(anchor) => match found.iter().position(|(id, _)| id.as_str() == anchor) {
+                    Some(at) => at + 1,
+                    None => return Err(JmapError::Method { kind: "anchorNotFound".into(), description: String::new() }),
+                },
+            };
+            let hits = found
+                .into_iter()
+                .skip(start)
+                .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
+                .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
+                .collect();
+            Ok(Queried { hits, position: start as u64, total: query.total.then_some(total) })
+        })
+    }
+
+    fn vanish_if_asked(&self) {
+        if let Some(id) = self.with(|s| s.vanish_after_query.take()) {
+            self.destroy(&id);
+        }
+    }
+
     /// Imports the blob. A server that keeps one copy of the same bytes
     /// files the copy already there instead, as the client does after an
     /// `alreadyExists`.
@@ -692,29 +757,19 @@ impl JmapApi for FakeJmap {
 
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         self.called("Email/query");
-        self.with(|s| {
-            if s.flat_mailbox_filters && query.filter.as_ref().is_some_and(mailbox_filter_james_refuses) {
-                return Err(JmapError::Method {
-                    kind: "unsupportedFilter".into(),
-                    description: "Nested inMailbox filters are not supported".into(),
-                });
-            }
-            let mut found: Vec<(&String, &FakeEmail)> = Vec::new();
-            for (id, e) in &s.emails {
-                if query.filter.as_ref().map_or(Ok(true), |f| s.matches(e, f))? {
-                    found.push((id, e));
-                }
-            }
-            found.sort_by(|a, b| b.1.received_at.cmp(&a.1.received_at).then(b.0.cmp(a.0)));
-            let total = found.len() as u64;
-            let hits = found
-                .into_iter()
-                .skip(query.position as usize)
-                .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
-                .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
-                .collect();
-            Ok(Queried { hits, position: query.position, total: query.total.then_some(total) })
-        })
+        let answer = self.listing(query, None);
+        self.vanish_if_asked();
+        answer
+    }
+
+    async fn query_after(&self, query: &EmailQuery, anchor: &str) -> Answer<Queried> {
+        self.called("Email/query");
+        if self.with(|s| s.refuse_anchors) {
+            return Err(JmapError::Method { kind: "invalidArguments".into(), description: "anchor is not supported".into() });
+        }
+        let answer = self.listing(query, Some(anchor));
+        self.vanish_if_asked();
+        answer
     }
 
     async fn emails(&self, ids: &[String], properties: &[&str]) -> Answer<Got<Email>> {
@@ -836,9 +891,18 @@ impl JmapApi for FakeJmap {
     async fn set_mailbox(&self, write: &MailboxWrite) -> Answer<String> {
         self.called("Mailbox/set");
         self.with(|s| match write {
-            MailboxWrite::Create { name, parent_id } => {
-                let id = s.id("mb-");
-                s.mailboxes.insert(id.clone(), FakeMailbox { name: name.clone(), parent_id: parent_id.clone(), role: None });
+            MailboxWrite::Create { name, parent_id, role } => {
+                if s.refuse_mailbox_creates {
+                    return Err(JmapError::Forbidden(String::new()));
+                }
+                if role.is_some() && s.refuse_mailbox_roles {
+                    return Err(JmapError::Method { kind: "invalidProperties".into(), description: "role".into() });
+                }
+                let id = match role {
+                    Some(role) => format!("mb-{role}"),
+                    None => s.id("mb-"),
+                };
+                s.mailboxes.insert(id.clone(), FakeMailbox { name: name.clone(), parent_id: parent_id.clone(), role: role.clone() });
                 s.record("Mailbox", &id, Op::Created);
                 Ok(id)
             }
@@ -1113,7 +1177,7 @@ mod tests {
         let fake = FakeJmap::new();
         let parent = fake.add_mailbox("Trips", None);
         let id = fake
-            .set_mailbox(&MailboxWrite::Create { name: "2026".into(), parent_id: Some(parent.clone()) })
+            .set_mailbox(&MailboxWrite::Create { name: "2026".into(), parent_id: Some(parent.clone()), role: None })
             .await
             .unwrap();
         let listed = fake.mailboxes().await.unwrap().list;
