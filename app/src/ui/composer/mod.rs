@@ -1381,7 +1381,7 @@ impl Composer {
                     this.dirty.set(true);
                     this.check_send();
                     this.check_own();
-                    this.toast(&fill(&gettext("Sending from {address}"), &[("address", &masked.email)]));
+                    this.toast_wrapping(&fill(&gettext("Sending from {address}"), &[("address", &masked.email)]));
                 }
                 Ok(_) => {}
                 Err(err) => this.failed(&gettext("Could not make a masked address: {reason}"), &err),
@@ -1631,6 +1631,20 @@ impl Composer {
     pub fn toast(&self, text: &str) {
         self.toasts
             .add_toast(adw::Toast::builder().title(super::window::toast_title(text)).timeout(4).build());
+    }
+
+    /// A toast whose words wrap instead of ending in "…", for a line that
+    /// names an address the writer has to read whole in a narrow window.
+    fn toast_wrapping(&self, text: &str) {
+        let title = gtk::Label::builder()
+            .label(text)
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .max_width_chars(40)
+            .xalign(0.0)
+            .build();
+        self.toasts
+            .add_toast(adw::Toast::builder().custom_title(&title).timeout(4).build());
     }
 
     /// Toasts a failure. `said` is `gettext` of the sentence, with
