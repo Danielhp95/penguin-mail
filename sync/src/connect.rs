@@ -692,7 +692,7 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         window_days,
         labels: saved.labels,
         capabilities: saved.capabilities.clone(),
-        auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION),
+        auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION) && !saved.offers(mailrs_jmap::SIEVE),
     };
     let mut services = AccountServices::jmap(client, settings);
     // DAV and ManageSieve servers take the account password over Basic, or
@@ -716,10 +716,15 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
     {
         services = services.with_calendar(AnyCalendar::Jmap(adapter));
     }
+    // On a server that runs Sieve, the automatic reply goes in the rules
+    // script. Stalwart keeps JMAP's own reply as a script of its own, and
+    // only one script runs, so the two would turn each other off.
     if saved.offers(mailrs_jmap::SIEVE) {
         let api = Arc::new(crate::JmapSieve::new(Arc::clone(&jmap_api)));
-        let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string());
-        services = services.with_rules(AnyRules::JmapSieve(rules));
+        let server_reply = saved.offers(mailrs_jmap::VACATION).then_some(crate::SERVER_REPLY_SCRIPT);
+        let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string())
+            .beside_server_reply(server_reply);
+        services = services.with_rules(AnyRules::JmapSieve(rules.clone())).with_auto_reply(AnyAutoReply::JmapSieve(rules));
     }
     if let Some(secret) = &dav_secret {
         let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
@@ -742,8 +747,9 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         }
     }
     // A ManageSieve server brings its own automatic reply with its rules;
-    // JMAP's own reply wins where the session offers it.
+    // JMAP's own reply wins where the session offers it and no Sieve.
     if saved.offers(mailrs_jmap::VACATION)
+        && !saved.offers(mailrs_jmap::SIEVE)
         && let AnyMail::Jmap(adapter) = services.mail.clone()
     {
         services = services.with_auto_reply(AnyAutoReply::Jmap(adapter));

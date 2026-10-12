@@ -65,3 +65,46 @@ async fn without_include_another_clients_script_is_not_replaced_until_taken_over
     assert!(matches!(err, crate::BackendError::WouldReplace { .. }), "{err:?}");
     assert!(h.fake.with(|s| s.scripts.get("theirs-id").is_some_and(|(_, _, a)| *a)));
 }
+
+/// Stalwart keeps JMAP's own reply as a script named `vacation`. The
+/// rules script must not include it, or that reply keeps answering
+/// after the person turns the reply off in Penguin Mail.
+async fn rules_beside_the_servers_reply() -> (super::Harness, SieveRules<JmapSieve<AnyJmap>>) {
+    let (h, rules) = rules().await;
+    (h, rules.beside_server_reply(Some(crate::services::SERVER_REPLY_SCRIPT)))
+}
+
+#[tokio::test]
+async fn the_servers_reply_script_is_never_included() {
+    let (h, rules) = rules_beside_the_servers_reply().await;
+    h.fake.with(|s| s.scripts.insert("reply-id".into(), ("vacation".into(), "keep;".into(), true)));
+    let err = rules.create_filter(&Filter::block("pest@example.com")).await.unwrap_err();
+    assert!(matches!(&err, crate::BackendError::WouldReplace { script } if script == "vacation"), "{err:?}");
+    rules.take_over().await;
+    rules.create_filter(&Filter::block("pest@example.com")).await.unwrap();
+    let ours = h.fake.with(|s| s.scripts.values().find(|(n, _, _)| n == "penguin-mail").cloned()).unwrap();
+    assert!(!ours.1.contains("include"), "{}", ours.1);
+    assert!(ours.2, "the rules script runs");
+}
+
+#[tokio::test]
+async fn an_include_of_the_servers_reply_script_is_dropped() {
+    let (h, rules) = rules_beside_the_servers_reply().await;
+    let written = "require [\"include\"];\ninclude :personal \"vacation\";\n";
+    h.fake.with(|s| s.scripts.insert("ours".into(), ("penguin-mail".into(), written.into(), true)));
+    rules.create_filter(&Filter::block("pest@example.com")).await.unwrap();
+    let ours = h.fake.with(|s| s.scripts.get("ours").cloned()).unwrap();
+    assert!(!ours.1.contains("include"), "{}", ours.1);
+}
+
+#[tokio::test]
+async fn the_reply_stays_on_after_a_rule_is_added() {
+    use crate::services::AutoReplyService;
+    let (_h, rules) = rules_beside_the_servers_reply().await;
+    let away = mailrs_domain::Vacation { enabled: true, subject: "Away".into(), body: "Back on Monday.".into(), ..Default::default() };
+    rules.set_vacation(&away).await.unwrap();
+    rules.create_filter(&Filter::block("pest@example.com")).await.unwrap();
+    let back = rules.vacation().await.unwrap();
+    assert!(back.enabled);
+    assert_eq!(back.body, "Back on Monday.");
+}

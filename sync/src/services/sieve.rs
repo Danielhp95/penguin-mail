@@ -24,6 +24,10 @@ pub struct SieveRules<M> {
     address: String,
     provider: String,
     state: Arc<Mutex<State>>,
+    /// The script a JMAP server keeps its own automatic reply in. Another
+    /// client's script is included, but never this one: the reply would
+    /// keep answering while the server reports it off.
+    server_reply: Option<&'static str>,
     /// Held from a write's read of the script through its put, so a rule
     /// sent by the timer and the automatic reply saved at the same moment
     /// do not both start from the same script and lose one change.
@@ -44,6 +48,7 @@ impl<M> Clone for SieveRules<M> {
             address: self.address.clone(),
             provider: self.provider.clone(),
             state: Arc::clone(&self.state),
+            server_reply: self.server_reply,
             writing: Arc::clone(&self.writing),
         }
     }
@@ -64,8 +69,19 @@ impl<M: ManageSieveApi> SieveRules<M> {
             address,
             provider,
             state: Arc::default(),
+            server_reply: None,
             writing: Arc::default(),
         }
+    }
+
+    /// These rules on a server that keeps its own automatic reply in the
+    /// script named `script`.
+    pub fn beside_server_reply(self, script: Option<&'static str>) -> Self {
+        SieveRules { server_reply: script, ..self }
+    }
+
+    fn is_server_reply(&self, name: &str) -> bool {
+        self.server_reply == Some(name)
     }
 
     /// The rules, and the text on the server nobody here wrote, in one
@@ -170,8 +186,11 @@ impl<M: ManageSieveApi> SieveRules<M> {
         ext: &Extensions,
         running: Running,
     ) -> Result<(), BackendError> {
+        if script.include.as_deref().is_some_and(|name| self.is_server_reply(name)) {
+            script.include = None;
+        }
         if let Running::Theirs(name) = &running {
-            if ext.has("include") {
+            if ext.has("include") && !self.is_server_reply(name) {
                 script.include = Some(name.clone());
             } else if !self.state().take_over {
                 return Err(BackendError::WouldReplace {
