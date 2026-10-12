@@ -36,6 +36,7 @@ mod packaging;
 mod permission;
 mod pgp;
 mod quoted;
+mod recent;
 mod protection;
 mod render;
 mod richtext;
