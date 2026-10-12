@@ -56,47 +56,6 @@ fn the_jmap_adapter_syncs_and_writes_against_every_server() {
     runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
 }
 
-/// A step that fails on one server because of a finding in the app's code, as
-/// its own test: ignored until the controller rules on the fix. The main
-/// test skips the step on that server and says so in its log.
-macro_rules! server_finding {
-    ($name:ident, $kind:ident, $reason:literal, $step:ident) => {
-        #[test]
-        #[ignore = $reason]
-        fn $name() {
-            if mailrs_testmail::jmap_docker().is_none() {
-                return;
-            }
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .thread_stack_size(mailrs_sync::WORKER_STACK)
-                .enable_all()
-                .build()
-                .expect("a runtime");
-            let body = runtime.spawn(async move {
-                let password = mailrs_testmail::password();
-                let Some(server) = JmapServer::start(JmapKind::$kind, &password).await else {
-                    return;
-                };
-                Run::new(&server, &password).await.$step().await;
-            });
-            runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
-        }
-    };
-}
-
-// Cyrus 3.13 test image: `CalendarEvent/set` create without `version`
-// answers `notCreated: {"e": {"type": "invalidProperties", "properties":
-// ["version"]}}` (with or without the jscalendarbis capability in
-// `using`). Adding `"version": "2.0"` makes the same create succeed;
-// `"1.0"` is refused the same way. The adapter's JSCalendar object has
-// no `version`.
-server_finding!(
-    cyrus_calendar_round_trips,
-    Cyrus,
-    "Cyrus refuses a created event without version 2.0 (invalidProperties: version); the adapter sends none",
-    the_calendar_round_trips
-);
-
 struct Run<'a> {
     server: &'a JmapServer,
     password: &'a str,
@@ -245,12 +204,7 @@ impl<'a> Run<'a> {
         self.a_contact_round_trips_where_offered().await;
         self.a_rule_lands_in_sieve_where_offered().await;
         self.masked_email_is_hidden_where_not_offered().await;
-        if self.kind() == JmapKind::Cyrus {
-            eprintln!("Cyrus: the calendar write skipped, see cyrus_calendar_round_trips (ignored)");
-            self.the_calendar_is_offered_as_the_gate_reads_it().await;
-        } else {
-            self.the_calendar_round_trips().await;
-        }
+        self.the_calendar_round_trips().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;

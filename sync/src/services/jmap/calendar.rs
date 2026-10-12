@@ -65,10 +65,13 @@ struct Cursor {
 const EARLIEST: EpochMillis = -62_135_596_800_000;
 const LATEST: EpochMillis = 253_402_300_799_000;
 
-fn utc(at: EpochMillis) -> String {
+/// An instant as the event filter's `after` and `before` take it: a
+/// LocalDateTime, read in the query's `timeZone`, which defaults to
+/// Etc/UTC. Cyrus refuses the UTC form with `Z` as `invalidArguments`.
+fn filter_time(at: EpochMillis) -> String {
     DateTime::<Utc>::from_timestamp_millis(at.clamp(EARLIEST, LATEST))
         .unwrap_or_default()
-        .format("%Y-%m-%dT%H:%M:%SZ")
+        .format("%Y-%m-%dT%H:%M:%S")
         .to_string()
 }
 
@@ -644,7 +647,7 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
     }
 
     async fn event_changes(&self, calendar: &str, token: Option<&str>, page: Option<&str>, from: EpochMillis) -> Result<model::EventPage, BackendError> {
-        let filter = json!({ "inCalendar": calendar, "after": utc(from) });
+        let filter = json!({ "inCalendar": calendar, "after": filter_time(from) });
         if let Some(page) = page {
             let cursor: Cursor = serde_json::from_str(page).map_err(|_| BackendError::StateLost)?;
             return self.page_of(calendar, &filter, cursor.position, Some(cursor.state), true).await;
@@ -656,7 +659,7 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
     }
 
     async fn event_range(&self, calendar: &str, from: EpochMillis, to: EpochMillis, page: Option<&str>) -> Result<model::EventPage, BackendError> {
-        let filter = json!({ "inCalendar": calendar, "after": utc(from), "before": utc(to) });
+        let filter = json!({ "inCalendar": calendar, "after": filter_time(from), "before": filter_time(to) });
         let position = match page {
             Some(page) => serde_json::from_str::<Cursor>(page).map_err(|_| BackendError::StateLost)?.position,
             None => 0,
