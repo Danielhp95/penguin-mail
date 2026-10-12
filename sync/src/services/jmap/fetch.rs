@@ -190,7 +190,7 @@ impl<J: JmapApi> Jmap<J> {
             // at the last id does not end the listing.
             return Ok(marked(self.api().query(&EmailQuery { position, ..query.clone() }).await?, mark));
         }
-        Ok(marked(Queried { hits, position, total: None }, mark))
+        Ok(marked(Queried { hits, position, total: None, query_state: found.query_state }, mark))
     }
 
     pub(super) async fn backfill_page(&self, days: i64, cursor: Option<&str>) -> Result<Backfill, BackendError> {

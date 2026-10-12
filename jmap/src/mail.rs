@@ -195,6 +195,9 @@ pub struct Queried {
     pub hits: Vec<Hit>,
     pub position: u64,
     pub total: Option<u64>,
+    /// The server's `queryState`: it changes when the listing does, so a
+    /// caller paging by position can tell that a page may have shifted.
+    pub query_state: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -337,6 +340,8 @@ struct QueryAnswer {
     position: u64,
     #[serde(default)]
     total: Option<u64>,
+    #[serde(default)]
+    query_state: String,
     ids: Vec<String>,
 }
 
@@ -441,7 +446,7 @@ impl JmapClient {
             .into_iter()
             .map(|id| Hit { thread_id: thread_of.get(&id).cloned().unwrap_or_else(|| id.clone()), id })
             .collect();
-        Ok(Queried { hits, position: listed.position, total: listed.total })
+        Ok(Queried { hits, position: listed.position, total: listed.total, query_state: listed.query_state })
     }
 
     /// `ids` with `properties`, a request per `maxObjectsInGet`.
