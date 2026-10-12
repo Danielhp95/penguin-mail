@@ -56,8 +56,9 @@ pub const FIRST_READ_BACK: EpochMillis = 365 * 24 * 60 * 60_000;
 /// the same as the timer already spends on it.
 pub const READY_RETRY: EpochMillis = READ_EVERY_OPEN;
 
-/// Pages one calendar read walks before it stops. A calendar past this
-/// keeps what was read and no token, so the next read walks it again.
+/// Pages one calendar read walks before it stops. A whole read past this
+/// keeps what it read and where it stopped, and the next read goes on from
+/// there. A read of changes past it keeps its token and reads them again.
 const PAGE_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -115,6 +116,9 @@ pub struct CalendarCopy<A: Accounts> {
     db: Db,
     last_list: Mutex<HashMap<AccountId, EpochMillis>>,
     last_read: Mutex<HashMap<AccountId, EpochMillis>>,
+    /// Pages one calendar read walks before it stops: [`PAGE_LIMIT`], and
+    /// fewer in a test.
+    pages_per_read: usize,
     /// Which kind of calendar server each account's list was last read
     /// from in this run. A different one (CalDAV, then JMAP Calendars)
     /// means the account's calendars moved, so the list is read again
@@ -238,6 +242,7 @@ impl<A: Accounts> CalendarCopy<A> {
             db,
             last_list: Mutex::new(HashMap::new()),
             last_read: Mutex::new(HashMap::new()),
+            pages_per_read: PAGE_LIMIT,
             listed_from: Mutex::new(HashMap::new()),
             refused: Mutex::new(HashMap::new()),
             tried: Mutex::new(HashMap::new()),
@@ -248,6 +253,14 @@ impl<A: Accounts> CalendarCopy<A> {
             waiting: tokio::sync::Mutex::new(None),
             serial: AtomicU64::new(0),
         }
+    }
+
+    /// Makes one calendar read stop after `pages`, for a test of a read too
+    /// long for one pass.
+    #[cfg(test)]
+    pub(crate) fn with_pages_per_read(mut self, pages: usize) -> Self {
+        self.pages_per_read = pages;
+        self
     }
 
     /// Forgets what the account was refused and when it was last read,
@@ -542,18 +555,29 @@ impl<A: Accounts> CalendarCopy<A> {
             let id = id.to_string();
             self.db.read(move |c| store::reach(c, account_id, &id)).await?
         };
-        let time_min = reach.map_or(now - FIRST_READ_BACK, |reach| reach.min(now - FIRST_READ_BACK));
-        let mut token = held;
-        let mut retried = false;
+        let mut time_min = reach.map_or(now - FIRST_READ_BACK, |reach| reach.min(now - FIRST_READ_BACK));
         // The moment this read started, marked on every row it writes, so
         // a whole read can tell a row no later page repeated from one
         // still current (`store::sweep`).
-        let mark = now;
+        let mut mark = now;
+        // A whole read too long for one pass goes on where the last one
+        // stopped, with that pass's mark and range.
+        let mut resumed = None;
+        let mut token = match held.as_deref().and_then(store::resumed_read) {
+            Some(read) => {
+                (mark, time_min) = (read.mark, read.from);
+                resumed = Some(read.page);
+                None
+            }
+            None => held,
+        };
+        let mut retried = false;
         'whole: loop {
             let whole = token.is_none();
-            let mut page: Option<String> = None;
+            let mut page: Option<String> = resumed.take();
+            let mut resuming = page.is_some();
             let mut count = 0usize;
-            for _ in 0..PAGE_LIMIT {
+            for _ in 0..self.pages_per_read {
                 let answer = calendar
                     .event_changes(id, token.as_deref(), page.as_deref(), time_min)
                     .await;
@@ -566,10 +590,19 @@ impl<A: Accounts> CalendarCopy<A> {
                     Err(BackendError::StateLost) if !retried => {
                         retried = true;
                         token = None;
+                        mark = now;
                         continue 'whole;
+                    }
+                    // A page the provider no longer knows starts the read
+                    // over next time, rather than failing every time.
+                    Err(err) if resuming && !err.is_transient() => {
+                        let calendar_id = id.to_string();
+                        self.db.write(move |c| store::set_token(c, account_id, &calendar_id, None, now)).await?;
+                        return Err(err.into());
                     }
                     Err(err) => return Err(err.into()),
                 };
+                resuming = false;
                 let last_page = got.next_page.is_none();
                 count += got.events.len() + got.removed.len();
                 let (events, removed, next_sync, whole_series) = (got.events, got.removed, got.next_sync, got.whole_series);
@@ -595,7 +628,15 @@ impl<A: Accounts> CalendarCopy<A> {
                     None => return Ok(Permitted::Done(count)),
                 }
             }
-            tracing::warn!(account = account_id, calendar = id, "gave up reading a calendar after {PAGE_LIMIT} pages");
+            // A whole read keeps where it stopped, so the next one goes on
+            // from there rather than from the start again.
+            if let (true, Some(page)) = (whole, page) {
+                let (calendar_id, held) = (id.to_string(), store::ResumedRead { mark, from: time_min, page }.text());
+                self.db.write(move |c| store::set_token(c, account_id, &calendar_id, Some(&held), now)).await?;
+                tracing::info!(account = account_id, calendar = id, "a calendar read goes on next time after {} pages", self.pages_per_read);
+            } else {
+                tracing::warn!(account = account_id, calendar = id, "gave up reading a calendar after {} pages", self.pages_per_read);
+            }
             return Ok(Permitted::Done(count));
         }
     }

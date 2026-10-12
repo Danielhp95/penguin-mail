@@ -861,3 +861,23 @@ async fn an_answer_with_a_note_to_one_occurrence_goes_into_its_new_override() {
     assert_eq!(over["participants/p2/participationStatus"], "declined");
     assert_eq!(over["participants/p2/participationComment"], "Away that week");
 }
+
+#[tokio::test]
+async fn a_whole_read_too_long_for_one_pass_goes_on_next_time() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let h = calendared().await;
+    let page = crate::services::jmap::calendar::PAGE;
+    burst(&h, 3 * page + 10);
+    let copy = crate::calendar_copy::CalendarCopy::new(Arc::new(crate::tests::Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone())
+        .with_pages_per_read(2);
+    let account = h.account_id;
+    let count = || h.db.read(move |c| mailrs_store::calendar_list::event_count(c, account, "cal-1"));
+    let token = || h.db.read(move |c| mailrs_store::calendar::token(c, account, "cal-1"));
+    copy.refresh(account, 1_790_000_000_000).await.unwrap();
+    assert_eq!(count().await.unwrap(), 2 * page);
+    assert!(token().await.unwrap().as_deref().and_then(mailrs_store::calendar::resumed_read).is_some(), "it keeps where it stopped");
+    copy.refresh(account, 1_790_000_060_000).await.unwrap();
+    assert_eq!(count().await.unwrap(), 3 * page + 10, "the next read goes on");
+    assert_eq!(token().await.unwrap(), Some(state(&h.fake).await));
+}

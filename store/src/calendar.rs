@@ -1422,6 +1422,39 @@ fn read_change(row: &Row, account_id: AccountId) -> rusqlite::Result<QueuedChang
     })
 }
 
+/// What a calendar's token column starts with while a whole read too long
+/// for one pass is under way: the rest says where the next pass goes on.
+const RESUME: &str = "\u{1}page:";
+
+/// Where a whole read of a calendar stopped, kept in its token column, so
+/// the next read goes on from that page with the same mark and range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumedRead {
+    /// When the read began, which every row it wrote carries.
+    pub mark: EpochMillis,
+    /// The earliest time it reads from.
+    pub from: EpochMillis,
+    /// The provider's page to read next.
+    pub page: String,
+}
+
+impl ResumedRead {
+    /// The text the token column keeps.
+    pub fn text(&self) -> String {
+        format!("{RESUME}{}|{}|{}", self.mark, self.from, self.page)
+    }
+}
+
+/// The whole read a token column says is under way, or `None` for a sync
+/// token.
+pub fn resumed_read(token: &str) -> Option<ResumedRead> {
+    let rest = token.strip_prefix(RESUME)?;
+    let mut parts = rest.splitn(3, '|');
+    let mark = parts.next()?.parse().ok()?;
+    let from = parts.next()?.parse().ok()?;
+    Some(ResumedRead { mark, from, page: parts.next()?.to_string() })
+}
+
 /// What a queued change's calendar starts with once the account's calendar
 /// server changed under it (CalDAV to JMAP Calendars, say) and its calendar
 /// is not on the new server's list: the rest is the old calendar's id. Ids
@@ -1565,8 +1598,11 @@ pub fn settle_left(conn: &Connection, account_id: AccountId, seq: i64) -> Result
         return Ok(Left::Moved);
     };
     let listed: Vec<(String, bool)> = {
-        let mut stmt = conn.prepare("SELECT id, sync_token IS NOT NULL FROM calendars WHERE account_id = ?1")?;
-        stmt.query_map(params![account_id], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+        // A whole read still under way has not read every event yet.
+        let mut stmt = conn.prepare(
+            "SELECT id, sync_token IS NOT NULL AND substr(sync_token, 1, length(?2)) <> ?2 FROM calendars WHERE account_id = ?1",
+        )?;
+        stmt.query_map(params![account_id, RESUME], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<rusqlite::Result<_>>()?
     };
     let unread = listed.iter().any(|(id, read)| !read && !model::list::is_local(id));
     if listed.is_empty() || listed.iter().any(|(id, _)| id == old) || unread {
