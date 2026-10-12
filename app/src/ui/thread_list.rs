@@ -348,6 +348,20 @@ impl ThreadList {
             muted: Cell::new(false),
             row_popover,
         });
+        // A search's subtitle is its query, which the open entry already
+        // shows; it comes back when the entry closes.
+        let weak = Rc::downgrade(&list);
+        list.search_bar.connect_search_mode_enabled_notify(move |_| {
+            if let Some(list) = weak.upgrade() {
+                list.show_subtitle();
+            }
+        });
+        let weak = Rc::downgrade(&list);
+        list.search_entry.connect_changed(move |_| {
+            if let Some(list) = weak.upgrade() {
+                list.show_subtitle();
+            }
+        });
         let weak = Rc::downgrade(&list);
         list.selection.connect_selection_changed(move |_, _, _| {
             let Some(list) = weak.upgrade() else { return };
@@ -367,19 +381,23 @@ impl ThreadList {
     pub fn set_title(&self, title: &str, subtitle: &str) {
         self.title.set_label(title);
         self.subtitle.set_label(subtitle);
-        let layout = super::narrow_header::header_layout(self.narrow.get());
-        self.subtitle.set_visible(layout.subtitle && !subtitle.is_empty());
-        self.keep_subtitle_room();
+        self.show_subtitle();
         self.page.set_title(title);
     }
 
-    /// The subtitle hangs 7 px below the header bar (style.css,
-    /// `.list-header-title`), into room the chips leave under it. A mailbox
-    /// with no chips keeps that room empty, so a banner or the first row
-    /// under the header does not cover the subtitle.
-    fn keep_subtitle_room(&self) {
-        let room = if self.subtitle.get_visible() { 7 } else { 0 };
-        self.categories_slot.set_height_request(room);
+    /// Shows the subtitle when the layout has room for it and it says
+    /// something the search entry under it does not. The subtitle hangs
+    /// 7 px below the header bar (style.css, `.list-header-title`), into
+    /// room the chips leave under it. A mailbox with no chips keeps that
+    /// room empty, so a banner or the first row under the header does not
+    /// cover the subtitle.
+    pub(crate) fn show_subtitle(&self) {
+        let layout = super::narrow_header::header_layout(self.narrow.get());
+        let query = self.search_entry.text();
+        let searching = self.search_bar.is_search_mode().then_some(query.as_str());
+        let shows = subtitle_shows(layout.subtitle, &self.subtitle.label(), searching);
+        self.subtitle.set_visible(shows);
+        self.categories_slot.set_height_request(if shows { 7 } else { 0 });
     }
 
     /// Lays the header out for a phone or for a wider window. On a phone
@@ -391,9 +409,7 @@ impl ThreadList {
             return;
         }
         let layout = super::narrow_header::header_layout(narrow);
-        self.subtitle
-            .set_visible(layout.subtitle && !self.subtitle.label().is_empty());
-        self.keep_subtitle_room();
+        self.show_subtitle();
         match layout.small_title {
             true => self.title.add_css_class("small"),
             false => self.title.remove_css_class("small"),
@@ -951,6 +967,13 @@ fn order(row: &ThreadSummary) -> (i64, i64, &str) {
     (row.last_message_at, -row.account_id, row.id.as_str())
 }
 
+/// Whether the list header shows `subtitle`: the layout has room, it says
+/// something, and it is not the query of a search whose entry is open
+/// (`searching` holds the entry's text then).
+fn subtitle_shows(room: bool, subtitle: &str, searching: Option<&str>) -> bool {
+    room && !subtitle.is_empty() && searching.is_none_or(|query| query.trim() != subtitle.trim())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -988,5 +1011,14 @@ mod tests {
         assert_eq!(neighbour(5, 3, 4), Some(2));
         assert_eq!(neighbour(5, 0, 4), None);
         assert_eq!(neighbour(1, 0, 0), None);
+    }
+
+    #[test]
+    fn a_search_does_not_repeat_its_query_under_the_title() {
+        assert!(!super::subtitle_shows(true, "hike", Some("hike ")));
+        assert!(super::subtitle_shows(true, "hike", None));
+        assert!(super::subtitle_shows(true, "19 unread", Some("hike")));
+        assert!(!super::subtitle_shows(false, "19 unread", None));
+        assert!(!super::subtitle_shows(true, "", None));
     }
 }
