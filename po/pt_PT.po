@@ -10629,16 +10629,25 @@ msgstr "{problem}. Nova tentativa {when}"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. O Penguin Mail deixou de tentar"
 
-#: sync/src/outbox.rs:53
+#: sync/src/outbox.rs:58
 msgid ""
 "Penguin Mail could not confirm whether this message went out. Check Sent."
-msgstr "O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. Verifique as Enviadas."
+msgstr ""
+"O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. "
+"Verifique as Enviadas."
 
-#: sync/src/outbox.rs:726
+#: sync/src/outbox.rs:71
 msgid "This message was canceled in another app and is no longer in Drafts."
-msgstr "Esta mensagem foi cancelada noutra aplicação e já não está nos Rascunhos."
+msgstr ""
+"Esta mensagem foi cancelada noutra aplicação e já não está nos Rascunhos."
 
-#: sync/src/outbox.rs:845
+#: sync/src/outbox.rs:77
+msgid ""
+"The server still holds this message and could not be asked to let it go. Try "
+"again later."
+msgstr "O servidor ainda tem esta mensagem e não foi possível pedir-lhe que a libertasse. Tente mais tarde."
+
+#: sync/src/outbox.rs:1014
 msgid "The server could not be asked to let go of the message."
 msgstr "Não foi possível pedir ao servidor que libertasse a mensagem."
 

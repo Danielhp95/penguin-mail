@@ -205,9 +205,9 @@ impl JmapClient {
         Ok(answer.take::<Listing>(&got, "EmailSubmission/get")?.list)
     }
 
-    /// The submission that sends the message `email_id`, when the server
-    /// has one: how a client finds a hold whose answer it never got.
-    pub async fn submission_for(&self, email_id: &str) -> Result<Option<String>, JmapError> {
+    /// The submissions that send the message `email_id`: how a client
+    /// finds a hold whose answer it never got.
+    pub async fn submissions_for(&self, email_id: &str) -> Result<Vec<String>, JmapError> {
         #[derive(Deserialize)]
         struct Ids {
             #[serde(default)]
@@ -220,7 +220,7 @@ impl JmapClient {
             "accountId": account, "filter": { "emailIds": [email_id] }
         }));
         let mut answer = self.send(&request).await?;
-        Ok(answer.take::<Ids>(&asked, "EmailSubmission/query")?.ids.into_iter().next())
+        Ok(answer.take::<Ids>(&asked, "EmailSubmission/query")?.ids)
     }
 
     /// Whether the server answers `EmailSubmission/get`, without which a

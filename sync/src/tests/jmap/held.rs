@@ -362,3 +362,12 @@ async fn a_held_copy_without_a_submission_settles_nothing() {
     let err = h.mail().find_hold("trip@example.com").await.unwrap_err();
     assert!(!err.is_transient(), "{err:?}");
 }
+
+#[tokio::test]
+async fn two_held_copies_of_one_message_settle_nothing() {
+    let h = holding().await;
+    h.mail().schedule(&letter(), now_millis() + HOUR).await.unwrap();
+    h.mail().schedule(&letter(), now_millis() + 2 * HOUR).await.unwrap();
+    let err = h.mail().find_hold("trip@example.com").await.unwrap_err();
+    assert!(!err.is_transient(), "{err:?}");
+}

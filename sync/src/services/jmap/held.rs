@@ -128,7 +128,8 @@ impl<J: JmapApi> Jmap<J> {
     /// The hold on the copy in Drafts whose `Message-ID` is `message_id`,
     /// for a hold whose answer never came back. A held copy that no
     /// submission sends cannot say whether the server refused it or sent
-    /// it and forgot, so it answers an error.
+    /// it and forgot, so it answers an error. So do two held copies or two
+    /// submissions, since taking one would leave the other to go.
     pub(super) async fn held_copy(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
         self.listed().await?;
         let Some(drafts) = self.known().roles.get(&Role::Drafts).cloned() else {
@@ -137,13 +138,17 @@ impl<J: JmapApi> Jmap<J> {
         let filter = json!({ "operator": "AND", "conditions": [
             has_message_id(message_id), { "inMailbox": drafts }, { "hasKeyword": HELD }
         ] });
-        let query = EmailQuery { filter: Some(filter), position: 0, limit: 1, total: false };
-        let Some(copy) = self.api().query(&query).await.map_err(backend)?.hits.into_iter().next() else {
-            return Ok(None);
+        let query = EmailQuery { filter: Some(filter), position: 0, limit: 2, total: false };
+        let mut hits = self.api().query(&query).await.map_err(backend)?.hits;
+        let copy = match (hits.pop(), hits.is_empty()) {
+            (None, _) => return Ok(None),
+            (Some(copy), true) => copy,
+            (Some(_), false) => return Err(unreadable()),
         };
-        match self.api().submission_for(&copy.id).await.map_err(backend)? {
-            Some(handle) => Ok(Some(Held { handle, message_id: copy.id, thread_id: copy.thread_id })),
-            None => Err(unreadable()),
+        let mut handles = self.api().submissions_for(&copy.id).await.map_err(backend)?;
+        match (handles.pop(), handles.is_empty()) {
+            (Some(handle), true) => Ok(Some(Held { handle, message_id: copy.id, thread_id: copy.thread_id })),
+            _ => Err(unreadable()),
         }
     }
 

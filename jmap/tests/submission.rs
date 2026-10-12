@@ -292,7 +292,7 @@ async fn the_submission_for_a_copy_is_found_by_its_email() {
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
         ["EmailSubmission/query", {"accountId": "A1", "queryState": "q", "ids": ["S7"], "position": 0}, "c0"]
     ]})).await;
-    assert_eq!(client(&server).submission_for("M9").await.unwrap().as_deref(), Some("S7"));
+    assert_eq!(client(&server).submissions_for("M9").await.unwrap(), ["S7"]);
     let call = &posts(&server).await[0]["methodCalls"][0];
     assert_eq!(call[1]["filter"], json!({"emailIds": ["M9"]}));
 }
@@ -303,5 +303,5 @@ async fn a_copy_without_a_submission_has_none() {
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
         ["EmailSubmission/query", {"accountId": "A1", "queryState": "q", "ids": [], "position": 0}, "c0"]
     ]})).await;
-    assert_eq!(client(&server).submission_for("M9").await.unwrap(), None);
+    assert!(client(&server).submissions_for("M9").await.unwrap().is_empty());
 }

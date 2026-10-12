@@ -1351,11 +1351,11 @@ impl JmapApi for FakeJmap {
         Ok(self.with(|s| s.submission_get))
     }
 
-    async fn submission_for(&self, email_id: &str) -> Answer<Option<String>> {
+    async fn submissions_for(&self, email_id: &str) -> Answer<Vec<String>> {
         self.called("EmailSubmission/query");
         self.with(|s| match s.submission_query_failure.take() {
             Some(err) => Err(err),
-            None => Ok(s.holds.iter().find(|(_, hold)| hold.email_id == email_id).map(|(id, _)| id.clone())),
+            None => Ok(s.holds.iter().filter(|(_, hold)| hold.email_id == email_id).map(|(id, _)| id.clone()).collect()),
         })
     }
 

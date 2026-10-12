@@ -44,18 +44,38 @@ const CLAIM_LASTS: EpochMillis = 10 * 60 * 1000;
 const ASK_AGAIN: EpochMillis = 60_000;
 
 /// How `held` marks a hold whose answer never came back and that nobody
-/// has found on the server yet: this, then the message's `Message-ID`.
-/// No server's handle starts with it.
+/// has found on the server yet: this, the time the answer was lost, and
+/// the message's `Message-ID`. No server's handle starts with it.
 const UNCONFIRMED: &str = "unconfirmed:";
+
+/// The mark for a hold whose answer was lost at `since`.
+fn mark(since: EpochMillis, message_id: &str) -> String {
+    format!("{UNCONFIRMED}{since}:{message_id}")
+}
 
 /// What the row of a message the server may or may not have sent says.
 fn check_sent() -> String {
     gettext("Penguin Mail could not confirm whether this message went out. Check Sent.")
 }
 
-/// The `Message-ID` a row waits to find its hold by, when it does.
-fn unconfirmed(message: &Queued) -> Option<&str> {
-    message.held.as_deref()?.strip_prefix(UNCONFIRMED)
+/// When a row's hold lost its answer, and the `Message-ID` it waits to
+/// find the hold by, when it does.
+fn unconfirmed(message: &Queued) -> Option<(EpochMillis, &str)> {
+    let rest = message.held.as_deref()?.strip_prefix(UNCONFIRMED)?;
+    let parsed = rest.split_once(':').and_then(|(since, id)| Some((since.parse().ok()?, id)));
+    Some(parsed.unwrap_or((0, rest)))
+}
+
+/// What a row says when another app canceled its hold and deleted the copy.
+fn canceled_elsewhere() -> String {
+    gettext("This message was canceled in another app and is no longer in Drafts.")
+}
+
+/// Why a held message cannot be deleted now.
+fn still_holds() -> SyncError {
+    SyncError::Backend(BackendError::Refused(gettext(
+        "The server still holds this message and could not be asked to let it go. Try again later.",
+    )))
 }
 
 /// Gives the row the server's hold and the copy waiting in Drafts.
@@ -71,12 +91,26 @@ enum Handed {
     Held(Held),
     /// The server cannot hold it, or never took it: the outbox sends it.
     Kept,
-    /// No answer came back and the copy could not be looked for yet. The
-    /// mark goes in `held`.
+    /// No answer came back, so the server may hold it. The mark goes in
+    /// `held`, and a later pass looks for the server's copy.
     Unconfirmed(String),
-    /// No answer came back and the server's answers cannot settle whether
-    /// it holds the message. The mark goes in `held`.
-    Unknown(String),
+}
+
+/// What looking for a hold whose answer was lost found.
+enum Looked {
+    Found(Held),
+    /// Nothing, and long enough after the lost answer to trust that.
+    Nothing,
+    /// Nothing yet, but a server's index may lag behind its commit.
+    TooSoon,
+}
+
+/// Why a held message is being called back.
+#[derive(Clone, Copy)]
+enum Purpose {
+    SendNow,
+    /// Holding it again at this hour.
+    NewHour(EpochMillis),
 }
 
 /// What calling a held message back for Send Now or a new hour left.
@@ -162,7 +196,7 @@ impl<A: Accounts> Outbox<A> {
             return Ok(Posted::Waiting(message.id));
         }
         if message.held.is_some() {
-            message = match self.recall(message).await? {
+            message = match self.recall(message, Purpose::SendNow).await? {
                 Recalled::Here(message) => *message,
                 Recalled::Done(posted) => return Ok(posted),
             };
@@ -203,7 +237,17 @@ impl<A: Accounts> Outbox<A> {
     /// and the message goes out from them at its hour, so Send Later works
     /// on a laptop that is offline when the writer picks the time.
     pub async fn schedule(&self, mut message: Queued) -> Result<Posted, SyncError> {
-        match self.hand_over(&message, message.send_at).await {
+        // Written before the server hears of it, so a crash or a failed
+        // write later leaves a row that looks for the server's copy, never
+        // a plain one the app would send as well.
+        if let Some(id) = message.raw.as_deref().and_then(message_id_header) {
+            message.held = Some(mark(now_millis(), &id));
+            let stored = message.clone();
+            message.id = self.db.write(move |c| outbox::put(c, &stored)).await?;
+        }
+        let handed = self.hand_over(&message, message.send_at).await;
+        message.held = None;
+        match handed {
             Ok(Handed::Held(held)) => {
                 adopt(&mut message, held);
                 return self.put_waiting(message).await;
@@ -212,13 +256,11 @@ impl<A: Accounts> Outbox<A> {
                 message.held = Some(mark);
                 return self.put_waiting(message).await;
             }
-            Ok(Handed::Unknown(mark)) => {
-                message.held = Some(mark);
-                let kept = self.unconfirmable(message).await?;
-                return Ok(Posted::Waiting(kept.id));
-            }
             Ok(Handed::Kept) => {}
-            Err(err) => return Ok(Posted::Refused(err.to_string())),
+            Err(err) => {
+                self.drop_written(&message).await?;
+                return Ok(Posted::Refused(err.to_string()));
+            }
         }
         match self.save_draft(&message).await {
             Ok(saved) => {
@@ -234,7 +276,10 @@ impl<A: Accounts> Outbox<A> {
             Err(err) if worth_retrying(&err) => {
                 tracing::info!(error = %err, "scheduled here; Gmail holds no draft for it yet");
             }
-            Err(err) => return Ok(Posted::Refused(err.to_string())),
+            Err(err) => {
+                self.drop_written(&message).await?;
+                return Ok(Posted::Refused(err.to_string()));
+            }
         }
         let id = self.db.write(move |c| outbox::put(c, &message)).await?;
         Ok(Posted::Waiting(id))
@@ -246,8 +291,9 @@ impl<A: Accounts> Outbox<A> {
     ///
     /// A held message is the server's to send: the pass asks where it
     /// stands, once a minute past its hour, and never sends it here. One
-    /// whose hold's answer was lost is looked for on every pass until the
-    /// server says whether it holds it.
+    /// whose hold's answer was lost is looked for once a minute. An empty
+    /// look counts only a minute or more after the lost answer, and only
+    /// at the hour, right before the message goes from here.
     pub async fn send_due(&self, now: EpochMillis) -> Result<Drained, SyncError> {
         let mut drained = Drained::default();
         let waiting = self
@@ -263,9 +309,11 @@ impl<A: Accounts> Outbox<A> {
             let Some(mut message) = self.claim(due.id).await? else {
                 continue;
             };
-            if message.held.is_some() && retry_delay(message.attempts).is_some() {
-                self.settle(message, now, &mut drained).await?;
-                continue;
+            if message.held.is_some() {
+                match self.settle(message, now, &mut drained).await? {
+                    Some(here) => message = here,
+                    None => continue,
+                }
             }
             if message.send_at > now || retry_delay(message.attempts).is_none() || message.held.is_some() {
                 self.release(message.id).await?;
@@ -320,8 +368,31 @@ impl<A: Accounts> Outbox<A> {
     }
 
     /// Drops a waiting message. A Send Later message leaves its Gmail
-    /// draft behind, as cancelling one always has.
+    /// draft behind, as cancelling one always has. A message the server
+    /// holds is called back first, so the server does not send it; when
+    /// the server cannot be asked, the message stays. One whose fate the
+    /// server already could not say goes once the server cannot be asked
+    /// at all, since nothing would change that.
     pub async fn drop_one(&self, id: i64) -> Result<(), SyncError> {
+        let Some(message) = self.find(id).await? else {
+            return Ok(());
+        };
+        if message.held.is_some() {
+            let Some(message) = self.claim(id).await? else {
+                return Err(still_holds());
+            };
+            let unknown = message.problem.is_some();
+            match self.let_go(&message).await {
+                Ok(()) => {}
+                Err(err) if unknown && !worth_retrying(&err) => {}
+                Err(err) => {
+                    tracing::info!(error = %err, "could not call a held message back to delete it");
+                    self.release(id).await?;
+                    return Err(still_holds());
+                }
+            }
+        }
+        self.looked(id);
         self.db.write(move |c| outbox::remove(c, id)).await?;
         Ok(())
     }
@@ -376,6 +447,8 @@ impl<A: Accounts> Outbox<A> {
     pub async fn cancel_scheduled(&self, targets: &[Target]) -> Result<Cancelled, SyncError> {
         let named = self.named(targets).await?;
         let mut cancelled = Cancelled::default();
+        // Held messages are called back here, and those the server never
+        // took come back for the rest of the loop.
         for item in named.into_iter().filter(|item| item.problem.is_none()) {
             let item = match item.held {
                 Some(_) => match self.cancel_held(item, &mut cancelled).await? {
@@ -548,6 +621,15 @@ impl<A: Accounts> Outbox<A> {
         Ok(Posted::Waiting(self.db.write(move |c| outbox::put(c, &message)).await?))
     }
 
+    /// Removes the row `schedule` wrote before a refusal.
+    async fn drop_written(&self, message: &Queued) -> Result<(), SyncError> {
+        let id = message.id;
+        if id > 0 {
+            self.db.write(move |c| outbox::remove(c, id)).await?;
+        }
+        Ok(())
+    }
+
     /// Whether it is time to ask the server about the held row `id`.
     fn look_due(&self, id: i64, now: EpochMillis) -> bool {
         let looks = self.next_look.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -564,9 +646,9 @@ impl<A: Accounts> Outbox<A> {
 
     /// Hands `message` to its server to send at `at`, when the server holds
     /// mail and the bytes are here. When no answer comes back the server
-    /// may hold it anyway, so the outbox looks for its copy before it
-    /// keeps a second one. A message without a `Message-ID` could not be
-    /// looked for, so it stays here.
+    /// may hold it anyway, so the row is marked for a later pass to look
+    /// for the server's copy. A message without a `Message-ID` could not
+    /// be looked for, so it stays here.
     async fn hand_over(&self, message: &Queued, at: EpochMillis) -> Result<Handed, SyncError> {
         let (Some(raw), Some(sync)) = (&message.raw, self.accounts.account(message.account_id)) else {
             return Ok(Handed::Kept);
@@ -574,49 +656,39 @@ impl<A: Accounts> Outbox<A> {
         let Some(id) = message_id_header(raw) else {
             return Ok(Handed::Kept);
         };
-        let err = match sync.hold(raw, at).await {
-            Ok(Some(held)) => return Ok(Handed::Held(held)),
-            Ok(None) => return Ok(Handed::Kept),
-            Err(err) if worth_retrying(&err) => err,
-            Err(err) => return Err(err),
-        };
-        tracing::info!(error = %err, "no answer to a hold; looking for it on the server");
-        let mark = format!("{UNCONFIRMED}{id}");
-        Ok(match sync.find_hold(&id).await {
-            Ok(Some(held)) => Handed::Held(held),
-            Ok(None) => Handed::Kept,
-            Err(err) if worth_retrying(&err) => Handed::Unconfirmed(mark),
-            Err(err) => {
-                tracing::info!(error = %err, "the server cannot say whether it holds the message");
-                Handed::Unknown(mark)
+        match sync.hold(raw, at).await {
+            Ok(Some(held)) => Ok(Handed::Held(held)),
+            Ok(None) => Ok(Handed::Kept),
+            Err(err) if worth_retrying(&err) => {
+                tracing::info!(error = %err, "no answer to a hold; the outbox looks for it later");
+                Ok(Handed::Unconfirmed(mark(now_millis(), &id)))
             }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Looks for the hold of a row whose hold's answer was lost.
+    async fn look(&self, sync: &AccountSync, message: &Queued, now: EpochMillis) -> Result<Looked, SyncError> {
+        let Some((since, id)) = unconfirmed(message) else {
+            return Ok(Looked::Nothing);
+        };
+        Ok(match sync.find_hold(id).await? {
+            Some(held) => Looked::Found(held),
+            None if now >= since.saturating_add(ASK_AGAIN) => Looked::Nothing,
+            None => Looked::TooSoon,
         })
     }
 
-    /// Looks again for the hold of a row whose hold's answer was lost.
-    /// Found, the row takes it, and a copy the row waited on before goes
-    /// from Drafts. Not there, the server never took the message and the
-    /// outbox keeps it, looking in Sent before it sends.
-    async fn confirm(&self, sync: &AccountSync, message: &mut Queued) -> Result<(), SyncError> {
-        let Some(id) = unconfirmed(message).map(str::to_string) else {
-            return Ok(());
-        };
-        match sync.find_hold(&id).await? {
-            Some(held) => {
-                if let Some(old) = message.draft_id.clone().filter(|old| *old != held.message_id)
-                    && let Err(err) = sync.delete_draft(&old).await
-                {
-                    tracing::warn!(error = %err, "held, but the old copy stayed in Drafts");
-                }
-                adopt(message, held);
-            }
-            None => {
-                message.held = None;
-                message.attempts = message.attempts.max(1);
-            }
+    /// Gives the row the hold a look found. A copy the row waited on
+    /// before goes from Drafts.
+    async fn take_found(&self, sync: &AccountSync, message: &mut Queued, held: Held) {
+        if let Some(old) = message.draft_id.clone().filter(|old| *old != held.message_id)
+            && let Err(err) = sync.delete_draft(&old).await
+        {
+            tracing::warn!(error = %err, "held, but the old copy stayed in Drafts");
         }
+        adopt(message, held);
         self.looked(message.id);
-        Ok(())
     }
 
     /// Records that nothing can say whether the server sent `message`. It
@@ -632,17 +704,33 @@ impl<A: Accounts> Outbox<A> {
 
     /// Where a held message stands once its hour came: still waiting, sent
     /// and filed, called back elsewhere, or past knowing. A row whose
-    /// hold's answer was lost is looked for first. `message` is claimed.
-    async fn settle(&self, mut message: Queued, now: EpochMillis, drained: &mut Drained) -> Result<(), SyncError> {
+    /// hold's answer was lost is looked for, and comes back to be sent
+    /// from here when it is due and the server has nothing.
+    /// `message` is claimed.
+    async fn settle(&self, mut message: Queued, now: EpochMillis, drained: &mut Drained) -> Result<Option<Queued>, SyncError> {
         let Some(sync) = self.accounts.account(message.account_id) else {
-            return self.release(message.id).await;
+            self.release(message.id).await?;
+            return Ok(None);
         };
         if unconfirmed(&message).is_some() {
-            match self.confirm(&sync, &mut message).await {
-                Ok(()) => {
-                    // The next pass settles the hold or sends the message.
+            match self.look(&sync, &message, now).await {
+                Ok(Looked::Found(held)) => {
+                    self.take_found(&sync, &mut message, held).await;
+                    // The next pass settles the hold.
                     self.db.write(move |c| outbox::put(c, &message)).await?;
                     drained.changed = true;
+                }
+                // Looked for right before it goes, so a send from here
+                // never goes beside the server's.
+                Ok(Looked::Nothing) if message.send_at <= now => {
+                    self.looked(message.id);
+                    message.held = None;
+                    message.attempts = message.attempts.max(1);
+                    return Ok(Some(message));
+                }
+                Ok(Looked::Nothing | Looked::TooSoon) => {
+                    self.look_at(message.id, now + ASK_AGAIN);
+                    self.release(message.id).await?;
                 }
                 Err(err) if worth_retrying(&err) => {
                     self.look_at(message.id, now + ASK_AGAIN);
@@ -653,7 +741,7 @@ impl<A: Accounts> Outbox<A> {
                     drained.changed = true;
                 }
             }
-            return Ok(());
+            return Ok(None);
         }
         let handle = message.held.clone().unwrap_or_default();
         let copy = message.message_id.clone().unwrap_or_default();
@@ -667,8 +755,21 @@ impl<A: Accounts> Outbox<A> {
                 drained.sent.push(message);
                 drained.changed = true;
             }
-            Ok(Settled::Canceled) => {
+            Ok(Settled::Canceled) if self.copy_left(&sync, &message).await => {
                 self.forget(&message).await?;
+                drained.changed = true;
+            }
+            // The bytes stay, so the person can still send it from the
+            // Outbox or delete it.
+            Ok(Settled::Canceled) => {
+                self.looked(message.id);
+                message.held = None;
+                message.draft_id = None;
+                message.problem = Some(canceled_elsewhere());
+                message.attempts = MOST_TRIES;
+                let stored = message.clone();
+                self.db.write(move |c| outbox::put(c, &stored)).await?;
+                drained.stuck.push(message);
                 drained.changed = true;
             }
             Ok(Settled::Unknown) => {
@@ -686,29 +787,43 @@ impl<A: Accounts> Outbox<A> {
                 drained.changed = true;
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Calls the server's hold on `message` back, for Send Now or a new
-    /// hour. `Here` gives the row as an ordinary draft, claimed again, or
-    /// as a message the server never took; `Done` the answer when the
-    /// server sent it, cannot say, or cannot be asked. `message` is
-    /// claimed.
-    async fn recall(&self, mut message: Queued) -> Result<Recalled, SyncError> {
+    /// hour. `Here` gives the row as an ordinary draft, written and claimed
+    /// again; for a new hour it is written with that hour and marked, so a
+    /// failure from there on leaves a row that looks for the next hold.
+    /// `Done` gives the answer when the server sent it, cannot say, or
+    /// cannot be asked. `message` is claimed.
+    async fn recall(&self, mut message: Queued, purpose: Purpose) -> Result<Recalled, SyncError> {
         let id = message.id;
         let Some(sync) = self.accounts.account(message.account_id) else {
             self.release(id).await?;
             return Ok(Recalled::Done(Posted::Waiting(id)));
         };
         if unconfirmed(&message).is_some() {
-            match self.confirm(&sync, &mut message).await {
-                Ok(()) if message.held.is_none() => return self.store_claimed(message).await,
-                Ok(()) => {}
-                Err(err) if worth_retrying(&err) => {
+            match (self.look(&sync, &message, now_millis()).await, purpose) {
+                (Ok(Looked::Found(held)), _) => self.take_found(&sync, &mut message, held).await,
+                (Ok(Looked::Nothing), Purpose::NewHour(_)) => {
+                    message.held = None;
+                    return self.store_claimed(message, purpose).await;
+                }
+                (Ok(Looked::TooSoon), Purpose::NewHour(_)) => {
                     self.release(id).await?;
                     return Ok(Recalled::Done(Posted::Waiting(id)));
                 }
-                Err(_) => {
+                // The server may hold it where a look cannot see yet, so
+                // Send Now sends nothing and asks the person.
+                (Ok(Looked::Nothing | Looked::TooSoon), Purpose::SendNow) => {
+                    self.unconfirmable(message).await?;
+                    return Ok(Recalled::Done(Posted::Refused(check_sent())));
+                }
+                (Err(err), _) if worth_retrying(&err) => {
+                    self.release(id).await?;
+                    return Ok(Recalled::Done(Posted::Waiting(id)));
+                }
+                (Err(_), _) => {
                     self.unconfirmable(message).await?;
                     return Ok(Recalled::Done(Posted::Refused(check_sent())));
                 }
@@ -722,11 +837,9 @@ impl<A: Accounts> Outbox<A> {
                 self.looked(id);
                 if !self.copy_left(&sync, &message).await {
                     self.forget(&message).await?;
-                    return Ok(Recalled::Done(Posted::Refused(gettext(
-                        "This message was canceled in another app and is no longer in Drafts.",
-                    ))));
+                    return Ok(Recalled::Done(Posted::Refused(canceled_elsewhere())));
                 }
-                self.store_claimed(message).await
+                self.store_claimed(message, purpose).await
             }
             Ok(Unheld::AlreadySent) => {
                 self.forget(&message).await?;
@@ -747,9 +860,16 @@ impl<A: Accounts> Outbox<A> {
         }
     }
 
-    /// Writes a row the server let go of, so a crash from here on leaves
-    /// a message the outbox sends, and claims it again for the caller.
-    async fn store_claimed(&self, message: Queued) -> Result<Recalled, SyncError> {
+    /// Writes a row the server let go of, and claims it again for the
+    /// caller. It counts one try, so a crash after a send from here looks
+    /// in Sent before it sends again. For a new hour the row takes that
+    /// hour and a mark, since the next step hands it to the server.
+    async fn store_claimed(&self, mut message: Queued, purpose: Purpose) -> Result<Recalled, SyncError> {
+        message.attempts = message.attempts.max(1);
+        if let Purpose::NewHour(at) = purpose {
+            message.send_at = at;
+            message.held = message.raw.as_deref().and_then(message_id_header).map(|id| mark(now_millis(), &id));
+        }
         let stored = message.clone();
         let id = self.db.write(move |c| outbox::put(c, &stored)).await?;
         Ok(match self.claim(id).await? {
@@ -774,11 +894,30 @@ impl<A: Accounts> Outbox<A> {
         }
     }
 
+    /// Calls the hold on `message` back so the server does not send it,
+    /// for Delete. Any answer will do; an error says the server could not
+    /// be asked, or a lost hold could not be looked for yet.
+    async fn let_go(&self, message: &Queued) -> Result<(), SyncError> {
+        let sync = self.accounts.account(message.account_id).ok_or(SyncError::UnknownAccount(message.account_id))?;
+        let mut message = message.clone();
+        if unconfirmed(&message).is_some() {
+            match self.look(&sync, &message, now_millis()).await? {
+                Looked::Found(held) => adopt(&mut message, held),
+                Looked::Nothing => return Ok(()),
+                Looked::TooSoon => return Err(BackendError::Offline(String::new()).into()),
+            }
+        }
+        let handle = message.held.clone().unwrap_or_default();
+        let copy = message.message_id.clone().unwrap_or_default();
+        sync.release_hold(&handle, &copy, message.send_at).await.map(|_| ())
+    }
+
     /// Calls the hold on a Send Later message back for Cancel Send, and
-    /// counts what became of it. `Some` gives the row back when the server
+    /// counts what became of it. The copy left in Drafts gets the row's
+    /// bytes back, Bcc and all. `Some` gives the row back when the server
     /// never took the message, for the cancel to treat as its own.
     async fn cancel_held(&self, item: Queued, cancelled: &mut Cancelled) -> Result<Option<Queued>, SyncError> {
-        let Some(item) = self.claim(item.id).await? else {
+        let Some(mut item) = self.claim(item.id).await? else {
             cancelled.still_held += 1;
             return Ok(None);
         };
@@ -788,15 +927,21 @@ impl<A: Accounts> Outbox<A> {
             cancelled.still_held += 1;
             return Ok(None);
         };
-        let mut item = item;
         if unconfirmed(&item).is_some() {
-            match self.confirm(&sync, &mut item).await {
-                Ok(()) if item.held.is_none() => {
+            match self.look(&sync, &item, now_millis()).await {
+                Ok(Looked::Found(held)) => self.take_found(&sync, &mut item, held).await,
+                Ok(Looked::Nothing) => {
+                    self.looked(id);
+                    item.held = None;
                     let stored = item.clone();
                     self.db.write(move |c| outbox::put(c, &stored)).await?;
                     return Ok(Some(item));
                 }
-                Ok(()) => {}
+                Ok(Looked::TooSoon) => {
+                    self.release(id).await?;
+                    cancelled.still_held += 1;
+                    return Ok(None);
+                }
                 Err(err) if worth_retrying(&err) => {
                     self.release(id).await?;
                     cancelled.still_held += 1;
@@ -812,7 +957,20 @@ impl<A: Accounts> Outbox<A> {
         let handle = item.held.clone().unwrap_or_default();
         let copy = item.message_id.clone().unwrap_or_default();
         match sync.release_hold(&handle, &copy, item.send_at).await {
-            Ok(Unheld::InDrafts) if self.copy_left(&sync, &item).await => cancelled.in_drafts += 1,
+            Ok(Unheld::InDrafts) if self.copy_left(&sync, &item).await => {
+                if let Err(err) = self.restore_draft(&sync, &item).await {
+                    // The copy in Drafts lacks the Bcc, so the person gets
+                    // the whole message back in a composer instead.
+                    tracing::info!(error = %err, "could not put the whole message back in Drafts");
+                    self.looked(id);
+                    item.held = None;
+                    let stored = item.clone();
+                    self.db.write(move |c| outbox::put(c, &stored)).await?;
+                    cancelled.unsaved.push(item);
+                    return Ok(None);
+                }
+                cancelled.in_drafts += 1;
+            }
             Ok(Unheld::InDrafts) => cancelled.cancelled_elsewhere += 1,
             Ok(Unheld::AlreadySent) => cancelled.already_sent += 1,
             Ok(Unheld::Unknown) => {
@@ -831,14 +989,25 @@ impl<A: Accounts> Outbox<A> {
         Ok(None)
     }
 
+    /// Writes the row's bytes over the copy a called-back hold left in
+    /// Drafts, which the server stored without the Bcc.
+    async fn restore_draft(&self, sync: &AccountSync, item: &Queued) -> Result<(), SyncError> {
+        let (Some(raw), Some(copy)) = (&item.raw, &item.draft_id) else {
+            return Ok(());
+        };
+        sync.save_draft(raw.clone(), item.thread_id.clone(), Some(copy.clone())).await?;
+        Ok(())
+    }
+
     /// Calls the hold back and holds the message again at `at`. Once the
-    /// server lets go, the row is a draft the outbox sends at `at`, so a
-    /// failure from there on still sends it once, at the new hour.
+    /// server lets go, the row is written with the new hour and a mark, so
+    /// a crash or a failed write from there on leaves a row that looks for
+    /// the new hold before anything goes from here.
     async fn hold_again(&self, message: Queued, at: EpochMillis) -> Result<Option<Queued>, SyncError> {
         let Some(message) = self.claim(message.id).await? else {
             return Ok(None);
         };
-        let mut message = match self.recall(message).await? {
+        let mut message = match self.recall(message, Purpose::NewHour(at)).await? {
             Recalled::Here(message) => *message,
             Recalled::Done(Posted::Waiting(_)) => {
                 return Err(SyncError::Backend(BackendError::Offline(gettext(
@@ -848,9 +1017,10 @@ impl<A: Accounts> Outbox<A> {
             Recalled::Done(Posted::Refused(reason)) => return Err(SyncError::Backend(BackendError::Refused(reason))),
             Recalled::Done(Posted::Sent(_)) => return Ok(None),
         };
-        message.send_at = at;
         let old = message.draft_id.clone();
-        match self.hand_over(&message, at).await {
+        let handed = self.hand_over(&message, at).await;
+        message.held = None;
+        match handed {
             Ok(Handed::Held(held)) => {
                 if let (Some(old), Some(sync)) = (old.filter(|old| *old != held.message_id), self.accounts.account(message.account_id))
                     && let Err(err) = sync.delete_draft(&old).await
@@ -860,11 +1030,6 @@ impl<A: Accounts> Outbox<A> {
                 adopt(&mut message, held);
             }
             Ok(Handed::Unconfirmed(mark)) => message.held = Some(mark),
-            Ok(Handed::Unknown(mark)) => {
-                message.held = Some(mark);
-                self.unconfirmable(message).await?;
-                return Ok(None);
-            }
             Ok(Handed::Kept) => {}
             Err(err) => tracing::info!(error = %err, "the server would not hold the message again; the app sends it"),
         }
