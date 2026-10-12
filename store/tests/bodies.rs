@@ -92,7 +92,7 @@ fn deleting_a_message_deletes_its_body() {
     let (conn, id) = db();
     store(&conn, &[meta(id, "a", "t1", 100, &["INBOX"])]);
     bodies::put_body(&conn, id, "a", &body("hi"), 1).unwrap();
-    let delete = Change::Delete {
+    let delete = Change::Erase {
         message_id: "a".into(),
     };
     messages::apply(&conn, id, &[delete]).unwrap();

@@ -184,7 +184,7 @@ fn an_upsert_replaces_the_whole_label_set() {
 fn deleting_the_last_message_removes_the_thread() {
     let (conn, id) = db();
     store(&conn, &[meta(id, "a", "t1", 100, &["INBOX"])]);
-    let delete = [Change::Delete {
+    let delete = [Change::Gone {
         message_id: "a".into(),
     }];
     let touched = messages::apply(&conn, id, &delete).unwrap();
@@ -208,7 +208,7 @@ fn delete_thread_removes_messages_and_summary() {
             meta(id, "b", "t1", 200, &["INBOX"]),
         ],
     );
-    let delete = Change::DeleteThread {
+    let delete = Change::ThreadGone {
         thread_id: "t1".into(),
     };
     messages::apply(&conn, id, &[delete]).unwrap();
@@ -354,7 +354,7 @@ fn a_change_set_refreshes_what_it_touched_and_reports_what_it_did() {
         &conn,
         id,
         &[
-            Change::Delete {
+            Change::Gone {
                 message_id: "a".into(),
             },
             Change::MarkWhole {

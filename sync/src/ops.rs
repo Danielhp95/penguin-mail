@@ -387,7 +387,7 @@ pub fn local_changes(
             MailOp::SetCategory { category, on } => {
                 changes.push(Change::of(id, Membership::Category(category.clone()), *on));
             }
-            MailOp::Destroy => changes.push(Change::Delete {
+            MailOp::Destroy => changes.push(Change::Erase {
                 message_id: id.into(),
             }),
             MailOp::MoveToRole(role) => {

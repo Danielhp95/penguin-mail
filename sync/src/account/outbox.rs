@@ -225,7 +225,7 @@ impl AccountSync {
         let threads = self
             .db
             .write(move |c| {
-                let delete = Change::Delete { message_id: id };
+                let delete = Change::Erase { message_id: id };
                 Ok(messages::apply(c, account_id, &[delete])?.threads)
             })
             .await?;

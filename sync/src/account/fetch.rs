@@ -207,7 +207,7 @@ pub(super) fn store_fetched(
     let changes: Vec<Change> = metas
         .iter()
         .map(|meta| placing.upsert(account_id, meta, generation))
-        .chain(gone.iter().map(|id| Change::Delete {
+        .chain(gone.iter().map(|id| Change::Gone {
             message_id: id.clone(),
         }))
         .collect();
