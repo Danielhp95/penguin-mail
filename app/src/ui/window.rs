@@ -2808,11 +2808,18 @@ impl MainWindow {
             // The server sends what it holds whether or not the account is
             // here, so those messages are called back first.
             let (outbox, account_id) = (this.core.outbox(), account.id);
-            let held = this
-                .core
-                .call(async move { outbox.held_count(account_id).await })
-                .await
-                .unwrap_or_default();
+            // Not knowing is not zero: removing the account then would
+            // leave the server to send what it holds.
+            let held = match this.core.call(async move { outbox.held_count(account_id).await }).await {
+                Ok(held) => held,
+                Err(err) => {
+                    return this.toast(&with_reason(
+                        &gettext("Could not check for messages the server holds to send later, so {account} stays: {reason}"),
+                        &err,
+                        &[("account", &account.email)],
+                    ));
+                }
+            };
             let mut body = crate::offered::remove_account_body(&account, remove);
             if let Some(line) = crate::offered::held_back_line(held) {
                 body = format!("{body}\n\n{line}");
