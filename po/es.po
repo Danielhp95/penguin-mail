@@ -2110,7 +2110,7 @@ msgstr ""
 "Esta cuenta no guarda ninguna contraseña que acepte un servidor de "
 "calendario o de contactos."
 
-#: app/src/core.rs:1320
+#: app/src/core.rs:1320 app/src/core.rs:1359
 msgid "The demo cannot switch accounts."
 msgstr "El modo de demostración no puede cambiar cuentas."
 
@@ -2377,7 +2377,7 @@ msgstr "Archivar"
 
 #: app/src/notify.rs:63 app/src/ui/conversation.rs:388
 #: app/src/ui/conversation.rs:1095 app/src/ui/preferences.rs:140
-#: app/src/ui/rules.rs:390 app/src/ui/window/message_menu.rs:128
+#: app/src/ui/rules.rs:392 app/src/ui/window/message_menu.rs:128
 msgid "Mark as Read"
 msgstr "Marcar como leído"
 
@@ -2829,55 +2829,71 @@ msgstr "Inicio de sesión de los calendarios"
 msgid "The app password you use for calendars stays as it is."
 msgstr "La contraseña de aplicación que usas para los calendarios no cambia."
 
-#: app/src/offered.rs:722
+#: app/src/offered.rs:729
+msgid "Could not switch to JMAP: {reason}"
+msgstr "No se ha podido cambiar a JMAP: {reason}"
+
+#: app/src/offered.rs:730
+msgid "Your IMAP account is unchanged."
+msgstr "Tu cuenta IMAP no ha cambiado."
+
+#: app/src/offered.rs:743
 msgid "This account uses JMAP already."
 msgstr "Esta cuenta ya usa JMAP."
 
-#: app/src/offered.rs:725
+#: app/src/offered.rs:747
 msgid "{provider} did not accept the token."
 msgstr "{provider} no ha aceptado el token."
 
-#: app/src/offered.rs:726
+#: app/src/offered.rs:748
 msgid "{provider} did not accept the password."
 msgstr "{provider} no ha aceptado la contraseña."
 
-#: app/src/offered.rs:729
+#: app/src/offered.rs:751
+msgid "You can choose Sign In With Browser instead."
+msgstr "Puedes elegir Iniciar sesión con el navegador en su lugar."
+
+#: app/src/offered.rs:756
+msgid "{provider} signed in to another account, not {address}."
+msgstr "{provider} ha iniciado sesión en otra cuenta, no en {address}."
+
+#: app/src/offered.rs:760
 msgid "The token holds a character that cannot be sent."
 msgstr "El token contiene un carácter que no se puede enviar."
 
-#: app/src/offered.rs:730
+#: app/src/offered.rs:761
 msgid "The password holds a character that cannot be sent."
 msgstr "La contraseña contiene un carácter que no se puede enviar."
 
-#: app/src/offered.rs:732
+#: app/src/offered.rs:763 app/src/offered.rs:799
 msgid "{provider} does not answer."
 msgstr "{provider} no responde."
 
-#: app/src/offered.rs:737
+#: app/src/offered.rs:768
 msgid "{provider} did not give the draft of a message waiting in Send Later."
 msgstr ""
 "{provider} no ha entregado el borrador de un mensaje que espera en Enviar "
 "más tarde."
 
-#: app/src/offered.rs:741
+#: app/src/offered.rs:772
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 "El correo de {provider} no dejó de cambiar mientras Penguin Mail lo "
 "emparejaba."
 
-#: app/src/offered.rs:753
-msgid "Could not switch to JMAP: {reason}"
-msgstr "No se ha podido cambiar a JMAP: {reason}"
+#: app/src/offered.rs:795
+msgid "{provider} refused the sign-in in the browser."
+msgstr "{provider} ha rechazado el inicio de sesión en el navegador."
 
-#: app/src/offered.rs:754
-msgid "Your IMAP account is unchanged."
-msgstr "Tu cuenta IMAP no ha cambiado."
+#: app/src/offered.rs:797
+msgid "You did not allow Penguin Mail on {provider}'s page."
+msgstr "No has permitido el acceso a Penguin Mail en la página de {provider}."
 
-#: app/src/offered.rs:764
+#: app/src/offered.rs:819
 msgid "{address} now uses JMAP"
 msgstr "{address} usa ahora JMAP"
 
-#: app/src/offered.rs:768
+#: app/src/offered.rs:823
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."
@@ -3744,7 +3760,7 @@ msgstr "Todo el correo"
 msgid "Delete it"
 msgstr "Eliminarlo"
 
-#: app/src/rules.rs:257 app/src/ui/rules.rs:389
+#: app/src/rules.rs:257 app/src/ui/rules.rs:391
 msgid "Skip the Inbox"
 msgstr "Saltar la bandeja de entrada"
 
@@ -3823,7 +3839,7 @@ msgstr "Contactos"
 msgid "Rules"
 msgstr "Reglas"
 
-#: app/src/servers.rs:39 app/src/ui/rules.rs:236
+#: app/src/servers.rs:39 app/src/ui/rules.rs:238
 msgid "On this computer, while Penguin Mail is open"
 msgstr "En este equipo, mientras Penguin Mail está abierto"
 
@@ -4398,7 +4414,7 @@ msgstr "Tiempo restante"
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail deja de esperar tras cinco minutos."
 
-#: app/src/ui/add_account.rs:795
+#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:139
 msgid "Open Page Again"
 msgstr "Abrir la página de nuevo"
 
@@ -4408,7 +4424,7 @@ msgstr "Copiar el enlace"
 
 #: app/src/ui/add_account.rs:805 app/src/ui/add_account.rs:976
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:326
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:492
 msgid "Try Again"
 msgstr "Intentar de nuevo"
 
@@ -4419,12 +4435,13 @@ msgstr "Intentar de nuevo"
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
 #: app/src/ui/composer/mod.rs:1777 app/src/ui/composer/mod.rs:1852
 #: app/src/ui/composer/mod.rs:2175 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:465 app/src/ui/rules.rs:645
+#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:467 app/src/ui/rules.rs:647
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
-#: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
-#: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
-#: app/src/ui/window/arrange.rs:148 app/src/ui/window/images.rs:101
-#: app/src/ui/window/organize.rs:73 app/src/ui/window/organize.rs:122
+#: app/src/ui/switch_jmap.rs:140 app/src/ui/templates.rs:239
+#: app/src/ui/unsubscribe.rs:119 app/src/ui/vacation.rs:45
+#: app/src/ui/when.rs:52 app/src/ui/window/arrange.rs:148
+#: app/src/ui/window/images.rs:101 app/src/ui/window/organize.rs:73
+#: app/src/ui/window/organize.rs:122
 msgid "Cancel"
 msgstr "Cancelar"
 
@@ -4438,7 +4455,8 @@ msgstr "Iniciar sesión"
 msgid "Your Name"
 msgstr "Tu nombre"
 
-#: app/src/ui/add_account.rs:939
+#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:113
+#: app/src/ui/switch_jmap.rs:116
 msgid "Sign In With Browser"
 msgstr "Iniciar sesión con el navegador"
 
@@ -4957,7 +4975,7 @@ msgstr "Probar"
 #: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/calendar/editor.rs:179
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:458
+#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:460
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
@@ -6091,7 +6109,7 @@ msgid "New Calendar"
 msgstr "Calendario nuevo"
 
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:675
-#: app/src/ui/rules.rs:459 app/src/ui/smart_editor.rs:146
+#: app/src/ui/rules.rs:461 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
 msgid "Create"
@@ -6864,11 +6882,11 @@ msgid "Masked"
 msgstr "Enmascarada"
 
 #: app/src/ui/composer/mod.rs:496 app/src/ui/composer/mod.rs:497
-#: app/src/ui/rules.rs:373
+#: app/src/ui/rules.rs:375
 msgid "From"
 msgstr "De"
 
-#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:374
+#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:376
 msgid "To"
 msgstr "Para"
 
@@ -6880,7 +6898,7 @@ msgstr "Cc"
 msgid "Bcc"
 msgstr "Cco"
 
-#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:375
+#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:377
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr "Asunto"
@@ -8665,7 +8683,7 @@ msgstr "Este mensaje no se ha enviado"
 msgid "This message is waiting to be sent"
 msgstr "Este mensaje está pendiente de envío"
 
-#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:459
+#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:461
 msgid "New Rule"
 msgstr "Regla nueva"
 
@@ -8685,133 +8703,133 @@ msgstr "Añadir regla"
 msgid "Made elsewhere. Change it where you made it."
 msgstr "Creada en otro sitio. Cámbiala donde la creaste."
 
-#: app/src/ui/rules.rs:246
+#: app/src/ui/rules.rs:248
 msgid "Off: its folder is not on this server"
 msgstr "Desactivada: su carpeta no está en este servidor"
 
-#: app/src/ui/rules.rs:256
+#: app/src/ui/rules.rs:258
 msgid "Edit the rule for {mail}"
 msgstr "Editar la regla de {mail}"
 
-#: app/src/ui/rules.rs:267
+#: app/src/ui/rules.rs:269
 msgid "Delete Rule"
 msgstr "Eliminar regla"
 
-#: app/src/ui/rules.rs:274
+#: app/src/ui/rules.rs:276
 msgid "Delete the rule for {mail}"
 msgstr "Eliminar la regla de {mail}"
 
-#: app/src/ui/rules.rs:291
+#: app/src/ui/rules.rs:293
 msgid "Rules Written Elsewhere"
 msgstr "Reglas escritas en otro sitio"
 
-#: app/src/ui/rules.rs:293
+#: app/src/ui/rules.rs:295
 msgid ""
 "Penguin Mail keeps these as they are. Change them where they were written."
 msgstr ""
 "Penguin Mail las mantiene tal como están. Cámbialas donde se escribieron."
 
-#: app/src/ui/rules.rs:324
+#: app/src/ui/rules.rs:326
 msgid "Rule deleted"
 msgstr "Regla eliminada"
 
-#: app/src/ui/rules.rs:328
+#: app/src/ui/rules.rs:330
 msgid "Could not delete the rule: {reason}"
 msgstr "No se ha podido eliminar la regla: {reason}"
 
-#: app/src/ui/rules.rs:336
+#: app/src/ui/rules.rs:338
 msgid "Could Not Load the Rules"
 msgstr "No se han podido cargar las reglas"
 
-#: app/src/ui/rules.rs:345
+#: app/src/ui/rules.rs:347
 msgid "Allow Rules"
 msgstr "Permitir reglas"
 
-#: app/src/ui/rules.rs:376
+#: app/src/ui/rules.rs:378
 msgid "Has the Words"
 msgstr "Contiene las palabras"
 
-#: app/src/ui/rules.rs:377
+#: app/src/ui/rules.rs:379
 msgid "Doesn't Have"
 msgstr "No contiene"
 
-#: app/src/ui/rules.rs:379
+#: app/src/ui/rules.rs:381
 msgid "Has an Attachment"
 msgstr "Tiene un adjunto"
 
-#: app/src/ui/rules.rs:381
+#: app/src/ui/rules.rs:383
 msgid "When Mail Matches"
 msgstr "Cuando el correo coincide"
 
-#: app/src/ui/rules.rs:391
+#: app/src/ui/rules.rs:393
 msgid "Star It"
 msgstr "Destacarlo"
 
-#: app/src/ui/rules.rs:392
+#: app/src/ui/rules.rs:394
 msgid "Never Send to Spam"
 msgstr "No enviar nunca a Spam"
 
-#: app/src/ui/rules.rs:393
+#: app/src/ui/rules.rs:395
 msgid "Delete It"
 msgstr "Eliminarlo"
 
-#: app/src/ui/rules.rs:396
+#: app/src/ui/rules.rs:398
 msgid "Apply Label"
 msgstr "Aplicar etiqueta"
 
-#: app/src/ui/rules.rs:396
+#: app/src/ui/rules.rs:398
 msgid "Don't Apply a Label"
 msgstr "No aplicar ninguna etiqueta"
 
-#: app/src/ui/rules.rs:397
+#: app/src/ui/rules.rs:399
 msgid "Don't Move"
 msgstr "No mover"
 
-#: app/src/ui/rules.rs:397
+#: app/src/ui/rules.rs:399
 msgid "Move to Folder"
 msgstr "Mover a carpeta"
 
-#: app/src/ui/rules.rs:407
+#: app/src/ui/rules.rs:409
 msgid "Do This"
 msgstr "Hacer esto"
 
-#: app/src/ui/rules.rs:447
+#: app/src/ui/rules.rs:449
 msgid "This rule also does things this form can't show. Saving keeps them."
 msgstr ""
 "Esta regla también hace cosas que este formulario no puede mostrar. Al "
 "guardar se mantienen."
 
-#: app/src/ui/rules.rs:458
+#: app/src/ui/rules.rs:460
 msgid "Edit Rule"
 msgstr "Editar regla"
 
-#: app/src/ui/rules.rs:531
+#: app/src/ui/rules.rs:533
 msgid "Rule added"
 msgstr "Regla añadida"
 
-#: app/src/ui/rules.rs:546 app/src/ui/rules.rs:618
+#: app/src/ui/rules.rs:548 app/src/ui/rules.rs:620
 msgid "Could not add the rule: {reason}"
 msgstr "No se ha podido añadir la regla: {reason}"
 
-#: app/src/ui/rules.rs:564
+#: app/src/ui/rules.rs:566
 msgid "Rule saved"
 msgstr "Regla guardada"
 
-#: app/src/ui/rules.rs:569
+#: app/src/ui/rules.rs:571
 msgid "Saved, but Gmail kept the old rule too, so both run now: {reason}"
 msgstr ""
 "Guardada, pero Gmail también ha mantenido la regla anterior, así que ahora "
 "se aplican las dos: {reason}"
 
-#: app/src/ui/rules.rs:589
+#: app/src/ui/rules.rs:591
 msgid "Could not save the rule: {reason}"
 msgstr "No se ha podido guardar la regla: {reason}"
 
-#: app/src/ui/rules.rs:639
+#: app/src/ui/rules.rs:641
 msgid "Replace “{script}”?"
 msgstr "¿Sustituir «{script}»?"
 
-#: app/src/ui/rules.rs:641
+#: app/src/ui/rules.rs:643
 msgid ""
 "{provider} runs one set of rules at a time, and it runs “{script}” now. "
 "Penguin Mail's rules would take its place; “{script}” stays on the server, "
@@ -8821,7 +8839,7 @@ msgstr ""
 "«{script}». Las reglas de Penguin Mail ocuparían su lugar; «{script}» se "
 "queda en el servidor, desactivado."
 
-#: app/src/ui/rules.rs:645
+#: app/src/ui/rules.rs:647
 msgid "Replace"
 msgstr "Sustituir"
 
@@ -9081,29 +9099,34 @@ msgstr "Ponle un nombre al buzón"
 msgid "Add a condition with a value"
 msgstr "Añade una condición con un valor"
 
-#: app/src/ui/switch_jmap.rs:79
+#: app/src/ui/switch_jmap.rs:93
 msgid "What changes"
 msgstr "Qué cambia"
 
-#: app/src/ui/switch_jmap.rs:80
+#: app/src/ui/switch_jmap.rs:94
 msgid "What stays"
 msgstr "Qué se mantiene"
 
-#: app/src/ui/switch_jmap.rs:89
+#: app/src/ui/switch_jmap.rs:103
 msgid "Sent to {host} and nowhere else."
 msgstr "Se envía a {host} y a ningún otro sitio."
 
-#: app/src/ui/switch_jmap.rs:107 app/src/ui/switch_jmap.rs:283
+#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:320
+#: app/src/ui/switch_jmap.rs:391
 msgid "Matching your mail…"
 msgstr "Emparejando tu correo…"
 
-#: app/src/ui/switch_jmap.rs:115
+#: app/src/ui/switch_jmap.rs:154
 msgid "Switch"
 msgstr "Cambiar"
 
-#: app/src/ui/switch_jmap.rs:125
+#: app/src/ui/switch_jmap.rs:164
 msgid "Switch to JMAP"
 msgstr "Cambiar a JMAP"
+
+#: app/src/ui/switch_jmap.rs:417 app/src/ui/switch_jmap.rs:432
+msgid "Finish signing in on {provider}'s page in your browser."
+msgstr "Termina de iniciar sesión en la página de {provider} en tu navegador."
 
 #: app/src/ui/templates.rs:25
 msgid ""
@@ -11563,7 +11586,7 @@ msgstr "Indica a qué correo se aplica la regla"
 msgid "Choose what the rule does"
 msgstr "Elige qué hace la regla"
 
-#: sync/src/sign_in.rs:207
+#: sync/src/sign_in.rs:209
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} ya está en Penguin Mail como cuenta de {provider}."
 

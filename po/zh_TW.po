@@ -1980,7 +1980,7 @@ msgstr "已等候瀏覽器五分鐘，停止等候。"
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "此帳號沒有保存行事曆或聯絡人伺服器接受的密碼。"
 
-#: app/src/core.rs:1320
+#: app/src/core.rs:1320 app/src/core.rs:1359
 msgid "The demo cannot switch accounts."
 msgstr "示範模式無法切換帳號。"
 
@@ -2241,7 +2241,7 @@ msgstr "封存"
 
 #: app/src/notify.rs:63 app/src/ui/conversation.rs:388
 #: app/src/ui/conversation.rs:1095 app/src/ui/preferences.rs:140
-#: app/src/ui/rules.rs:390 app/src/ui/window/message_menu.rs:128
+#: app/src/ui/rules.rs:392 app/src/ui/window/message_menu.rs:128
 msgid "Mark as Read"
 msgstr "標示為已讀"
 
@@ -2665,51 +2665,67 @@ msgstr "行事曆登入"
 msgid "The app password you use for calendars stays as it is."
 msgstr "行事曆使用的應用程式密碼維持不變。"
 
-#: app/src/offered.rs:722
-msgid "This account uses JMAP already."
-msgstr "此帳號已在使用 JMAP。"
-
-#: app/src/offered.rs:725
-msgid "{provider} did not accept the token."
-msgstr "{provider} 不接受此權杖。"
-
-#: app/src/offered.rs:726
-msgid "{provider} did not accept the password."
-msgstr "{provider} 不接受此密碼。"
-
 #: app/src/offered.rs:729
-msgid "The token holds a character that cannot be sent."
-msgstr "權杖含有無法傳送的字元。"
-
-#: app/src/offered.rs:730
-msgid "The password holds a character that cannot be sent."
-msgstr "密碼含有無法傳送的字元。"
-
-#: app/src/offered.rs:732
-msgid "{provider} does not answer."
-msgstr "{provider} 沒有回應。"
-
-#: app/src/offered.rs:737
-msgid "{provider} did not give the draft of a message waiting in Send Later."
-msgstr "{provider} 未提供一封等待排程傳送的郵件草稿。"
-
-#: app/src/offered.rs:741
-msgid "The mail on {provider} kept changing while Penguin Mail matched it."
-msgstr "Penguin Mail 比對期間，{provider} 上的郵件持續變動。"
-
-#: app/src/offered.rs:753
 msgid "Could not switch to JMAP: {reason}"
 msgstr "無法切換至 JMAP：{reason}"
 
-#: app/src/offered.rs:754
+#: app/src/offered.rs:730
 msgid "Your IMAP account is unchanged."
 msgstr "您的 IMAP 帳號維持不變。"
 
-#: app/src/offered.rs:764
+#: app/src/offered.rs:743
+msgid "This account uses JMAP already."
+msgstr "此帳號已在使用 JMAP。"
+
+#: app/src/offered.rs:747
+msgid "{provider} did not accept the token."
+msgstr "{provider} 不接受此權杖。"
+
+#: app/src/offered.rs:748
+msgid "{provider} did not accept the password."
+msgstr "{provider} 不接受此密碼。"
+
+#: app/src/offered.rs:751
+msgid "You can choose Sign In With Browser instead."
+msgstr "您也可以改選 [使用瀏覽器登入]。"
+
+#: app/src/offered.rs:756
+msgid "{provider} signed in to another account, not {address}."
+msgstr "{provider} 登入的是另一個帳號，而不是 {address}。"
+
+#: app/src/offered.rs:760
+msgid "The token holds a character that cannot be sent."
+msgstr "權杖含有無法傳送的字元。"
+
+#: app/src/offered.rs:761
+msgid "The password holds a character that cannot be sent."
+msgstr "密碼含有無法傳送的字元。"
+
+#: app/src/offered.rs:763 app/src/offered.rs:799
+msgid "{provider} does not answer."
+msgstr "{provider} 沒有回應。"
+
+#: app/src/offered.rs:768
+msgid "{provider} did not give the draft of a message waiting in Send Later."
+msgstr "{provider} 未提供一封等待排程傳送的郵件草稿。"
+
+#: app/src/offered.rs:772
+msgid "The mail on {provider} kept changing while Penguin Mail matched it."
+msgstr "Penguin Mail 比對期間，{provider} 上的郵件持續變動。"
+
+#: app/src/offered.rs:795
+msgid "{provider} refused the sign-in in the browser."
+msgstr "{provider} 拒絕了在瀏覽器中的登入。"
+
+#: app/src/offered.rs:797
+msgid "You did not allow Penguin Mail on {provider}'s page."
+msgstr "您沒有在 {provider} 的頁面上允許 Penguin Mail。"
+
+#: app/src/offered.rs:819
 msgid "{address} now uses JMAP"
 msgstr "{address} 現在使用 JMAP"
 
-#: app/src/offered.rs:768
+#: app/src/offered.rs:823
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."
@@ -3524,7 +3540,7 @@ msgstr "所有郵件"
 msgid "Delete it"
 msgstr "刪除郵件"
 
-#: app/src/rules.rs:257 app/src/ui/rules.rs:389
+#: app/src/rules.rs:257 app/src/ui/rules.rs:391
 msgid "Skip the Inbox"
 msgstr "略過收件匣"
 
@@ -3603,7 +3619,7 @@ msgstr "聯絡人"
 msgid "Rules"
 msgstr "規則"
 
-#: app/src/servers.rs:39 app/src/ui/rules.rs:236
+#: app/src/servers.rs:39 app/src/ui/rules.rs:238
 msgid "On this computer, while Penguin Mail is open"
 msgstr "在此電腦上，Penguin Mail 開啟時"
 
@@ -4158,7 +4174,7 @@ msgstr "剩餘時間"
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail 會在五分鐘後停止等候。"
 
-#: app/src/ui/add_account.rs:795
+#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:139
 msgid "Open Page Again"
 msgstr "再次開啟頁面"
 
@@ -4168,7 +4184,7 @@ msgstr "複製連結"
 
 #: app/src/ui/add_account.rs:805 app/src/ui/add_account.rs:976
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:326
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:492
 msgid "Try Again"
 msgstr "重試"
 
@@ -4179,12 +4195,13 @@ msgstr "重試"
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
 #: app/src/ui/composer/mod.rs:1777 app/src/ui/composer/mod.rs:1852
 #: app/src/ui/composer/mod.rs:2175 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:465 app/src/ui/rules.rs:645
+#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:467 app/src/ui/rules.rs:647
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
-#: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
-#: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
-#: app/src/ui/window/arrange.rs:148 app/src/ui/window/images.rs:101
-#: app/src/ui/window/organize.rs:73 app/src/ui/window/organize.rs:122
+#: app/src/ui/switch_jmap.rs:140 app/src/ui/templates.rs:239
+#: app/src/ui/unsubscribe.rs:119 app/src/ui/vacation.rs:45
+#: app/src/ui/when.rs:52 app/src/ui/window/arrange.rs:148
+#: app/src/ui/window/images.rs:101 app/src/ui/window/organize.rs:73
+#: app/src/ui/window/organize.rs:122
 msgid "Cancel"
 msgstr "取消"
 
@@ -4198,7 +4215,8 @@ msgstr "登入"
 msgid "Your Name"
 msgstr "姓名"
 
-#: app/src/ui/add_account.rs:939
+#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:113
+#: app/src/ui/switch_jmap.rs:116
 msgid "Sign In With Browser"
 msgstr "使用瀏覽器登入"
 
@@ -4701,7 +4719,7 @@ msgstr "測試"
 #: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/calendar/editor.rs:179
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2626
-#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:458
+#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:460
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
@@ -5794,7 +5812,7 @@ msgid "New Calendar"
 msgstr "新增行事曆"
 
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:675
-#: app/src/ui/rules.rs:459 app/src/ui/smart_editor.rs:146
+#: app/src/ui/rules.rs:461 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
 msgid "Create"
@@ -6551,11 +6569,11 @@ msgid "Masked"
 msgstr "遮罩"
 
 #: app/src/ui/composer/mod.rs:496 app/src/ui/composer/mod.rs:497
-#: app/src/ui/rules.rs:373
+#: app/src/ui/rules.rs:375
 msgid "From"
 msgstr "寄件者"
 
-#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:374
+#: app/src/ui/composer/mod.rs:502 app/src/ui/rules.rs:376
 msgid "To"
 msgstr "收件者"
 
@@ -6567,7 +6585,7 @@ msgstr "副本"
 msgid "Bcc"
 msgstr "密件副本"
 
-#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:375
+#: app/src/ui/composer/mod.rs:518 app/src/ui/rules.rs:377
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr "主旨"
@@ -8282,7 +8300,7 @@ msgstr "此郵件尚未傳送"
 msgid "This message is waiting to be sent"
 msgstr "此郵件正在等候傳送"
 
-#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:459
+#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:461
 msgid "New Rule"
 msgstr "新增規則"
 
@@ -8302,128 +8320,128 @@ msgstr "新增規則"
 msgid "Made elsewhere. Change it where you made it."
 msgstr "在其他程式建立。請至原處變更。"
 
-#: app/src/ui/rules.rs:246
+#: app/src/ui/rules.rs:248
 msgid "Off: its folder is not on this server"
 msgstr "已停用：此伺服器上沒有其資料夾"
 
-#: app/src/ui/rules.rs:256
+#: app/src/ui/rules.rs:258
 msgid "Edit the rule for {mail}"
 msgstr "編輯 {mail} 的規則"
 
-#: app/src/ui/rules.rs:267
+#: app/src/ui/rules.rs:269
 msgid "Delete Rule"
 msgstr "刪除規則"
 
-#: app/src/ui/rules.rs:274
+#: app/src/ui/rules.rs:276
 msgid "Delete the rule for {mail}"
 msgstr "刪除 {mail} 的規則"
 
-#: app/src/ui/rules.rs:291
+#: app/src/ui/rules.rs:293
 msgid "Rules Written Elsewhere"
 msgstr "在其他程式撰寫的規則"
 
-#: app/src/ui/rules.rs:293
+#: app/src/ui/rules.rs:295
 msgid ""
 "Penguin Mail keeps these as they are. Change them where they were written."
 msgstr "Penguin Mail 會保留這些規則。請至原先撰寫規則的程式變更。"
 
-#: app/src/ui/rules.rs:324
+#: app/src/ui/rules.rs:326
 msgid "Rule deleted"
 msgstr "已刪除規則"
 
-#: app/src/ui/rules.rs:328
+#: app/src/ui/rules.rs:330
 msgid "Could not delete the rule: {reason}"
 msgstr "無法刪除規則：{reason}"
 
-#: app/src/ui/rules.rs:336
+#: app/src/ui/rules.rs:338
 msgid "Could Not Load the Rules"
 msgstr "無法載入規則"
 
-#: app/src/ui/rules.rs:345
+#: app/src/ui/rules.rs:347
 msgid "Allow Rules"
 msgstr "允許規則"
 
-#: app/src/ui/rules.rs:376
+#: app/src/ui/rules.rs:378
 msgid "Has the Words"
 msgstr "包含文字"
 
-#: app/src/ui/rules.rs:377
+#: app/src/ui/rules.rs:379
 msgid "Doesn't Have"
 msgstr "不包含"
 
-#: app/src/ui/rules.rs:379
+#: app/src/ui/rules.rs:381
 msgid "Has an Attachment"
 msgstr "有附件"
 
-#: app/src/ui/rules.rs:381
+#: app/src/ui/rules.rs:383
 msgid "When Mail Matches"
 msgstr "郵件符合條件時"
 
-#: app/src/ui/rules.rs:391
+#: app/src/ui/rules.rs:393
 msgid "Star It"
 msgstr "加上星號"
 
-#: app/src/ui/rules.rs:392
+#: app/src/ui/rules.rs:394
 msgid "Never Send to Spam"
 msgstr "一律不移至垃圾郵件"
 
-#: app/src/ui/rules.rs:393
+#: app/src/ui/rules.rs:395
 msgid "Delete It"
 msgstr "刪除郵件"
 
-#: app/src/ui/rules.rs:396
+#: app/src/ui/rules.rs:398
 msgid "Apply Label"
 msgstr "套用標籤"
 
-#: app/src/ui/rules.rs:396
+#: app/src/ui/rules.rs:398
 msgid "Don't Apply a Label"
 msgstr "不套用標籤"
 
-#: app/src/ui/rules.rs:397
+#: app/src/ui/rules.rs:399
 msgid "Don't Move"
 msgstr "不移動"
 
-#: app/src/ui/rules.rs:397
+#: app/src/ui/rules.rs:399
 msgid "Move to Folder"
 msgstr "移至資料夾"
 
-#: app/src/ui/rules.rs:407
+#: app/src/ui/rules.rs:409
 msgid "Do This"
 msgstr "執行此操作"
 
-#: app/src/ui/rules.rs:447
+#: app/src/ui/rules.rs:449
 msgid "This rule also does things this form can't show. Saving keeps them."
 msgstr "此規則還有此表單無法顯示的操作。儲存時會保留。"
 
-#: app/src/ui/rules.rs:458
+#: app/src/ui/rules.rs:460
 msgid "Edit Rule"
 msgstr "編輯規則"
 
-#: app/src/ui/rules.rs:531
+#: app/src/ui/rules.rs:533
 msgid "Rule added"
 msgstr "已新增規則"
 
-#: app/src/ui/rules.rs:546 app/src/ui/rules.rs:618
+#: app/src/ui/rules.rs:548 app/src/ui/rules.rs:620
 msgid "Could not add the rule: {reason}"
 msgstr "無法新增規則：{reason}"
 
-#: app/src/ui/rules.rs:564
+#: app/src/ui/rules.rs:566
 msgid "Rule saved"
 msgstr "已儲存規則"
 
-#: app/src/ui/rules.rs:569
+#: app/src/ui/rules.rs:571
 msgid "Saved, but Gmail kept the old rule too, so both run now: {reason}"
 msgstr "已儲存，但 Gmail 也保留了舊規則，因此兩項規則都會執行：{reason}"
 
-#: app/src/ui/rules.rs:589
+#: app/src/ui/rules.rs:591
 msgid "Could not save the rule: {reason}"
 msgstr "無法儲存規則：{reason}"
 
-#: app/src/ui/rules.rs:639
+#: app/src/ui/rules.rs:641
 msgid "Replace “{script}”?"
 msgstr "是否取代「{script}」？"
 
-#: app/src/ui/rules.rs:641
+#: app/src/ui/rules.rs:643
 msgid ""
 "{provider} runs one set of rules at a time, and it runs “{script}” now. "
 "Penguin Mail's rules would take its place; “{script}” stays on the server, "
@@ -8432,7 +8450,7 @@ msgstr ""
 "{provider} 一次只執行一組規則，目前執行的是「{script}」。Penguin Mail 的規則"
 "將取而代之；「{script}」會保留在伺服器上，但停用。"
 
-#: app/src/ui/rules.rs:645
+#: app/src/ui/rules.rs:647
 msgid "Replace"
 msgstr "取代"
 
@@ -8684,29 +8702,34 @@ msgstr "請為信箱命名"
 msgid "Add a condition with a value"
 msgstr "請新增條件並填入值"
 
-#: app/src/ui/switch_jmap.rs:79
+#: app/src/ui/switch_jmap.rs:93
 msgid "What changes"
 msgstr "會改變的部分"
 
-#: app/src/ui/switch_jmap.rs:80
+#: app/src/ui/switch_jmap.rs:94
 msgid "What stays"
 msgstr "保持不變的部分"
 
-#: app/src/ui/switch_jmap.rs:89
+#: app/src/ui/switch_jmap.rs:103
 msgid "Sent to {host} and nowhere else."
 msgstr "只會傳送到 {host}，不會傳到其他地方。"
 
-#: app/src/ui/switch_jmap.rs:107 app/src/ui/switch_jmap.rs:283
+#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:320
+#: app/src/ui/switch_jmap.rs:391
 msgid "Matching your mail…"
 msgstr "正在比對您的郵件…"
 
-#: app/src/ui/switch_jmap.rs:115
+#: app/src/ui/switch_jmap.rs:154
 msgid "Switch"
 msgstr "切換"
 
-#: app/src/ui/switch_jmap.rs:125
+#: app/src/ui/switch_jmap.rs:164
 msgid "Switch to JMAP"
 msgstr "切換至 JMAP"
+
+#: app/src/ui/switch_jmap.rs:417 app/src/ui/switch_jmap.rs:432
+msgid "Finish signing in on {provider}'s page in your browser."
+msgstr "請在瀏覽器中的 {provider} 頁面完成登入。"
 
 #: app/src/ui/templates.rs:25
 msgid ""
@@ -11023,7 +11046,7 @@ msgstr "請指定此規則適用的郵件"
 msgid "Choose what the rule does"
 msgstr "請選擇規則執行的操作"
 
-#: sync/src/sign_in.rs:207
+#: sync/src/sign_in.rs:209
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} 已是 Penguin Mail 中的 {provider} 帳號。"
 

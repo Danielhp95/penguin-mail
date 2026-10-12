@@ -227,7 +227,9 @@ impl Rules {
                 self.shown.borrow_mut().push(row.upcast());
                 continue;
             }
-            if list.here.iter().any(|here| filter.id.as_ref() == Some(here)) {
+            // The demo's screenshot of a rule kept here (`MAILRS_DEMO_SWITCH`).
+            let shown_here = self.core.demo && std::env::var("MAILRS_DEMO_SWITCH").is_ok_and(|stage| stage == "rules-here");
+            if shown_here || list.here.iter().any(|here| filter.id.as_ref() == Some(here)) {
                 // Kept from before a switch to JMAP: the server runs a
                 // script of the person's own that it cannot include.
                 row.set_subtitle(&glib::markup_escape_text(&format!(

@@ -21,7 +21,7 @@ use mailrs_domain::translate::gettext;
 use mailrs_domain::{Account, AccountId, Provider};
 use mailrs_jmap::{Auth, Email, EmailQuery, JmapClient, JmapError, Mailbox};
 use mailrs_store::Db;
-use mailrs_store::jmap::{JmapAuth, JmapSaved};
+use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
 use mailrs_store::services::ServiceKind;
 use mailrs_store::switch::{Adoption, Moved, StoredMailbox, StoredMessage, adopt_jmap, stored_mailboxes, stored_messages};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 
 use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
+use crate::sign_in::JmapGrant;
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
 use crate::{AccountServices, AccountSync, AnyJmap, AnyRules, BackendError, SyncError};
@@ -524,6 +525,9 @@ pub enum SwitchError {
     /// Send Later.
     #[error("could not read a Send Later draft from the IMAP server: {0}")]
     Drafts(SyncError),
+    /// The session signs in to another account than this one.
+    #[error("the JMAP sign-in reached another account")]
+    OtherAccount,
     #[error(transparent)]
     Sync(#[from] SyncError),
 }
@@ -612,35 +616,90 @@ pub async fn move_rules(services: &mut AccountServices) -> bool {
     }
 }
 
-/// Signs in to the JMAP session with what the person typed, then switches.
-/// `imap` is the IMAP account's sync, which reads the drafts Send Later
-/// messages name; None when it is not running.
+/// How the switch signs in to the JMAP session.
+pub enum SwitchSignIn {
+    /// A password or a token the person typed.
+    Typed(SwitchTo),
+    /// A sign-in on the server's own page in the browser.
+    Browser { session_url: String, grant: JmapGrant },
+}
+
+/// What one way of signing in becomes: the sign-in the checks send, and
+/// what the account keeps.
+pub struct Signed {
+    pub session_url: String,
+    pub auth: Auth,
+    pub kind: JmapAuth,
+    pub user_name: Option<String>,
+    pub oauth: Option<SavedOAuth>,
+    /// What the keyring keeps: the password, the token or the refresh
+    /// token.
+    pub secret: String,
+}
+
+/// What `how` signs in with. A browser grant's checks send its access
+/// token as it came: a session that refreshes here would rotate the
+/// refresh token before the keyring holds it.
+pub fn signed_with(how: SwitchSignIn, address: &str) -> Signed {
+    match how {
+        SwitchSignIn::Typed(to) => Signed {
+            auth: match to.token {
+                true => Auth::Bearer(to.secret.clone()),
+                false => Auth::Basic { user: to.user.clone(), password: to.secret.clone() },
+            },
+            kind: if to.token { JmapAuth::Bearer } else { JmapAuth::Basic },
+            user_name: (!to.token && !to.user.eq_ignore_ascii_case(address)).then_some(to.user),
+            oauth: None,
+            session_url: to.session_url,
+            secret: to.secret,
+        },
+        SwitchSignIn::Browser { session_url, grant } => Signed {
+            session_url,
+            auth: Auth::Bearer(grant.access_token),
+            kind: JmapAuth::OAuth,
+            user_name: None,
+            oauth: Some(grant.client),
+            secret: grant.refresh_token,
+        },
+    }
+}
+
+/// Signs in to the JMAP session, then switches. `imap` is the IMAP
+/// account's sync, which reads the drafts Send Later messages name; None
+/// when it is not running.
 pub async fn to_jmap(
     db: &Db,
     secrets: &Secrets,
     account: &Account,
     imap: Option<&AccountSync>,
-    to: SwitchTo,
+    how: SwitchSignIn,
 ) -> Result<Switched, SwitchError> {
     if account.provider != Provider::Imap {
         return Err(SwitchError::NotImap);
     }
-    let auth = match to.token {
-        true => Auth::Bearer(to.secret.clone()),
-        false => Auth::Basic { user: to.user.clone(), password: to.secret.clone() },
-    };
-    let client = JmapClient::new(&to.session_url, auth).map_err(SwitchError::SignIn)?;
+    let signed = signed_with(how, &account.email);
+    let client = JmapClient::new(&signed.session_url, signed.auth).map_err(SwitchError::SignIn)?;
     let checked = mailrs_jmap::check(&client).await.map_err(SwitchError::SignIn)?;
     let session = &checked.session;
     let saved = JmapSaved {
-        session_url: to.session_url,
-        auth: if to.token { JmapAuth::Bearer } else { JmapAuth::Basic },
-        user_name: (!to.token && !to.user.eq_ignore_ascii_case(&account.email)).then_some(to.user),
+        session_url: signed.session_url,
+        auth: signed.kind,
+        user_name: signed.user_name,
         labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
-        oauth: None,
+        oauth: signed.oauth,
     };
-    to_jmap_over(db, secrets, account, imap, &AnyJmap::from(client), saved, to.secret).await
+    to_jmap_over(db, secrets, account, imap, &AnyJmap::from(client), saved, signed.secret).await
+}
+
+/// Whether the session signs in to the account at `address`: its user name
+/// is the address, or one of its identities sends from it.
+async fn same_account<J: JmapApi>(api: &J, session: &mailrs_jmap::Session, address: &str) -> Result<bool, SwitchError> {
+    if session.username.eq_ignore_ascii_case(address) {
+        return Ok(true);
+    }
+    let identities = api.identities().await.map_err(backend)?;
+    Ok(identities.iter().any(|identity| identity.email.eq_ignore_ascii_case(address)))
 }
 
 /// The switch over `api`, already signed in. The JMAP secret goes into the
@@ -679,6 +738,12 @@ pub async fn to_jmap_over<J: JmapApi>(
     let session = api.session().await.map_err(SwitchError::SignIn)?;
     if !session.offers(mailrs_jmap::MAIL) {
         return Err(SwitchError::SignIn(JmapError::UnknownCapability(mailrs_jmap::MAIL.to_string())));
+    }
+    // A browser already signed in to a second account at the provider
+    // hands back that account. Matched against its mail, most of this
+    // account's mail would go.
+    if !same_account(api, &session, &account.email).await? {
+        return Err(SwitchError::OtherAccount);
     }
     let listed = api.mailboxes().await.map_err(backend)?.list;
     let (stored, boxes, drafts) =

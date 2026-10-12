@@ -1302,7 +1302,7 @@ impl Core {
     /// stops while the switch runs; afterwards the account starts again on
     /// whatever the store names, JMAP or still IMAP, whether or not the
     /// switch went through.
-    pub async fn switch_to_jmap(&self, account: Account, to: mailrs_sync::switch::SwitchTo) -> Result<mailrs_sync::switch::Switched> {
+    pub async fn switch_to_jmap(&self, account: Account, how: mailrs_sync::switch::SwitchSignIn) -> Result<mailrs_sync::switch::Switched> {
         let engine = self.engine.current().ok_or_else(|| anyhow!("sync is not running"))?;
         let (db, secrets, outbox, demo) = (self.db.clone(), self.secrets.clone(), Arc::clone(&self.outbox), self.demo);
         let reach = Reach { connector: self.connector(), demo: self.demo_mail.clone() };
@@ -1318,7 +1318,7 @@ impl Core {
                 engine.stop_account(id);
                 let switched = match demo {
                     true => Err(anyhow!(gettext("The demo cannot switch accounts."))),
-                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, imap.as_deref(), to)
+                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, imap.as_deref(), how)
                         .await
                         .map_err(anyhow::Error::from),
                 };
@@ -1340,6 +1340,34 @@ impl Core {
         // replaced.
         self.actions.forget_account(id);
         Ok(switched)
+    }
+}
+
+impl Core {
+    /// Signs in on the JMAP server's own page in the browser for Switch to
+    /// JMAP, and hands back the grant; nothing is kept until the switch
+    /// runs. The account goes on syncing over IMAP while the browser is
+    /// open. `urls` and `cancel` work as for [`Core::sign_in_jmap_browser`].
+    pub async fn switch_grant(
+        &self,
+        offer: JmapBrowser,
+        address: String,
+        urls: async_channel::Sender<String>,
+        cancel: async_channel::Receiver<()>,
+    ) -> Result<mailrs_sync::sign_in::JmapGrant> {
+        if self.demo {
+            bail!(gettext("The demo cannot switch accounts."));
+        }
+        self.call(async move {
+            let open = move |url: &str| {
+                let _ = urls.try_send(url.to_string());
+            };
+            let canceled = async move {
+                let _ = cancel.recv().await;
+            };
+            Ok::<_, anyhow::Error>(mailrs_sync::sign_in::jmap_grant(offer, &address, open, canceled).await?)
+        })
+        .await
     }
 }
 
@@ -1793,7 +1821,7 @@ mod tests {
             secret: "not a token".into(),
         };
 
-        let switched = futures::executor::block_on(core.switch_to_jmap(fastmail.clone(), to));
+        let switched = futures::executor::block_on(core.switch_to_jmap(fastmail.clone(), mailrs_sync::switch::SwitchSignIn::Typed(to)));
 
         assert!(switched.is_err(), "the demo switches nothing");
         let after = core.engine.current().and_then(|e| e.account(fastmail.id).ok()).expect("it runs again");

@@ -4,10 +4,12 @@
 
 mod browser;
 mod jmap_browser;
+mod jmap_grant;
 pub mod own_client;
 
 pub use browser::{Browser, BrowserSignInError, SignedIn, Wanted, google_sign_in, in_browser};
 pub use jmap_browser::{BROWSER_WAIT, BrowserReady, JmapBrowser, browser_ready, jmap_in_browser};
+pub use jmap_grant::{JmapGrant, jmap_grant};
 
 use std::sync::Arc;
 

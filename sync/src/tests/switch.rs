@@ -769,3 +769,47 @@ async fn an_offline_calendar_change_reaches_the_jmap_calendar_after_a_switch() {
     assert_eq!(title.as_deref(), Some("Allotment rota, moved"), "the change went to the JMAP event with its UID");
     assert!(h.db.read(move |c| mailrs_store::calendar::queued(c, id)).await.unwrap().is_empty());
 }
+
+/// A browser already signed in to a second account at the same provider
+/// hands back that account's grant. Matching this account's mail against
+/// another mailbox would drop most of it, so the switch stops first.
+#[tokio::test]
+async fn a_session_for_another_account_leaves_the_imap_account_as_it_was() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    fake.with(|s| {
+        s.session.username = "someone@example.com".into();
+        s.identities[0].email = "someone@example.com".into();
+    });
+    let account = account(&h).await;
+    let refused = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "r1".into()).await;
+    assert!(matches!(refused, Err(SwitchError::OtherAccount)), "{refused:?}");
+    assert_eq!(self::account(&h).await.provider, Provider::Imap);
+    assert_eq!(secrets.jmap.load(h.account_id).unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_session_that_names_the_address_as_an_identity_is_the_same_account() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    fake.with(|s| s.session.username = "u-123".into());
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "r1".into()).await.unwrap();
+}
+
+#[test]
+fn a_browser_grant_keeps_the_account_signed_in_through_its_refresh_token() {
+    use crate::sign_in::JmapGrant;
+    use crate::switch::{SwitchSignIn, signed_with};
+
+    let grant = JmapGrant {
+        client: mailrs_store::jmap::SavedOAuth { client_id: "client-1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() },
+        access_token: "a1".into(),
+        refresh_token: "r1".into(),
+    };
+    let how = SwitchSignIn::Browser { session_url: "https://api.fastmail.com/jmap/session".into(), grant };
+    let signed = signed_with(how, "me@fastmail.com");
+    assert!(matches!(&signed.auth, mailrs_jmap::Auth::Bearer(token) if token == "a1"), "the checks use the access token as it came");
+    assert_eq!(signed.kind, JmapAuth::OAuth);
+    assert_eq!(signed.oauth.as_ref().map(|c| c.client_id.as_str()), Some("client-1"));
+    assert_eq!((signed.user_name, signed.secret.as_str()), (None, "r1"));
+}
+

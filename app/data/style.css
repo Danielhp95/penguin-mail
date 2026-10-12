@@ -1889,3 +1889,8 @@ row.switch-entry > box.header { min-height: 58px; }
 .switch-toast { font-weight: 400; }
 .switch-toasts toast { border-radius: 18px; }
 .switch-progress spinner { color: var(--accent-color); }
+/* Sign In With Browser, as the add-account dialog draws it: a full-width
+   pill 44 px high in bold, its line in the dialog's small dim type. */
+button.switch-browser { min-height: 44px; padding: 0 16px; font-weight: 700; }
+.switch-browser-line { font-size: 0.89em; }
+.switch-waiting button { min-height: 34px; padding: 0 18px; }
