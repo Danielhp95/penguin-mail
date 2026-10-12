@@ -101,8 +101,11 @@ pub fn present(
     offers: impl Fn(AccountId) -> Offers,
     grant: impl Fn(String) + 'static,
 ) {
+    // Each page of the stack is as tall as it needs, so the dialog fits
+    // the list rather than the tallest page.
     let stack = gtk::Stack::builder()
         .transition_type(gtk::StackTransitionType::Crossfade)
+        .vhomogeneous(false)
         .build();
     let accounts = with_rules(app.accounts(), &offers);
     let masked: Vec<Account> = accounts
@@ -113,9 +116,7 @@ pub fn present(
     let list = adw::PreferencesGroup::builder()
         .description(if masked.is_empty() { about() } else { about_masked() })
         .build();
-    let page = adw::PreferencesPage::new();
-    page.add(&list);
-    stack.add_named(&page, Some("list"));
+    stack.add_named(&fitted(&list), Some("list"));
     let add = gtk::Button::builder()
         .icon_name("list-add-symbolic")
         .tooltip_text(gettext("Create Address"))
@@ -136,10 +137,10 @@ pub fn present(
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&nav));
     let dialog = adw::Dialog::builder()
-        .content_width(560)
-        .content_height(640)
+        .content_width(CONTENT_WIDTH)
         .child(&toasts)
         .build();
+
     let this = Rc::new(Dialog {
         app: Rc::clone(app),
         accounts,
@@ -156,6 +157,12 @@ pub fn present(
         dialog: dialog.clone(),
     });
     let weak = Rc::downgrade(&this);
+    this.nav.connect_visible_page_notify(move |_| {
+        if let Some(this) = weak.upgrade() {
+            this.fit();
+        }
+    });
+    let weak = Rc::downgrade(&this);
     add.connect_clicked(move |_| {
         if let Some(this) = weak.upgrade() {
             this.show_form();
@@ -166,8 +173,8 @@ pub fn present(
     dialog.connect_closed(move |_| {
         keep.borrow_mut().take();
     });
-    dialog.present(Some(parent));
     this.reload();
+    dialog.present(Some(parent));
     if this.app.hidden_addresses().is_empty() && this.masked.is_empty() {
         this.show_form();
     }
@@ -180,7 +187,7 @@ fn created_on(ts: mailrs_domain::EpochMillis) -> String {
                 &gettext("Created {date}"),
                 &[(
                     "date",
-                    &crate::format::short_date(
+                    &crate::format::day_month(
                         when.date_naive(),
                         chrono::Local::now().date_naive(),
                     ),
@@ -190,6 +197,31 @@ fn created_on(ts: mailrs_domain::EpochMillis) -> String {
             .replace(' ', "\u{a0}")
         })
         .unwrap_or_default()
+}
+
+/// The dialog's width, and its height while a page other than the list
+/// shows.
+const CONTENT_WIDTH: i32 = 560;
+const FULL_HEIGHT: i32 = 640;
+
+/// `group` in a page as tall as its content, which scrolls once the
+/// dialog reaches the window's height. A preferences page always takes
+/// the height it is given, so the list would end above an empty area.
+fn fitted(group: &adw::PreferencesGroup) -> gtk::ScrolledWindow {
+    let column = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .margin_top(24)
+        .margin_bottom(24)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    column.append(group);
+    let clamp = adw::Clamp::builder().child(&column).build();
+    gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .propagate_natural_height(true)
+        .child(&clamp)
+        .build()
 }
 
 fn copy(widget: &impl IsA<gtk::Widget>, text: &str) {
@@ -217,6 +249,19 @@ impl Dialog {
     /// `said` is the whole sentence, with `{reason}` where the error goes.
     fn failed(&self, said: &str, err: &anyhow::Error) {
         self.toast(&with_reason(said, err, &[]));
+    }
+
+    /// Sizes the dialog: the list as tall as its rows, which the dialog
+    /// keeps within the window and scrolls past that, and the pages pushed
+    /// over it at the full height. The dialog measures its content once
+    /// when it opens, so each change of the list asks again.
+    fn fit(&self) {
+        let on_list = self.nav.visible_page().is_some_and(|page| page == self.home);
+        let height = match self.dialog.child() {
+            Some(content) if on_list => content.measure(gtk::Orientation::Vertical, CONTENT_WIDTH).1,
+            _ => FULL_HEIGHT,
+        };
+        self.dialog.set_content_height(height);
     }
 
     /// Adds `row` to the list until the next reload.
@@ -251,6 +296,7 @@ impl Dialog {
             if addresses.is_empty() {
                 self.show_empty();
             }
+            self.fit();
             return;
         }
         let loading = adw::ActionRow::builder()
@@ -263,6 +309,7 @@ impl Dialog {
                 .build(),
         );
         self.show(&loading);
+        self.fit();
         let (this, listed) = (Rc::clone(self), addresses.len());
         glib::spawn_future_local(async move {
             let mut read = Vec::with_capacity(this.masked.len());
@@ -294,6 +341,7 @@ impl Dialog {
             if rows == 0 {
                 this.show_empty();
             }
+            this.fit();
         });
     }
 
@@ -569,6 +617,7 @@ impl Dialog {
         }
         self.stack.add_named(&page, Some("access"));
         self.stack.set_visible_child_name("access");
+        self.fit();
     }
 
     /// The Create Address page.

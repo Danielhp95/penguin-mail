@@ -1929,15 +1929,15 @@ msgstr ""
 msgid "%H:%M"
 msgstr ""
 
-#: app/src/format.rs:36 app/src/format.rs:213
+#: app/src/format.rs:36 app/src/format.rs:224
 msgid "Yesterday"
 msgstr ""
 
-#: app/src/format.rs:38 app/src/format.rs:214
+#: app/src/format.rs:38 app/src/format.rs:225
 msgid "%A"
 msgstr ""
 
-#: app/src/format.rs:39
+#: app/src/format.rs:39 app/src/format.rs:81
 msgid "%-d %b"
 msgstr ""
 
@@ -1957,15 +1957,15 @@ msgstr ""
 msgid "Tomorrow at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:58 app/src/format.rs:111
+#: app/src/format.rs:58 app/src/format.rs:122
 msgid "%a %-d %b at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:59 app/src/format.rs:112
+#: app/src/format.rs:59 app/src/format.rs:123
 msgid "%-d %b %Y at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:60
+#: app/src/format.rs:60 app/src/format.rs:82
 msgid "%-d %b %Y"
 msgstr ""
 
@@ -1977,103 +1977,103 @@ msgstr ""
 msgid "%a, %-d %b %Y"
 msgstr ""
 
-#: app/src/format.rs:79 app/src/format.rs:216
+#: app/src/format.rs:90 app/src/format.rs:227
 msgid "%A, %-d %B %Y"
 msgstr ""
 
-#: app/src/format.rs:87
+#: app/src/format.rs:98
 msgid "{date} at {time}"
 msgstr ""
 
-#: app/src/format.rs:108
+#: app/src/format.rs:119
 msgid "today at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:109
+#: app/src/format.rs:120
 msgid "tomorrow at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:110
+#: app/src/format.rs:121
 msgid "%A at %H:%M"
 msgstr ""
 
-#: app/src/format.rs:122
+#: app/src/format.rs:133
 msgid "Send {when}"
 msgstr ""
 
-#: app/src/format.rs:129
+#: app/src/format.rs:140
 msgid "In 1 Hour"
 msgstr ""
 
-#: app/src/format.rs:149
+#: app/src/format.rs:160
 msgid "Tonight at 21:00"
 msgstr ""
 
-#: app/src/format.rs:153
+#: app/src/format.rs:164
 msgid "Tomorrow at 08:00"
 msgstr ""
 
-#: app/src/format.rs:160
+#: app/src/format.rs:171
 msgid "Monday at 08:00"
 msgstr ""
 
-#: app/src/format.rs:174
+#: app/src/format.rs:185
 msgid "{date} · All day"
 msgstr ""
 
-#: app/src/format.rs:185
+#: app/src/format.rs:196
 msgid "{date} · {start}"
 msgstr ""
 
-#: app/src/format.rs:192
+#: app/src/format.rs:203
 msgid "{date} {time}"
 msgstr ""
 
-#: app/src/format.rs:200
+#: app/src/format.rs:211
 msgid "{date} · {start}–{end}"
 msgstr ""
 
-#: app/src/format.rs:215
+#: app/src/format.rs:226
 msgid "%A, %-d %B"
 msgstr ""
 
-#: app/src/format.rs:232
+#: app/src/format.rs:243
 msgid "{day} {time}"
 msgstr ""
 
-#: app/src/format.rs:300
+#: app/src/format.rs:311
 msgid "Blue"
 msgstr ""
 
-#: app/src/format.rs:301
+#: app/src/format.rs:312
 msgid "Teal"
 msgstr ""
 
-#: app/src/format.rs:302
+#: app/src/format.rs:313
 msgid "Green"
 msgstr ""
 
-#: app/src/format.rs:303
+#: app/src/format.rs:314
 msgid "Yellow"
 msgstr ""
 
-#: app/src/format.rs:304
+#: app/src/format.rs:315
 msgid "Orange"
 msgstr ""
 
-#: app/src/format.rs:305
+#: app/src/format.rs:316
 msgid "Red"
 msgstr ""
 
-#: app/src/format.rs:306
+#: app/src/format.rs:317
 msgid "Pink"
 msgstr ""
 
-#: app/src/format.rs:307
+#: app/src/format.rs:318
 msgid "Purple"
 msgstr ""
 
-#: app/src/format.rs:308
+#: app/src/format.rs:319
 msgid "Slate"
 msgstr ""
 
@@ -2127,8 +2127,8 @@ msgstr ""
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:504
-#: app/src/ui/hide_my_email.rs:530 app/src/ui/queued.rs:58
+#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:552
+#: app/src/ui/hide_my_email.rs:578 app/src/ui/queued.rs:58
 #: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:106
 #: app/src/ui/window/organize.rs:204
 msgid "Delete"
@@ -3709,7 +3709,7 @@ msgstr ""
 msgid "What's New"
 msgstr ""
 
-#: app/src/ui/about.rs:178 app/src/ui/hide_my_email.rs:593
+#: app/src/ui/about.rs:178 app/src/ui/hide_my_email.rs:642
 msgid "Website"
 msgstr ""
 
@@ -3856,7 +3856,7 @@ msgid "Copy Link"
 msgstr ""
 
 #: app/src/ui/add_account.rs:802 app/src/ui/add_account.rs:950
-#: app/src/ui/hide_my_email.rs:318 app/src/ui/hide_my_email.rs:322
+#: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
 #: app/src/ui/key_import.rs:213
 msgid "Try Again"
 msgstr ""
@@ -4247,7 +4247,7 @@ msgid "Running"
 msgstr ""
 
 #: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
-#: app/src/ui/hide_my_email.rs:767
+#: app/src/ui/hide_my_email.rs:816
 msgid "Done"
 msgstr ""
 
@@ -5446,7 +5446,7 @@ msgstr ""
 msgid "New Calendar"
 msgstr ""
 
-#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:626
+#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:675
 #: app/src/ui/rules.rs:439 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
@@ -6903,158 +6903,158 @@ msgstr ""
 msgid "Waiting for its first message"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:121 app/src/ui/hide_my_email.rs:123
-#: app/src/ui/hide_my_email.rs:636
+#: app/src/ui/hide_my_email.rs:122 app/src/ui/hide_my_email.rs:124
+#: app/src/ui/hide_my_email.rs:685
 msgid "Create Address"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:130
+#: app/src/ui/hide_my_email.rs:131
 msgid "Hide My Email"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:180
+#: app/src/ui/hide_my_email.rs:187
 msgid "Created {date}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:230
+#: app/src/ui/hide_my_email.rs:275
 msgid "No addresses yet"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:231
+#: app/src/ui/hide_my_email.rs:276
 msgid "Create one with the + button."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:257
+#: app/src/ui/hide_my_email.rs:303
 msgid "Loading masked addresses…"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:305
+#: app/src/ui/hide_my_email.rs:353
 msgid "Could not read the masked addresses: {reason}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:340
+#: app/src/ui/hide_my_email.rs:388
 msgid "Off: mail goes to the Trash"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:351 app/src/ui/hide_my_email.rs:435
+#: app/src/ui/hide_my_email.rs:399 app/src/ui/hide_my_email.rs:483
 #: app/src/ui/window/message_menu.rs:137
 msgid "Copy Address"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:352 app/src/ui/hide_my_email.rs:436
+#: app/src/ui/hide_my_email.rs:400 app/src/ui/hide_my_email.rs:484
 msgid "Copy {address}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:359 app/src/ui/hide_my_email.rs:443
-#: app/src/ui/hide_my_email.rs:754
+#: app/src/ui/hide_my_email.rs:407 app/src/ui/hide_my_email.rs:491
+#: app/src/ui/hide_my_email.rs:803
 msgid "Address copied"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:367 app/src/ui/hide_my_email.rs:451
+#: app/src/ui/hide_my_email.rs:415 app/src/ui/hide_my_email.rs:499
 msgid "Receive Mail"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:372 app/src/ui/hide_my_email.rs:456
+#: app/src/ui/hide_my_email.rs:420 app/src/ui/hide_my_email.rs:504
 msgid "Receive mail at {address}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:387 app/src/ui/hide_my_email.rs:471
+#: app/src/ui/hide_my_email.rs:435 app/src/ui/hide_my_email.rs:519
 msgid "Mail to this address reaches you again"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:390
+#: app/src/ui/hide_my_email.rs:438
 msgid "Mail to this address now goes to the Trash"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:394 app/src/ui/hide_my_email.rs:473
+#: app/src/ui/hide_my_email.rs:442 app/src/ui/hide_my_email.rs:521
 msgid "Could not change the address: {reason}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:405 app/src/ui/hide_my_email.rs:483
+#: app/src/ui/hide_my_email.rs:453 app/src/ui/hide_my_email.rs:531
 msgid "Delete Address"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:407 app/src/ui/hide_my_email.rs:484
+#: app/src/ui/hide_my_email.rs:455 app/src/ui/hide_my_email.rs:532
 msgid "Delete {address}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:472
+#: app/src/ui/hide_my_email.rs:520
 msgid "Mail to this address is now dropped"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:499 app/src/ui/hide_my_email.rs:522
+#: app/src/ui/hide_my_email.rs:547 app/src/ui/hide_my_email.rs:570
 msgid "Delete Address?"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:501
+#: app/src/ui/hide_my_email.rs:549
 msgid "{address} stops working, and mail sent to it is dropped."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:513 app/src/ui/hide_my_email.rs:539
+#: app/src/ui/hide_my_email.rs:561 app/src/ui/hide_my_email.rs:587
 msgid "Address deleted"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:514 app/src/ui/hide_my_email.rs:541
+#: app/src/ui/hide_my_email.rs:562 app/src/ui/hide_my_email.rs:589
 msgid "Could not delete the address: {reason}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:525
+#: app/src/ui/hide_my_email.rs:573
 msgid ""
 "Mail sent to {address} arrives in your inbox again, without the Hide My "
 "Email label. To stop that mail, turn the address off instead."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:556
+#: app/src/ui/hide_my_email.rs:604
 msgid "Allow Hide My Email"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:577 app/src/ui/window.rs:3288
+#: app/src/ui/hide_my_email.rs:626 app/src/ui/window.rs:3288
 msgid "Add an account first"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:582
+#: app/src/ui/hide_my_email.rs:631
 msgid "Account"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:595
+#: app/src/ui/hide_my_email.rs:644
 msgid "Where Did You Use It?"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:609
+#: app/src/ui/hide_my_email.rs:658
 msgid ""
 "Your provider makes a new address that delivers to you. Give it to one site "
 "only."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:614
+#: app/src/ui/hide_my_email.rs:663
 msgid ""
 "You get a new address that ends in your own, such as "
 "name+kite.fern482@gmail.com. Give it to one site only."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:669
+#: app/src/ui/hide_my_email.rs:718
 msgid "It is on your clipboard. Mail sent to it arrives in your inbox."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:674 app/src/ui/hide_my_email.rs:698
+#: app/src/ui/hide_my_email.rs:723 app/src/ui/hide_my_email.rs:747
 msgid "Could not create the address: {reason}"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:687
+#: app/src/ui/hide_my_email.rs:736
 msgid ""
 "It is on your clipboard. Mail sent to it gets the Hide My Email label in "
 "Gmail."
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:732
+#: app/src/ui/hide_my_email.rs:781
 msgid "Your New Address"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:746
+#: app/src/ui/hide_my_email.rs:795
 msgid "Copy"
 msgstr ""
 
-#: app/src/ui/hide_my_email.rs:782
+#: app/src/ui/hide_my_email.rs:831
 msgid "Address Created"
 msgstr ""
 
