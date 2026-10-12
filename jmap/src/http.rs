@@ -464,7 +464,11 @@ mod tests {
 
     use super::*;
 
-    async fn client_with_concurrency(most: u64) -> JmapClient {
+    /// A client whose session allows `most` requests at once, with the
+    /// server that answers it. The caller keeps the server: once dropped,
+    /// its port can go to another test's server, which answers the session
+    /// read with a 404.
+    async fn client_with_concurrency(most: u64) -> (MockServer, JmapClient) {
         let server = MockServer::start().await;
         let base = server.uri();
         let session = json!({
@@ -477,7 +481,7 @@ mod tests {
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_json(session)).mount(&server).await;
         let client = JmapClient::new(&format!("{base}/jmap/session"), Auth::Bearer("t".into())).unwrap();
         client.session().await.unwrap();
-        client
+        (server, client)
     }
 
     #[test]
@@ -489,17 +493,17 @@ mod tests {
 
     #[tokio::test]
     async fn the_permits_shrink_to_the_sessions_limit() {
-        assert_eq!(client_with_concurrency(2).await.inner.permits.available_permits(), 2);
+        assert_eq!(client_with_concurrency(2).await.1.inner.permits.available_permits(), 2);
     }
 
     #[tokio::test]
     async fn a_server_allowing_one_request_leaves_one_permit() {
-        assert_eq!(client_with_concurrency(1).await.inner.permits.available_permits(), 1);
+        assert_eq!(client_with_concurrency(1).await.1.inner.permits.available_permits(), 1);
     }
 
     #[tokio::test]
     async fn the_session_read_waits_for_a_free_permit() {
-        let client = client_with_concurrency(50).await;
+        let (_server, client) = client_with_concurrency(50).await;
         let held: Vec<_> = every_permit(&client).await;
         let waited = tokio::time::timeout(Duration::from_millis(100), client.refresh_session()).await;
         assert!(waited.is_err(), "the session read went out with every permit taken");
@@ -535,6 +539,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_server_allowing_more_still_gets_the_clients_own_most() {
-        assert_eq!(client_with_concurrency(50).await.inner.permits.available_permits(), MOST_AT_ONCE);
+        assert_eq!(client_with_concurrency(50).await.1.inner.permits.available_permits(), MOST_AT_ONCE);
     }
 }

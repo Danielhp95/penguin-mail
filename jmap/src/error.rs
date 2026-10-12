@@ -61,6 +61,29 @@ pub enum JmapError {
     /// never the path. A retry would hit the same full disk.
     #[error("local file: {0}")]
     LocalFile(String),
+    /// The server refuses the sign-in for now and may take it later, as
+    /// Fastmail's `invalid_grant` with `temporary: true` says.
+    #[error("the server holds the sign-in for now")]
+    SignInLocked,
+    /// The person, or the server's administrator, said no on the consent
+    /// page.
+    #[error("the sign-in was declined")]
+    Declined,
+    /// A sign-in server, or an address its metadata names, is not on
+    /// https, or is not an address at all.
+    #[error("the sign-in server must be reached over https")]
+    NotHttps,
+    /// The server's OAuth metadata names an issuer other than the one it
+    /// was fetched for (RFC 8414 section 3.3).
+    #[error("the sign-in server's metadata names another issuer")]
+    IssuerMismatch,
+    /// A redirect address other than the app's own loopback on 127.0.0.1.
+    #[error("the sign-in must hand back to the app on 127.0.0.1")]
+    BadRedirect,
+    /// The token endpoint handed out a token of a type other than Bearer
+    /// (RFC 6750), which the client cannot present.
+    #[error("the sign-in server handed out a token that is not a Bearer token")]
+    NotBearer,
 }
 
 /// A decode failure for `what`, keeping the error's category and position
@@ -72,7 +95,7 @@ pub(crate) fn decode(what: &str, err: &serde_json::Error) -> JmapError {
 
 impl JmapError {
     pub fn is_transient(&self) -> bool {
-        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. })
+        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. } | JmapError::SignInLocked)
     }
 }
 

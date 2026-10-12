@@ -12,6 +12,7 @@ mod check;
 pub mod contacts;
 pub mod masked;
 pub mod mdn;
+pub mod oauth;
 pub mod quota;
 pub mod sieve;
 pub mod vacation;
