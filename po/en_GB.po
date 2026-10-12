@@ -10728,11 +10728,11 @@ msgstr "Say which mail the rule is for"
 msgid "Choose what the rule does"
 msgstr "Choose what the rule does"
 
-#: sync/src/sign_in.rs:210
+#: sync/src/sign_in.rs:258
 msgid "You signed in to a different account than {address}, so nothing changed."
 msgstr "You signed in to a different account than {address}, so nothing changed."
 
-#: sync/src/sign_in.rs:217
+#: sync/src/sign_in.rs:265
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} is already in Penguin Mail as a {provider} account."
 

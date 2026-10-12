@@ -11069,7 +11069,9 @@ msgstr "A un drapeau"
 
 #: sync/src/account/outbox.rs:93
 msgid "The message was sent, but Penguin Mail could not keep a copy in Sent."
-msgstr "Le message est parti, mais Penguin Mail n’a pas pu en garder une copie dans les Envoyés."
+msgstr ""
+"Le message est parti, mais Penguin Mail n’a pas pu en garder une copie dans "
+"les Envoyés."
 
 #: sync/src/account/outbox.rs:163
 msgid ""
@@ -11785,14 +11787,14 @@ msgstr "Indiquez à quel courrier la règle s’applique"
 msgid "Choose what the rule does"
 msgstr "Choisissez ce que fait la règle"
 
-#: sync/src/sign_in.rs:210
+#: sync/src/sign_in.rs:258
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
 msgstr ""
 "Vous vous êtes connecté à un autre compte que {address}, donc rien n’a "
 "changé."
 
-#: sync/src/sign_in.rs:217
+#: sync/src/sign_in.rs:265
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} est déjà dans Penguin Mail en tant que compte {provider}."
 

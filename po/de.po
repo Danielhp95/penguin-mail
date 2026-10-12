@@ -11111,7 +11111,9 @@ msgstr "Ist markiert"
 
 #: sync/src/account/outbox.rs:93
 msgid "The message was sent, but Penguin Mail could not keep a copy in Sent."
-msgstr "Die Nachricht wurde gesendet, aber Penguin Mail konnte keine Kopie in „Gesendet“ ablegen."
+msgstr ""
+"Die Nachricht wurde gesendet, aber Penguin Mail konnte keine Kopie in "
+"„Gesendet“ ablegen."
 
 #: sync/src/account/outbox.rs:163
 msgid ""
@@ -11831,14 +11833,14 @@ msgstr "Geben Sie an, für welche E-Mails die Regel gilt"
 msgid "Choose what the rule does"
 msgstr "Wählen Sie, was die Regel tut"
 
-#: sync/src/sign_in.rs:210
+#: sync/src/sign_in.rs:258
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
 msgstr ""
 "Sie haben sich bei einem anderen Konto als {address} angemeldet, daher wurde "
 "nichts geändert."
 
-#: sync/src/sign_in.rs:217
+#: sync/src/sign_in.rs:265
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} ist bereits als {provider}-Konto in Penguin Mail vorhanden."
 

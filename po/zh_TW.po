@@ -11166,12 +11166,12 @@ msgstr "請指定此規則適用的郵件"
 msgid "Choose what the rule does"
 msgstr "請選擇規則執行的操作"
 
-#: sync/src/sign_in.rs:210
+#: sync/src/sign_in.rs:258
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
 msgstr "您登入的帳號不是 {address}，因此未做任何變更。"
 
-#: sync/src/sign_in.rs:217
+#: sync/src/sign_in.rs:265
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} 已是 Penguin Mail 中的 {provider} 帳號。"
 
