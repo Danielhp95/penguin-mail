@@ -611,6 +611,11 @@ toolbarview.sidebar-card.undershoot-bottom > .bottom-bar { box-shadow: none; bor
 .list-header-title .subtitle { font-size: 0.85em; font-weight: 500; opacity: 0.75; }
 .app-dark .list-header-title .subtitle { opacity: 0.64; }
 
+/* "No Conversation Selected": smaller and dimmer than an open
+   conversation's subject, so the empty pane recedes. 0.7 keeps the bold
+   title above 4.5:1 in light. */
+.nothing-open .title { opacity: 0.7; }
+
 /* Follow Up: the banner above All Inboxes. */
 .follow-up-banner {
   padding: 6px 6px 6px 14px;
