@@ -37,6 +37,28 @@ async fn calendars_list_with_the_default_first() {
 }
 
 #[tokio::test]
+async fn a_calendar_s_default_alerts_become_its_reminders() {
+    use mailrs_domain::calendar::{Reminder, ReminderMethod};
+    let h = calendared().await;
+    h.fake.with(|s| {
+        let alert = |offset: &str, action: &str| json!({"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": offset}, "action": action});
+        s.calendars[0].default_alerts_with_time = serde_json::from_value(json!({"k1": alert("-PT10M", "display")})).ok();
+        s.calendars[0].default_alerts_without_time = serde_json::from_value(json!({"k2": alert("-PT9H", "email"), "k3": alert("PT9H", "display")})).ok();
+    });
+    let listed = calendar(&h).calendars().await.unwrap();
+    assert_eq!(listed[0].reminders, [Reminder { minutes: 10, method: ReminderMethod::Notification }]);
+    assert_eq!(listed[0].all_day_reminders, Some(vec![Reminder { minutes: 540, method: ReminderMethod::Email }]), "an alert after the start has no reminder");
+}
+
+#[tokio::test]
+async fn a_calendar_without_default_alerts_reminds_of_nothing() {
+    let h = calendared().await;
+    let listed = calendar(&h).calendars().await.unwrap();
+    assert!(listed[0].reminders.is_empty());
+    assert_eq!(listed[0].all_day_reminders, Some(Vec::new()));
+}
+
+#[tokio::test]
 async fn an_account_without_jmap_calendars_has_no_jmap_calendar() {
     let h = over(FakeJmap::new()).await;
     assert!(h.sync.services().calendar.is_none());
@@ -229,21 +251,31 @@ async fn an_etag_without_a_fingerprint_is_refused_once_the_event_changed() {
 }
 
 #[tokio::test]
-async fn a_write_whose_state_moved_meanwhile_is_tried_once_more() {
+async fn a_write_whose_state_moved_meanwhile_is_tried_twice_more() {
     let h = calendared().await;
     let id = h.fake.add_event(rota("cal-1"));
     let mut event = first_event(&h).await;
     let held = event.etag.clone();
     event.title = "Rota, retried".into();
-    h.fake.with(|s| s.state_mismatches = 1);
+    h.fake.with(|s| s.state_mismatches = 2);
     let mut saved = calendar(&h).put_event(&event, Some(&held), false, Notify::Nobody).await.unwrap();
     assert_eq!(h.fake.event(&id).unwrap()["title"], "Rota, retried");
     let held = saved.etag.clone();
     saved.title = "Rota, given up".into();
-    h.fake.with(|s| s.state_mismatches = 2);
+    h.fake.with(|s| s.state_mismatches = 3);
     let refused = calendar(&h).put_event(&saved, Some(&held), false, Notify::Nobody).await.unwrap_err();
-    assert!(matches!(refused, BackendError::Changed), "a second mismatch is not retried");
+    assert!(matches!(refused, BackendError::Changed), "a third mismatch is not retried");
     assert_eq!(h.fake.event(&id).unwrap()["title"], "Rota, retried");
+}
+
+#[tokio::test]
+async fn a_delete_whose_state_moved_twice_is_tried_again() {
+    let h = calendared().await;
+    let id = h.fake.add_event(rota("cal-1"));
+    let event = first_event(&h).await;
+    h.fake.with(|s| s.state_mismatches = 2);
+    calendar(&h).remove_event("cal-1", &event.id, Some(&event.etag), Notify::Nobody).await.unwrap();
+    assert!(h.fake.event(&id).is_none());
 }
 
 #[tokio::test]
@@ -668,4 +700,184 @@ async fn an_occurrence_moved_here_while_its_series_moved_elsewhere_keeps_the_ser
     let saved = calendar(&h).put_event(&one, None, false, Notify::Nobody).await.unwrap();
     assert_eq!((saved.start, saved.kept_theirs.as_slice()), (original + HOUR, ["the time".to_string()].as_slice()));
     assert!(h.fake.event(&id).unwrap().get("recurrenceOverrides").is_none(), "nothing to write, so no empty override");
+}
+
+/// A new event made on this computer, with a guest, as the editor queues
+/// it: a client-made id and no version yet.
+fn new_meeting() -> Event {
+    Event {
+        calendar: "cal-1".into(),
+        id: crate::calendar_copy::new_event_id(),
+        title: "Seed swap".into(),
+        start: 1_791_000_000_000,
+        end: 1_791_003_600_000,
+        zone: "Europe/Lisbon".into(),
+        busy: true,
+        organizer: Some("me@example.com".into()),
+        guests: vec![mailrs_domain::calendar::Guest { email: "ines@allotment.example".into(), ..Default::default() }],
+        ..Event::default()
+    }
+}
+
+/// The account's calendar copy, with the calendar list read.
+async fn copy_of(h: &Harness) -> crate::calendar_copy::CalendarCopy<crate::tests::Connected> {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let copy = crate::calendar_copy::CalendarCopy::new(Arc::new(crate::tests::Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone());
+    copy.refresh(h.account_id, 1_790_000_000_000).await.unwrap();
+    copy
+}
+
+#[tokio::test]
+async fn a_create_whose_answer_was_lost_makes_one_event_and_one_invitation() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    copy.apply(h.account_id, vec![mailrs_domain::calendar::series::Step::Save(new_meeting())]).await.unwrap();
+    h.fake.with(|s| s.lose_event_answer = true);
+    assert!(copy.send(h.account_id).await.is_err(), "a lost answer keeps the change queued");
+    copy.send(h.account_id).await.unwrap();
+    let (events, scheduled) = h.fake.with(|s| (s.events.len(), s.scheduled.len()));
+    assert_eq!((events, scheduled), (1, 1));
+    let account = h.account_id;
+    assert!(h.db.read(move |c| mailrs_store::calendar::queued(c, account)).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_create_whose_read_back_failed_makes_one_event_and_one_invitation() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    copy.apply(h.account_id, vec![mailrs_domain::calendar::series::Step::Save(new_meeting())]).await.unwrap();
+    h.fake.with(|s| s.failing_event_gets = 1);
+    assert!(copy.send(h.account_id).await.is_err(), "a failed read keeps the change queued");
+    copy.send(h.account_id).await.unwrap();
+    let (events, scheduled) = h.fake.with(|s| (s.events.len(), s.scheduled.len()));
+    assert_eq!((events, scheduled), (1, 1));
+}
+
+#[tokio::test]
+async fn a_new_event_carries_its_uid_in_the_copy_and_the_queue() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    let new = new_meeting();
+    let (account, id) = (h.account_id, new.id.clone());
+    copy.apply(account, vec![mailrs_domain::calendar::series::Step::Save(new)]).await.unwrap();
+    let key = id.clone();
+    let stored = h.db.read(move |c| mailrs_store::calendar::event(c, account, "cal-1", &key)).await.unwrap().unwrap();
+    let queued = h.db.read(move |c| mailrs_store::calendar::queued(c, account)).await.unwrap();
+    assert_eq!(stored.uid, format!("{id}@penguin-mail"));
+    assert_eq!(queued[0].body.as_ref().map(|b| b.uid.as_str()), Some(stored.uid.as_str()));
+}
+
+#[tokio::test]
+async fn a_create_queued_without_a_uid_still_goes_up_with_one() {
+    let h = calendared().await;
+    let new = new_meeting();
+    h.fake.with(|s| s.lose_event_answer = true);
+    calendar(&h).put_event(&new, None, true, Notify::Guests).await.unwrap_err();
+    let made = calendar(&h).put_event(&new, None, true, Notify::Guests).await.unwrap();
+    assert_eq!(made.uid, format!("{}@penguin-mail", new.id));
+    assert_eq!(h.fake.with(|s| (s.events.len(), s.scheduled.len())), (1, 1));
+}
+
+/// Adds `count` events to `cal-1` the way another app would, in one burst.
+fn burst(h: &Harness, count: usize) {
+    for n in 0..count {
+        h.fake.add_event(json!({
+            "@type": "Event", "uid": format!("burst-{n}@example.com"), "title": format!("Burst {n}"), "calendarIds": {"cal-1": true},
+            "start": "2026-10-06T09:00:00", "timeZone": "Europe/Lisbon", "duration": "PT1H"
+        }));
+    }
+}
+
+#[tokio::test]
+async fn a_burst_of_changes_comes_a_page_at_a_time() {
+    let h = calendared().await;
+    let since = state(&h.fake).await;
+    burst(&h, 1000);
+    let calendar = calendar(&h);
+    let (mut seen, mut pages, mut page) = (0, 0, None::<String>);
+    loop {
+        let got = calendar.event_changes("cal-1", Some(&since), page.as_deref(), 0).await.unwrap();
+        assert!(got.events.len() <= crate::services::jmap::calendar::PAGE, "{} events in one page", got.events.len());
+        let AnyCalendar::Jmap(adapter) = &calendar else { unreachable!() };
+        let held = adapter.kept_calendar_objects();
+        assert!(held <= crate::services::jmap::calendar::PAGE, "{held} objects kept");
+        seen += got.events.len();
+        pages += 1;
+        match got.next_page {
+            Some(next) => page = Some(next),
+            None => {
+                assert_eq!(got.next_sync, Some(state(&h.fake).await));
+                break;
+            }
+        }
+    }
+    assert_eq!((seen, pages), (1000, 5));
+}
+
+#[tokio::test]
+async fn a_burst_too_long_for_one_read_ends_where_it_got_to_and_goes_on_next_time() {
+    let h = calendared().await;
+    let since = state(&h.fake).await;
+    let rounds = crate::services::jmap::calendar::ROUNDS;
+    let page_size = crate::services::jmap::calendar::PAGE;
+    burst(&h, (rounds + 2) * page_size);
+    let calendar = calendar(&h);
+    let mut page = None::<String>;
+    let mut seen = 0;
+    let token = loop {
+        let got = calendar.event_changes("cal-1", Some(&since), page.as_deref(), 0).await.unwrap();
+        seen += got.events.len();
+        match got.next_page {
+            Some(next) => page = Some(next),
+            None => break got.next_sync.unwrap(),
+        }
+    };
+    assert_eq!(seen, rounds * page_size, "one read stops after its rounds");
+    assert_ne!(token, state(&h.fake).await);
+    let rest = calendar.event_changes("cal-1", Some(&token), None, 0).await.unwrap();
+    assert_eq!(rest.events.len(), page_size);
+}
+
+#[tokio::test]
+async fn an_answer_with_a_note_saves_the_note_for_the_organizer() {
+    let h = calendared().await;
+    let id = h.fake.add_event(invited());
+    calendar(&h).answer_event("cal-1", &id, "me@example.com", Answer::Maybe, Some("Late by ten minutes")).await.unwrap();
+    let me = &h.fake.event(&id).unwrap()["participants"]["p2"];
+    assert_eq!((me["participationStatus"].as_str(), me["participationComment"].as_str()), (Some("tentative"), Some("Late by ten minutes")));
+}
+
+#[tokio::test]
+async fn an_answer_with_a_note_to_one_occurrence_goes_into_its_new_override() {
+    let h = calendared().await;
+    let mut weekly = invited();
+    weekly["recurrenceRule"] = json!({"@type": "RecurrenceRule", "frequency": "weekly"});
+    let id = h.fake.add_event(weekly);
+    let series = first_event(&h).await;
+    let one = occurrence_id(&series, series.start + 7 * DAY);
+    calendar(&h).answer_event("cal-1", &one, "me@example.com", Answer::No, Some("Away that week")).await.unwrap();
+    let over = &h.fake.event(&id).unwrap()["recurrenceOverrides"]["2026-10-15T18:00:00"];
+    assert_eq!(over["participants/p2/participationStatus"], "declined");
+    assert_eq!(over["participants/p2/participationComment"], "Away that week");
+}
+
+#[tokio::test]
+async fn a_whole_read_too_long_for_one_pass_goes_on_next_time() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let h = calendared().await;
+    let page = crate::services::jmap::calendar::PAGE;
+    burst(&h, 3 * page + 10);
+    let copy = crate::calendar_copy::CalendarCopy::new(Arc::new(crate::tests::Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone())
+        .with_pages_per_read(2);
+    let account = h.account_id;
+    let count = || h.db.read(move |c| mailrs_store::calendar_list::event_count(c, account, "cal-1"));
+    let token = || h.db.read(move |c| mailrs_store::calendar::token(c, account, "cal-1"));
+    copy.refresh(account, 1_790_000_000_000).await.unwrap();
+    assert_eq!(count().await.unwrap(), 2 * page);
+    assert!(token().await.unwrap().as_deref().and_then(mailrs_store::calendar::resumed_read).is_some(), "it keeps where it stopped");
+    copy.refresh(account, 1_790_000_060_000).await.unwrap();
+    assert_eq!(count().await.unwrap(), 3 * page + 10, "the next read goes on");
+    assert_eq!(token().await.unwrap(), Some(state(&h.fake).await));
 }

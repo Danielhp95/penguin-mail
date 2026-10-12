@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 
 use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
-use crate::sign_in::JmapGrant;
+use crate::sign_in::BrowserGrant;
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
 use crate::{AccountServices, AccountSync, AnyJmap, AnyRules, BackendError, SyncError};
@@ -676,7 +676,7 @@ pub enum SwitchSignIn {
     /// A password or a token the person typed.
     Typed(SwitchTo),
     /// A sign-in on the server's own page in the browser.
-    Browser { session_url: String, grant: JmapGrant },
+    Browser { session_url: String, grant: BrowserGrant },
 }
 
 /// What one way of signing in becomes: the sign-in the checks send, and
@@ -743,6 +743,7 @@ pub async fn to_jmap(
         labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
         oauth: signed.oauth,
+        owner: Some(crate::sign_in::SignedAs::of(&checked).owner),
     };
     to_jmap_over(db, secrets, account, imap, &AnyJmap::from(client), saved, signed.secret).await
 }

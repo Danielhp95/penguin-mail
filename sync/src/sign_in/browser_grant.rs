@@ -21,7 +21,7 @@ use mailrs_jmap::JmapError;
 const REGISTERED_REDIRECT: &str = "http://127.0.0.1/";
 
 /// What a browser sign-in handed back. The tokens never show in Debug.
-pub struct JmapGrant {
+pub struct BrowserGrant {
     pub client: SavedOAuth,
     /// For the checks right after the sign-in. The account's session
     /// refreshes from `refresh_token` once the keyring holds it.
@@ -29,9 +29,9 @@ pub struct JmapGrant {
     pub refresh_token: String,
 }
 
-impl fmt::Debug for JmapGrant {
+impl fmt::Debug for BrowserGrant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("JmapGrant").field("client", &self.client).finish_non_exhaustive()
+        f.debug_struct("BrowserGrant").field("client", &self.client).finish_non_exhaustive()
     }
 }
 
@@ -49,17 +49,21 @@ impl SignInServer for Live {
     async fn exchange(&self, client: &OAuthClient, code: &str, redirect: &str, pkce: &Pkce) -> Result<oauth::Tokens, JmapError> {
         client.exchange(code, redirect, pkce).await
     }
+
+    fn revoke(&self, grant: crate::JmapGrant) {
+        tokio::spawn(grant.revoke());
+    }
 }
 
 /// Signs in on the JMAP server's own page and hands back the grant.
 /// `address` fills the page's address field. The wait for the browser
 /// ends after [`BROWSER_WAIT`], or when `canceled` resolves.
-pub async fn jmap_grant(
+pub async fn browser_grant(
     offer: JmapBrowser,
     address: &str,
     open: impl Fn(&str),
     canceled: impl Future<Output = ()>,
-) -> Result<JmapGrant, BrowserSignInError> {
+) -> Result<BrowserGrant, BrowserSignInError> {
     granting(&Live, offer, address, open, canceled, BROWSER_WAIT).await
 }
 
@@ -70,7 +74,7 @@ pub(crate) async fn granting<S: SignInServer>(
     open: impl Fn(&str),
     canceled: impl Future<Output = ()>,
     wait: Duration,
-) -> Result<JmapGrant, BrowserSignInError> {
+) -> Result<BrowserGrant, BrowserSignInError> {
     let metadata = match server.metadata(&offer.session_url).await {
         Ok(found) if found.registration_endpoint.is_some() => found,
         _ => return Err(BrowserSignInError::NotOffered),
@@ -97,7 +101,7 @@ pub(crate) async fn granting<S: SignInServer>(
     let client = OAuthClient { client_id: client_id.clone(), token_endpoint: metadata.token_endpoint.clone(), resource: offer.session_url.clone() };
     let tokens = server.exchange(&client, &code, &redirect, &pkce).await.map_err(BrowserSignInError::Jmap)?;
     let refresh_token = tokens.refresh_token.ok_or(BrowserSignInError::NoRefreshToken)?;
-    Ok(JmapGrant {
+    Ok(BrowserGrant {
         client: SavedOAuth { client_id, token_endpoint: metadata.token_endpoint },
         access_token: tokens.access_token,
         refresh_token,
@@ -130,6 +134,7 @@ mod tests {
                 scopes_supported: vec!["urn:ietf:params:oauth:scope:mail".into(), "offline_access".into()],
                 code_challenge_methods_supported: vec!["S256".into()],
                 authorization_response_iss_parameter_supported: true,
+                revocation_endpoint: None,
             })
         }
 
@@ -142,6 +147,8 @@ mod tests {
             assert_eq!((code, client.client_id.as_str()), ("c1", "client-1"));
             Ok(Tokens { access_token: "a1".into(), expires_in: 3600, refresh_token: self.refresh.map(str::to_string) })
         }
+
+        fn revoke(&self, _grant: crate::JmapGrant) {}
     }
 
     fn query_value(url: &str, name: &str) -> String {
@@ -197,7 +204,7 @@ mod tests {
 
     #[test]
     fn a_grant_never_prints_its_tokens() {
-        let grant = JmapGrant {
+        let grant = BrowserGrant {
             client: SavedOAuth { client_id: "client-1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() },
             access_token: "secret-access".into(),
             refresh_token: "secret-refresh".into(),

@@ -9,6 +9,7 @@ mod calendar_copy;
 mod calendar_read;
 mod calendar_list;
 mod calendar_series;
+mod calendar_switch;
 mod carddav;
 mod connect;
 mod connector;

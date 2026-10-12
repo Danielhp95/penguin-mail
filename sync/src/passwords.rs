@@ -385,7 +385,7 @@ impl Secrets {
                 Box::new(move || tokens.delete(id))
             }
             Provider::Jmap => {
-                self.jmap_sessions.forget(id);
+                self.jmap_sessions.forget(id).await;
                 let (jmap, passwords) = (Arc::clone(&self.jmap), Arc::clone(&self.passwords));
                 // The token or password, and the CalDAV app password kept
                 // beside it in part 3. Nothing may stay under the id: ids

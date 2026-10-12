@@ -577,6 +577,13 @@ fn reminder_alerts<'a>(fields: &Fields<'a>) -> impl Iterator<Item = (&'a str, Re
     })
 }
 
+/// The reminders a calendar's default alerts stand for, as an event that
+/// uses them would show.
+pub(crate) fn default_reminders(alerts: &Map<String, Value>) -> Vec<Reminder> {
+    let holder = json!({ "alerts": alerts });
+    reminder_alerts(&Fields::of(&holder)).map(|(_, r)| r).collect()
+}
+
 fn reminders_of(fields: &Fields) -> Option<Vec<Reminder>> {
     if fields.get("useDefaultAlerts").and_then(Value::as_bool) == Some(true) {
         return None;
@@ -1211,17 +1218,55 @@ pub(crate) fn patch_of(event: &model::Event, current: &Value, me: &[String]) -> 
     if before.unread_rule && want.iter().any(|at| !had.contains(at)) {
         return Err(unreadable_repeat());
     }
-    let mut overrides = Entries { patch: &mut patch, fields, key: "recurrenceOverrides" };
-    for at in want.iter().filter(|at| !had.contains(at)) {
-        overrides.put(&server_key(&fields, clock, *at), Some(json!({ "excluded": true })));
-    }
-    for at in had.iter().filter(|at| !want.contains(at)) {
-        overrides.put(&server_key(&fields, clock, *at), None);
+    let delta = event.start - before.start;
+    let changed_held = fields
+        .map("recurrenceOverrides")
+        .is_some_and(|o| o.values().any(|v| v.get("excluded").and_then(Value::as_bool) != Some(true)));
+    if delta != 0 && changed_held {
+        let moved = moved_overrides(&fields, clock, clock_for(event), delta, &had, &want);
+        patch.insert("recurrenceOverrides".into(), Value::Object(moved));
+    } else {
+        let mut overrides = Entries { patch: &mut patch, fields, key: "recurrenceOverrides" };
+        for at in want.iter().filter(|at| !had.contains(at)) {
+            overrides.put(&server_key(&fields, clock, *at), Some(json!({ "excluded": true })));
+        }
+        for at in had.iter().filter(|at| !want.contains(at)) {
+            overrides.put(&server_key(&fields, clock, *at), None);
+        }
     }
     if before.limited() {
         only_mine(&mut patch);
     }
     Ok(patch)
+}
+
+/// The series' `recurrenceOverrides` for a series moved by `delta`: every
+/// key, read on `was` and written on `now`, moves by the same amount, as
+/// the copy moves its `EXDATE` lines. A changed occurrence left under its
+/// old key would be an occurrence of its own (RFC 8984 4.3.5), shown
+/// beside the moved series' new one. The map goes whole, since a moved
+/// key can land on another entry's old one. `had` and `want` are the
+/// excluded instants before and after the edit, which add or drop an
+/// exclusion the move did not carry.
+fn moved_overrides(fields: &Fields, was: Clock, now: Clock, delta: EpochMillis, had: &[EpochMillis], want: &[EpochMillis]) -> Map<String, Value> {
+    let mut moved = Map::new();
+    for (key, value) in fields.map("recurrenceOverrides").into_iter().flatten() {
+        let excluded = value.get("excluded").and_then(Value::as_bool) == Some(true);
+        match was.parse(key) {
+            Some(at) if excluded && !want.contains(&(at + delta)) && had.contains(&at) => {}
+            Some(at) => {
+                moved.insert(now.text(at + delta), value.clone());
+            }
+            None => {
+                moved.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    let shifted: Vec<EpochMillis> = had.iter().map(|at| at + delta).collect();
+    for at in want.iter().filter(|at| !shifted.contains(at)) {
+        moved.insert(now.text(*at), json!({ "excluded": true }));
+    }
+    moved
 }
 
 /// What one changed occurrence overrides in its series, `current`: the
@@ -1968,5 +2013,47 @@ mod tests {
         let bo = series.guests.iter_mut().find(|g| g.email == "bo@allotment.example").unwrap();
         bo.name = Some("Bo Lin".into());
         assert_eq!(Value::Object(patch_of(&series, &object, &ines()).unwrap()), json!({"participants/bo/name": "Bo Lin"}));
+    }
+
+    /// The whole series moved an hour later through the editor's own step,
+    /// as "All events" does.
+    fn moved_an_hour(object: &Value) -> model::Event {
+        use mailrs_domain::calendar::series::{self, Picked, RepeatScope, Step};
+        let series = series_of(object, &[]);
+        let picked = Picked { original_start: series.start, start: series.start };
+        let edited = model::Event { start: series.start + 3_600_000, end: series.end + 3_600_000, ..series.clone() };
+        match series::change(&series, &[], picked, edited, RepeatScope::All, "new").as_slice() {
+            [Step::Save(moved)] => moved.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn moving_a_series_moves_its_changed_occurrences_with_it() {
+        let object = lisbon_weekly();
+        let patch = patch_of(&moved_an_hour(&object), &object, &[]).unwrap();
+        assert_eq!(patch["start"], "2026-10-06T10:00:00");
+        assert_eq!(
+            patch["recurrenceOverrides"],
+            json!({
+                "2026-10-13T10:00:00": {"excluded": true},
+                "2026-10-20T10:00:00": {"start": "2026-10-20T10:00:00", "title": "Rota, late"}
+            })
+        );
+        assert!(!patch.keys().any(|k| k.starts_with("recurrenceOverrides/")), "{patch:?}");
+    }
+
+    #[test]
+    fn a_moved_series_shows_each_changed_occurrence_once() {
+        let mut object = lisbon_weekly();
+        for (path, value) in patch_of(&moved_an_hour(&object), &object, &[]).unwrap() {
+            set_path(&mut object, &path, value);
+        }
+        let events = events_of(&object, "cal-1", &[]);
+        let series = &events[0];
+        let late = &events[1];
+        assert_eq!(late.original_start, Some(utc("2026-10-20T09:00:00Z")));
+        let shown = model::expand(series, utc("2026-10-19T00:00:00Z"), utc("2026-10-21T00:00:00Z"));
+        assert_eq!(shown.iter().map(|(start, _)| *start).collect::<Vec<_>>(), [utc("2026-10-20T09:00:00Z")]);
     }
 }

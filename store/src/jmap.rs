@@ -46,6 +46,35 @@ pub struct JmapSaved {
     /// The client and token endpoint of an OAuth sign-in. The tokens and
     /// any client secret are in the keyring.
     pub oauth: Option<SavedOAuth>,
+    /// Who the session belonged to at the last sign-in. A row kept before
+    /// the app recorded it has none.
+    pub owner: Option<SessionOwner>,
+}
+
+/// Who a JMAP session belongs to: the session's `username` and the id of
+/// its primary mail account. A sign-in that replaces an account's
+/// credentials must reach the same owner. Its `Debug` leaves the user name
+/// out, which is often an address.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SessionOwner {
+    pub username: String,
+    pub mail_account: String,
+}
+
+impl std::fmt::Debug for SessionOwner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionOwner").field("username", &"<hidden>").field("mail_account", &self.mail_account).finish()
+    }
+}
+
+/// The `capabilities` column. A row with an owner keeps it beside the
+/// capabilities in one object; an older row holds the bare list.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum StoredCapabilities {
+    List(Vec<String>),
+    #[serde(rename_all = "camelCase")]
+    WithOwner { offered: Vec<String>, username: String, mail_account: String },
 }
 
 /// What an OAuth sign-in needs besides its tokens.
@@ -64,6 +93,7 @@ impl std::fmt::Debug for JmapSaved {
             .field("labels", &self.labels)
             .field("capabilities", &self.capabilities)
             .field("oauth", &self.oauth.as_ref().map(|_| "<hidden>"))
+            .field("owner", &self.owner)
             .finish()
     }
 }
@@ -75,7 +105,15 @@ impl JmapSaved {
 }
 
 pub fn save(conn: &Connection, account_id: AccountId, saved: &JmapSaved) -> Result<()> {
-    let capabilities = serde_json::to_string(&saved.capabilities).unwrap_or_else(|_| "[]".into());
+    let stored = match &saved.owner {
+        Some(owner) => StoredCapabilities::WithOwner {
+            offered: saved.capabilities.clone(),
+            username: owner.username.clone(),
+            mail_account: owner.mail_account.clone(),
+        },
+        None => StoredCapabilities::List(saved.capabilities.clone()),
+    };
+    let capabilities = serde_json::to_string(&stored).unwrap_or_else(|_| "[]".into());
     conn.execute(
         "INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities, oauth_client_id, oauth_token_url) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
@@ -108,10 +146,14 @@ pub fn load(conn: &Connection, account_id: AccountId) -> Result<Option<JmapSaved
         .optional()?;
     row.map(|(session_url, auth, user_name, labels, capabilities, client_id, token_endpoint)| {
         let auth = JmapAuth::parse(&auth).ok_or(StoreError::Corrupt { column: "jmap_accounts.auth", value: auth })?;
-        let capabilities = serde_json::from_str(&capabilities)
+        let stored = serde_json::from_str(&capabilities)
             .map_err(|_| StoreError::Corrupt { column: "jmap_accounts.capabilities", value: capabilities })?;
+        let (capabilities, owner) = match stored {
+            StoredCapabilities::List(offered) => (offered, None),
+            StoredCapabilities::WithOwner { offered, username, mail_account } => (offered, Some(SessionOwner { username, mail_account })),
+        };
         let oauth = client_id.zip(token_endpoint).map(|(client_id, token_endpoint)| SavedOAuth { client_id, token_endpoint });
-        Ok(JmapSaved { session_url, auth, user_name, labels, capabilities, oauth })
+        Ok(JmapSaved { session_url, auth, user_name, labels, capabilities, oauth, owner })
     })
     .transpose()
 }
@@ -133,6 +175,7 @@ mod tests {
             labels: true,
             capabilities: vec!["urn:ietf:params:jmap:mail".into(), "urn:ietf:params:jmap:submission".into()],
             oauth: None,
+            owner: None,
         };
         save(&conn, id, &saved).unwrap();
         assert_eq!(load(&conn, id).unwrap(), Some(saved.clone()));
@@ -152,9 +195,46 @@ mod tests {
             labels: true,
             capabilities: Vec::new(),
             oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+            owner: None,
         };
         save(&conn, id, &saved).unwrap();
         assert_eq!(load(&conn, id).unwrap(), Some(saved));
+    }
+
+    #[test]
+    fn the_session_s_owner_comes_back_beside_the_capabilities() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_jmap_account(&conn, "me@fastmail.com", "Fastmail", 0).unwrap().unwrap();
+        let saved = JmapSaved {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            auth: JmapAuth::OAuth,
+            user_name: None,
+            labels: true,
+            capabilities: vec!["urn:ietf:params:jmap:mail".into()],
+            oauth: None,
+            owner: Some(SessionOwner { username: "me@fastmail.com".into(), mail_account: "u1".into() }),
+        };
+        save(&conn, id, &saved).unwrap();
+        assert_eq!(load(&conn, id).unwrap(), Some(saved));
+    }
+
+    #[test]
+    fn a_row_kept_before_the_owner_was_recorded_has_none() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_jmap_account(&conn, "me@fastmail.com", "Fastmail", 0).unwrap().unwrap();
+        conn.execute(
+            "INSERT INTO jmap_accounts (account_id, session_url, auth, labels, capabilities) VALUES (?1, 'https://a.test/jmap', 'bearer', 1, '[\"urn:ietf:params:jmap:mail\"]')",
+            params![id],
+        )
+        .unwrap();
+        let saved = load(&conn, id).unwrap().unwrap();
+        assert_eq!((saved.capabilities, saved.owner), (vec!["urn:ietf:params:jmap:mail".to_string()], None));
+    }
+
+    #[test]
+    fn debug_output_leaves_the_owner_s_user_name_out() {
+        let owner = SessionOwner { username: "dana@example.org".into(), mail_account: "u1".into() };
+        assert!(!format!("{owner:?}").contains("dana"));
     }
 
     #[test]
@@ -166,6 +246,7 @@ mod tests {
             labels: false,
             capabilities: vec![],
             oauth: None,
+            owner: None,
         };
         let shown = format!("{saved:?}");
         assert!(!shown.contains("dana"), "{shown}");

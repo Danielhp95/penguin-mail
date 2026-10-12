@@ -30,6 +30,7 @@ fn calendar(id: &str, shown: bool) -> Calendar {
         shown,
         hidden: false,
         reminders: Vec::new(),
+        all_day_reminders: None,
     }
 }
 

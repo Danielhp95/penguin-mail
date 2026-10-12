@@ -2117,7 +2117,7 @@ msgstr ""
 "l’ancien."
 
 #: app/src/core.rs:738 app/src/core.rs:813 app/src/core.rs:866
-#: app/src/core.rs:931 app/src/core.rs:1023
+#: app/src/core.rs:931 app/src/core.rs:1025
 msgid "Demo mode cannot add real accounts."
 msgstr "Le mode démo ne peut pas ajouter de vrais comptes."
 
@@ -2129,13 +2129,13 @@ msgstr "Annulé."
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Abandon après cinq minutes d’attente du navigateur."
 
-#: app/src/core.rs:1173 app/src/core.rs:1196
+#: app/src/core.rs:1175 app/src/core.rs:1198
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Ce compte ne conserve aucun mot de passe qu’un serveur de calendrier ou de "
 "contacts accepte."
 
-#: app/src/core.rs:1320 app/src/core.rs:1359
+#: app/src/core.rs:1337 app/src/core.rs:1376
 msgid "The demo cannot switch accounts."
 msgstr "Le mode démo ne peut pas faire basculer de comptes."
 
@@ -3860,8 +3860,8 @@ msgstr "Trouvé sur {host}. L’utiliser ?"
 msgid "{host} refused the login: {reason}"
 msgstr "{host} a refusé la connexion : {reason}"
 
-#: app/src/servers.rs:34 app/src/ui/calendar/editor.rs:1164
-#: app/src/ui/calendar/editor.rs:1240 app/src/ui/contacts_prefs.rs:271
+#: app/src/servers.rs:34 app/src/ui/calendar/editor.rs:1168
+#: app/src/ui/calendar/editor.rs:1244 app/src/ui/contacts_prefs.rs:271
 #: app/src/ui/sidebar.rs:356 app/src/ui/sidebar.rs:1407
 #: app/src/ui/window/shortcuts.rs:236
 msgid "Calendar"
@@ -3961,11 +3961,11 @@ msgstr "Markdown"
 msgid "Automatic"
 msgstr "Automatique"
 
-#: app/src/settings/mod.rs:537 app/src/ui/calendar/editor.rs:2034
+#: app/src/settings/mod.rs:537 app/src/ui/calendar/editor.rs:2041
 msgid "Monday"
 msgstr "Lundi"
 
-#: app/src/settings/mod.rs:538 app/src/ui/calendar/editor.rs:2040
+#: app/src/settings/mod.rs:538 app/src/ui/calendar/editor.rs:2047
 msgid "Sunday"
 msgstr "Dimanche"
 
@@ -4603,7 +4603,7 @@ msgstr "Ajouter un autre compte"
 msgid "Not Now"
 msgstr "Pas maintenant"
 
-#: app/src/ui/add_account.rs:1242 app/src/ui/calendar/editor.rs:1606
+#: app/src/ui/add_account.rs:1242 app/src/ui/calendar/editor.rs:1613
 #: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
 #: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1371
@@ -4934,7 +4934,7 @@ msgstr "Modifier"
 msgid "Edit {server}"
 msgstr "Modifier {server}"
 
-#: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1639
+#: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:1951 app/src/ui/composer/recipients.rs:315
 #: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3002
 msgid "Remove"
@@ -5398,7 +5398,7 @@ msgstr "Clé d’API Brave Search (enregistrée)"
 msgid "Brave Search API Key"
 msgstr "Clé d’API Brave Search"
 
-#: app/src/ui/autocomplete.rs:307 app/src/ui/calendar/editor.rs:2274
+#: app/src/ui/autocomplete.rs:307 app/src/ui/calendar/editor.rs:2281
 #: app/src/ui/composer/recipients.rs:50
 msgid "{name}, {address}"
 msgstr "{name}, {address}"
@@ -5484,12 +5484,12 @@ msgstr "{title}, toute la journée, {calendar}"
 msgid "{title}, {start} to {end}, {calendar}"
 msgstr "{title}, de {start} à {end}, {calendar}"
 
-#: app/src/ui/calendar/draft.rs:103 app/src/ui/calendar/editor.rs:1997
+#: app/src/ui/calendar/draft.rs:103 app/src/ui/calendar/editor.rs:2004
 #: app/src/ui/calendar/kinds.rs:59
 msgid "Out of office"
 msgstr "Absent du bureau"
 
-#: app/src/ui/calendar/draft.rs:104 app/src/ui/calendar/editor.rs:1996
+#: app/src/ui/calendar/draft.rs:104 app/src/ui/calendar/editor.rs:2003
 #: app/src/ui/calendar/kinds.rs:60
 msgid "Focus time"
 msgstr "Temps de concentration"
@@ -5595,285 +5595,285 @@ msgstr "Début"
 msgid "Ends"
 msgstr "Fin"
 
-#: app/src/ui/calendar/editor.rs:850
+#: app/src/ui/calendar/editor.rs:854
 msgid "Repeats"
 msgstr "Répétition"
 
-#: app/src/ui/calendar/editor.rs:893
+#: app/src/ui/calendar/editor.rs:897
 msgid "Custom…"
 msgstr "Personnalisée…"
 
-#: app/src/ui/calendar/editor.rs:947
+#: app/src/ui/calendar/editor.rs:951
 msgid "Every"
 msgstr "Intervalle"
 
-#: app/src/ui/calendar/editor.rs:951
+#: app/src/ui/calendar/editor.rs:955
 msgid "Unit"
 msgstr "Unité"
 
-#: app/src/ui/calendar/editor.rs:955
+#: app/src/ui/calendar/editor.rs:959
 msgid "On"
 msgstr "Jours"
 
-#: app/src/ui/calendar/editor.rs:1007
+#: app/src/ui/calendar/editor.rs:1011
 msgid "Stops"
 msgstr "Fin"
 
-#: app/src/ui/calendar/editor.rs:1014 app/src/ui/calendar/editor.rs:1019
+#: app/src/ui/calendar/editor.rs:1018 app/src/ui/calendar/editor.rs:1023
 #: app/src/ui/calendar/words.rs:466
 msgid "Never"
 msgstr "Jamais"
 
-#: app/src/ui/calendar/editor.rs:1015 app/src/ui/calendar/editor.rs:1038
+#: app/src/ui/calendar/editor.rs:1019 app/src/ui/calendar/editor.rs:1042
 msgid "On a date"
 msgstr "À une date"
 
-#: app/src/ui/calendar/editor.rs:1016 app/src/ui/calendar/editor.rs:1064
+#: app/src/ui/calendar/editor.rs:1020 app/src/ui/calendar/editor.rs:1068
 msgid "After"
 msgstr "Après"
 
-#: app/src/ui/calendar/editor.rs:1028
+#: app/src/ui/calendar/editor.rs:1032
 msgid "End date of the repeat"
 msgstr "Date de fin de la répétition"
 
-#: app/src/ui/calendar/editor.rs:1051 app/src/ui/calendar/editor.rs:1060
+#: app/src/ui/calendar/editor.rs:1055 app/src/ui/calendar/editor.rs:1064
 msgid "time"
 msgid_plural "times"
 msgstr[0] "fois"
 msgstr[1] "fois"
 
-#: app/src/ui/calendar/editor.rs:1052
+#: app/src/ui/calendar/editor.rs:1056
 msgid "Number of times"
 msgstr "Nombre de fois"
 
-#: app/src/ui/calendar/editor.rs:1252
+#: app/src/ui/calendar/editor.rs:1256
 msgid "Place"
 msgstr "Lieu"
 
 #. Named for the moment Show all hands it the focus.
-#: app/src/ui/calendar/editor.rs:1267 app/src/ui/calendar/popover.rs:288
+#: app/src/ui/calendar/editor.rs:1271 app/src/ui/calendar/popover.rs:288
 msgid "Guests"
 msgstr "Invités"
 
-#: app/src/ui/calendar/editor.rs:1270 app/src/ui/calendar/editor.rs:1275
+#: app/src/ui/calendar/editor.rs:1274 app/src/ui/calendar/editor.rs:1279
 msgid "Add guests"
 msgstr "Ajouter des invités"
 
-#: app/src/ui/calendar/editor.rs:1336
+#: app/src/ui/calendar/editor.rs:1340
 msgid "Not an address: {text}"
 msgstr "Pas une adresse : {text}"
 
-#: app/src/ui/calendar/editor.rs:1359
+#: app/src/ui/calendar/editor.rs:1363
 msgid "{address} · {answer}"
 msgstr "{address} · {answer}"
 
-#: app/src/ui/calendar/editor.rs:1377
+#: app/src/ui/calendar/editor.rs:1381
 msgid "Remove {guest}"
 msgstr "Retirer {guest}"
 
-#: app/src/ui/calendar/editor.rs:1404
+#: app/src/ui/calendar/editor.rs:1408
 msgid "Reminders"
 msgstr "Rappels"
 
-#: app/src/ui/calendar/editor.rs:1444
+#: app/src/ui/calendar/editor.rs:1451
 msgid "Add Reminder"
 msgstr "Ajouter un rappel"
 
-#: app/src/ui/calendar/editor.rs:1486
+#: app/src/ui/calendar/editor.rs:1493
 msgid "Remove reminder"
 msgstr "Supprimer le rappel"
 
-#: app/src/ui/calendar/editor.rs:1530 app/src/ui/calendar/editor.rs:1541
+#: app/src/ui/calendar/editor.rs:1537 app/src/ui/calendar/editor.rs:1548
 #: app/src/ui/calendar/popover.rs:266
 msgid "Notes"
 msgstr "Notes"
 
-#: app/src/ui/calendar/editor.rs:1556
+#: app/src/ui/calendar/editor.rs:1563
 msgid "Attachments"
 msgstr "Pièces jointes"
 
-#: app/src/ui/calendar/editor.rs:1561 app/src/ui/calendar/editor.rs:1567
+#: app/src/ui/calendar/editor.rs:1568 app/src/ui/calendar/editor.rs:1574
 msgid "Attach File…"
 msgstr "Joindre un fichier…"
 
-#: app/src/ui/calendar/editor.rs:1610
+#: app/src/ui/calendar/editor.rs:1617
 msgid "Grant access to upload {file}"
 msgstr "Accorder l’accès pour envoyer {file}"
 
-#: app/src/ui/calendar/editor.rs:1623
+#: app/src/ui/calendar/editor.rs:1630
 msgid "Share with guests"
 msgstr "Partager avec les invités"
 
-#: app/src/ui/calendar/editor.rs:1625
+#: app/src/ui/calendar/editor.rs:1632
 msgid "Share {file} with the guests"
 msgstr "Partager {file} avec les invités"
 
-#: app/src/ui/calendar/editor.rs:1641 app/src/ui/composer/mod.rs:1955
+#: app/src/ui/calendar/editor.rs:1648 app/src/ui/composer/mod.rs:1955
 msgid "Remove {file}"
 msgstr "Retirer {file}"
 
-#: app/src/ui/calendar/editor.rs:1675
+#: app/src/ui/calendar/editor.rs:1682
 msgid "Cancel Upload"
 msgstr "Annuler l’envoi"
 
-#: app/src/ui/calendar/editor.rs:1677
+#: app/src/ui/calendar/editor.rs:1684
 msgid "Cancel upload of {file}"
 msgstr "Annuler l’envoi de {file}"
 
-#: app/src/ui/calendar/editor.rs:1702
+#: app/src/ui/calendar/editor.rs:1709
 msgid "Attach File"
 msgstr "Joindre un fichier"
 
-#: app/src/ui/calendar/editor.rs:1716
+#: app/src/ui/calendar/editor.rs:1723
 msgid "Penguin Mail can attach only a file saved on this computer."
 msgstr ""
 "Penguin Mail ne peut joindre qu’un fichier enregistré sur cet ordinateur."
 
-#: app/src/ui/calendar/editor.rs:1744
+#: app/src/ui/calendar/editor.rs:1751
 msgid "Uploading {file}"
 msgstr "Envoi de {file}"
 
-#: app/src/ui/calendar/editor.rs:1775
+#: app/src/ui/calendar/editor.rs:1782
 msgid "Could not attach {file}: {reason}"
 msgstr "Impossible de joindre {file} : {reason}"
 
-#: app/src/ui/calendar/editor.rs:1818 app/src/ui/composer/mod.rs:367
+#: app/src/ui/calendar/editor.rs:1825 app/src/ui/composer/mod.rs:367
 msgid "More"
 msgstr "Plus"
 
-#: app/src/ui/calendar/editor.rs:1822
+#: app/src/ui/calendar/editor.rs:1829
 msgid "Time zone"
 msgstr "Fuseau horaire"
 
-#: app/src/ui/calendar/editor.rs:1866
+#: app/src/ui/calendar/editor.rs:1873
 msgid "Show as busy"
 msgstr "Afficher comme occupé"
 
-#: app/src/ui/calendar/editor.rs:1880
+#: app/src/ui/calendar/editor.rs:1887
 msgid "Private"
 msgstr "Privé"
 
-#: app/src/ui/calendar/editor.rs:1882
+#: app/src/ui/calendar/editor.rs:1889
 msgid "Only people who can change this calendar see the details"
 msgstr "Seules les personnes pouvant modifier cet agenda voient les détails"
 
-#: app/src/ui/calendar/editor.rs:1896 app/src/ui/calendar/manage.rs:353
+#: app/src/ui/calendar/editor.rs:1903 app/src/ui/calendar/manage.rs:353
 #: app/src/ui/calendar/sidebar.rs:1261 app/src/ui/sidebar.rs:1588
 #: app/src/ui/sidebar.rs:1832
 msgid "Color"
 msgstr "Couleur"
 
-#: app/src/ui/calendar/editor.rs:1900
+#: app/src/ui/calendar/editor.rs:1907
 msgid "Calendar color"
 msgstr "Couleur de l’agenda"
 
-#: app/src/ui/calendar/editor.rs:1944
+#: app/src/ui/calendar/editor.rs:1951
 msgid "Add Google Meet"
 msgstr "Ajouter Google Meet"
 
-#: app/src/ui/calendar/editor.rs:1995 app/src/ui/calendar/mod.rs:2270
+#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2270
 #: app/src/ui/calendar/quick.rs:54
 msgid "Event"
 msgstr "Événement"
 
-#: app/src/ui/calendar/editor.rs:2019
+#: app/src/ui/calendar/editor.rs:2026
 msgid "day"
 msgid_plural "days"
 msgstr[0] "jour"
 msgstr[1] "jours"
 
-#: app/src/ui/calendar/editor.rs:2020
+#: app/src/ui/calendar/editor.rs:2027
 msgid "week"
 msgid_plural "weeks"
 msgstr[0] "semaine"
 msgstr[1] "semaines"
 
-#: app/src/ui/calendar/editor.rs:2021
+#: app/src/ui/calendar/editor.rs:2028
 msgid "month"
 msgid_plural "months"
 msgstr[0] "mois"
 msgstr[1] "mois"
 
-#: app/src/ui/calendar/editor.rs:2022
+#: app/src/ui/calendar/editor.rs:2029
 msgid "year"
 msgid_plural "years"
 msgstr[0] "an"
 msgstr[1] "ans"
 
-#: app/src/ui/calendar/editor.rs:2035
+#: app/src/ui/calendar/editor.rs:2042
 msgid "Tuesday"
 msgstr "Mardi"
 
-#: app/src/ui/calendar/editor.rs:2036
+#: app/src/ui/calendar/editor.rs:2043
 msgid "Wednesday"
 msgstr "Mercredi"
 
-#: app/src/ui/calendar/editor.rs:2037
+#: app/src/ui/calendar/editor.rs:2044
 msgid "Thursday"
 msgstr "Jeudi"
 
-#: app/src/ui/calendar/editor.rs:2038
+#: app/src/ui/calendar/editor.rs:2045
 msgid "Friday"
 msgstr "Vendredi"
 
-#: app/src/ui/calendar/editor.rs:2039
+#: app/src/ui/calendar/editor.rs:2046
 msgid "Saturday"
 msgstr "Samedi"
 
-#: app/src/ui/calendar/editor.rs:2051
+#: app/src/ui/calendar/editor.rs:2058
 msgid "Lavender"
 msgstr "Lavande"
 
-#: app/src/ui/calendar/editor.rs:2052
+#: app/src/ui/calendar/editor.rs:2059
 msgid "Sage"
 msgstr "Sauge"
 
-#: app/src/ui/calendar/editor.rs:2053
+#: app/src/ui/calendar/editor.rs:2060
 msgid "Grape"
 msgstr "Raisin"
 
-#: app/src/ui/calendar/editor.rs:2054
+#: app/src/ui/calendar/editor.rs:2061
 msgid "Flamingo"
 msgstr "Flamant rose"
 
-#: app/src/ui/calendar/editor.rs:2055
+#: app/src/ui/calendar/editor.rs:2062
 msgid "Banana"
 msgstr "Banane"
 
-#: app/src/ui/calendar/editor.rs:2056
+#: app/src/ui/calendar/editor.rs:2063
 msgid "Tangerine"
 msgstr "Mandarine"
 
-#: app/src/ui/calendar/editor.rs:2057
+#: app/src/ui/calendar/editor.rs:2064
 msgid "Peacock"
 msgstr "Paon"
 
-#: app/src/ui/calendar/editor.rs:2058
+#: app/src/ui/calendar/editor.rs:2065
 msgid "Graphite"
 msgstr "Graphite"
 
-#: app/src/ui/calendar/editor.rs:2059
+#: app/src/ui/calendar/editor.rs:2066
 msgid "Blueberry"
 msgstr "Myrtille"
 
-#: app/src/ui/calendar/editor.rs:2060
+#: app/src/ui/calendar/editor.rs:2067
 msgid "Basil"
 msgstr "Basilic"
 
-#: app/src/ui/calendar/editor.rs:2061
+#: app/src/ui/calendar/editor.rs:2068
 msgid "Tomato"
 msgstr "Tomate"
 
-#: app/src/ui/calendar/editor.rs:2069 app/src/ui/calendar/editor.rs:2303
+#: app/src/ui/calendar/editor.rs:2076 app/src/ui/calendar/editor.rs:2310
 msgid "By email"
 msgstr "Par courriel"
 
-#: app/src/ui/calendar/editor.rs:2070 app/src/ui/calendar/editor.rs:2300
-#: app/src/ui/calendar/editor.rs:2303
+#: app/src/ui/calendar/editor.rs:2077 app/src/ui/calendar/editor.rs:2307
+#: app/src/ui/calendar/editor.rs:2310
 msgid "Reminder"
 msgstr "Rappel"
 
-#: app/src/ui/calendar/editor.rs:2076
+#: app/src/ui/calendar/editor.rs:2083
 msgid "Uses the calendar's default"
 msgstr "Utilise la valeur par défaut de l’agenda"
 
@@ -11044,18 +11044,26 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} recevra une nouvelle étiquette."
 msgstr[1] "{accounts} recevront de nouvelles étiquettes."
 
-#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
-#: sync/src/calendar_copy.rs:1036
+#: sync/src/calendar_copy.rs:847
+msgid ""
+"this account's calendars moved to another server, which does not have this "
+"event"
+msgstr ""
+"les agendas de ce compte sont passés sur un autre serveur, qui n’a pas cet "
+"événement"
+
+#: sync/src/calendar_copy.rs:993 sync/src/calendar_copy.rs:1095
+#: sync/src/calendar_copy.rs:1140
 msgid "deleted elsewhere"
 msgstr "supprimé ailleurs"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:927
+#: sync/src/calendar_copy.rs:998
 msgid "the calendar is gone"
 msgstr "l’agenda n’existe plus"
 
-#: sync/src/calendar_copy.rs:1690
+#: sync/src/calendar_copy.rs:1814
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -11300,23 +11308,23 @@ msgstr "Le trousseau a refusé : {reason}"
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "Une règle de cet ordinateur a transféré le message joint de {address}."
 
-#: sync/src/services/caldav.rs:387
+#: sync/src/services/caldav.rs:388
 msgid "An event needs an ID to be imported."
 msgstr "Un événement a besoin d’un identifiant pour être importé."
 
-#: sync/src/services/caldav.rs:408
+#: sync/src/services/caldav.rs:409
 msgid "A CalDAV calendar cannot store attached files."
 msgstr "Un agenda CalDAV ne peut pas stocker de fichiers joints."
 
-#: sync/src/services/caldav.rs:412
+#: sync/src/services/caldav.rs:413
 msgid "A CalDAV calendar has no files to share."
 msgstr "Un agenda CalDAV n’a pas de fichiers à partager."
 
-#: sync/src/services/caldav.rs:442
+#: sync/src/services/caldav.rs:443
 msgid "You are not a guest of this event."
 msgstr "Vous n’êtes pas invité à cet événement."
 
-#: sync/src/services/caldav.rs:446
+#: sync/src/services/caldav.rs:447
 msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr ""
 "Penguin Mail ne peut pas modifier la liste des agendas d’un serveur CalDAV."
@@ -11330,73 +11338,73 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "Le message n’indique aucun destinataire."
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:216
 msgid "the title"
 msgstr "le titre"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:217
 msgid "the time"
 msgstr "l’heure"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:218
 msgid "the repeat"
 msgstr "la répétition"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:219
 msgid "the place"
 msgstr "le lieu"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:220
 msgid "the meeting link"
 msgstr "le lien de la réunion"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:221
 msgid "the notes"
 msgstr "les notes"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:222
 msgid "the reminders"
 msgstr "les rappels"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:223
 msgid "the guests"
 msgstr "les invités"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:224
 msgid "your answer"
 msgstr "votre réponse"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:225
 msgid "the color"
 msgstr "la couleur"
 
-#: sync/src/services/jmap/calendar.rs:211
+#: sync/src/services/jmap/calendar.rs:226
 msgid "the privacy"
 msgstr "la confidentialité"
 
-#: sync/src/services/jmap/calendar.rs:212
+#: sync/src/services/jmap/calendar.rs:227
 msgid "whether it shows as busy"
 msgstr "l’affichage comme occupé"
 
-#: sync/src/services/jmap/calendar.rs:213
+#: sync/src/services/jmap/calendar.rs:228
 msgid "the status"
 msgstr "le statut"
 
-#: sync/src/services/jmap/calendar.rs:424
+#: sync/src/services/jmap/calendar.rs:486
 msgid "The server kept the event but did not say its id."
 msgstr "Le serveur a enregistré l’événement sans indiquer son identifiant."
 
-#: sync/src/services/jmap/calendar.rs:727
+#: sync/src/services/jmap/calendar.rs:806
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr ""
 "Penguin Mail ne peut pas joindre de fichiers aux événements de cet agenda "
 "JMAP."
 
-#: sync/src/services/jmap/calendar.rs:731
+#: sync/src/services/jmap/calendar.rs:810
 msgid "This JMAP calendar has no files to share."
 msgstr "Cet agenda JMAP n’a pas de fichiers à partager."
 
-#: sync/src/services/jmap/calendar.rs:791
+#: sync/src/services/jmap/calendar.rs:879
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr ""
 "Penguin Mail ne peut pas modifier la liste des agendas d’un serveur JMAP."
@@ -11413,7 +11421,7 @@ msgstr "Le serveur a refusé cette demande."
 msgid "The server could not take this request."
 msgstr "Le serveur n’a pas pu accepter cette demande."
 
-#: sync/src/services/jmap/jscal.rs:1113
+#: sync/src/services/jmap/jscal.rs:1120
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
@@ -11422,7 +11430,7 @@ msgstr ""
 "donc pas modifier la répétition. Modifiez-la dans l’application qui l’a "
 "définie."
 
-#: sync/src/services/jmap/jscal.rs:1117
+#: sync/src/services/jmap/jscal.rs:1124
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
@@ -11521,37 +11529,37 @@ msgid "This rule is read-only, so Penguin Mail leaves it as it is."
 msgstr ""
 "Cette règle est en lecture seule, Penguin Mail la laisse donc telle quelle."
 
-#: sync/src/services/microsoft/calendar.rs:359
+#: sync/src/services/microsoft/calendar.rs:360
 msgid "Outlook cannot repeat an event that way."
 msgstr "Outlook ne peut pas répéter un événement de cette manière."
 
-#: sync/src/services/microsoft/calendar.rs:651
+#: sync/src/services/microsoft/calendar.rs:652
 msgid "Outlook cannot attach a file to an event."
 msgstr "Outlook ne peut pas joindre de fichier à un événement."
 
-#: sync/src/services/microsoft/calendar.rs:655
+#: sync/src/services/microsoft/calendar.rs:656
 msgid "Outlook has no files to share."
 msgstr "Outlook n’a pas de fichiers à partager."
 
-#: sync/src/services/microsoft/calendar.rs:664
+#: sync/src/services/microsoft/calendar.rs:665
 msgid "Outlook cannot move an event to another calendar."
 msgstr "Outlook ne peut pas déplacer un événement vers un autre agenda."
 
 #. What Outlook has no call for is a refusal, not `Unsupported`:
 #. that answer would keep the change in the queue for good.
-#: sync/src/services/microsoft/calendar.rs:698
+#: sync/src/services/microsoft/calendar.rs:699
 msgid "Outlook cannot take a calendar off the list."
 msgstr "Outlook ne peut pas retirer un agenda de la liste."
 
-#: sync/src/services/microsoft/calendar.rs:699
+#: sync/src/services/microsoft/calendar.rs:700
 msgid "Outlook cannot hide a calendar on all your devices."
 msgstr "Outlook ne peut pas masquer un agenda sur tous vos appareils."
 
-#: sync/src/services/microsoft/calendar.rs:700
+#: sync/src/services/microsoft/calendar.rs:701
 msgid "Outlook cannot subscribe to a calendar by its address."
 msgstr "Outlook ne peut pas s’abonner à un agenda par son adresse."
 
-#: sync/src/services/microsoft/calendar.rs:701
+#: sync/src/services/microsoft/calendar.rs:702
 msgid "Outlook has no other calendars to add."
 msgstr "Outlook n’a pas d’autres agendas à ajouter."
 
@@ -11652,7 +11660,14 @@ msgstr "Indiquez à quel courrier la règle s’applique"
 msgid "Choose what the rule does"
 msgstr "Choisissez ce que fait la règle"
 
-#: sync/src/sign_in.rs:209
+#: sync/src/sign_in.rs:210
+msgid ""
+"You signed in to a different account than {address}, so nothing changed."
+msgstr ""
+"Vous vous êtes connecté à un autre compte que {address}, donc rien n’a "
+"changé."
+
+#: sync/src/sign_in.rs:217
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} est déjà dans Penguin Mail en tant que compte {provider}."
 

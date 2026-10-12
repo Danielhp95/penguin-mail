@@ -2018,6 +2018,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             BrowserSignInError::OtherAddress { .. } => "other address",
             BrowserSignInError::Google(_) => "google",
             BrowserSignInError::Microsoft(_) => "microsoft",
+            BrowserSignInError::KeptJmap(JmapSignInError::DifferentAccount { .. }) => "different account",
             BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) | BrowserSignInError::KeptJmap(_) => {
                 "keeping the account"
             }
@@ -2038,6 +2039,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
     }
     match (err.downcast_ref::<JmapSignInError>(), err.downcast_ref::<ImapSignInError>()) {
         (Some(JmapSignInError::Taken { .. }), _) | (_, Some(ImapSignInError::Taken { .. })) => "address taken",
+        (Some(JmapSignInError::DifferentAccount { .. }), _) => "different account",
         (Some(JmapSignInError::Store(_)), _) | (_, Some(ImapSignInError::Store(_))) => "store",
         (Some(JmapSignInError::Password(_)), _) | (_, Some(ImapSignInError::Password(_))) => "keyring",
         _ => "other",
@@ -3762,6 +3764,7 @@ mod tests {
             labels: true,
             capabilities: Vec::new(),
             oauth: None,
+            owner: None,
         };
         let proposal = saved_jmap(&account, &saved);
         assert_eq!(proposal.session_url, saved.session_url);
@@ -3785,6 +3788,7 @@ mod tests {
             labels: true,
             capabilities: Vec::new(),
             oauth: None,
+            owner: None,
         };
         assert!(saved_jmap(&account, &saved).token);
         let basic = mailrs_store::jmap::JmapSaved { auth: mailrs_store::jmap::JmapAuth::Basic, ..saved };
@@ -3803,6 +3807,7 @@ mod tests {
             labels: true,
             capabilities: Vec::new(),
             oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+            owner: None,
         };
         assert!(asks_dav_password_again(&saved, &[ServiceKind::CalDav]));
         assert!(asks_dav_password_again(&saved, &[ServiceKind::CardDav]));
@@ -3919,6 +3924,20 @@ mod tests {
         assert!(!failure_kind(&taken).contains('@'));
         let refused = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
         assert_eq!(failure_kind(&refused), "unauthorized");
+    }
+
+    #[test]
+    fn a_sign_in_that_reached_another_account_says_so_and_logs_no_address() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = typed_jmap("api.fastmail.com", "", &address, None).unwrap();
+        let other = || anyhow::Error::new(mailrs_sync::sign_in::JmapSignInError::DifferentAccount { address: "me@fastmail.com".into() });
+        let said = "You signed in to a different account than me@fastmail.com, so nothing changed.";
+        assert_eq!(jmap_failure(&other(), &proposal, true).body, said);
+        let browser = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::KeptJmap(
+            mailrs_sync::sign_in::JmapSignInError::DifferentAccount { address: "me@fastmail.com".into() },
+        ));
+        assert_eq!(jmap_browser_failure(&browser, &proposal).body, said);
+        assert_eq!(failure_kind(&other()), "different account");
     }
 
     #[test]

@@ -7,7 +7,7 @@
 mod api;
 mod bodies;
 mod cadence;
-mod calendar;
+pub(crate) mod calendar;
 mod contacts;
 mod errors;
 mod feed;

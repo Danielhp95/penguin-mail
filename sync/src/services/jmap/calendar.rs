@@ -32,32 +32,47 @@ use crate::{BackendError, now_millis};
 
 /// The colour a calendar without one gets: GNOME's blue, as for CalDAV.
 const DEFAULT_COLOR: &str = "#3584e4";
-/// Events per query page and per `/get` of changed events.
-pub(super) const PAGE: usize = 200;
-const CHANGES_PER_CALL: usize = 500;
-/// Rounds of `/changes` one read follows while the server has more.
-const ROUNDS: usize = 20;
+/// Events per query page, and changes per `/changes` call, so one page of
+/// either holds at most this many event objects.
+pub(crate) const PAGE: usize = 200;
+/// Pages of `/changes` one read follows while the server has more. The
+/// read then ends at the state it got to, and the next one goes on from
+/// there, so a burst of any size moves the copy forward every time.
+pub(crate) const ROUNDS: usize = 20;
 /// Hex digits of each part's hash in an etag: 24 bits, so two different
 /// values of one part match by chance once in 16 million.
 const DIGITS: usize = 6;
 const DAY: EpochMillis = 86_400_000;
+/// Tries at one write. `ifInState` covers every event of the account, so
+/// another app's write anywhere answers `stateMismatch`; each try reads
+/// the event again first.
+const TRIES: usize = 3;
 
-/// One read of the account's event changes since a state.
+/// One page of the account's event changes since a state: at most
+/// [`PAGE`] changed events, the ones destroyed, and the state they lead to.
 #[derive(Debug, Default)]
 pub(crate) struct EventChanges {
     since: String,
     new_state: String,
+    more: bool,
     objects: Vec<Value>,
     destroyed: Vec<String>,
 }
 
-/// Where a whole read stands between pages: the next position, and the
-/// state its first page was read at, which becomes the calendar's token.
+/// Where a read stands between pages. A whole read keeps the next
+/// position and the state its first page was read at, which becomes the
+/// calendar's token. A read of changes keeps the state the last page
+/// reached and how many pages it has read.
 #[derive(Serialize, Deserialize)]
 struct Cursor {
+    #[serde(default)]
     position: u64,
     #[serde(default)]
     state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    changes_from: Option<String>,
+    #[serde(default)]
+    round: usize,
 }
 
 /// Year 1 and the end of year 9999, the span `chrono` and a server's date
@@ -360,6 +375,22 @@ fn override_entry(current: &Value, key: &str, inner: Option<&str>, value: Value)
     }
 }
 
+/// Puts one patch entry in `patch`. Two entries for one new override, or
+/// for a series with no overrides yet, name the same path with an object
+/// each; their keys join, since a patch names a path once.
+fn merge_entry(patch: &mut Map<String, Value>, path: String, value: Value) {
+    match (patch.get_mut(&path), value) {
+        (Some(Value::Object(held)), Value::Object(more)) => {
+            for (key, value) in more {
+                merge_entry(held, key, value);
+            }
+        }
+        (_, value) => {
+            patch.insert(path, value);
+        }
+    }
+}
+
 /// What one save sends: the patch, and the parts where the server's
 /// version stayed.
 struct Plan {
@@ -413,8 +444,39 @@ impl<J: JmapApi> Jmap<J> {
         Ok(model::Event { etag: String::new(), ..occurrence })
     }
 
+    /// The object with `uid` on `calendar`, if the server holds one.
+    async fn by_uid(&self, calendar: &str, uid: &str) -> Result<Option<Value>, BackendError> {
+        let filter = json!({ "inCalendar": calendar, "uid": uid });
+        let found = self.api().calendar_events_page(&filter, 0, 1).await.map_err(backend)?;
+        Ok(found.events.into_iter().next())
+    }
+
+    /// Changes the server's `object` to match `event`, the version the
+    /// person chose to keep, and answers it as the server then holds it.
+    async fn overwrite(&self, object: &Value, event: &model::Event, send: bool) -> Result<model::Event, BackendError> {
+        let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
+        let same = model::Event { id: id.clone(), series: None, original_start: None, ..event.clone() };
+        let patch = jscal::patch_of(&same, object, &self.me())?;
+        if !patch.is_empty() {
+            self.write_event(&EventWrite::Update { id: id.clone(), patch }, send, None).await.map_err(backend)?;
+        }
+        self.read_back(&event.calendar, &id, &id).await
+    }
+
+    /// Creates `event` under the UID the copy gave it. JMAP takes no id
+    /// from the client, so a create whose answer was lost, or whose read
+    /// back failed, would make a second event and invite the guests twice
+    /// when tried again. The UID finds the event the first try made, and
+    /// the try goes onto it.
     async fn create(&self, event: &model::Event, send: bool) -> Result<model::Event, BackendError> {
-        let mut object = jscal::object_of(event)?;
+        let mut event = event.clone();
+        if event.uid.trim().is_empty() {
+            event.uid = model::made_uid(&event.id);
+        }
+        if let Some(object) = self.by_uid(&event.calendar, &event.uid).await? {
+            return self.overwrite(&object, &event, send).await;
+        }
+        let mut object = jscal::object_of(&event)?;
         object.insert("calendarIds".into(), json!({ event.calendar.clone(): true }));
         let created = self.write_event(&EventWrite::Create(object), send, None).await.map_err(backend)?;
         let id = created
@@ -567,11 +629,18 @@ impl<J: JmapApi> Jmap<J> {
         }
         let next = position + page.events.len() as u64;
         if !page.events.is_empty() && page.total.is_some_and(|total| next < total) {
-            out.next_page = serde_json::to_string(&Cursor { position: next, state }).ok();
+            out.next_page = serde_json::to_string(&Cursor { position: next, state, changes_from: None, round: 0 }).ok();
         } else if with_token {
             out.next_sync = Some(state);
         }
         Ok(out)
+    }
+
+    /// How many event objects the adapter keeps from its last read of
+    /// changes.
+    #[cfg(test)]
+    pub(crate) fn kept_calendar_objects(&self) -> usize {
+        self.known().calendar_changes.as_ref().map_or(0, |kept| kept.objects.len())
     }
 
     async fn changes_since(&self, since: &str) -> Result<Arc<EventChanges>, BackendError> {
@@ -579,29 +648,36 @@ impl<J: JmapApi> Jmap<J> {
         if let Some(kept) = kept.filter(|k| k.since == since) {
             return Ok(kept);
         }
-        let (mut at, mut ids, mut destroyed) = (since.to_string(), Vec::new(), Vec::new());
-        for _ in 0..ROUNDS {
-            let changes = self.api().calendar_event_changes(&at, CHANGES_PER_CALL).await.map_err(backend)?;
-            ids.extend(changes.created);
-            ids.extend(changes.updated);
-            destroyed.extend(changes.destroyed);
-            at = changes.new_state;
-            if !changes.has_more_changes {
-                break;
-            }
-        }
+        // The page goes before the next is read, so the copy holds one.
+        self.known().calendar_changes = None;
+        let changes = self.api().calendar_event_changes(since, PAGE).await.map_err(backend)?;
+        let mut ids = changes.created;
+        ids.extend(changes.updated);
         ids.sort_unstable();
         ids.dedup();
-        let mut objects = Vec::new();
-        for chunk in ids.chunks(PAGE) {
-            objects.extend(self.api().calendar_events(chunk).await.map_err(backend)?.list);
+        // A server that answers more than it was asked for is read whole
+        // again, a page at a time, rather than held at once.
+        if ids.len() + changes.destroyed.len() > PAGE {
+            return Err(BackendError::StateLost);
         }
-        let read = Arc::new(EventChanges { since: since.to_string(), new_state: at, objects, destroyed });
+        let objects = match ids.is_empty() {
+            true => Vec::new(),
+            false => self.api().calendar_events(&ids).await.map_err(backend)?.list,
+        };
+        let read = Arc::new(EventChanges {
+            since: since.to_string(),
+            new_state: changes.new_state,
+            more: changes.has_more_changes,
+            objects,
+            destroyed: changes.destroyed,
+        });
         self.known().calendar_changes = Some(Arc::clone(&read));
         Ok(read)
     }
 
-    async fn changed_in(&self, calendar: &str, since: &str) -> Result<model::EventPage, BackendError> {
+    /// One page of the changes to `calendar` since `since`, the `round`th
+    /// of this read.
+    async fn changed_in(&self, calendar: &str, since: &str, round: usize) -> Result<model::EventPage, BackendError> {
         let changes = self.changes_since(since).await?;
         let me = self.me();
         let mut page = model::EventPage::default();
@@ -621,6 +697,10 @@ impl<J: JmapApi> Jmap<J> {
         }
         page.removed.extend(changes.destroyed.iter().cloned());
         page.next_sync = Some(changes.new_state.clone());
+        if changes.more && round + 1 < ROUNDS {
+            let next = Cursor { position: 0, state: String::new(), changes_from: Some(changes.new_state.clone()), round: round + 1 };
+            page.next_page = serde_json::to_string(&next).ok();
+        }
         Ok(page)
     }
 }
@@ -639,7 +719,10 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
                 primary: if names_a_default { c.is_default } else { index == 0 },
                 shown: true,
                 hidden: false,
-                reminders: Vec::new(),
+                reminders: c.default_alerts_with_time.as_ref().map(jscal::default_reminders).unwrap_or_default(),
+                // JMAP keeps the two apart: a calendar with timed defaults
+                // and none for all-day events reminds of no all-day event.
+                all_day_reminders: Some(c.default_alerts_without_time.as_ref().map(jscal::default_reminders).unwrap_or_default()),
                 name: c.name,
                 id: c.id,
             })
@@ -650,10 +733,13 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         let filter = json!({ "inCalendar": calendar, "after": filter_time(from) });
         if let Some(page) = page {
             let cursor: Cursor = serde_json::from_str(page).map_err(|_| BackendError::StateLost)?;
+            if let Some(from) = &cursor.changes_from {
+                return self.changed_in(calendar, from, cursor.round).await;
+            }
             return self.page_of(calendar, &filter, cursor.position, Some(cursor.state), true).await;
         }
         match token {
-            Some(since) => self.changed_in(calendar, since).await,
+            Some(since) => self.changed_in(calendar, since, 0).await,
             None => self.page_of(calendar, &filter, 0, None, true).await,
         }
     }
@@ -673,8 +759,8 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
             return self.create(event, send).await;
         }
         // Another write between the read and the write: read again and
-        // apply the person's parts once more, once.
-        for _ in 0..2 {
+        // apply the person's parts once more, at most twice.
+        for _ in 0..TRIES {
             if let Some(saved) = self.try_change(event, etag, send).await? {
                 return Ok(saved);
             }
@@ -684,7 +770,7 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
 
     async fn remove_event(&self, calendar: &str, id: &str, etag: Option<&str>, notify: Notify) -> Result<(), BackendError> {
         let send = notify == Notify::Guests;
-        for _ in 0..2 {
+        for _ in 0..TRIES {
             if let Some(()) = self.try_remove(calendar, id, etag, send).await? {
                 return Ok(());
             }
@@ -696,31 +782,24 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         if event.uid.trim().is_empty() {
             return Err(BackendError::Refused(gettext("An event needs an ID to be imported.")));
         }
-        let filter = json!({ "inCalendar": event.calendar, "uid": event.uid });
-        let found = self.api().calendar_events_page(&filter, 0, 1).await.map_err(backend)?;
-        let Some(object) = found.events.first() else {
+        let Some(object) = self.by_uid(&event.calendar, &event.uid).await? else {
             return self.create(event, false).await;
         };
-        let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
-        let me = self.me();
         // A file holding one occurrence (a RECURRENCE-ID and no rule) of a
         // series the calendar has changes that occurrence, as CalDAV does.
         if let Some(original) = event.original_start {
-            let series = read_events(object, &event.calendar, &me).into_iter().next().ok_or(BackendError::NotFound)?;
+            let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
+            let me = self.me();
+            let series = read_events(&object, &event.calendar, &me).into_iter().next().ok_or(BackendError::NotFound)?;
             let one = model::Event { id: occurrence_id(&series, original), series: Some(id.clone()), ..event.clone() };
-            let key = jscal::override_key(object, original);
-            let entry = override_entry(object, &key, None, jscal::override_of(&one, object, &me)?);
+            let key = jscal::override_key(&object, original);
+            let entry = override_entry(&object, &key, None, jscal::override_of(&one, &object, &me)?);
             let update = EventWrite::Update { id: id.clone(), patch: Map::from_iter([entry]) };
             self.write_event(&update, false, None).await.map_err(backend)?;
             return self.read_back(&event.calendar, &id, &one.id).await;
         }
         // The file is the version the person chose to keep, whole.
-        let same = model::Event { id: id.clone(), series: None, original_start: None, ..event.clone() };
-        let patch = jscal::patch_of(&same, object, &me)?;
-        if !patch.is_empty() {
-            self.write_event(&EventWrite::Update { id: id.clone(), patch }, false, None).await.map_err(backend)?;
-        }
-        self.read_back(&event.calendar, &id, &id).await
+        self.overwrite(&object, event, false).await
     }
 
     async fn upload_attachment(&self, _file: &model::Attachment, _sent: Arc<std::sync::atomic::AtomicU64>) -> Result<model::Attachment, BackendError> {
@@ -754,27 +833,36 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         let Some(participant) = jscal::participant_for(&object, &who) else {
             return Err(BackendError::Refused(gettext("You are not a guest of this event.")));
         };
-        let status = json!(jscal::status_of(Some(answer)));
-        let (path, value) = match occurrence {
-            None => (format!("participants/{}/participationStatus", pointer(&participant)), status),
-            Some(original) => {
-                let key = jscal::override_key(&object, original);
-                let over = object.get("recurrenceOverrides").and_then(|o| o.get(&key));
-                let escaped = pointer(&participant);
-                let whole = format!("participants/{escaped}");
-                // An override may replace the participant map, or one
-                // participant, whole; the answer then goes inside that
-                // copy, since a key inside another key is an invalidPatch.
-                if over.and_then(|o| o.get("participants")).is_some_and(|p| p.get(&participant).is_some()) {
-                    (format!("recurrenceOverrides/{}/participants/{escaped}/participationStatus", pointer(&key)), status)
-                } else if over.and_then(|o| o.get(&whole)).is_some_and(Value::is_object) {
-                    (format!("recurrenceOverrides/{}/{}/participationStatus", pointer(&key), pointer(&whole)), status)
-                } else {
-                    override_entry(&object, &key, Some(&format!("{whole}/participationStatus")), status)
+        // The note goes on the participant too, where a server that
+        // schedules puts it in the REPLY it sends.
+        let mut fields = vec![("participationStatus", json!(jscal::status_of(Some(answer))))];
+        if let Some(note) = note.filter(|n| !n.trim().is_empty()) {
+            fields.push(("participationComment", json!(note)));
+        }
+        let mut patch = Map::new();
+        for (field, value) in fields {
+            let (path, value) = match occurrence {
+                None => (format!("participants/{}/{field}", pointer(&participant)), value),
+                Some(original) => {
+                    let key = jscal::override_key(&object, original);
+                    let over = object.get("recurrenceOverrides").and_then(|o| o.get(&key));
+                    let escaped = pointer(&participant);
+                    let whole = format!("participants/{escaped}");
+                    // An override may replace the participant map, or one
+                    // participant, whole; the answer then goes inside that
+                    // copy, since a key inside another key is an invalidPatch.
+                    if over.and_then(|o| o.get("participants")).is_some_and(|p| p.get(&participant).is_some()) {
+                        (format!("recurrenceOverrides/{}/participants/{escaped}/{field}", pointer(&key)), value)
+                    } else if over.and_then(|o| o.get(&whole)).is_some_and(Value::is_object) {
+                        (format!("recurrenceOverrides/{}/{}/{field}", pointer(&key), pointer(&whole)), value)
+                    } else {
+                        override_entry(&object, &key, Some(&format!("{whole}/{field}")), value)
+                    }
                 }
-            }
-        };
-        let update = EventWrite::Update { id: owner.to_string(), patch: Map::from_iter([(path, value)]) };
+            };
+            merge_entry(&mut patch, path, value);
+        }
+        let update = EventWrite::Update { id: owner.to_string(), patch };
         match self.api().set_calendar_event(&update, true, None).await {
             Ok(_) => {}
             Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods" => {

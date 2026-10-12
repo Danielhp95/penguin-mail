@@ -396,6 +396,7 @@ pub(crate) fn google_calendar(item: &Value) -> calendar::Calendar {
         // Google sends `hidden` only when it is true.
         hidden: item.get("hidden").and_then(Value::as_bool) == Some(true),
         reminders: reminders(item.get("defaultReminders")),
+        all_day_reminders: None,
     }
 }
 

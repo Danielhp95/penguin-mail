@@ -112,6 +112,7 @@ fn saved() -> JmapSaved {
         labels: true,
         capabilities: vec![mailrs_jmap::MAIL.into(), mailrs_jmap::SUBMISSION.into()],
         oauth: None,
+        owner: None,
     }
 }
 
@@ -751,7 +752,16 @@ async fn an_offline_calendar_change_reaches_the_jmap_calendar_after_a_switch() {
         ..mailrs_domain::calendar::Event::default()
     };
     let id = h.account_id;
-    h.db.write(move |c| mailrs_store::calendar::enqueue(c, id, mailrs_store::calendar::ChangeKind::Save, &moved)).await.unwrap();
+    // The account read its CalDAV calendar before going offline.
+    let calendar = mailrs_domain::calendar::Calendar { id: collection.into(), name: "Personal".into(), ..Default::default() };
+    let was = mailrs_domain::calendar::Event { title: "Allotment rota".into(), ..moved.clone() };
+    h.db.write(move |c| {
+        mailrs_store::calendar::save_calendars(c, id, &[calendar])?;
+        mailrs_store::calendar::save_events(c, id, &[was], 0)?;
+        mailrs_store::calendar::enqueue(c, id, mailrs_store::calendar::ChangeKind::Save, &moved)
+    })
+    .await
+    .unwrap();
     let account = account(&h).await;
     let mut calendars = saved();
     calendars.capabilities.push(mailrs_jmap::CALENDARS.into());
@@ -768,6 +778,10 @@ async fn an_offline_calendar_change_reaches_the_jmap_calendar_after_a_switch() {
     let title = fake.event(&on_jmap).and_then(|e| e["title"].as_str().map(str::to_string));
     assert_eq!(title.as_deref(), Some("Allotment rota, moved"), "the change went to the JMAP event with its UID");
     assert!(h.db.read(move |c| mailrs_store::calendar::queued(c, id)).await.unwrap().is_empty());
+    copy.send(id).await.unwrap();
+    let writes = fake.with(|s| s.calls.iter().filter(|c| *c == "CalendarEvent/set").count());
+    assert_eq!(writes, 1, "the change went out once");
+    assert_eq!(fake.with(|s| s.events.len()), 1, "onto the event there, with none made");
 }
 
 /// A browser already signed in to a second account at the same provider
@@ -797,10 +811,10 @@ async fn a_session_that_names_the_address_as_an_identity_is_the_same_account() {
 
 #[test]
 fn a_browser_grant_keeps_the_account_signed_in_through_its_refresh_token() {
-    use crate::sign_in::JmapGrant;
+    use crate::sign_in::BrowserGrant;
     use crate::switch::{SwitchSignIn, signed_with};
 
-    let grant = JmapGrant {
+    let grant = BrowserGrant {
         client: mailrs_store::jmap::SavedOAuth { client_id: "client-1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() },
         access_token: "a1".into(),
         refresh_token: "r1".into(),

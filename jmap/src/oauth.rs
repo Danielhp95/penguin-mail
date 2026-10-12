@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use base64::Engine;
@@ -95,6 +96,10 @@ pub struct Metadata {
     /// without one did not come from it.
     #[serde(default)]
     pub authorization_response_iss_parameter_supported: bool,
+    /// Where RFC 7009 revokes a token, when the server offers it. Only
+    /// [`revoke`] reads it, and it calls it over https alone.
+    #[serde(default)]
+    pub revocation_endpoint: Option<String>,
 }
 
 #[derive(Clone)]
@@ -312,6 +317,44 @@ async fn register_over(
         .ok_or_else(|| JmapError::Decode("no client_id came back".into()))
 }
 
+/// How long removing an account waits on the server to revoke its grant.
+const REVOKE_WAIT: Duration = Duration::from_secs(5);
+
+/// Revokes `refresh_token`, and the grant with it, at the revocation
+/// endpoint the server beside `session_url` names (RFC 7009). Answers
+/// `false` when it names none. Gives up after five seconds, and an error
+/// carries none of the server's words.
+pub async fn revoke(session_url: &str, client_id: &str, refresh_token: &str) -> Result<bool, JmapError> {
+    revoke_over(session_url, client_id, refresh_token, Transport::HttpsOnly, REVOKE_WAIT).await
+}
+
+async fn revoke_over(
+    session_url: &str,
+    client_id: &str,
+    refresh_token: &str,
+    transport: Transport,
+    wait: Duration,
+) -> Result<bool, JmapError> {
+    let revoking = async {
+        let metadata = metadata_over(session_url, transport).await?;
+        let Some(endpoint) = metadata.revocation_endpoint else { return Ok(false) };
+        revoke_at(&endpoint, client_id, refresh_token, transport).await.map(|()| true)
+    };
+    tokio::time::timeout(wait, revoking)
+        .await
+        .unwrap_or_else(|_| Err(JmapError::Network("the revocation took too long".into())))
+}
+
+async fn revoke_at(endpoint: &str, client_id: &str, refresh_token: &str, transport: Transport) -> Result<(), JmapError> {
+    let endpoint = secure(endpoint, transport)?;
+    let form = [("token", refresh_token), ("token_type_hint", "refresh_token"), ("client_id", client_id)];
+    let (status, body) = read(http()?.post(endpoint).form(&form).send().await.map_err(network)?).await?;
+    match status {
+        200..300 => Ok(()),
+        status => Err(JmapError::Problem { status, kind: error_code(body["error"].as_str()), detail: String::new() }),
+    }
+}
+
 impl OAuthClient {
     /// Trades the code from the redirect for tokens.
     pub async fn exchange(&self, code: &str, redirect_uri: &str, pkce: &Pkce) -> Result<Tokens, JmapError> {
@@ -438,6 +481,8 @@ impl Held {
 /// at a time, and holds the newest one until a save of it succeeds.
 struct Keeper {
     keep: Keep,
+    /// The session's retired mark: once set, nothing is saved.
+    retired: Arc<AtomicBool>,
     /// The newest refresh token no save has kept yet. Its lock orders the
     /// saves, so an older token never lands after a newer one. It is taken
     /// with `held` locked or alone, never the other way round.
@@ -445,8 +490,15 @@ struct Keeper {
 }
 
 impl Keeper {
+    /// Saves `rotated`, unless the session is retired: its token would
+    /// land over the new grant's, or under an account that is gone. The
+    /// mark is read under the `unsaved` lock, which `retire` takes after
+    /// setting it, so no save starts once `retire` has returned.
     async fn save(&self, rotated: String, wait: Duration) {
         let mut unsaved = self.unsaved.lock().await;
+        if self.retired.load(Ordering::SeqCst) {
+            return;
+        }
         *unsaved = Some(rotated);
         self.flush(&mut unsaved, wait).await;
     }
@@ -474,6 +526,9 @@ pub struct OAuthSession {
     keeper: Option<Arc<Keeper>>,
     keep_wait: Duration,
     transport: Transport,
+    /// Set once the session is retired: a new sign-in replaced its grant,
+    /// or its account went.
+    retired: Arc<AtomicBool>,
 }
 
 // By hand, so neither token nor the client id reaches a log line.
@@ -502,6 +557,7 @@ impl OAuthSession {
             keeper: None,
             keep_wait: KEEP_WAIT,
             transport: Transport::HttpsOnly,
+            retired: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -514,7 +570,7 @@ impl OAuthSession {
         mut self,
         keep: impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static,
     ) -> OAuthSession {
-        let keeper = Keeper { keep: Box::new(keep), unsaved: Arc::new(tokio::sync::Mutex::new(None)) };
+        let keeper = Keeper { keep: Box::new(keep), retired: Arc::clone(&self.retired), unsaved: Arc::new(tokio::sync::Mutex::new(None)) };
         self.keeper = Some(Arc::new(keeper));
         self
     }
@@ -558,12 +614,35 @@ impl OAuthSession {
         self.renewed(held).await
     }
 
+    /// Stops the session from saving any refresh token from now on, and
+    /// answers the newest one it holds, once a refresh or a save already
+    /// running has ended. A new sign-in retires the session it replaces
+    /// before it keeps its own token, and removing the account retires it
+    /// before the token is revoked and deleted.
+    pub async fn retire(&self) -> String {
+        self.retired.store(true, Ordering::SeqCst);
+        // A refresh holds `held` until its save ends, and a save run again
+        // holds `unsaved`: both are over once these locks are taken.
+        let held = self.held.lock().await;
+        if let Some(keeper) = &self.keeper {
+            drop(keeper.unsaved.lock().await);
+        }
+        held.refresh_token.clone()
+    }
+
+    /// Whether [`OAuthSession::retire`] ran.
+    pub fn retired(&self) -> bool {
+        self.retired.load(Ordering::SeqCst)
+    }
+
     /// Runs `keep` again in the background for a rotated refresh token an
-    /// earlier save failed to keep, unless a save is running already.
+    /// earlier save failed to keep, unless a save is running already or the
+    /// session is retired.
     fn save_again(&self) {
         let Some(keeper) = &self.keeper else { return };
         let Ok(mut unsaved) = Arc::clone(&keeper.unsaved).try_lock_owned() else { return };
-        if unsaved.is_none() {
+        // Read under the lock, as `Keeper::save` reads it.
+        if unsaved.is_none() || self.retired() {
             return;
         }
         let (keeper, wait) = (Arc::clone(keeper), self.keep_wait);
@@ -847,6 +926,7 @@ mod tests {
             scopes_supported: Vec::new(),
             code_challenge_methods_supported: vec!["S256".into()],
             authorization_response_iss_parameter_supported: false,
+            revocation_endpoint: None,
         };
         assert_eq!(checked(https.clone(), "https://auth.example.com", Transport::HttpsOnly), Ok(https.clone()));
         let http = "http://auth.example.com/x".to_string();
@@ -1387,5 +1467,112 @@ mod tests {
         let err = jmap_with(&server, "stale").session().await.unwrap_err();
         assert_eq!(err, JmapError::Unauthorized);
         assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_session_retired_mid_refresh_keeps_nothing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                bearer_answer(json!({"access_token": "a2", "expires_in": 3600, "refresh_token": "r2"}))
+                    .set_delay(Duration::from_millis(300)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = Arc::new(OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL));
+        let refreshing = tokio::spawn({
+            let session = Arc::clone(&session);
+            async move { session.bearer(false).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // A new sign-in or a removal retires the session while its refresh
+        // waits on the server.
+        let last = session.retire().await;
+        assert_eq!(refreshing.await.unwrap().unwrap(), "a2");
+        assert!(saved.lock().unwrap().is_empty(), "a retired session wrote the keyring");
+        assert_eq!(last, "r2", "retiring hands back the newest refresh token");
+    }
+
+    #[tokio::test]
+    async fn a_retired_session_stops_saving_a_rotation_the_keyring_refused() {
+        let server = MockServer::start().await;
+        rotating_once(&server, 3600).await;
+        let (saved, keep) = refusing_first(1);
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        session.retire().await;
+        session.bearer(false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(saved.lock().unwrap().is_empty(), "save_again ran for a retired session");
+    }
+
+    /// Metadata that names `/revoke` on the mock server.
+    async fn serving_revocation(server: &MockServer) {
+        let mut metadata = metadata_for(server, true);
+        metadata["revocation_endpoint"] = json!(format!("{}/revoke", server.uri()));
+        serving(server, metadata).await;
+    }
+
+    #[tokio::test]
+    async fn revoking_sends_the_refresh_token_with_its_hint() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .and(body_string_contains("token=r1"))
+            .and(body_string_contains("token_type_hint=refresh_token"))
+            .and(body_string_contains("client_id=c1"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let revoked = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await;
+        assert_eq!(revoked, Ok(true));
+    }
+
+    #[tokio::test]
+    async fn a_server_that_names_no_revocation_endpoint_is_left_alone() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, true).await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
+        assert_eq!(revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await, Ok(false));
+    }
+
+    #[tokio::test]
+    async fn a_revocation_that_hangs_is_given_up_soon() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(10)))
+            .mount(&server)
+            .await;
+        let started = std::time::Instant::now();
+        let revoked = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_millis(200)).await;
+        assert!(revoked.is_err());
+        assert!(started.elapsed() < Duration::from_secs(2), "the removal would wait on the server");
+    }
+
+    #[tokio::test]
+    async fn a_refused_revocation_names_nothing_the_server_wrote() {
+        let server = MockServer::start().await;
+        serving_revocation(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/revoke"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_request", "error_description": "SECRET r1"})))
+            .mount(&server)
+            .await;
+        let err = revoke_over(&session_of(&server), "c1", "r1", LOCAL, Duration::from_secs(5)).await.unwrap_err();
+        let shown = format!("{err} {err:?}");
+        assert!(!shown.contains("SECRET") && !shown.contains("r1"), "{shown}");
+    }
+
+    #[tokio::test]
+    async fn a_revocation_endpoint_off_https_is_never_called() {
+        let refused = revoke_at("http://auth.example.com/revoke", "c1", "r1", Transport::HttpsOnly).await;
+        assert_eq!(refused, Err(JmapError::NotHttps));
     }
 }
