@@ -10420,7 +10420,7 @@ msgstr ""
 msgid "Is flagged"
 msgstr ""
 
-#: sync/src/account/outbox.rs:171
+#: sync/src/account/outbox.rs:149
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -10440,37 +10440,37 @@ msgstr ""
 msgid "This message asks for no read receipt."
 msgstr ""
 
-#: sync/src/account/writes.rs:760
+#: sync/src/account/writes.rs:747
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr ""
 
-#: sync/src/account/writes.rs:783
+#: sync/src/account/writes.rs:770
 msgid ""
 "{provider} is busy, so “{action}” did not go through for {conversations}. "
 "Try again in a moment."
 msgstr ""
 
-#: sync/src/account/writes.rs:792
+#: sync/src/account/writes.rs:779
 msgid ""
 "{provider} stayed busy for {waited}, so “{action}” did not go through for "
 "{conversations}."
 msgstr ""
 
-#: sync/src/account/writes.rs:799
+#: sync/src/account/writes.rs:786
 msgid "{action} failed: {reason}"
 msgstr ""
 
-#: sync/src/account/writes.rs:817
+#: sync/src/account/writes.rs:804
 msgid "a moment"
 msgstr ""
 
-#: sync/src/account/writes.rs:819
+#: sync/src/account/writes.rs:806
 msgid "{count} second"
 msgid_plural "{count} seconds"
 msgstr[0] ""
 msgstr[1] ""
 
-#: sync/src/account/writes.rs:824
+#: sync/src/account/writes.rs:811
 msgid "a minute"
 msgstr ""
 
