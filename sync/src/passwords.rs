@@ -325,6 +325,9 @@ pub struct Secrets {
     pub passwords: Arc<Passwords>,
     pub microsoft: Arc<Passwords>,
     pub jmap: Arc<Passwords>,
+    /// The OAuth sessions JMAP accounts hold this run, beside the refresh
+    /// tokens in `jmap`.
+    pub jmap_sessions: crate::connect::JmapSessions,
 }
 
 impl Secrets {
@@ -337,6 +340,7 @@ impl Secrets {
             passwords: Arc::new(Passwords::Keyring(KeyringPasswords::new())),
             microsoft: Arc::new(Passwords::Keyring(KeyringPasswords::microsoft())),
             jmap: Arc::new(Passwords::Keyring(KeyringPasswords::jmap())),
+            jmap_sessions: crate::connect::JmapSessions::default(),
         }
     }
 
@@ -349,6 +353,7 @@ impl Secrets {
             passwords: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             microsoft: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             jmap: Arc::new(Passwords::Memory(MemoryPasswords::default())),
+            jmap_sessions: crate::connect::JmapSessions::default(),
         }
     }
 
@@ -380,6 +385,7 @@ impl Secrets {
                 Box::new(move || tokens.delete(id))
             }
             Provider::Jmap => {
+                self.jmap_sessions.forget(id);
                 let (jmap, passwords) = (Arc::clone(&self.jmap), Arc::clone(&self.passwords));
                 // The token or password, and the CalDAV app password kept
                 // beside it in part 3. Nothing may stay under the id: ids

@@ -6,11 +6,10 @@
 //! Fastmail and Stalwart both work this way, so no client id is built in.
 
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_discover::JmapProvider;
-use mailrs_domain::Provider;
+use mailrs_domain::{AccountId, Provider};
 use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens};
 use mailrs_jmap::{Auth, JmapClient, JmapError};
 use mailrs_store::accounts;
@@ -116,24 +115,29 @@ async fn redirected(
     }
 }
 
-/// The client id the JMAP account at `address` signed in with before, when
-/// it signed in through the browser to the same session and the server
-/// still names the same token endpoint.
-async fn kept_client(connector: &Connector, address: &str, session_url: &str, metadata: &Metadata) -> Result<Option<String>, BrowserSignInError> {
+/// The account at `address` and the client id it signed in with before,
+/// when it signed in through the browser to the same session and the
+/// server still names the same token endpoint.
+async fn kept_client(
+    connector: &Connector,
+    address: &str,
+    session_url: &str,
+    metadata: &Metadata,
+) -> Result<Option<(AccountId, String)>, BrowserSignInError> {
     let address = address.to_string();
     let saved = connector
         .db
         .read(move |c| match accounts::account_by_email(c, &address)? {
-            Some(held) if held.provider == Provider::Jmap => mailrs_store::jmap::load(c, held.id),
+            Some(held) if held.provider == Provider::Jmap => Ok(mailrs_store::jmap::load(c, held.id)?.map(|saved| (held.id, saved))),
             _ => Ok(None),
         })
         .await
         .map_err(|err| BrowserSignInError::KeptJmap(err.into()))?;
     Ok(saved
-        .filter(|saved| saved.auth == JmapAuth::OAuth && saved.session_url == session_url)
-        .and_then(|saved| saved.oauth)
-        .filter(|client| client.token_endpoint == metadata.token_endpoint)
-        .map(|client| client.client_id))
+        .filter(|(_, saved)| saved.auth == JmapAuth::OAuth && saved.session_url == session_url)
+        .and_then(|(id, saved)| saved.oauth.map(|client| (id, client)))
+        .filter(|(_, client)| client.token_endpoint == metadata.token_endpoint)
+        .map(|(id, client)| (id, client.client_id)))
 }
 
 /// What one trip to the consent page needs besides the client.
@@ -203,12 +207,23 @@ pub(crate) async fn signing_in<S: SignInServer>(
     let scopes = scopes_for(&offer, &metadata);
     let trip = Trip { server, metadata: &metadata, scopes: &scopes, session_url: &offer.session_url, address, open: &open, wait };
     let mut canceled = std::pin::pin!(canceled);
-    let (client_id, tokens) = match kept_client(connector, address, &offer.session_url, &metadata).await? {
-        Some(kept) => match trip.consent(&kept, canceled.as_mut()).await {
+    let sessions = &connector.secrets.jmap_sessions;
+    // A kept client whose last sign-in never came back is not tried again:
+    // the server may have forgotten it and show its own page instead of
+    // coming back. The row keeps it until a new sign-in succeeds.
+    let kept = kept_client(connector, address, &offer.session_url, &metadata)
+        .await?
+        .filter(|(id, _)| !sessions.kept_client_failed(*id));
+    let (client_id, tokens) = match kept {
+        Some((id, kept)) => match trip.consent(&kept, canceled.as_mut()).await {
             Err(BrowserSignInError::Jmap(JmapError::UnknownClient)) => {
                 let fresh = trip.register().await?;
                 let tokens = trip.consent(&fresh, canceled.as_mut()).await?;
                 (fresh, tokens)
+            }
+            Err(err @ (BrowserSignInError::GaveUp | BrowserSignInError::Canceled)) => {
+                sessions.kept_client_unanswered(id);
+                return Err(err);
             }
             done => (kept, done?),
         },
@@ -247,14 +262,17 @@ pub(crate) async fn signing_in<S: SignInServer>(
     // The keyring takes the refresh token as the account is kept; when it
     // refuses, a new account goes again and the sign-in fails.
     let account = jmap_signed_in(db, secrets, new, now_millis()).await?;
+    // The new refresh token, and maybe a new client, need a new session.
+    secrets.jmap_sessions.forget(account.id);
     let window_days = config.engine_config().window_days;
-    let services = connect_jmap(db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, window_days).await?;
+    let services = connect_jmap(db, secrets, &account, window_days).await?;
     Ok(SignedIn { account, name: None, services })
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::sync::Arc;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
@@ -404,7 +422,10 @@ mod tests {
         let server = FakeServer::answering("client", vec![tokens("r1"), tokens("r2")]);
         let pages = Arc::new(Mutex::new(Vec::new()));
         let first = sign_in(&server, &reach, &session_url, &pages).await.unwrap();
+        let before = reach.secrets.jmap_sessions.held(first.account.id).unwrap();
         let again = sign_in(&server, &reach, &session_url, &pages).await.unwrap();
+        let after = reach.secrets.jmap_sessions.held(again.account.id).unwrap();
+        assert!(!Arc::ptr_eq(&before, &after), "the new refresh token gets a new session");
         assert_eq!(again.account.id, first.account.id);
         assert_eq!(server.registrations(), 1, "a sign-in again registers nothing");
         assert!(pages.lock().unwrap()[1].contains("client_id=client-1"));
@@ -511,5 +532,35 @@ mod tests {
     fn a_server_outside_the_table_asks_for_the_mail_scopes_its_metadata_lists() {
         let offer = JmapBrowser { session_url: "https://mail.example.org/jmap/session".into(), provider: None };
         assert_eq!(scopes_for(&offer, &metadata()), ["urn:ietf:params:oauth:scope:mail", "offline_access"]);
+    }
+
+    #[tokio::test]
+    async fn a_kept_client_that_never_came_back_is_replaced_on_the_next_attempt() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let first = FakeServer::answering("old", vec![tokens("r1")]);
+        let account = sign_in(&first, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap().account;
+        // The server shows its own page for the kept client and never
+        // comes back; the person cancels.
+        let offer = JmapBrowser { session_url: session_url.clone(), provider: None };
+        let silent = FakeServer::answering("unused", Vec::new());
+        let canceled = signing_in(&silent, &reach, offer, "me@fastmail.com", |_: &str| {}, std::future::ready(()), Duration::from_secs(5)).await;
+        assert!(matches!(canceled, Err(BrowserSignInError::Canceled)));
+        assert_eq!(silent.registrations(), 0);
+        assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("old-1"), "a cancel changes nothing kept");
+        let still = crate::connect_jmap(&db, &reach.secrets, &account, 30).await;
+        assert!(still.is_ok(), "the account keeps working with its old client");
+        let next = FakeServer::answering("new", vec![tokens("r2")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        sign_in(&next, &reach, &session_url, &pages).await.unwrap();
+        assert_eq!(next.registrations(), 1);
+        assert!(pages.lock().unwrap()[0].contains("client_id=new-1"), "the kept client is not tried again");
+        assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("new-1"));
+        let after = FakeServer::answering("later", vec![tokens("r3")]);
+        sign_in(&after, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap();
+        assert_eq!(after.registrations(), 0, "the new client is kept and trusted again");
     }
 }

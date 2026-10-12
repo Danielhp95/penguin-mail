@@ -547,7 +547,7 @@ impl OAuthSession {
     /// An access token other than `refused`, which the server just turned
     /// away. When another call refreshed while this one waited for the
     /// lock, its token comes back and no second refresh goes out.
-    pub(crate) async fn bearer_instead_of(&self, refused: &str) -> Result<String, JmapError> {
+    pub async fn bearer_instead_of(&self, refused: &str) -> Result<String, JmapError> {
         self.save_again();
         let held = Arc::clone(&self.held).lock_owned().await;
         if let Some(token) = held.usable()
