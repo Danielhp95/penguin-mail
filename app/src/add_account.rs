@@ -1889,6 +1889,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::IssuerMismatch => "issuer mismatch",
             JmapError::BadRedirect => "bad redirect",
             JmapError::NotBearer => "not bearer",
+            JmapError::UnknownClient => "unknown client",
         };
     }
     if let Some(browser) = err.downcast_ref::<BrowserSignInError>() {

@@ -381,7 +381,8 @@ impl OAuthClient {
         }
         Err((match (status, error_code(body["error"].as_str()).as_str()) {
             (_, "invalid_grant") if body["temporary"].as_bool() == Some(true) => JmapError::SignInLocked,
-            (_, "invalid_grant" | "invalid_client" | "unauthorized_client") => JmapError::Unauthorized,
+            (_, "invalid_client" | "unauthorized_client") => JmapError::UnknownClient,
+            (_, "invalid_grant") => JmapError::Unauthorized,
             (429 | 503, _) => JmapError::RateLimited { retry_after: None },
             (status, error) => JmapError::Problem { status, kind: error.to_string(), detail: String::new() },
         }, None))
@@ -734,6 +735,7 @@ pub fn parse_redirect(request: &str, state: &str, metadata: &Metadata) -> Option
     if let Some(error) = error {
         return Some(Err(match error.as_str() {
             "access_denied" => JmapError::Declined,
+            "invalid_client" | "unauthorized_client" => JmapError::UnknownClient,
             other => JmapError::Forbidden(error_code(Some(other))),
         }));
     }
@@ -923,6 +925,19 @@ mod tests {
             .mount(&server)
             .await;
         assert_eq!(client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn a_client_the_server_forgot_is_told_apart_from_a_revoked_grant() {
+        for error in ["invalid_client", "unauthorized_client"] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(401).set_body_json(json!({"error": error})))
+                .mount(&server)
+                .await;
+            assert_eq!(client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err(), JmapError::UnknownClient, "{error}");
+        }
     }
 
     async fn answering_tokens(server: &MockServer, answer: ResponseTemplate) {
