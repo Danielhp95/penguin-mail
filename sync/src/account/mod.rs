@@ -80,7 +80,8 @@ pub struct AccountSync {
     /// Forever on a row the store lacks knows what to erase.
     hits: Mutex<std::collections::HashMap<String, listed::Hits>>,
     /// The last small messages fetched whole, so a file opened right
-    /// after its message costs no second fetch.
+    /// after its message costs no second fetch. One cache serves every
+    /// account of the engine.
     raw: Arc<Mutex<RawCache>>,
     /// Taken on a folder server by a write from its first server command
     /// to the moment its moved messages' refs are recorded, and by every
@@ -140,6 +141,13 @@ impl AccountSync {
         self
     }
 
+    /// Shares `cache` with the other accounts, so all of them keep their
+    /// raw messages under one budget.
+    pub fn with_raw_cache(mut self, cache: Arc<Mutex<RawCache>>) -> Self {
+        self.raw = cache;
+        self
+    }
+
     /// Caps the wait between retries of a triage write.
     pub fn with_retry_max(mut self, retry_max: Duration) -> Self {
         self.retry_max = retry_max;
@@ -177,11 +185,14 @@ impl AccountSync {
         // real length: Gmail's size estimate can put it under the limit
         // while its bytes come to more, and its files are read from these
         // bytes next.
-        if (bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await? {
+        // A POP3 account's bytes are in the store already, and keeping a
+        // second copy here would double them.
+        let local = self.services.mail.capabilities().local_mailboxes;
+        if !local && ((bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await?) {
             self.raw
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .put(message_id.to_string(), Arc::clone(&bytes));
+                .put(self.account_id, message_id.to_string(), Arc::clone(&bytes));
         }
         Ok(bytes)
     }
@@ -191,7 +202,7 @@ impl AccountSync {
         self.raw
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(message_id)
+            .get(self.account_id, message_id)
     }
 
     /// Whether `message_id` goes by the raw path: a stored message whose
