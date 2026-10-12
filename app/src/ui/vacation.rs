@@ -247,13 +247,17 @@ impl Form {
             .build();
         body.buffer().set_text(&reply.body);
         crate::ui::name(&body, &gettext("Message"));
+        let placeholder_text = gettext("The reply people get while you are away");
+        body.update_property(&[gtk::accessible::Property::Placeholder(&placeholder_text)]);
         // A text view has no placeholder, so a dim line sits where the
         // text starts while there is none, and says what goes there.
         let hint = gtk::Label::builder()
-            .label(gettext("The reply people get while you are away"))
+            .label(&placeholder_text)
             .can_target(false)
             .css_classes(["dim-label"])
             .build();
+        // The text view says the placeholder to a screen reader already.
+        hint.update_state(&[gtk::accessible::State::Hidden(true)]);
         // Buffer coordinates: they count the left margin but start under
         // the top one.
         body.add_overlay(&hint, 12, 0);
