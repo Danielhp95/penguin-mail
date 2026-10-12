@@ -4045,11 +4045,11 @@ msgstr ""
 msgid "Leave the user name empty to sign in with your address."
 msgstr ""
 
-#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2975
+#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2977
 msgid "Use These Settings"
 msgstr ""
 
-#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3514
+#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3516
 msgid "Looking up {domain}"
 msgstr ""
 
@@ -4064,7 +4064,7 @@ msgid ""
 msgstr ""
 
 #: app/src/ui/add_account.rs:2521 app/src/ui/add_account.rs:2614
-#: app/src/ui/add_account.rs:3584
+#: app/src/ui/add_account.rs:3586
 msgid "Signing In…"
 msgstr ""
 
@@ -4080,47 +4080,47 @@ msgstr ""
 msgid "Looking Up…"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3046
+#: app/src/ui/add_account.rs:3048
 msgid "Sign in with {provider} in your browser"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3051
+#: app/src/ui/add_account.rs:3053
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
 msgstr ""
 
-#: app/src/ui/add_account.rs:3071
+#: app/src/ui/add_account.rs:3073
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
 msgstr ""
 
-#: app/src/ui/add_account.rs:3074
+#: app/src/ui/add_account.rs:3076
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
 msgstr ""
 
-#: app/src/ui/add_account.rs:3085
+#: app/src/ui/add_account.rs:3087
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
 msgstr ""
 
-#: app/src/ui/add_account.rs:3256
+#: app/src/ui/add_account.rs:3258
 msgid "Link copied"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3283
+#: app/src/ui/add_account.rs:3285
 msgid "{account} is added"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3303
+#: app/src/ui/add_account.rs:3305
 msgid "{account} is ready"
 msgstr ""
 
-#: app/src/ui/add_account.rs:3587
+#: app/src/ui/add_account.rs:3589
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."

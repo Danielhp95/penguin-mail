@@ -4125,11 +4125,11 @@ msgstr "使用者名稱"
 msgid "Leave the user name empty to sign in with your address."
 msgstr "使用者名稱留空即以電子郵件地址登入。"
 
-#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2975
+#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2977
 msgid "Use These Settings"
 msgstr "使用這些設定"
 
-#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3514
+#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3516
 msgid "Looking up {domain}"
 msgstr "正在查詢 {domain}"
 
@@ -4146,7 +4146,7 @@ msgstr ""
 "式密碼，再貼至此處。"
 
 #: app/src/ui/add_account.rs:2521 app/src/ui/add_account.rs:2614
-#: app/src/ui/add_account.rs:3584
+#: app/src/ui/add_account.rs:3586
 msgid "Signing In…"
 msgstr "正在登入…"
 
@@ -4162,17 +4162,17 @@ msgstr "未傳送密碼。"
 msgid "Looking Up…"
 msgstr "正在查詢…"
 
-#: app/src/ui/add_account.rs:3046
+#: app/src/ui/add_account.rs:3048
 msgid "Sign in with {provider} in your browser"
 msgstr "在瀏覽器中以 {provider} 登入"
 
-#: app/src/ui/add_account.rs:3051
+#: app/src/ui/add_account.rs:3053
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
 msgstr "已在瀏覽器中開啟 {provider} 登入頁面。完成登入後，此視窗會繼續下一步。"
 
-#: app/src/ui/add_account.rs:3071
+#: app/src/ui/add_account.rs:3073
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4180,7 +4180,7 @@ msgstr ""
 "此版本的 Penguin Mail 未包含 Google 登入功能。請從 github.com/c9dev/penguin-"
 "mail/releases 取得發行版本。"
 
-#: app/src/ui/add_account.rs:3074
+#: app/src/ui/add_account.rs:3076
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4188,7 +4188,7 @@ msgstr ""
 "此版本的 Penguin Mail 未包含 Microsoft 登入功能。請從 github.com/c9dev/"
 "penguin-mail/releases 取得發行版本。"
 
-#: app/src/ui/add_account.rs:3085
+#: app/src/ui/add_account.rs:3087
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
@@ -4196,19 +4196,19 @@ msgstr ""
 "正在使用自己的 Google 用戶端登入。Google 登入頁面已在瀏覽器中開啟，在該處完成"
 "後，此視窗會繼續下一步。"
 
-#: app/src/ui/add_account.rs:3256
+#: app/src/ui/add_account.rs:3258
 msgid "Link copied"
 msgstr "已複製連結"
 
-#: app/src/ui/add_account.rs:3283
+#: app/src/ui/add_account.rs:3285
 msgid "{account} is added"
 msgstr "已新增 {account}"
 
-#: app/src/ui/add_account.rs:3303
+#: app/src/ui/add_account.rs:3305
 msgid "{account} is ready"
 msgstr "{account} 已準備就緒"
 
-#: app/src/ui/add_account.rs:3587
+#: app/src/ui/add_account.rs:3589
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."
