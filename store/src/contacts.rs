@@ -4,8 +4,7 @@
 //! from mail, someone you wrote to ranks above someone who only wrote to
 //! you.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Mutex, PoisonError};
+use std::collections::{HashMap, HashSet};
 
 use mailrs_domain::{AccountId, Address, EpochMillis};
 use rusqlite::Connection;
@@ -131,126 +130,194 @@ pub fn suggestions(conn: &Connection) -> Result<Vec<Suggestion>> {
 /// accounts' own addresses and automated senders.
 ///
 /// Reading every message costs tens of milliseconds on a large store, and
-/// the app reads this list again after any new mail. So a store on disk
-/// keeps the tally between reads, with the last message row it reached and
-/// the store's contact mark, which triggers move on any change but new
-/// mail (`contact_marks`). While the mark stands, a read takes only the
-/// rows after the last one; once it moved, the read starts over.
+/// the app reads this list again after any new mail. So the store keeps
+/// the tally (`correspondents`), counted up to message row `counted_row`,
+/// and this read adds the rows after it. A kept tally marked stale, after
+/// a change to a row it counted, is passed over for a read of every row
+/// until [`catch_up`] counts again.
 pub fn list_correspondents(conn: &Connection) -> Result<Vec<Correspondent>> {
+    // The mark, the kept tally and the rows after it, as of one moment.
+    let _snapshot = match conn.is_autocommit() {
+        true => Some(conn.unchecked_transaction()?),
+        false => None,
+    };
     let own: HashSet<String> = conn
         .prepare_cached("SELECT lower(email) FROM accounts")?
         .query_map([], |row| row.get(0))?
         .collect::<rusqlite::Result<_>>()?;
-    // Read before the rows, so a change made while they are read moves the
-    // mark past the one kept with them.
-    let mark: (i64, i64) = conn
-        .prepare_cached("SELECT born, epoch FROM contact_marks")?
-        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    let Some(path) = conn.path().filter(|path| !path.is_empty()) else {
-        let mut tally = Tally::default();
-        tally.read(conn)?;
-        return Ok(ranked(&tally, &own));
-    };
-    let mut kept = KEPT.lock().unwrap_or_else(PoisonError::into_inner);
-    let tally = kept.entry(path.to_string()).or_default();
-    if tally.mark != Some(mark) {
-        *tally = Tally { mark: Some(mark), ..Tally::default() };
+    let (stale, counted_row) = marks(conn)?;
+    let mut tally = Tally::default();
+    if !stale {
+        let mut stmt = conn.prepare_cached("SELECT key, email, name, score, last_seen FROM correspondents")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                Correspondent { email: row.get(1)?, name: row.get(2)?, score: row.get(3)?, last_seen: row.get(4)? },
+            ))
+        })?;
+        tally.found = rows.collect::<rusqlite::Result<_>>()?;
+        tally.last_row = counted_row;
     }
     tally.read(conn)?;
-    Ok(ranked(tally, &own))
+    Ok(tally.ranked(&own))
 }
 
-/// The tally of each store on disk, by its path.
-static KEPT: Mutex<BTreeMap<String, Tally>> = Mutex::new(BTreeMap::new());
+/// Brings the kept tally up to date: counts the message rows after the
+/// last one it counted, or every row once it is stale. Runs inside the
+/// caller's transaction; the store's writer calls it when idle. The count
+/// keys on the messages' implicit rowids, which a VACUUM or a rebuilt
+/// table renumbers: either must mark the tally stale first.
+pub fn catch_up(conn: &Connection) -> Result<()> {
+    let (stale, last) = marks(conn)?;
+    if stale {
+        // Counted in memory and written once: an upsert per address of
+        // every message costs several times as long. The map goes when
+        // this returns.
+        let mut tally = Tally::default();
+        tally.read(conn)?;
+        conn.execute("DELETE FROM correspondents", [])?;
+        let mut insert = conn.prepare_cached(
+            "INSERT INTO correspondents (key, email, name, score, last_seen) VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for (key, person) in &tally.found {
+            insert.execute(rusqlite::params![key, person.email, person.name, person.score, person.last_seen])?;
+        }
+        conn.prepare_cached("UPDATE contact_marks SET stale = 0, counted_row = ?1")?
+            .execute([tally.last_row])?;
+        return Ok(());
+    }
+    let mut upsert = conn.prepare_cached(
+        "INSERT INTO correspondents (key, email, name, score, last_seen) VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT (key) DO UPDATE SET score = score + excluded.score, \
+         name = CASE WHEN excluded.last_seen >= last_seen OR name IS NULL \
+             THEN coalesce(excluded.name, name) ELSE name END, \
+         last_seen = CASE WHEN excluded.last_seen >= last_seen OR name IS NULL \
+             THEN max(last_seen, excluded.last_seen) ELSE last_seen END",
+    )?;
+    let counted = each_address(conn, last, |address, weight, date| {
+        if let Some((key, email, name)) = counted(address) {
+            upsert.execute(rusqlite::params![key, email, name, weight, date])?;
+        }
+        Ok(())
+    })?;
+    conn.prepare_cached("UPDATE contact_marks SET stale = 0, counted_row = ?1")?
+        .execute([counted.unwrap_or(last)])?;
+    Ok(())
+}
+
+/// Whether the kept tally is stale, and the last message row it counted.
+fn marks(conn: &Connection) -> Result<(bool, i64)> {
+    Ok(conn
+        .prepare_cached("SELECT stale, counted_row FROM contact_marks")?
+        .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?)
+}
+
+/// Hands each address of the message rows after `after` to `note`, in row
+/// order, the order the name kept depends on: a sent message's recipients
+/// with [`SENT_WEIGHT`], any other message's sender with 1. Returns the
+/// last row read, or `None` when there were none.
+fn each_address(
+    conn: &Connection,
+    after: i64,
+    mut note: impl FnMut(Address, i64, EpochMillis) -> Result<()>,
+) -> Result<Option<i64>> {
+    // Only sent mail needs its recipients, so only sent mail hands over
+    // the JSON that holds them.
+    let mut stmt = conn.prepare_cached(
+        "SELECT m.rowid, m.from_name, m.from_addr, \
+         CASE WHEN s.message_id IS NULL THEN NULL ELSE m.to_addrs END, \
+         CASE WHEN s.message_id IS NULL THEN NULL ELSE m.cc_addrs END, m.date \
+         FROM messages m LEFT JOIN message_mailboxes s \
+         ON s.account_id = m.account_id AND s.message_id = m.id \
+         AND s.mailbox IN (SELECT key FROM mailboxes WHERE role = 'sent') \
+         WHERE m.rowid > ?1 ORDER BY m.rowid",
+    )?;
+    let mut rows = stmt.query([after])?;
+    let mut last = None;
+    while let Some(row) = rows.next()? {
+        let date: EpochMillis = row.get(5)?;
+        match (row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?) {
+            (Some(to), Some(cc)) => {
+                let to: Vec<Address> = serde_json::from_str(&to).unwrap_or_default();
+                let cc: Vec<Address> = serde_json::from_str(&cc).unwrap_or_default();
+                for address in to.into_iter().chain(cc) {
+                    note(address, SENT_WEIGHT, date)?;
+                }
+            }
+            _ => {
+                if let Some(email) = row.get::<_, Option<String>>(2)? {
+                    note(Address { name: row.get(1)?, email }, 1, date)?;
+                }
+            }
+        }
+        last = Some(row.get(0)?);
+    }
+    Ok(last)
+}
+
+/// The tally's key, address and name for `address`, or `None` for one not
+/// worth suggesting.
+fn counted(address: Address) -> Option<(String, String, Option<String>)> {
+    let key = address.email.trim().to_lowercase();
+    if key.is_empty() || !key.contains('@') || is_automated(&key) {
+        return None;
+    }
+    let name = address
+        .name
+        .filter(|n| !n.trim().is_empty() && !n.contains('@'));
+    Some((key, address.email.trim().to_string(), name))
+}
 
 /// Correspondents counted from the message rows up to `last_row`, by
-/// lower-case address, with the contact mark they were counted under.
+/// lower-case address.
 #[derive(Default)]
 struct Tally {
-    mark: Option<(i64, i64)>,
     last_row: i64,
     found: HashMap<String, Correspondent>,
 }
 
 impl Tally {
-    /// Counts the message rows after `last_row`, in row order, the order a
-    /// read of every row takes, since the name kept depends on it.
+    /// Counts the message rows after `last_row`, as [`catch_up`] does,
+    /// and moves `last_row` to the last of them.
     fn read(&mut self, conn: &Connection) -> Result<()> {
-        // Only sent mail needs its recipients, so only sent mail hands over
-        // the JSON that holds them.
-        let mut stmt = conn.prepare_cached(
-            "SELECT m.rowid, m.from_name, m.from_addr, \
-             CASE WHEN s.message_id IS NULL THEN NULL ELSE m.to_addrs END, \
-             CASE WHEN s.message_id IS NULL THEN NULL ELSE m.cc_addrs END, m.date \
-             FROM messages m LEFT JOIN message_mailboxes s \
-             ON s.account_id = m.account_id AND s.message_id = m.id \
-             AND s.mailbox IN (SELECT key FROM mailboxes WHERE role = 'sent') \
-             WHERE m.rowid > ?1 ORDER BY m.rowid",
-        )?;
-        let rows = stmt.query_map([self.last_row], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, EpochMillis>(5)?,
-            ))
-        })?;
-        for row in rows {
-            let (row, from_name, from_addr, to, cc, date) = row?;
-            if let (Some(to), Some(cc)) = (to, cc) {
-                let to: Vec<Address> = serde_json::from_str(&to).unwrap_or_default();
-                let cc: Vec<Address> = serde_json::from_str(&cc).unwrap_or_default();
-                for address in to.into_iter().chain(cc) {
-                    self.note(address, SENT_WEIGHT, date);
-                }
-            } else if let Some(email) = from_addr {
-                self.note(Address { name: from_name, email }, 1, date);
+        let found = &mut self.found;
+        let last = each_address(conn, self.last_row, |address, weight, date| {
+            let Some((key, email, name)) = counted(address) else {
+                return Ok(());
+            };
+            let entry = found.entry(key).or_insert_with(|| Correspondent {
+                name: None,
+                email,
+                score: 0,
+                last_seen: date,
+            });
+            entry.score += weight;
+            if date >= entry.last_seen || entry.name.is_none() {
+                entry.name = name.or(entry.name.take());
+                entry.last_seen = entry.last_seen.max(date);
             }
-            // Row by row, so a read that fails part way counts no row twice.
-            self.last_row = row;
-        }
+            Ok(())
+        })?;
+        self.last_row = last.unwrap_or(self.last_row);
         Ok(())
     }
 
-    fn note(&mut self, address: Address, weight: i64, date: EpochMillis) {
-        let key = address.email.trim().to_lowercase();
-        if key.is_empty() || !key.contains('@') || is_automated(&key) {
-            return;
-        }
-        let name = address
-            .name
-            .filter(|n| !n.trim().is_empty() && !n.contains('@'));
-        let entry = self.found.entry(key).or_insert_with(|| Correspondent {
-            name: None,
-            email: address.email.trim().to_string(),
-            score: 0,
-            last_seen: date,
+    /// The correspondents but the accounts' own addresses, best first.
+    fn ranked(self, own: &HashSet<String>) -> Vec<Correspondent> {
+        let mut contacts: Vec<Correspondent> = self
+            .found
+            .into_iter()
+            .filter(|(key, _)| !own.contains(key))
+            .map(|(_, person)| person)
+            .collect();
+        contacts.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then(b.last_seen.cmp(&a.last_seen))
+                .then_with(|| a.email.cmp(&b.email))
         });
-        entry.score += weight;
-        if date >= entry.last_seen || entry.name.is_none() {
-            entry.name = name.or(entry.name.take());
-            entry.last_seen = entry.last_seen.max(date);
-        }
+        contacts
     }
-}
-
-/// The tally's correspondents but the accounts' own addresses, best first.
-fn ranked(tally: &Tally, own: &HashSet<String>) -> Vec<Correspondent> {
-    let mut contacts: Vec<Correspondent> = tally
-        .found
-        .iter()
-        .filter(|(key, _)| !own.contains(*key))
-        .map(|(_, person)| person.clone())
-        .collect();
-    contacts.sort_by(|a, b| {
-        b.score
-            .cmp(&a.score)
-            .then(b.last_seen.cmp(&a.last_seen))
-            .then_with(|| a.email.cmp(&b.email))
-    });
-    contacts
 }
 
 /// What [`list_correspondents`] answers when it reads every message.
@@ -262,7 +329,7 @@ fn whole_read(conn: &Connection) -> Result<Vec<Correspondent>> {
         .collect::<rusqlite::Result<_>>()?;
     let mut tally = Tally::default();
     tally.read(conn)?;
-    Ok(ranked(&tally, &own))
+    Ok(tally.ranked(&own))
 }
 
 /// Addresses nobody writes to: no-reply senders and notification robots.
@@ -330,14 +397,13 @@ mod tests {
         meta
     }
 
-    /// Each change that can move a correspondent, made on a store on disk
-    /// (where the list is kept between reads), leaves the list what a read
-    /// of every message gives.
+    /// Each change that can move a correspondent leaves the list what a
+    /// read of every message gives, both before the kept tally catches up
+    /// and after.
     #[test]
     fn the_list_kept_between_reads_matches_a_read_of_every_message() {
         use mailrs_domain::{MailboxKind, Membership, RemoteMailbox, Role};
-        let dir = tempfile::tempdir().unwrap();
-        let conn = crate::open_connection(&dir.path().join("mail.db")).unwrap();
+        let conn = open_in_memory().unwrap();
         let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
         list_gmail_roles(&conn, id);
         let put = |meta: MessageMeta| {
@@ -346,6 +412,8 @@ mod tests {
         };
         let same = |step: &str| {
             assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap(), "after {step}");
+            catch_up(&conn).unwrap();
+            assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap(), "caught up after {step}");
         };
         let dated = |mut meta: MessageMeta, date: i64| {
             meta.date = date;
@@ -359,6 +427,8 @@ mod tests {
         same("nothing new");
         put(dated(message(id, "m4", ("Dana", "dana@example.com"), &[("Ana", "ana@example.org")], gmail::SENT), 500));
         same("new sent mail");
+        put(dated(message(id, "m4", ("Dana", "dana@example.com"), &[("Ana", "ana@example.org")], gmail::SENT), 500));
+        same("sent mail read again");
         messages::apply(&conn, id, &[messages::Change::Erase { message_id: "m2".into() }]).unwrap();
         same("a deletion");
         let into_sent = messages::Change::of("m1", Membership::Mailbox(gmail::SENT.into()), true);
@@ -407,6 +477,27 @@ mod tests {
         same("mail in a second account");
         accounts::delete_account(&conn, other).unwrap();
         same("an account removed");
+    }
+
+    /// Mail filed in Sent as it arrives, and Sent mail read again as it
+    /// was, leave the kept tally standing: the next read counts the new
+    /// rows alone.
+    #[test]
+    fn sent_mail_new_or_read_again_keeps_the_tally() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        let sent = message(id, "m1", ("Dana", "dana@example.com"), &[("Mara", "mara@example.org")], gmail::SENT);
+        let put = |meta: &MessageMeta| {
+            let upsert = messages::Change::Upsert { meta: Box::new(meta.clone()), generation: 1 };
+            messages::apply(&conn, id, &[upsert]).unwrap();
+        };
+        put(&sent);
+        catch_up(&conn).unwrap();
+        put(&sent);
+        put(&message(id, "m2", ("Dana", "dana@example.com"), &[("Bo", "bo@example.org")], gmail::SENT));
+        let stale: bool = conn.query_row("SELECT stale FROM contact_marks", [], |row| row.get(0)).unwrap();
+        assert!(!stale);
     }
 
     #[test]

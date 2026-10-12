@@ -419,26 +419,35 @@ fn replace_memberships(
     message_id: &str,
     held: &Memberships,
 ) -> Result<()> {
-    for table in ["message_mailboxes", "message_categories"] {
-        conn.prepare_cached(&format!(
-            "DELETE FROM {table} WHERE account_id = ?1 AND message_id = ?2"
-        ))?
-        .execute(params![account_id, message_id])?;
+    // Filings that stay are left alone, so mail read again as it was
+    // fires none of the filing triggers (`contacts_sent_filed`).
+    let wanted: BTreeSet<i64> = held
+        .mailboxes
+        .iter()
+        .map(|id| mailbox_key(conn, account_id, id))
+        .collect::<Result<_>>()?;
+    let filed: BTreeSet<i64> = conn
+        .prepare_cached("SELECT mailbox FROM message_mailboxes WHERE account_id = ?1 AND message_id = ?2")?
+        .query_map(params![account_id, message_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut unfile = conn.prepare_cached(
+        "DELETE FROM message_mailboxes WHERE account_id = ?1 AND message_id = ?2 AND mailbox = ?3",
+    )?;
+    for key in filed.difference(&wanted) {
+        unfile.execute(params![account_id, message_id, key])?;
     }
+    let mut file = conn.prepare_cached(
+        "INSERT OR IGNORE INTO message_mailboxes (account_id, message_id, mailbox) VALUES (?1, ?2, ?3)",
+    )?;
+    for key in wanted.difference(&filed) {
+        file.execute(params![account_id, message_id, key])?;
+    }
+    conn.prepare_cached("DELETE FROM message_categories WHERE account_id = ?1 AND message_id = ?2")?
+        .execute(params![account_id, message_id])?;
     conn.prepare_cached(
         "DELETE FROM message_keywords WHERE account_id = ?1 AND message_id = ?2 AND local = 0",
     )?
     .execute(params![account_id, message_id])?;
-    let mut mailbox = conn.prepare_cached(
-        "INSERT OR IGNORE INTO message_mailboxes (account_id, message_id, mailbox) VALUES (?1, ?2, ?3)",
-    )?;
-    for id in &held.mailboxes {
-        mailbox.execute(params![
-            account_id,
-            message_id,
-            mailbox_key(conn, account_id, id)?
-        ])?;
-    }
     let mut keyword = conn.prepare_cached(
         "INSERT OR IGNORE INTO message_keywords (account_id, message_id, keyword) VALUES (?1, ?2, ?3)",
     )?;

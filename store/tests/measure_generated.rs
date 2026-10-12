@@ -144,11 +144,31 @@ fn calendar_and_contact_reads_on_a_generated_store() {
     time("search events", || calendar::search(&conn, &[id], "event 1", START, CalendarScope::Shown, 50).unwrap());
     time("events by uid", || calendar::with_uid(&conn, id, "e4000@EXAMPLE.com", START, START + 400 * 24 * HOUR).unwrap());
     time("series by uid", || calendar::series_with_uid(&conn, id, "e4000@example.com").unwrap());
+    // The store's writer counts new mail into the kept tally when idle;
+    // each step below does what it would, then reads.
+    time("contacts, every message counted again", || {
+        conn.execute("UPDATE contact_marks SET stale = 1", []).unwrap();
+        contacts::catch_up(&conn).unwrap();
+    });
     time("contacts, nothing new", || contacts::suggestions(&conn).unwrap());
+    let put = |meta: MessageMeta| {
+        messages::apply(&conn, id, &[Change::Upsert { meta: Box::new(meta), generation: 1 }]).unwrap();
+        contacts::catch_up(&conn).unwrap();
+        contacts::suggestions(&conn).unwrap()
+    };
     let mut n = 50_000;
-    time("contacts after one new message", || {
-        messages::apply(&conn, id, &[Change::Upsert { meta: Box::new(message(id, n + 1)), generation: 1 }]).unwrap();
-        n += 1;
+    time("contacts after a new Inbox message", || {
+        n += if n % 10 == 9 { 2 } else { 1 };
+        put(message(id, n))
+    });
+    let mut sent = 50_000;
+    time("contacts after a new Sent message", || {
+        sent += 10;
+        put(message(id, sent))
+    });
+    time("contacts after a Sent message read again", || put(message(id, 0)));
+    time("contacts while the kept tally is stale", || {
+        conn.execute("UPDATE contact_marks SET stale = 1", []).unwrap();
         contacts::suggestions(&conn).unwrap()
     });
 }

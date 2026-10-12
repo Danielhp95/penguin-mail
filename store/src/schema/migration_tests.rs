@@ -1198,9 +1198,37 @@ fn migration_61_marks_changes_to_the_mail_contacts_count() {
     )
     .unwrap();
     drop(conn);
-    let conn = open_with(&path, MIGRATIONS).unwrap();
+    let conn = open_with(&path, &MIGRATIONS[..61]).unwrap();
     let epoch = |conn: &Connection| -> i64 { conn.query_row("SELECT epoch FROM contact_marks", [], |r| r.get(0)).unwrap() };
     assert_eq!(epoch(&conn), 0);
     conn.execute("DELETE FROM messages WHERE id = 'm1'", []).unwrap();
     assert_eq!(epoch(&conn), 1);
+}
+
+/// Migration 62 keeps the correspondents tally in the store. It starts
+/// empty and stale, so the first catch-up counts every message, and a
+/// change to a row it counted makes it stale again.
+#[test]
+fn migration_62_keeps_the_correspondents_tally_in_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, &MIGRATIONS[..61]).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    let marks = |conn: &Connection| -> (bool, i64) {
+        conn.query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    assert_eq!(marks(&conn), (true, 0));
+    crate::contacts::catch_up(&conn).unwrap();
+    assert_eq!(marks(&conn), (false, 1));
+    let kept: i64 = conn.query_row("SELECT COUNT(*) FROM correspondents", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 1);
+    conn.execute("UPDATE messages SET from_addr = 'bo@example.org' WHERE id = 'm1'", []).unwrap();
+    assert_eq!(marks(&conn), (true, 0));
 }
