@@ -1366,6 +1366,79 @@ mod tests {
             .await;
     }
 
+    /// A full session on `server`, read with the stale token, whose API
+    /// answers every echo.
+    async fn session_read_while_stale(server: &MockServer) {
+        let base = server.uri();
+        Mock::given(method("GET"))
+            .and(path("/jmap/session"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "capabilities": {"urn:ietf:params:jmap:core": {"maxConcurrentRequests": 4}, "urn:ietf:params:jmap:mail": {}},
+                "accounts": {"A1": {"name": "me", "isPersonal": true, "isReadOnly": false,
+                    "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+                "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"},
+                "username": "me", "apiUrl": format!("{base}/api/"),
+                "downloadUrl": format!("{base}/d/{{blobId}}"), "uploadUrl": format!("{base}/u/"),
+                "eventSourceUrl": format!("{base}/events/"), "state": "s"
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("POST")).and(path("/api/")).respond_with(echoed()).mount(server).await;
+    }
+
+    /// `stale` answers 401 at `at` once; `fresh` gets `answer`.
+    async fn refused_then(server: &MockServer, verb: &str, at: &str, answer: ResponseTemplate) {
+        Mock::given(method(verb))
+            .and(path(at))
+            .and(header("Authorization", "Bearer stale"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(server)
+            .await;
+        Mock::given(method(verb)).and(path(at)).and(header("Authorization", "Bearer fresh")).respond_with(answer).mount(server).await;
+    }
+
+    #[tokio::test]
+    async fn a_download_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        refused_then(&server, "GET", "/d/B1", ResponseTemplate::new(200).set_body_bytes(b"blob".to_vec())).await;
+        assert_eq!(jmap_with(&server, "stale").download("A1", "B1", "n", "text/plain", 100).await.unwrap(), b"blob");
+    }
+
+    #[tokio::test]
+    async fn an_upload_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        let uploaded = json!({"accountId": "A1", "blobId": "B9", "type": "text/plain", "size": 4});
+        refused_then(&server, "POST", "/u/", ResponseTemplate::new(200).set_body_json(uploaded)).await;
+        let got = jmap_with(&server, "stale").upload("A1", "text/plain", b"blob".to_vec()).await.unwrap();
+        assert_eq!(got.blob_id, "B9");
+        let bodies: Vec<Vec<u8>> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.url.path() == "/u/")
+            .map(|r| r.body)
+            .collect();
+        assert_eq!(bodies, [b"blob".to_vec(), b"blob".to_vec()], "the same bytes go again");
+    }
+
+    #[tokio::test]
+    async fn a_push_stream_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        let body = "event: state\ndata: {\"@type\":\"StateChange\",\"changed\":{\"A1\":{\"Email\":\"e2\"}}}\n\n";
+        let stream = ResponseTemplate::new(200).insert_header("Content-Type", "text/event-stream").set_body_string(body);
+        refused_then(&server, "GET", "/events/", stream).await;
+        let pushed = jmap_with(&server, "stale").push(Duration::from_secs(5)).await.unwrap();
+        assert_eq!(pushed, crate::Pushed::Changed);
+    }
+
     fn echo() -> Request {
         let mut request = Request::new();
         request.call(crate::CORE, "Core/echo", json!({}));

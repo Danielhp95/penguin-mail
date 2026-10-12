@@ -281,10 +281,27 @@ impl JmapClient {
         }
     }
 
-    /// A request with the account's credentials.
-    pub(crate) async fn authorized(&self, method: reqwest::Method, url: Url) -> Result<reqwest::RequestBuilder, JmapError> {
-        let header = self.inner.auth.header(None).await?;
-        Ok(self.inner.http.request(method, url).header(AUTHORIZATION, header))
+    /// A request with the account's credentials, and the header it
+    /// carries. With `refused`, the header a server just answered 401 to,
+    /// an OAuth account's token is refreshed first.
+    pub(crate) async fn authorized(
+        &self,
+        method: reqwest::Method,
+        url: Url,
+        refused: Option<&HeaderValue>,
+    ) -> Result<(reqwest::RequestBuilder, HeaderValue), JmapError> {
+        let header = self.inner.auth.header(refused).await?;
+        Ok((self.inner.http.request(method, url).header(AUTHORIZATION, header.clone()), header))
+    }
+
+    /// The HTTP client every call shares.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.inner.http
+    }
+
+    /// Whether a 401 is worth one more try with a refreshed token.
+    pub(crate) fn refreshes(&self) -> bool {
+        self.inner.auth.kind() == AuthKind::OAuth
     }
 
     /// What `send` answers when it goes out with the account's credentials,
@@ -292,7 +309,7 @@ impl JmapClient {
     /// 401. A 401 means the server acted on nothing, so even a write goes
     /// again safely; any other answer, or none, comes back as it is, and
     /// a second 401 too.
-    async fn with_credentials<F, Fut>(&self, send: F) -> Result<reqwest::Response, JmapError>
+    pub(crate) async fn with_credentials<F, Fut>(&self, send: F) -> Result<reqwest::Response, JmapError>
     where
         F: Fn(HeaderValue) -> Fut,
         Fut: Future<Output = Result<reqwest::Response, JmapError>>,

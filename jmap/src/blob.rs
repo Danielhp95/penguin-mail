@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use reqwest::header::{CONTENT_TYPE, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
@@ -86,7 +86,12 @@ impl JmapClient {
         // `endpoint` repeats a refused URL, and this one holds the account
         // id, so the refusal names the kind of URL instead.
         let url = self.endpoint(url).map_err(|_| JmapError::BadUrl("the download URL".into()))?;
-        let response = self.authorized(reqwest::Method::GET, url).await?.timeout(BLOB_TIMEOUT).send().await.map_err(network)?;
+        let response = self
+            .with_credentials(|header| {
+                let request = self.http().get(url.clone()).header(AUTHORIZATION, header).timeout(BLOB_TIMEOUT);
+                async move { request.send().await.map_err(network) }
+            })
+            .await?;
         match response.status().is_success() {
             true => Ok(response),
             false => Err(failure(response).await),
@@ -160,16 +165,21 @@ impl JmapClient {
             kind: "mime".into(),
             detail: "the type is not a valid header value".into(),
         })?;
+        let request =
+            self.http().post(url).header(CONTENT_TYPE, mime).timeout(BLOB_TIMEOUT).body(bytes).build().map_err(network)?;
         let _permit = self.permit().await;
         let response = self
-            .authorized(reqwest::Method::POST, url)
-            .await?
-            .header(CONTENT_TYPE, mime)
-            .timeout(BLOB_TIMEOUT)
-            .body(bytes)
-            .send()
-            .await
-            .map_err(network)?;
+            .with_credentials(|header| {
+                // The body sits in memory, so a second try after a refused
+                // token clones it, and the copy shares its buffer.
+                let copy = request.try_clone().ok_or_else(|| JmapError::Network("the upload cannot be sent again".into()));
+                async move {
+                    let mut copy = copy?;
+                    copy.headers_mut().insert(AUTHORIZATION, header);
+                    self.http().execute(copy).await.map_err(network)
+                }
+            })
+            .await?;
         if !response.status().is_success() {
             return Err(failure(response).await);
         }
