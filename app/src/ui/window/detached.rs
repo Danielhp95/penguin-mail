@@ -194,7 +194,7 @@ fn gates(mailbox: &Mailbox, offers: Offers) -> [(&'static str, bool); 3] {
     [block, categorize, ("trash", deletes(mailbox, offers.delete_forever))]
 }
 
-fn show_source(parent: &adw::Window, subject: &str, raw: Vec<u8>) {
+fn show_source(parent: &adw::Window, subject: &str, raw: std::sync::Arc<Vec<u8>>) {
     let text = String::from_utf8_lossy(&raw).replace("\r\n", "\n");
     let view = gtk::TextView::builder()
         .editable(false)
@@ -254,7 +254,7 @@ fn show_source(parent: &adw::Window, subject: &str, raw: Vec<u8>) {
         glib::spawn_future_local(async move {
             if let Ok(file) = dialog.save_future(Some(&owner)).await
                 && let Some(path) = file.path()
-                && let Err(err) = std::fs::write(&path, &raw)
+                && let Err(err) = std::fs::write(&path, raw.as_slice())
             {
                 tracing::warn!(error = %err, "could not save the message source");
             }

@@ -768,7 +768,7 @@ impl<A: Accounts> Tools<A> {
             let (s, id) = (Arc::clone(&sync), message_id.clone());
             let raw = self.call(async move { s.raw_message(&id).await }).await?;
             let blank = self.effects.new_draft(account.id)?;
-            let mut draft = self.effects.reopen_draft(raw, blank).await?;
+            let mut draft = self.effects.reopen_draft(raw.as_ref().clone(), blank).await?;
             draft.draft_id = Some(draft_id);
             draft.thread_id = (thread.len() > 1).then_some(stored.thread_id.clone());
             let missing = self.apply(&mut draft, edits).await?;

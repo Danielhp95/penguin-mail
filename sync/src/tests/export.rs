@@ -174,6 +174,67 @@ mod conversations {
         assert_eq!(h.fake.with(|s| s.usage.units), cost::THREAD + cost::GET);
     }
 
+    #[tokio::test]
+    async fn the_raw_message_is_handed_out_not_copied() {
+        let h = harness().await;
+        h.fake.seed(meta("one", "t1", DAY, &["INBOX"]));
+        let raw = h.sync.raw_message("one").await.unwrap();
+        let cached = h.sync.cached_raw("one").expect("a small message stays cached");
+        assert!(std::sync::Arc::ptr_eq(&raw, &cached));
+    }
+
+    /// Collects each write the exporter makes, so a test can see how the
+    /// file was fed.
+    #[derive(Default)]
+    struct Writes(Vec<Vec<u8>>);
+
+    impl tokio::io::AsyncWrite for Writes {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            self.0.push(buf.to_vec());
+            std::task::Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_conversation_streams_to_a_writer_one_message_at_a_time() {
+        let h = harness().await;
+        h.fake.seed(meta("second", "t1", 2 * DAY, &["INBOX"]));
+        h.fake.seed(meta("first", "t1", DAY, &["INBOX"]));
+        // Fixed bytes, since the fake's own messages carry a random boundary.
+        h.fake.with(|s| {
+            for id in ["first", "second"] {
+                s.raws.insert(
+                    id.into(),
+                    format!("From: ann@example.com\r\nDate: Mon, 5 Jan 2026 09:07:03 +0000\r\n\r\nFrom {id}\r\n").into_bytes(),
+                );
+            }
+        });
+        let whole = String::from_utf8(h.sync.export_mbox("t1", None).await.unwrap()).unwrap();
+        let mut writes = Writes::default();
+        h.sync.export_mbox_to("t1", None, &mut writes).await.unwrap();
+        assert_eq!(writes.0.len(), 2, "one write per message");
+        assert!(writes.0.iter().all(|w| w.starts_with(b"From ")));
+        assert_eq!(String::from_utf8(writes.0.concat()).unwrap(), whole);
+    }
+
     /// Without a `Date` header every entry would sit at the epoch, which
     /// sorts an imported archive wrong.
     #[tokio::test]

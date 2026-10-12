@@ -2701,7 +2701,7 @@ impl MainWindow {
                 None => {
                     let s = sync.clone();
                     match this.core.call(async move { s.raw_message(&source).await }).await {
-                        Ok(raw) => raw,
+                        Ok(raw) => raw.as_ref().clone(),
                         Err(err) => {
                             return this.toast(&with_reason(
                                 &gettext("Could not open the draft: {reason}"),

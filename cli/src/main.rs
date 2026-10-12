@@ -464,12 +464,21 @@ async fn export_mail(
             PathBuf::from(export::file_name(&named.subject, named.date, extension))
         }
     };
-    let mail = match message_id {
-        Some(id) => sync.raw_message(id).await?,
-        None => sync.export_mbox(thread_id, None).await?,
+    let length = match message_id {
+        Some(id) => {
+            let raw = sync.raw_message(id).await?;
+            std::fs::write(&path, raw.as_slice()).with_context(|| format!("could not write {}", path.display()))?;
+            raw.len() as u64
+        }
+        None => {
+            let mut file = tokio::fs::File::create(&path)
+                .await
+                .with_context(|| format!("could not write {}", path.display()))?;
+            sync.export_mbox_to(thread_id, None, &mut file).await?;
+            file.metadata().await?.len()
+        }
     };
-    std::fs::write(&path, &mail).with_context(|| format!("could not write {}", path.display()))?;
-    println!("Wrote {} bytes to {}", mail.len(), path.display());
+    println!("Wrote {length} bytes to {}", path.display());
     Ok(())
 }
 
