@@ -66,15 +66,20 @@ fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
 }
 
 /// Stores a message: as a new row, or over the row it already has, which
-/// is the one its id names or the one holding the same Gmail draft. Gives
-/// back the row's id. Writing over a row lets go of any claim on it, since
-/// the caller that claimed it is done with it.
+/// is the one its id names, the one holding the same Gmail draft, or the
+/// one holding the same server hold. Gives back the row's id. Writing over
+/// a row lets go of any claim on it, since the caller that claimed it is
+/// done with it.
 pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
-    let already = match (message.id, &message.draft_id) {
-        (id, _) if id > 0 => Some(id),
-        (_, Some(draft_id)) => find_draft(conn, message.account_id, draft_id)?.map(|m| m.id),
+    let by_draft = match &message.draft_id {
+        Some(draft_id) => find_draft(conn, message.account_id, draft_id)?.map(|m| m.id),
+        None => None,
+    };
+    let by_hold = match &message.held {
+        Some(handle) if by_draft.is_none() => find_held(conn, message.account_id, handle)?.map(|m| m.id),
         _ => None,
     };
+    let already = Some(message.id).filter(|id| *id > 0).or(by_draft).or(by_hold);
     if let Some(id) = already {
         let changed = conn.execute(
             "UPDATE outbox SET draft_id = ?2, message_id = ?3, thread_id = ?4, subject = ?5, \

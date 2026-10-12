@@ -895,6 +895,7 @@ CREATE TABLE jmap_accounts (
     // Outlook have no keyword for it.
     r#"
 ALTER TABLE outbox ADD COLUMN held TEXT;
+CREATE UNIQUE INDEX outbox_by_hold ON outbox(account_id, held) WHERE held IS NOT NULL;
 ALTER TABLE bodies ADD COLUMN receipt_to TEXT;
 ALTER TABLE bodies ADD COLUMN read_report TEXT;
 CREATE TABLE receipts (
