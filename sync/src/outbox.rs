@@ -44,6 +44,10 @@ const CLAIM_LASTS: EpochMillis = 10 * 60 * 1000;
 /// hour has come and the server has not sent it yet.
 const ASK_AGAIN: EpochMillis = 60_000;
 
+/// How often a hold still hours from its hour is asked about, so a cancel
+/// made in another app shows here before the hour.
+const CHECK_HELD: EpochMillis = 60 * 60_000;
+
 /// How `held` marks a hold whose answer never came back and that nobody
 /// has found on the server yet: this, the time the answer was lost, and
 /// the message's `Message-ID`. No server's handle starts with it.
@@ -237,6 +241,8 @@ pub struct Outbox<A: Accounts> {
     /// past their hour, or still unconfirmed, have an entry, and a restart
     /// asks about each once more at once.
     next_look: Mutex<HashMap<i64, EpochMillis>>,
+    /// When to look again at each held row still hours from its hour.
+    checked: Mutex<HashMap<i64, EpochMillis>>,
     /// When to ask again about each held copy another install made, by
     /// the copy's id.
     adopt_looked: Mutex<HashMap<String, EpochMillis>>,
@@ -253,7 +259,7 @@ pub struct OutboxHold {
 
 impl<A: Accounts> Outbox<A> {
     pub fn new(accounts: Arc<A>, db: Db) -> Self {
-        Outbox { accounts, db, next_look: Mutex::new(HashMap::new()), adopt_looked: Mutex::default(), sending: Mutex::default() }
+        Outbox { accounts, db, next_look: Mutex::new(HashMap::new()), checked: Mutex::default(), adopt_looked: Mutex::default(), sending: Mutex::default() }
     }
 
     fn lock_of(&self, account_id: AccountId) -> Arc<tokio::sync::RwLock<()>> {
@@ -421,13 +427,20 @@ impl<A: Accounts> Outbox<A> {
         if let Err(err) = self.adopt_holds(now, &mut drained).await {
             tracing::info!(error = %err, "could not look for holds another install made");
         }
-        let waiting = self
-            .db
-            .read(move |c| Ok(outbox::list(c)?.into_iter().filter(|m| m.send_at <= now || unconfirmed(m).is_some()).collect::<Vec<_>>()))
-            .await?;
+        // A hold still hours from its hour is asked about once an hour, so
+        // one another app called back leaves Send Later before its hour.
+        let early = move |m: &Queued| m.send_at > now && m.problem.is_none() && server_holds(m);
+        let listed = self.db.read(outbox::list).await?;
+        let waiting: Vec<Queued> = listed
+            .into_iter()
+            .filter(|m| m.send_at <= now || unconfirmed(m).is_some() || (early(m) && self.check_due(m.id, now)))
+            .collect();
         for due in waiting {
-            if retry_delay(due.attempts).is_none() || (due.held.is_some() && !self.look_due(due.id, now)) {
+            if retry_delay(due.attempts).is_none() || (due.held.is_some() && !early(&due) && !self.look_due(due.id, now)) {
                 continue;
+            }
+            if early(&due) {
+                self.checked.lock().unwrap_or_else(PoisonError::into_inner).insert(due.id, now + CHECK_HELD);
             }
             // The row as it stands once claimed, which another caller may
             // have sent, dropped or moved since the list was read.
@@ -851,6 +864,13 @@ impl<A: Accounts> Outbox<A> {
         Ok(())
     }
 
+    /// Whether it is time for the hourly look at the held row `id`, before
+    /// its hour.
+    fn check_due(&self, id: i64, now: EpochMillis) -> bool {
+        let checked = self.checked.lock().unwrap_or_else(PoisonError::into_inner);
+        checked.get(&id).is_none_or(|at| *at <= now)
+    }
+
     /// Whether it is time to ask the server about the held row `id`.
     fn look_due(&self, id: i64, now: EpochMillis) -> bool {
         let looks = self.next_look.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -863,6 +883,7 @@ impl<A: Accounts> Outbox<A> {
 
     fn looked(&self, id: i64) {
         self.next_look.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&id);
+        self.checked.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
     }
 
     /// Hands `message` to its server to send at `at`, when the server holds

@@ -2739,8 +2739,12 @@ msgid ""
 "first."
 msgid_plural ""
 "{count} messages waiting in Send Later on the server go back to Drafts first."
-msgstr[0] "{count} mensaje que espera en Enviar más tarde en el servidor vuelve antes a Borradores."
-msgstr[1] "{count} mensajes que esperan en Enviar más tarde en el servidor vuelven antes a Borradores."
+msgstr[0] ""
+"{count} mensaje que espera en Enviar más tarde en el servidor vuelve antes a "
+"Borradores."
+msgstr[1] ""
+"{count} mensajes que esperan en Enviar más tarde en el servidor vuelven "
+"antes a Borradores."
 
 #: app/src/offered.rs:631
 msgid ""
@@ -2749,8 +2753,12 @@ msgid ""
 msgid_plural ""
 "Penguin Mail could not call back {count} messages waiting on the server. The "
 "server may still send them at their hour."
-msgstr[0] "Penguin Mail no pudo recuperar {count} mensaje que espera en el servidor. El servidor aún puede enviarlo a su hora."
-msgstr[1] "Penguin Mail no pudo recuperar {count} mensajes que esperan en el servidor. El servidor aún puede enviarlos a su hora."
+msgstr[0] ""
+"Penguin Mail no pudo recuperar {count} mensaje que espera en el servidor. El "
+"servidor aún puede enviarlo a su hora."
+msgstr[1] ""
+"Penguin Mail no pudo recuperar {count} mensajes que esperan en el servidor. "
+"El servidor aún puede enviarlos a su hora."
 
 #: app/src/offered.rs:646
 msgid ""
@@ -11184,7 +11192,7 @@ msgstr "{problem}. Se volverá a intentar {when}"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail ha dejado de intentarlo"
 
-#: sync/src/outbox.rs:100
+#: sync/src/outbox.rs:104
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
@@ -11192,7 +11200,7 @@ msgstr ""
 "El servidor aún retiene este mensaje y lo envía a su hora. Inténtalo más "
 "tarde o cancela el envío."
 
-#: sync/src/outbox.rs:111
+#: sync/src/outbox.rs:115
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -11200,11 +11208,11 @@ msgstr ""
 "El servidor aún retiene este mensaje y no se le pudo pedir que lo liberara. "
 "Inténtalo más tarde."
 
-#: sync/src/outbox.rs:742
+#: sync/src/outbox.rs:755
 msgid "Waiting for the account to switch to JMAP"
 msgstr "Esperando a que la cuenta cambie a JMAP"
 
-#: sync/src/outbox.rs:1345
+#: sync/src/outbox.rs:1366
 msgid "The server could not be asked to let go of the message."
 msgstr "No se pudo pedir al servidor que liberara el mensaje."
 

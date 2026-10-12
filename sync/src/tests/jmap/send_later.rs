@@ -797,3 +797,33 @@ async fn removing_an_account_whose_server_cannot_hear_counts_what_may_still_go()
     assert_eq!(queue(&h).call_back_account(h.account_id).await.unwrap(), 1, "the server may still send it");
     assert_eq!(pending(&h), 1);
 }
+
+#[tokio::test]
+async fn a_hold_canceled_elsewhere_leaves_send_later_before_its_hour() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + 3 * HOUR).await;
+    let email = row(&h, id).await.unwrap().message_id.unwrap();
+    // Another mail program calls it back, and the copy is a draft again.
+    h.fake.with(|s| {
+        s.holds.values_mut().for_each(|hold| hold.status = "canceled".into());
+        s.emails.get_mut(&email).unwrap().keywords.remove(mailrs_jmap::HELD);
+    });
+    let drained = queue(&h).send_due(now_millis()).await.unwrap();
+    assert!(drained.changed);
+    assert!(row(&h, id).await.is_none(), "gone from Send Later hours before its hour");
+    assert_eq!(sent(&h), 0);
+}
+
+#[tokio::test]
+async fn a_hold_hours_away_is_asked_about_at_most_hourly() {
+    let h = holding().await;
+    scheduled(&h, now_millis() + 5 * HOUR).await;
+    let outbox = queue(&h);
+    let now = now_millis();
+    outbox.send_due(now).await.unwrap();
+    let looks = asked(&h);
+    outbox.send_due(now + 30 * MINUTE).await.unwrap();
+    assert_eq!(asked(&h), looks, "not again within the hour");
+    outbox.send_due(now + HOUR + MINUTE).await.unwrap();
+    assert_eq!(asked(&h), looks + 1, "once the hour has passed");
+}

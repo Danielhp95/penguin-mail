@@ -2593,7 +2593,9 @@ msgid ""
 msgid_plural ""
 "Penguin Mail could not call back {count} messages waiting on the server. The "
 "server may still send them at their hour."
-msgstr[0] "Penguin Mail 無法收回伺服器上等待中的 {count} 封郵件。伺服器仍可能在排定時間寄出。"
+msgstr[0] ""
+"Penguin Mail 無法收回伺服器上等待中的 {count} 封郵件。伺服器仍可能在排定時間"
+"寄出。"
 
 #: app/src/offered.rs:646
 msgid ""
@@ -10678,23 +10680,23 @@ msgstr "{problem}。將於 {when} 重試"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 
-#: sync/src/outbox.rs:100
+#: sync/src/outbox.rs:104
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
 msgstr "伺服器仍保留這封郵件，並將於排定時間寄出。請稍後再試，或取消傳送。"
 
-#: sync/src/outbox.rs:111
+#: sync/src/outbox.rs:115
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
 msgstr "伺服器仍保留這封郵件，且無法要求它釋出。請稍後再試。"
 
-#: sync/src/outbox.rs:742
+#: sync/src/outbox.rs:755
 msgid "Waiting for the account to switch to JMAP"
 msgstr "正在等候帳號切換至 JMAP"
 
-#: sync/src/outbox.rs:1345
+#: sync/src/outbox.rs:1366
 msgid "The server could not be asked to let go of the message."
 msgstr "無法要求伺服器釋出這封郵件。"
 

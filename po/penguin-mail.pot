@@ -10605,23 +10605,23 @@ msgstr ""
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr ""
 
-#: sync/src/outbox.rs:100
+#: sync/src/outbox.rs:104
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
 msgstr ""
 
-#: sync/src/outbox.rs:111
+#: sync/src/outbox.rs:115
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
 msgstr ""
 
-#: sync/src/outbox.rs:742
+#: sync/src/outbox.rs:755
 msgid "Waiting for the account to switch to JMAP"
 msgstr ""
 
-#: sync/src/outbox.rs:1345
+#: sync/src/outbox.rs:1366
 msgid "The server could not be asked to let go of the message."
 msgstr ""
 
