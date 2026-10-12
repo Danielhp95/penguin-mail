@@ -20,6 +20,7 @@ use mailrs_gmail::OAuthClient;
 use mailrs_imap::{CheckError, ImapError};
 use mailrs_pop3::{Pop3Api, Pop3Client, Pop3Error};
 use mailrs_store::servers::{self, Pop3Servers, Servers};
+use mailrs_store::jmap::{JmapSaved, SessionOwner};
 use mailrs_store::{Db, StoreError, accounts};
 
 use crate::SyncError;
@@ -200,6 +201,13 @@ pub enum MicrosoftSignInError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Password(#[from] PasswordError),
+}
+
+fn different_account(address: &str) -> String {
+    fill(
+        &gettext("You signed in to a different account than {address}, so nothing changed."),
+        &[("address", address)],
+    )
 }
 
 fn taken(address: &str, provider: &str) -> String {
@@ -403,6 +411,74 @@ pub struct NewJmap {
     /// An app password for the account's CalDAV and CardDAV servers, when
     /// the JMAP secret is a token those servers will not take.
     pub dav_password: Option<String>,
+    /// Who the session the sign-in reached belongs to.
+    pub signed_as: SignedAs,
+}
+
+/// Who a JMAP sign-in reached: the session's owner, and the addresses its
+/// identities name. No `Debug`: both hold addresses.
+#[derive(Clone)]
+pub struct SignedAs {
+    pub owner: SessionOwner,
+    pub sends_as: Vec<String>,
+}
+
+impl SignedAs {
+    /// The session's `username` and primary mail account, and the
+    /// identities' addresses, from a sign-in check.
+    pub fn of(checked: &mailrs_jmap::Checked) -> SignedAs {
+        let session = &checked.session;
+        SignedAs {
+            owner: SessionOwner {
+                username: session.username.clone(),
+                mail_account: session.primary_accounts.get(mailrs_jmap::MAIL).cloned().unwrap_or_default(),
+            },
+            sends_as: checked.addresses.clone(),
+        }
+    }
+
+    /// Whether this session may hold the account at `address`: its user
+    /// name is the address, or a login name that is the address's local
+    /// part, or one of its identities sends as the address.
+    fn sends_as(&self, address: &str) -> bool {
+        let (address, username) = (address.trim(), self.owner.username.trim());
+        let local = address.split_once('@').map(|(local, _)| local);
+        username.eq_ignore_ascii_case(address)
+            || (!username.is_empty() && !username.contains('@') && local.is_some_and(|l| l.eq_ignore_ascii_case(username)))
+            || self.sends_as.iter().any(|a| a.trim().eq_ignore_ascii_case(address))
+    }
+}
+
+#[cfg(test)]
+impl SignedAs {
+    /// A session whose user name is `address`, with mail account `A1`.
+    pub(crate) fn address(address: &str) -> SignedAs {
+        SignedAs {
+            owner: SessionOwner { username: address.into(), mail_account: "A1".into() },
+            sends_as: vec![address.into()],
+        }
+    }
+}
+
+/// Whether a sign-in that reached `signed` at `session_url` may keep the
+/// account at `address`, whose row is `held` when it is already here. An
+/// account already here must stay on its server and reach the owner it
+/// had: the same user name or the same mail account. A row kept before the
+/// owner was recorded, and a new account, need a session that sends as the
+/// address. A browser signed in to another account, or a session URL typed
+/// for someone else's server, then changes nothing.
+fn same_owner(held: Option<&JmapSaved>, address: &str, session_url: &str, signed: &SignedAs) -> bool {
+    if let Some(held) = held {
+        if !mailrs_jmap::same_server(&held.session_url, session_url) {
+            return false;
+        }
+        if let Some(owner) = &held.owner {
+            let user = !owner.username.trim().is_empty() && owner.username.trim().eq_ignore_ascii_case(signed.owner.username.trim());
+            let account = !owner.mail_account.is_empty() && owner.mail_account == signed.owner.mail_account;
+            return user || account;
+        }
+    }
+    signed.sends_as(address)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -410,6 +486,10 @@ pub enum JmapSignInError {
     /// The address belongs to an account another provider serves.
     #[error("{}", taken(.address, .provider))]
     Taken { address: String, provider: String },
+    /// The session belongs to someone other than the account at the
+    /// address, so nothing was kept.
+    #[error("{}", different_account(.address))]
+    DifferentAccount { address: String },
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]
@@ -434,18 +514,33 @@ pub async fn jmap_signed_in(
         saved,
         secret,
         dav_password,
+        signed_as,
     } = new;
+    let mut saved = saved;
     let email = address.clone();
-    let before = db
-        .read(move |c| accounts::account_by_email(c, &email))
+    let (before, held_row) = db
+        .read(move |c| {
+            let held = accounts::account_by_email(c, &email)?;
+            let row = match &held {
+                Some(held) if held.provider == Provider::Jmap => mailrs_store::jmap::load(c, held.id)?,
+                _ => None,
+            };
+            Ok((held, row))
+        })
         .await?;
+    if let Some(held) = &before
+        && held.provider != Provider::Jmap
+    {
+        return Err(JmapSignInError::Taken {
+            address,
+            provider: held.provider_name().to_string(),
+        });
+    }
+    if !same_owner(held_row.as_ref(), &address, &saved.session_url, &signed_as) {
+        return Err(JmapSignInError::DifferentAccount { address });
+    }
+    saved.owner = Some(signed_as.owner);
     if let Some(held) = &before {
-        if held.provider != Provider::Jmap {
-            return Err(JmapSignInError::Taken {
-                address,
-                provider: held.provider_name().to_string(),
-            });
-        }
         keep_secret(Arc::clone(&secrets.jmap), held.id, secret.clone()).await?;
         if let Some(password) = dav_password.clone() {
             keep_secret(Arc::clone(&secrets.passwords), held.id, password).await?;

@@ -17,6 +17,7 @@ fn saved() -> JmapSaved {
         labels: true,
         capabilities: vec!["urn:ietf:params:jmap:mail".into()],
         oauth: None,
+        owner: None,
     }
 }
 

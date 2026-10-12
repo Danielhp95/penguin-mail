@@ -15,7 +15,7 @@ use mailrs_jmap::{Auth, JmapClient, JmapError};
 use mailrs_store::accounts;
 use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
 
-use super::{BrowserSignInError, NewJmap, SignedIn, jmap_signed_in};
+use super::{BrowserSignInError, NewJmap, SignedAs, SignedIn, jmap_signed_in};
 use crate::{Connector, connect_jmap, now_millis};
 
 /// How long the sign-in waits for the browser to come back: RFC 8252's
@@ -267,9 +267,11 @@ pub(crate) async fn signing_in<S: SignInServer>(
             auth: JmapAuth::OAuth,
             user_name: None,
             oauth: Some(SavedOAuth { client_id, token_endpoint: metadata.token_endpoint }),
+            owner: None,
         },
         secret: refresh,
         dav_password: dav_password.filter(|p| !p.is_empty()),
+        signed_as: SignedAs::of(&checked),
     };
     let Connector { db, config, secrets, .. } = connector;
     // The keyring takes the refresh token as the account is kept; when it
@@ -341,28 +343,50 @@ mod tests {
         Ok(Tokens { access_token: "a1".into(), expires_in: 3600, refresh_token: Some(refresh.into()) })
     }
 
-    /// A JMAP server whose session answers only the access token `a1`.
+    /// A JMAP server whose session answers only the access token `a1`,
+    /// for me@fastmail.com in mail account A1, who also sends as
+    /// alias@fastmail.com.
     async fn jmap_server() -> MockServer {
         let server = MockServer::start().await;
+        mount_session(&server, "a1", "me@fastmail.com", "A1", &["me@fastmail.com", "alias@fastmail.com"]).await;
+        server
+    }
+
+    /// Answers the access token `bearer` with a session that belongs to
+    /// `username`, with mail in `account`, whose identities send as
+    /// `sends_as`.
+    async fn mount_session(server: &MockServer, bearer: &str, username: &str, account: &str, sends_as: &[&str]) {
+        let (mail, submission) = ("urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission");
         let session = serde_json::json!({
-            "capabilities": {"urn:ietf:params:jmap:core": {}, "urn:ietf:params:jmap:mail": {}},
-            "accounts": {"A1": {"name": "me@fastmail.com", "isPersonal": true, "isReadOnly": false,
-                "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
-            "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"},
-            "username": "me@fastmail.com",
+            "capabilities": {"urn:ietf:params:jmap:core": {}, mail: {}, submission: {}},
+            "accounts": {account: {"name": username, "isPersonal": true, "isReadOnly": false,
+                "accountCapabilities": {mail: {}, submission: {}}}},
+            "primaryAccounts": {mail: account, submission: account},
+            "username": username,
             "apiUrl": format!("{}/api/", server.uri()),
             "downloadUrl": format!("{}/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}", server.uri()),
             "uploadUrl": format!("{}/upload/{{accountId}}/", server.uri()),
             "eventSourceUrl": format!("{}/events/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}", server.uri()),
             "state": "s0"
         });
+        let bearer = format!("Bearer {bearer}");
         Mock::given(method("GET"))
             .and(path("/jmap/session"))
-            .and(header("authorization", "Bearer a1"))
+            .and(header("authorization", bearer.as_str()))
             .respond_with(ResponseTemplate::new(200).set_body_json(session))
-            .mount(&server)
+            .mount(server)
             .await;
-        server
+        let list: Vec<_> = sends_as.iter().enumerate().map(|(n, email)| serde_json::json!({"id": format!("i{n}"), "email": email})).collect();
+        let identities = serde_json::json!({
+            "methodResponses": [["Identity/get", {"accountId": account, "state": "i0", "list": list, "notFound": []}, "c0"]],
+            "sessionState": "s0"
+        });
+        Mock::given(method("POST"))
+            .and(path("/api/"))
+            .and(header("authorization", bearer.as_str()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(identities))
+            .mount(server)
+            .await;
     }
 
     fn connector(db: &Db) -> Connector {
@@ -474,9 +498,11 @@ mod tests {
                 auth: JmapAuth::Bearer,
                 user_name: None,
                 oauth: None,
+                owner: None,
             },
             secret: "fmu1-token".into(),
             dav_password: None,
+            signed_as: SignedAs::address("alias@fastmail.com"),
         };
         let held = jmap_signed_in(&db, &reach.secrets, token, 1).await.unwrap();
         let server = FakeServer::answering("client", vec![tokens("r1")]);
@@ -667,5 +693,45 @@ mod tests {
         let after = FakeServer::answering("later", vec![tokens("r3")]);
         sign_in(&after, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap();
         assert_eq!(after.registrations(), 0, "the new client is kept and trusted again");
+    }
+
+    /// Reads what the store and the keyring hold for `id`: the session URL,
+    /// the kept client and the refresh token.
+    async fn kept(db: &Db, reach: &Connector, id: i64) -> (String, Option<String>, Option<String>) {
+        let saved = db.read(move |c| mailrs_store::jmap::load(c, id)).await.unwrap().unwrap();
+        (saved.session_url, saved.oauth.map(|o| o.client_id), reach.secrets.jmap.load(id).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_again_that_comes_back_as_another_account_changes_nothing() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let first = FakeServer::answering("client", vec![tokens("r1")]);
+        let id = sign_in(&first, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap().account.id;
+        let before = kept(&db, &reach, id).await;
+        // The browser is signed in to someone else's account on the same
+        // server: its token reaches another user's session.
+        mount_session(&jmap, "a2", "other@fastmail.com", "B2", &["other@fastmail.com"]).await;
+        let theirs = FakeServer::answering("client", vec![Ok(Tokens { access_token: "a2".into(), expires_in: 3600, refresh_token: Some("r2".into()) })]);
+        let refused = sign_in(&theirs, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await;
+        let Err(err) = refused else { panic!("another account's grant was kept") };
+        assert_eq!(err.to_string(), "You signed in to a different account than me@fastmail.com, so nothing changed.");
+        assert_eq!(kept(&db, &reach, id).await, before, "the account keeps its server, client and token");
+    }
+
+    #[tokio::test]
+    async fn a_new_account_at_an_address_the_session_does_not_send_as_is_refused() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let refused = sign_in_as(&server, &reach, &session_url, &Arc::new(Mutex::new(Vec::new())), "boss@fastmail.com").await;
+        assert!(matches!(refused, Err(BrowserSignInError::KeptJmap(crate::sign_in::JmapSignInError::DifferentAccount { .. }))));
+        assert!(db.read(accounts::list_accounts).await.unwrap().is_empty(), "no account is added");
     }
 }

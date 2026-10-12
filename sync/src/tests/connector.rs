@@ -314,9 +314,11 @@ fn new_jmap(address: &str, token: &str) -> crate::sign_in::NewJmap {
             labels: true,
             capabilities: vec!["urn:ietf:params:jmap:mail".into()],
             oauth: None,
+            owner: None,
         },
         secret: token.into(),
         dav_password: None,
+        signed_as: crate::sign_in::SignedAs::address(address),
     }
 }
 
@@ -351,6 +353,93 @@ async fn signing_a_jmap_account_in_again_keeps_the_new_token_and_ends_needs_sign
     assert_eq!(again.id, first.id);
     assert_eq!(again.state, AccountState::Ok);
     assert_eq!(secrets.jmap.load(id).unwrap().as_deref(), Some("new"));
+}
+
+/// A session that belongs to `username`, with mail in `account`, sending
+/// only as `username`.
+fn reached(username: &str, account: &str) -> crate::sign_in::SignedAs {
+    crate::sign_in::SignedAs {
+        owner: mailrs_store::jmap::SessionOwner { username: username.into(), mail_account: account.into() },
+        sends_as: vec![username.into()],
+    }
+}
+
+#[tokio::test]
+async fn a_token_sign_in_again_that_reaches_another_account_keeps_the_old_one() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let first = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "old"), 0).await.unwrap();
+    let mut other = new_jmap("me@fastmail.com", "theirs");
+    other.signed_as = reached("other@fastmail.com", "B2");
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, other, 1).await;
+    let Err(err) = refused else { panic!("another account's token was kept") };
+    assert!(matches!(err, crate::sign_in::JmapSignInError::DifferentAccount { .. }));
+    assert_eq!(err.to_string(), "You signed in to a different account than me@fastmail.com, so nothing changed.");
+    assert_eq!(secrets.jmap.load(first.id).unwrap().as_deref(), Some("old"));
+}
+
+#[tokio::test]
+async fn a_sign_in_again_that_reaches_the_same_mail_account_is_kept() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let first = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "old"), 0).await.unwrap();
+    // The server renamed the login; the mail account is the same.
+    let mut renamed = new_jmap("me@fastmail.com", "new");
+    renamed.signed_as = reached("me@newname.example", "A1");
+    crate::sign_in::jmap_signed_in(&db, &secrets, renamed, 1).await.unwrap();
+    assert_eq!(secrets.jmap.load(first.id).unwrap().as_deref(), Some("new"));
+    let id = first.id;
+    let owner = db.read(move |c| mailrs_store::jmap::load(c, id)).await.unwrap().unwrap().owner.unwrap();
+    assert_eq!(owner.username, "me@newname.example");
+}
+
+#[tokio::test]
+async fn a_session_url_for_another_server_cannot_take_an_account_already_here() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let first = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "old"), 0).await.unwrap();
+    // A session URL typed by hand for another server, whose session even
+    // names the same user.
+    let mut elsewhere = new_jmap("me@fastmail.com", "theirs");
+    elsewhere.saved.session_url = "https://jmap.example.net/jmap/session".into();
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, elsewhere, 1).await;
+    assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::DifferentAccount { .. })));
+    let id = first.id;
+    let saved = db.read(move |c| mailrs_store::jmap::load(c, id)).await.unwrap().unwrap();
+    assert_eq!(saved.session_url, "https://api.fastmail.com/jmap/session");
+    assert_eq!(secrets.jmap.load(id).unwrap().as_deref(), Some("old"));
+}
+
+#[tokio::test]
+async fn an_account_kept_before_its_owner_was_recorded_signs_in_again_by_its_address() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let first = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "old"), 0).await.unwrap();
+    let id = first.id;
+    db.write(move |c| {
+        let mut saved = mailrs_store::jmap::load(c, id)?.unwrap();
+        saved.owner = None;
+        mailrs_store::jmap::save(c, id, &saved)
+    })
+    .await
+    .unwrap();
+    let mut other = new_jmap("me@fastmail.com", "theirs");
+    other.signed_as = reached("other@fastmail.com", "A1");
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, other, 1).await;
+    assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::DifferentAccount { .. })), "nothing to compare, so the address decides");
+    crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "new"), 2).await.unwrap();
+    let owner = db.read(move |c| mailrs_store::jmap::load(c, id)).await.unwrap().unwrap().owner;
+    assert_eq!(owner.map(|o| o.mail_account).as_deref(), Some("A1"), "the owner is recorded from now on");
+}
+
+#[tokio::test]
+async fn a_login_name_that_is_the_address_s_local_part_may_add_the_account() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    // Cyrus logs user1 in and names no address in its identity.
+    let mut cyrus = new_jmap("user1@example.com", "pw");
+    cyrus.signed_as = crate::sign_in::SignedAs { sends_as: Vec::new(), ..reached("user1", "user1") };
+    assert!(crate::sign_in::jmap_signed_in(&db, &secrets, cyrus, 0).await.is_ok());
 }
 
 #[tokio::test]
@@ -388,6 +477,7 @@ fn session_row(capabilities: &[&str], auth: mailrs_store::jmap::JmapAuth) -> mai
         labels: true,
         capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
         oauth: None,
+        owner: None,
     }
 }
 
@@ -398,6 +488,7 @@ async fn jmap_signed_in_with(db: &Db, secrets: &Secrets, saved: mailrs_store::jm
         saved,
         secret: "secret".into(),
         dav_password: dav.map(str::to_string),
+        signed_as: crate::sign_in::SignedAs::address("me@example.org"),
     };
     crate::sign_in::jmap_signed_in(db, secrets, new, 0).await.unwrap()
 }
@@ -610,6 +701,7 @@ fn oauth_row(session_url: &str, capabilities: &[&str]) -> mailrs_store::jmap::Jm
         labels: true,
         capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
         oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+        owner: None,
     }
 }
 
@@ -620,6 +712,7 @@ fn new_oauth(saved: mailrs_store::jmap::JmapSaved) -> crate::sign_in::NewJmap {
         saved,
         secret: "refresh-1".into(),
         dav_password: None,
+        signed_as: crate::sign_in::SignedAs::address("me@fastmail.com"),
     }
 }
 
@@ -876,6 +969,7 @@ async fn a_dav_host_off_the_table_waits_for_a_yes_on_an_oauth_account() {
     let mut new = new_oauth(saved.clone());
     new.provider_name = "jmap.example.org".into();
     new.address = "me@example.org".into();
+    new.signed_as = crate::sign_in::SignedAs::address("me@example.org");
     let account = crate::sign_in::jmap_signed_in(&db, &secrets, new, 0).await.unwrap();
     let id = account.id;
     db.write(move |c| {

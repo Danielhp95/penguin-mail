@@ -27,7 +27,7 @@ pub mod submission;
 
 pub use auth::{Auth, AuthKind};
 pub use blob::{MOST_BLOB_BYTES, Uploaded};
-pub use check::{Checked, Offered, check};
+pub use check::{Checked, Offered, check, same_server};
 pub use error::JmapError;
 pub use http::JmapClient;
 pub use identity::{EmailAddress, Identity};

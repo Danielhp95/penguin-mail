@@ -973,6 +973,7 @@ impl Core {
                     .cloned()
                     .collect(),
                 oauth: None,
+                owner: None,
             };
             let new = NewJmap {
                 address,
@@ -980,6 +981,7 @@ impl Core {
                 saved,
                 secret,
                 dav_password,
+                signed_as: mailrs_sync::sign_in::SignedAs::of(&checked),
             };
             let account = jmap_signed_in(&db, &secrets, new, now_millis()).await?;
             let services = connect_jmap(&db, &secrets, &account, window_days).await?;
@@ -1646,6 +1648,7 @@ mod tests {
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
                     oauth: None,
+                    owner: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })
@@ -1671,6 +1674,7 @@ mod tests {
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
                     oauth: None,
+                    owner: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })
