@@ -53,6 +53,13 @@ pub(super) fn shows_in(mailbox: &Mailbox, account: AccountId) -> bool {
     }
 }
 
+/// The band's words with a break allowed before the address's "@", for a
+/// list too narrow for the whole address. Only for show: the label is not
+/// selectable, so the hidden character never reaches a clipboard.
+fn breakable(line: &str) -> String {
+    line.replacen('@', "\u{200b}@", 1)
+}
+
 /// One account's band: a tint of the accent, its words, Review Storage
 /// and a close button, as the Follow Up banner has.
 pub(super) struct StorageBand {
@@ -69,9 +76,8 @@ impl StorageBand {
         // The title holds the address, which may carry an "&", so it is
         // plain text.
         let title = gtk::Label::builder()
-            .label(line)
+            .label(breakable(line))
             .xalign(0.0)
-            .hexpand(true)
             .wrap(true)
             .wrap_mode(gtk::pango::WrapMode::WordChar)
             .build();
@@ -93,9 +99,19 @@ impl StorageBand {
             .css_classes(["follow-up-banner", "storage-band"])
             .accessible_role(gtk::AccessibleRole::Group)
             .build();
+        // The words and Review Storage share a line where the list is wide
+        // enough, and Review Storage moves under the words where it is not,
+        // so the address never breaks mid-word.
+        let words = adw::WrapBox::builder()
+            .child_spacing(10)
+            .line_spacing(6)
+            .hexpand(true)
+            .valign(gtk::Align::Center)
+            .build();
+        words.append(&title);
+        words.append(&review);
         content.append(&gtk::Image::from_icon_name("drive-harddisk-symbolic"));
-        content.append(&title);
-        content.append(&review);
+        content.append(&words);
         content.append(&close);
         let revealer = gtk::Revealer::builder()
             .child(&content)
@@ -152,7 +168,7 @@ impl MainWindow {
             });
             for (id, email, full, line) in wanted {
                 if let Some(band) = widgets.get(&id) {
-                    band.title.set_label(&line);
+                    band.title.set_label(&breakable(&line));
                     band.full.set(full);
                     continue;
                 }
@@ -206,6 +222,14 @@ mod tests {
 
     use super::{banner_line, shows_in, stays_dismissed};
     use crate::ui::{Mailbox, Standard};
+
+    #[test]
+    fn the_band_may_break_before_the_at_and_nowhere_inside_the_address() {
+        assert_eq!(
+            super::breakable("dana@home.example is full and may refuse new mail"),
+            "dana\u{200b}@home.example is full and may refuse new mail"
+        );
+    }
 
     #[test]
     fn the_band_shows_in_all_inboxes_and_the_accounts_own_mailboxes() {
