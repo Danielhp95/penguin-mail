@@ -178,9 +178,10 @@ impl<S: SignInServer, O: Fn(&str)> Trip<'_, S, O> {
 /// The whole sign-in: the client this account signed in with before, or
 /// one registered now, the consent page through `open`, the code exchange,
 /// the session check, then the account kept with its refresh token and its
-/// services built. `address` fills the server's address field. When the
-/// server no longer knows a kept client, one new client is registered and
-/// the consent page opens once more. Each wait for the browser ends after
+/// services built. `address`, as the person typed it, fills the server's
+/// address field and names the account. When the server no longer knows
+/// a kept client, one new client is registered and the consent page opens
+/// once more. Each wait for the browser ends after
 /// [`BROWSER_WAIT`], and the whole sign-in when `canceled` resolves.
 pub async fn jmap_in_browser(
     connector: &Connector,
@@ -244,8 +245,15 @@ pub(crate) async fn signing_in<S: SignInServer>(
         Some(provider) => provider.name.clone(),
         None => host_of(&offer.session_url).to_string(),
     };
+    // The account keeps the address the person typed, as a password
+    // sign-in does: an alias, or a token account signing in again, then
+    // finds its own account rather than making one under the session's.
+    let address = match address.trim() {
+        "" => checked.address.clone().unwrap_or_default(),
+        typed => typed.to_string(),
+    };
     let new = NewJmap {
-        address: checked.address.clone().unwrap_or_else(|| address.to_string()),
+        address,
         provider_name,
         saved: JmapSaved {
             labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
@@ -380,8 +388,59 @@ mod tests {
     }
 
     async fn sign_in(server: &FakeServer, reach: &Connector, session_url: &str, pages: &Arc<Mutex<Vec<String>>>) -> Result<SignedIn, BrowserSignInError> {
+        sign_in_as(server, reach, session_url, pages, "me@fastmail.com").await
+    }
+
+    /// A sign-in where the person typed `address`. The session names
+    /// me@fastmail.com whatever the person typed.
+    async fn sign_in_as(server: &FakeServer, reach: &Connector, session_url: &str, pages: &Arc<Mutex<Vec<String>>>, address: &str) -> Result<SignedIn, BrowserSignInError> {
         let offer = JmapBrowser { session_url: session_url.into(), provider: None };
-        signing_in(server, reach, offer, "me@fastmail.com", browser(Arc::clone(pages)), std::future::pending(), Duration::from_secs(5)).await
+        signing_in(server, reach, offer, address, browser(Arc::clone(pages)), std::future::pending(), Duration::from_secs(5)).await
+    }
+
+    #[tokio::test]
+    async fn the_account_keeps_the_address_the_person_typed() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let signed = sign_in_as(&server, &reach, &session_url, &pages, "alias@fastmail.com").await.unwrap();
+        assert_eq!(signed.account.email, "alias@fastmail.com");
+    }
+
+    #[tokio::test]
+    async fn a_token_account_signing_in_through_the_browser_stays_one_account() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let token = NewJmap {
+            address: "alias@fastmail.com".into(),
+            provider_name: "Fastmail".into(),
+            saved: JmapSaved {
+                labels: true,
+                capabilities: Vec::new(),
+                session_url: session_url.clone(),
+                auth: JmapAuth::Bearer,
+                user_name: None,
+                oauth: None,
+            },
+            secret: "fmu1-token".into(),
+            dav_password: None,
+        };
+        let held = jmap_signed_in(&db, &reach.secrets, token, 1).await.unwrap();
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let signed = sign_in_as(&server, &reach, &session_url, &pages, "alias@fastmail.com").await.unwrap();
+        assert_eq!(signed.account.id, held.id);
+        let accounts = db.read(accounts::list_accounts).await.unwrap();
+        assert_eq!(accounts.len(), 1, "{accounts:?}");
+        let saved = db.read(move |c| mailrs_store::jmap::load(c, held.id)).await.unwrap().unwrap();
+        assert_eq!(saved.auth, JmapAuth::OAuth);
     }
 
     async fn kept_client_id(db: &Db, id: i64) -> Option<String> {
