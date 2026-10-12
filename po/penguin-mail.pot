@@ -10582,23 +10582,23 @@ msgstr ""
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr ""
 
-#: sync/src/outbox.rs:99
+#: sync/src/outbox.rs:100
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
 msgstr ""
 
-#: sync/src/outbox.rs:110
+#: sync/src/outbox.rs:111
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
 msgstr ""
 
-#: sync/src/outbox.rs:702
+#: sync/src/outbox.rs:709
 msgid "Waiting for the account to switch to JMAP"
 msgstr ""
 
-#: sync/src/outbox.rs:1262
+#: sync/src/outbox.rs:1312
 msgid "The server could not be asked to let go of the message."
 msgstr ""
 
@@ -10736,7 +10736,7 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:441
 msgid "The server made an address Penguin Mail cannot read."
 msgstr ""
 

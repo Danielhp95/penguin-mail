@@ -219,6 +219,24 @@ pub fn find_held(conn: &Connection, account_id: AccountId, handle: &str) -> Resu
         .optional()?)
 }
 
+/// The held copies no waiting row stands for, by account and message id:
+/// messages carrying `keyword`, the app's held keyword, that no row names
+/// by its draft or its message, and that no row whose hold lost its
+/// answer waits to find by their `Message-ID`. Another install of the app
+/// held them.
+pub fn unclaimed_holds(conn: &Connection, keyword: &str) -> Result<Vec<(AccountId, String)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT m.account_id, m.id FROM message_keywords k \
+         JOIN messages m ON m.account_id = k.account_id AND m.id = k.message_id \
+         WHERE k.keyword = ?1 AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.account_id = m.account_id \
+         AND (o.draft_id = m.id OR o.message_id = m.id \
+         OR (m.rfc822_msgid IS NOT NULL AND o.held LIKE 'unconfirmed:%' \
+         AND substr(o.held, -length(m.rfc822_msgid) - 1) = ':' || m.rfc822_msgid)))",
+    )?;
+    let rows = stmt.query_map(params![keyword], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 /// The waiting message whose Gmail draft shows as `message_id`.
 pub fn by_message(
     conn: &Connection,

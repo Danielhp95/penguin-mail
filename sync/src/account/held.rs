@@ -6,7 +6,7 @@
 use mailrs_domain::EpochMillis;
 
 use super::AccountSync;
-use crate::{BackendError, Held, MailBackend, Settled, SyncError, Unheld};
+use crate::{BackendError, Claimed, Held, MailBackend, Settled, SyncError, Unheld};
 
 impl AccountSync {
     /// Hands `raw` to the server to send at `at`. `None` when the server
@@ -27,6 +27,17 @@ impl AccountSync {
     pub async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, SyncError> {
         let found = self.services.mail.find_hold(message_id).await?;
         if let Some(held) = &found {
+            self.held_draft(held).await;
+        }
+        Ok(found)
+    }
+
+    /// The hold whose copy is the stored message `copy`, for a hold another
+    /// install made. See [`MailBackend::hold_of_copy`].
+    pub async fn hold_of_copy(&self, copy: &str) -> Result<Option<Claimed>, SyncError> {
+        let name = self.remote(copy).await?;
+        let found = self.services.mail.hold_of_copy(&name).await?;
+        if let Some(Claimed::Held { held, .. }) = &found {
             self.held_draft(held).await;
         }
         Ok(found)

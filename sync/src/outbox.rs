@@ -29,11 +29,12 @@ use mailrs_domain::translate::gettext;
 use mailrs_domain::{AccountId, EpochMillis, Target};
 use mailrs_gmail::GmailError;
 use mailrs_store::Db;
+use mailrs_store::messages;
 use mailrs_store::outbox::{self, Queued};
 
 use crate::account::message_id_header;
 use crate::backoff::{MOST_TRIES, retry_delay};
-use crate::{AccountSync, Accounts, BackendError, Held, MailBackend, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
+use crate::{AccountSync, Accounts, BackendError, Claimed, Held, MailBackend, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
 
 /// How long a claim on a waiting message holds. A send that takes longer
 /// than this belongs to a run that died, and the message is free again.
@@ -236,6 +237,9 @@ pub struct Outbox<A: Accounts> {
     /// past their hour, or still unconfirmed, have an entry, and a restart
     /// asks about each once more at once.
     next_look: Mutex<HashMap<i64, EpochMillis>>,
+    /// When to ask again about each held copy another install made, by
+    /// the copy's id.
+    adopt_looked: Mutex<HashMap<String, EpochMillis>>,
     /// One lock per account that has sent or been held this run. A send
     /// takes it to read; [`Outbox::hold`] takes it to write.
     sending: Mutex<HashMap<AccountId, Arc<tokio::sync::RwLock<()>>>>,
@@ -249,7 +253,7 @@ pub struct OutboxHold {
 
 impl<A: Accounts> Outbox<A> {
     pub fn new(accounts: Arc<A>, db: Db) -> Self {
-        Outbox { accounts, db, next_look: Mutex::new(HashMap::new()), sending: Mutex::default() }
+        Outbox { accounts, db, next_look: Mutex::new(HashMap::new()), adopt_looked: Mutex::default(), sending: Mutex::default() }
     }
 
     fn lock_of(&self, account_id: AccountId) -> Arc<tokio::sync::RwLock<()>> {
@@ -414,6 +418,9 @@ impl<A: Accounts> Outbox<A> {
     /// at the hour, right before the message goes from here.
     pub async fn send_due(&self, now: EpochMillis) -> Result<Drained, SyncError> {
         let mut drained = Drained::default();
+        if let Err(err) = self.adopt_holds(now, &mut drained).await {
+            tracing::info!(error = %err, "could not look for holds another install made");
+        }
         let waiting = self
             .db
             .read(move |c| Ok(outbox::list(c)?.into_iter().filter(|m| m.send_at <= now || unconfirmed(m).is_some()).collect::<Vec<_>>()))
@@ -1197,6 +1204,49 @@ impl<A: Accounts> Outbox<A> {
         };
         sync.put_back_draft(raw.clone(), item.thread_id.clone(), Some(copy.clone())).await?;
         Ok(())
+    }
+
+    /// Gives a row to every copy the server holds for Send Later that no
+    /// row here stands for: another install of the app held it. The row
+    /// shows in Send Later as the server's, with Cancel Send, and the pass
+    /// settles and files it like any other. A copy is asked about at most
+    /// once a minute. One the server sent or someone called back is filed
+    /// as such, and one whose fate nothing can tell stays where it is.
+    async fn adopt_holds(&self, now: EpochMillis, drained: &mut Drained) -> Result<(), SyncError> {
+        let copies = self.db.read(|c| outbox::unclaimed_holds(c, mailrs_jmap::HELD)).await?;
+        for (account_id, copy) in copies {
+            if !self.adopt_due(&copy, now) {
+                continue;
+            }
+            let (Some(sync), Some(_sending)) = (self.accounts.account(account_id), self.sending(account_id)) else {
+                continue;
+            };
+            self.adopt_looked.lock().unwrap_or_else(PoisonError::into_inner).insert(copy.clone(), now + ASK_AGAIN);
+            match sync.hold_of_copy(&copy).await {
+                Ok(Some(Claimed::Held { held, send_at, raw })) => {
+                    let wanted = vec![copy.clone()];
+                    let meta = self.db.read(move |c| messages::by_ids(c, account_id, &wanted)).await?.into_iter().next();
+                    let mut row = Queued { account_id, send_at, raw: Some(raw), ..Queued::default() };
+                    if let Some(meta) = meta {
+                        row.subject = meta.subject;
+                        row.recipients = meta.to.iter().chain(&meta.cc).map(|a| a.display().to_string()).collect::<Vec<_>>().join(", ");
+                    }
+                    adopt(&mut row, held);
+                    self.db.write(move |c| outbox::put(c, &row)).await?;
+                    drained.changed = true;
+                }
+                Ok(Some(Claimed::Unknown)) => tracing::info!(account = account_id, "a held copy no submission sends; left as it is"),
+                Ok(Some(Claimed::Settled) | None) => {}
+                Err(err) => tracing::info!(account = account_id, error = %err, "could not ask about a hold another install made"),
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether to ask about the held copy `copy` now.
+    fn adopt_due(&self, copy: &str, now: EpochMillis) -> bool {
+        let looked = self.adopt_looked.lock().unwrap_or_else(PoisonError::into_inner);
+        looked.get(copy).is_none_or(|at| *at <= now)
     }
 
     /// The held row whose draft `message` names, when `message` has no row

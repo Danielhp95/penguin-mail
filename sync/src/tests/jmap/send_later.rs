@@ -6,11 +6,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use mailrs_domain::{EpochMillis, Target};
+use mailrs_domain::{EpochMillis, MailSet, Role, Target};
 use mailrs_jmap::JmapError;
 use mailrs_store::outbox::{self, Queued};
 
-use super::{Harness, over};
+use super::{Harness, beside, over};
 use crate::fake::FakeJmap;
 use crate::tests::Connected;
 use crate::{Outbox, Posted, Reopened, now_millis, server_holds};
@@ -694,4 +694,79 @@ async fn saving_a_draft_over_a_held_copy_is_refused() {
     assert!(h.fake.with(|s| s.emails.contains_key(&copy)), "the held copy stays");
     h.fake.release_due(i64::MAX);
     assert_eq!(sent(&h), 1);
+}
+
+/// How many threads the Drafts list of `h` shows.
+async fn drafts_listed(h: &Harness) -> i64 {
+    let account = h.account_id;
+    h.db.read(move |c| {
+        mailrs_store::threads::count_threads(c, &mailrs_store::threads::ThreadFilter::account(account, MailSet::Role(Role::Drafts)))
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_held_copy_is_no_draft_on_any_install() {
+    let h = holding().await;
+    put(&h, blind(&h, now_millis() + HOUR)).await;
+    let other = beside(&h).await;
+    other.bootstrap_all().await;
+    assert_eq!(drafts_listed(&other).await, 0, "the copy the server holds is not a draft here");
+    h.bootstrap_all().await;
+    assert_eq!(drafts_listed(&h).await, 0, "nor on the install that held it");
+}
+
+#[tokio::test]
+async fn a_held_copy_from_another_install_shows_in_send_later_and_cancel_send_works() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    put(&h, blind(&h, at)).await;
+    let other = beside(&h).await;
+    other.bootstrap_all().await;
+    let mine = queue(&other);
+    mine.send_due(now_millis()).await.unwrap();
+    let rows = other.db.read(outbox::scheduled).await.unwrap();
+    assert_eq!(rows.len(), 1, "the server's hold shows in Send Later here");
+    let row = &rows[0];
+    assert!(server_holds(row), "as one the server sends");
+    assert_eq!(row.send_at / 1000, at / 1000, "at the hour the server keeps");
+    assert_eq!((row.subject.as_str(), row.recipients.as_str()), ("Trip", "ada@example.com"));
+    let bytes = String::from_utf8_lossy(row.raw.as_deref().unwrap()).into_owned();
+    assert!(bytes.contains("Bcc: grace@example.com"), "the Bcc comes back from the envelope: {bytes}");
+    assert!(other.fake.with(|s| s.calls.iter().any(|c| c == "EmailSubmission/query")), "found by its copy");
+
+    let target = Target::thread(other.account_id, row.thread_id.clone().unwrap());
+    let cancelled = mine.cancel_scheduled(&[target]).await.unwrap();
+    assert_eq!(cancelled.in_drafts, 1);
+    assert_eq!(pending(&h), 0, "the server will not send it");
+    h.fake.release_due(i64::MAX);
+    assert_eq!(sent(&h), 0);
+    other.look().await;
+    assert_eq!(drafts_listed(&other).await, 1, "it is a draft again, Bcc and all");
+}
+
+#[tokio::test]
+async fn a_held_copy_from_another_install_is_filed_here_once_sent() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    let id = scheduled(&h, at).await;
+    let email = row(&h, id).await.unwrap().message_id.unwrap();
+    let other = beside(&h).await;
+    other.bootstrap_all().await;
+    queue(&other).send_due(now_millis()).await.unwrap();
+    h.fake.release_due(i64::MAX);
+    let drained = queue(&other).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(drained.sent.len(), 1);
+    assert!(h.fake.with(|s| s.emails[&email].mailbox_ids.contains(&s.role_id("sent").unwrap())), "filed in Sent");
+    assert_eq!(sent(&h), 1);
+}
+
+#[tokio::test]
+async fn the_install_that_held_it_does_not_take_its_own_copy_twice() {
+    let h = holding().await;
+    scheduled(&h, now_millis() + HOUR).await;
+    h.bootstrap_all().await;
+    queue(&h).send_due(now_millis()).await.unwrap();
+    assert_eq!(h.db.read(outbox::scheduled).await.unwrap().len(), 1);
 }

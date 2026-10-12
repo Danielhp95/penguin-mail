@@ -51,6 +51,18 @@ pub(crate) async fn over(fake: FakeJmap) -> Harness {
     Harness { fake, sync, db, events, account_id, _dir: dir }
 }
 
+/// A second install of the app on the same account: its own store, the
+/// same server.
+pub(crate) async fn beside(first: &Harness) -> Harness {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(&dir.path().join("mail.db")).unwrap();
+    let account_id = db.write(|c| accounts::insert_account(c, "me@example.com", 0)).await.unwrap();
+    let fake = Arc::clone(&first.fake);
+    let (sender, events) = async_channel::unbounded();
+    let sync = Arc::new(AccountSync::new(account_id, AccountServices::fake_jmap(Arc::clone(&fake)), db.clone(), sender));
+    Harness { fake, sync, db, events, account_id, _dir: dir }
+}
+
 /// A message to the account, dated now.
 pub(crate) fn raw(message_id: &str, subject: &str) -> Vec<u8> {
     format!(

@@ -119,6 +119,21 @@ async fn a_submission_reads_its_status_and_hour() {
 }
 
 #[tokio::test]
+async fn a_submission_names_who_it_goes_to_blind_copies_and_all() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["EmailSubmission/get", {"accountId": "A1", "state": "x", "notFound": [], "list": [
+            {"id": "S1", "emailId": "M9", "undoStatus": "pending", "envelope": {
+                "mailFrom": {"email": "me@example.com"},
+                "rcptTo": [{"email": "ada@example.com"}, {"email": "grace@example.com", "parameters": null}]}}]}, "c0"]
+    ]})).await;
+    let found = client(&server).submissions(&["S1".to_string()]).await.unwrap();
+    assert_eq!(found[0].recipients(), ["ada@example.com", "grace@example.com"]);
+    let asked = &posts(&server).await[0]["methodCalls"][0][1]["properties"];
+    assert!(asked.as_array().unwrap().contains(&json!("envelope")));
+}
+
+#[tokio::test]
 async fn filing_a_sent_hold_moves_it_and_drops_both_keywords() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [

@@ -10899,7 +10899,9 @@ msgstr "A un drapeau"
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
-msgstr "Le serveur retient ce message pour l’envoyer à l’heure prévue. Annulez l’envoi avant de le modifier."
+msgstr ""
+"Le serveur retient ce message pour l’envoyer à l’heure prévue. Annulez "
+"l’envoi avant de le modifier."
 
 #: sync/src/account/receipts.rs:29
 msgid "Read: {subject}"
@@ -11214,13 +11216,15 @@ msgstr "{problem}. Nouvelle tentative {when}"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail a cessé de réessayer"
 
-#: sync/src/outbox.rs:99
+#: sync/src/outbox.rs:100
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
-msgstr "Le serveur retient encore ce message et l’envoie à l’heure prévue. Réessayez plus tard, ou annulez l’envoi."
+msgstr ""
+"Le serveur retient encore ce message et l’envoie à l’heure prévue. Réessayez "
+"plus tard, ou annulez l’envoi."
 
-#: sync/src/outbox.rs:110
+#: sync/src/outbox.rs:111
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -11228,11 +11232,11 @@ msgstr ""
 "Le serveur retient encore ce message et n’a pas pu être prié de le libérer. "
 "Réessayez plus tard."
 
-#: sync/src/outbox.rs:702
+#: sync/src/outbox.rs:709
 msgid "Waiting for the account to switch to JMAP"
 msgstr "En attente du passage du compte à JMAP"
 
-#: sync/src/outbox.rs:1262
+#: sync/src/outbox.rs:1312
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 
@@ -11379,7 +11383,7 @@ msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
 msgid "This server files sent mail itself."
 msgstr "Ce serveur classe lui-même le courrier envoyé."
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:441
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "Le serveur a créé une adresse que Penguin Mail ne sait pas lire."
 

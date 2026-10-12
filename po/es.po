@@ -10848,7 +10848,9 @@ msgstr "Tiene bandera"
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
-msgstr "El servidor retiene este mensaje para enviarlo a su hora. Cancela el envío antes de cambiarlo."
+msgstr ""
+"El servidor retiene este mensaje para enviarlo a su hora. Cancela el envío "
+"antes de cambiarlo."
 
 #: sync/src/account/receipts.rs:29
 msgid "Read: {subject}"
@@ -11159,13 +11161,15 @@ msgstr "{problem}. Se volverá a intentar {when}"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail ha dejado de intentarlo"
 
-#: sync/src/outbox.rs:99
+#: sync/src/outbox.rs:100
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
-msgstr "El servidor aún retiene este mensaje y lo envía a su hora. Inténtalo más tarde o cancela el envío."
+msgstr ""
+"El servidor aún retiene este mensaje y lo envía a su hora. Inténtalo más "
+"tarde o cancela el envío."
 
-#: sync/src/outbox.rs:110
+#: sync/src/outbox.rs:111
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -11173,11 +11177,11 @@ msgstr ""
 "El servidor aún retiene este mensaje y no se le pudo pedir que lo liberara. "
 "Inténtalo más tarde."
 
-#: sync/src/outbox.rs:702
+#: sync/src/outbox.rs:709
 msgid "Waiting for the account to switch to JMAP"
 msgstr "Esperando a que la cuenta cambie a JMAP"
 
-#: sync/src/outbox.rs:1262
+#: sync/src/outbox.rs:1312
 msgid "The server could not be asked to let go of the message."
 msgstr "No se pudo pedir al servidor que liberara el mensaje."
 
@@ -11322,7 +11326,7 @@ msgstr "Este servidor no guarda colores para sus buzones."
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:441
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "El servidor ha creado una dirección que Penguin Mail no puede leer."
 

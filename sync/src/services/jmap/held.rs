@@ -15,7 +15,7 @@ use serde_json::json;
 use super::outgoing::has_message_id;
 use super::{Jmap, JmapApi, backend};
 use crate::services::imap::{envelope_of, without_bcc};
-use crate::services::{Held, Settled, Unheld};
+use crate::services::{Claimed, Held, Settled, Unheld};
 use crate::{BackendError, now_millis};
 
 /// How long a hold the server names no hour for, or one past its hour,
@@ -152,6 +152,61 @@ impl<J: JmapApi> Jmap<J> {
         }
     }
 
+    /// The hold whose copy in Drafts is `email_id`, found through
+    /// `EmailSubmission/query` by the copy, for an install that has no row
+    /// for it. A hold the server sent or someone called back is filed as
+    /// such. The copy has no Bcc, so the blind copies come back from the
+    /// submission's envelope: every address it goes to that the copy's To
+    /// and Cc leave out.
+    pub(super) async fn claimed(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        let mut handles = self.api().submissions_for(email_id).await.map_err(backend)?;
+        let handle = match (handles.pop(), handles.is_empty()) {
+            (None, _) => return self.unclaimed(email_id).await,
+            (Some(handle), true) => handle,
+            (Some(_), false) => return Err(unreadable()),
+        };
+        let found = self.api().submissions(std::slice::from_ref(&handle)).await.map_err(backend)?;
+        let Some(state) = found.into_iter().next() else {
+            return self.unclaimed(email_id).await;
+        };
+        match state.undo_status.as_str() {
+            "pending" => {}
+            "final" => {
+                self.file(email_id).await;
+                return Ok(Some(Claimed::Settled));
+            }
+            "canceled" => {
+                self.take_off_hold(email_id).await?;
+                return Ok(Some(Claimed::Settled));
+            }
+            _ => return Err(unreadable()),
+        }
+        let ids = [email_id.to_string()];
+        let Some(copy) = self.raws(&ids).await?.into_iter().next() else {
+            return Ok(None);
+        };
+        let got = self.api().emails(&ids, &["id", "threadId"]).await.map_err(backend)?;
+        let thread_id = got.list.into_iter().next().map(|e| e.thread_id).unwrap_or_default();
+        let (_, written_to) = envelope_of(&copy.bytes, &self.settings().address)?;
+        let blind: Vec<String> =
+            state.recipients().into_iter().filter(|r| !written_to.iter().any(|w| w.eq_ignore_ascii_case(r))).collect();
+        let raw = match blind.is_empty() {
+            true => copy.bytes,
+            false => [format!("Bcc: {}\r\n", blind.join(", ")).into_bytes(), copy.bytes].concat(),
+        };
+        let held = Held { handle, message_id: email_id.to_string(), thread_id };
+        Ok(Some(Claimed::Held { held, send_at: send_at(&state).unwrap_or_else(now_millis), raw }))
+    }
+
+    /// A held copy no submission sends: one the server sent and forgot, or
+    /// one whose fate the copy cannot tell.
+    async fn unclaimed(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        Ok(Some(match self.forgotten(email_id, 0).await? {
+            Fate::Sent | Fate::NotSent => Claimed::Settled,
+            Fate::Unknown => Claimed::Unknown,
+        }))
+    }
+
     pub(super) async fn release(&self, handle: &str, message_id: &str, at: EpochMillis) -> Result<Unheld, BackendError> {
         let found = self.api().submissions(&[handle.to_string()]).await.map_err(backend)?;
         let Some(state) = found.into_iter().next() else {
@@ -277,7 +332,7 @@ mod tests {
     use super::{seconds_until, send_at};
 
     fn sending_at(at: &str) -> SubmissionState {
-        SubmissionState { id: "S1".into(), email_id: "M1".into(), undo_status: "pending".into(), send_at: Some(at.into()) }
+        SubmissionState { id: "S1".into(), email_id: "M1".into(), undo_status: "pending".into(), send_at: Some(at.into()), envelope: None }
     }
 
     #[test]

@@ -10657,23 +10657,23 @@ msgstr "{problem}。將於 {when} 重試"
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 
-#: sync/src/outbox.rs:99
+#: sync/src/outbox.rs:100
 msgid ""
 "The server still holds this message and sends it at its hour. Try again "
 "later, or use Cancel Send."
 msgstr "伺服器仍保留這封郵件，並將於排定時間寄出。請稍後再試，或取消傳送。"
 
-#: sync/src/outbox.rs:110
+#: sync/src/outbox.rs:111
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
 msgstr "伺服器仍保留這封郵件，且無法要求它釋出。請稍後再試。"
 
-#: sync/src/outbox.rs:702
+#: sync/src/outbox.rs:709
 msgid "Waiting for the account to switch to JMAP"
 msgstr "正在等候帳號切換至 JMAP"
 
-#: sync/src/outbox.rs:1262
+#: sync/src/outbox.rs:1312
 msgid "The server could not be asked to let go of the message."
 msgstr "無法要求伺服器釋出這封郵件。"
 
@@ -10813,7 +10813,7 @@ msgstr "此伺服器不會儲存信箱的顏色。"
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:441
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "伺服器建立的地址無法由 Penguin Mail 讀取。"
 

@@ -85,7 +85,7 @@ pub use services::{
     RemoteRef, SearchQuery, Want, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules,
     AutoReplyService, CalendarService, ContactsService, Google, GraphApi, Imap, ImapApi, ImapSettings, Jmap, JmapApi, JmapSettings, JmapSieve,
     IdentityService, KeywordsOf, KeywordsPage, MailBackend, MailCapabilities, Microsoft, MicrosoftSettings, Missing, Offers, Pop3, Pop3Settings, Refused,
-    Priority, Relocated, RemoteChange, Held, ReceiptOut, Settled, Storage, Unheld,
+    Priority, Relocated, RemoteChange, Claimed, Held, ReceiptOut, Settled, Storage, Unheld,
     RulesService, SendAsAddress, SyncState, Unapplied, Changes, RAW_LIMIT, Submit, Withheld,
     background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesPlace, SieveRules,
 };

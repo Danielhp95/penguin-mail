@@ -1503,7 +1503,10 @@ impl JmapApi for FakeJmap {
                     let hold = s.holds.get(id)?;
                     let send_at = chrono::DateTime::from_timestamp_millis(hold.send_at)
                         .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
-                    Some(SubmissionState { id: id.clone(), email_id: hold.email_id.clone(), undo_status: hold.status.clone(), send_at })
+                    let envelope = Some(mailrs_jmap::Envelope {
+                        rcpt_to: hold.rcpt_to.iter().map(|email| mailrs_jmap::EnvelopeAddress { email: email.clone() }).collect(),
+                    });
+                    Some(SubmissionState { id: id.clone(), email_id: hold.email_id.clone(), undo_status: hold.status.clone(), send_at, envelope })
                 })
                 .collect())
         })

@@ -44,7 +44,7 @@ pub(crate) use outgoing::{bare_message_id, has_message_id};
 pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
-    Backfill, Changes, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, ReceiptOut, Relocated,
+    Backfill, Changes, Claimed, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, ReceiptOut, Relocated,
     RemoteRef, SearchQuery, Settled, Storage, SyncState, Unapplied, Unheld, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
@@ -388,6 +388,10 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
 
     async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
         self.held_copy(message_id).await
+    }
+
+    async fn hold_of_copy(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        self.claimed(email_id).await
     }
 
     async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
