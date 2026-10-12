@@ -166,6 +166,15 @@ enum Recalled {
     Done(Posted),
 }
 
+/// Where a reopened message closed unchanged went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reheld {
+    /// The server holds it again for its hour.
+    Held,
+    /// The server would not take it, so it waits here for its hour.
+    Here,
+}
+
 /// What opening a held message in the composer found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reopened {
@@ -586,6 +595,58 @@ impl<A: Accounts> Outbox<A> {
             })
             .await?;
         Ok(())
+    }
+
+    /// Hands the Send Later message `id` back to the server for its hour,
+    /// for a composer that [`Outbox::reopen_held`] opened and the person
+    /// closed without a change: the server sends it with the laptop shut,
+    /// as before. The draft the reopen left goes. `Here` when the server
+    /// would not take it: the message stays in Send Later and goes from
+    /// this computer at its hour.
+    pub async fn hold_unchanged(&self, id: i64) -> Result<Reheld, SyncError> {
+        let Some(mut message) = self.claim(id).await? else {
+            return Ok(Reheld::Here);
+        };
+        if message.held.is_some() || message.problem.is_some() || message.raw.is_none() {
+            self.release(id).await?;
+            return Ok(match server_holds(&message) {
+                true => Reheld::Held,
+                false => Reheld::Here,
+            });
+        }
+        let Some(_sending) = self.sending(message.account_id) else {
+            self.release(id).await?;
+            return Ok(Reheld::Here);
+        };
+        // Marked first, as `schedule` does, so a crash mid-way leaves a row
+        // that looks for the hold before anything goes from here.
+        let unmarked = message.clone();
+        message.held = message.raw.as_deref().and_then(message_id_header).map(|id| mark(now_millis(), &id));
+        let stored = message.clone();
+        self.db.write(move |c| outbox::put(c, &stored)).await?;
+        let handed = self.hand_over(&message, message.send_at).await;
+        let reheld = match handed {
+            Ok(Handed::Held(held)) => {
+                self.drop_old_copy(message.account_id, message.draft_id.as_deref(), &held.message_id).await;
+                adopt(&mut message, held);
+                Reheld::Held
+            }
+            Ok(Handed::Unconfirmed(mark)) => {
+                message.held = Some(mark);
+                Reheld::Held
+            }
+            Ok(Handed::Kept) => {
+                message = unmarked;
+                Reheld::Here
+            }
+            Err(err) => {
+                tracing::info!(error = %quiet_text(err), "the server would not hold a reopened message again; the app sends it");
+                message = unmarked;
+                Reheld::Here
+            }
+        };
+        self.db.write(move |c| outbox::put(c, &message)).await?;
+        Ok(reheld)
     }
 
     /// Opens the Send Later message `id` for the composer. A held one is
@@ -1353,16 +1414,18 @@ impl<A: Accounts> Outbox<A> {
 
     /// Puts the whole message back over the copy a called-back hold left
     /// in Drafts, for the composer to open, and writes the row as one that
-    /// sends that draft at its hour. When the save fails the row keeps its
-    /// bytes, Bcc and all, and the composer opens on those.
+    /// waits for its hour here. When the save fails the composer opens on
+    /// the row's bytes, Bcc and all.
     async fn back_as_draft(&self, mut row: Queued) -> Result<Queued, SyncError> {
         if let (Some(sync), Some(raw)) = (self.accounts.account(row.account_id), row.raw.clone()) {
             match sync.put_back_draft(raw, row.thread_id.clone(), row.draft_id.clone()).await {
+                // The row keeps the bytes, so a composer closed unchanged
+                // can hand them back to the server; saving an edit drops
+                // them (`draft_saved`), and the edit goes.
                 Ok(saved) => {
                     row.draft_id = Some(saved.draft_id);
                     row.message_id = Some(saved.message_id);
                     row.thread_id = Some(saved.thread_id);
-                    row.raw = None;
                 }
                 Err(err) => tracing::info!(error = %err, "called back, but the whole message could not go back in Drafts"),
             }

@@ -10,7 +10,7 @@ use gtk::glib;
 use mailrs_domain::EpochMillis;
 use mailrs_domain::translate::{fill_plural, gettext};
 use mailrs_store::outbox::Queued;
-use mailrs_sync::{Cancelled, now_millis};
+use mailrs_sync::{Cancelled, Reheld, now_millis};
 
 use super::undo_send::{self, Surface, Waiting};
 use super::{MainWindow, Target};
@@ -207,6 +207,23 @@ impl MainWindow {
             for line in cancel_lines(&cancelled, reopened) {
                 this.toast(&line);
             }
+        });
+    }
+
+    /// Hands a Send Later message the person opened and closed unchanged
+    /// back to the server for its hour. When the server will not take it,
+    /// it stays in Send Later here, and the person hears so once.
+    pub(super) fn hold_unchanged(self: &Rc<Self>, id: i64) {
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let outbox = this.core.outbox();
+            let reheld = this.core.call(async move { outbox.hold_unchanged(id).await }).await;
+            if !matches!(reheld, Ok(Reheld::Held)) {
+                this.toast(&gettext(
+                    "The server would not take this message back, so Penguin Mail sends it at its hour while it runs.",
+                ));
+            }
+            this.scheduled_changed();
         });
     }
 

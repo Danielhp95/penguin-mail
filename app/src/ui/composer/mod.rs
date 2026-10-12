@@ -292,6 +292,10 @@ pub struct Composer {
     /// Set while the message shows read-only: a Send Later message the
     /// server still holds, which nothing here may send, save or change.
     locked: Cell<bool>,
+    /// Set once the message went to be sent or scheduled, and once a draft
+    /// of it was saved: either way it is no longer the one it opened as.
+    handed: Cell<bool>,
+    saved: Cell<bool>,
     attach: gtk::Button,
     on_send: Box<dyn Fn(Draft, Built, SendWhen)>,
 }
@@ -721,6 +725,8 @@ impl Composer {
             dirty: Cell::new(false),
             closing: Cell::new(false),
             locked: Cell::new(false),
+            handed: Cell::new(false),
+            saved: Cell::new(false),
             attach: attach.clone(),
             on_send: Box::new(on_send),
         });
@@ -1683,6 +1689,23 @@ impl Composer {
         self.window.insert_action_group("composer", None::<&gio::ActionGroup>);
     }
 
+    /// Runs `unchanged` when the window closes on the message as it
+    /// opened: not sent, not scheduled, not saved, and with no change
+    /// made, kept or thrown away.
+    pub fn on_closed_unchanged(self: &Rc<Self>, unchanged: Box<dyn Fn()>) {
+        let weak = Rc::downgrade(self);
+        self.window.connect_close_request(move |_| {
+            if let Some(c) = weak.upgrade()
+                && !c.handed.get()
+                && !c.saved.get()
+                && !c.dirty.get()
+            {
+                unchanged();
+            }
+            glib::Propagation::Proceed
+        });
+    }
+
     /// Treats the message as unsaved, so closing asks before discarding it.
     pub fn mark_unsaved(&self) {
         self.dirty.set(true);
@@ -1769,6 +1792,7 @@ impl Composer {
                 email: identity.address.email.clone(),
             });
         }
+        self.handed.set(true);
         self.closing.set(true);
         self.window.close();
         (self.on_send)(draft, built, when);
@@ -1866,6 +1890,7 @@ impl Composer {
             match protection::draft::save(&this.core, &draft, secret, standard).await {
                 Ok(saved) => {
                     this.base.borrow_mut().draft_id = Some(saved.draft_id);
+                    this.saved.set(true);
                     this.dirty.set(false);
                     if then_close {
                         this.closing.set(true);

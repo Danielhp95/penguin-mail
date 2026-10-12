@@ -2643,12 +2643,15 @@ impl MainWindow {
             let mut source = message.id.clone();
             let mut kept_bytes = None;
             let mut locked = None;
+            // The row of a held message called back for this composer.
+            let mut reopened = None;
             let send_at = waiting.as_ref().map(|row| row.send_at);
             if let Some(row) = waiting.filter(|row| row.held.is_some()) {
                 let (outbox, id) = (this.core.outbox(), row.id);
                 match this.core.call(async move { outbox.reopen_held(id).await }).await {
                     Ok(Reopened::Free) => {}
                     Ok(Reopened::Draft(now)) => {
+                        reopened = Some(now.id);
                         draft_id = now.draft_id.clone();
                         source = now.message_id.clone().unwrap_or(source);
                         kept_bytes = now.raw;
@@ -2716,6 +2719,16 @@ impl MainWindow {
             let Some(composer) = app.open_composer(draft, Signature::AsWritten) else {
                 return;
             };
+            // Closed as it opened, it goes back to the server for its hour,
+            // so it still goes with the laptop shut.
+            if let Some(id) = reopened {
+                let weak = Rc::downgrade(&this);
+                composer.on_closed_unchanged(Box::new(move || {
+                    if let Some(win) = weak.upgrade() {
+                        win.hold_unchanged(id);
+                    }
+                }));
+            }
             if let Some((notice, target)) = locked {
                 let cancel = target.map(|target| {
                     let weak = Rc::downgrade(&this);

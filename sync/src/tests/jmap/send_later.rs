@@ -13,7 +13,7 @@ use mailrs_store::outbox::{self, Queued};
 use super::{Harness, beside, over};
 use crate::fake::FakeJmap;
 use crate::tests::Connected;
-use crate::{Outbox, Posted, Reopened, now_millis, server_holds};
+use crate::{Outbox, Posted, Reheld, Reopened, now_millis, server_holds};
 
 const HOUR: EpochMillis = 3_600_000;
 const MINUTE: EpochMillis = 60_000;
@@ -660,7 +660,7 @@ async fn opening_a_held_copy_puts_the_whole_message_back_in_drafts() {
     let draft = open.draft_id.clone().unwrap();
     let text = h.fake.with(|s| String::from_utf8_lossy(&s.emails[&draft].raw).into_owned());
     assert!(text.contains("Bcc: grace@example.com"), "{text}");
-    assert!(open.raw.is_none(), "the draft holds the bytes now, so an edit is what goes");
+    assert!(open.raw.is_some(), "the row keeps the bytes to hand back if nothing changes");
 }
 
 #[tokio::test]
@@ -843,4 +843,46 @@ async fn a_hold_another_install_sent_now_reads_as_sent_here() {
     assert!(drained.stuck.is_empty(), "not an Outbox row saying it was canceled: {:?}", drained.stuck);
     assert_eq!(drained.sent.len(), 1, "it reads as sent");
     assert_eq!(sent(&h), 1);
+}
+
+#[tokio::test]
+async fn a_held_message_opened_and_closed_unchanged_goes_back_to_the_server() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    let id = put(&h, blind(&h, at)).await;
+    let outbox = queue(&h);
+    let Reopened::Draft(open) = outbox.reopen_held(id).await.unwrap() else {
+        panic!("the server let go of it");
+    };
+    assert_eq!(pending(&h), 0);
+    assert_eq!(outbox.hold_unchanged(open.id).await.unwrap(), Reheld::Held);
+    assert_eq!(pending(&h), 1, "the server holds it again");
+    let kept = row(&h, open.id).await.unwrap();
+    assert!(server_holds(&kept) && kept.send_at == at, "at the hour first picked");
+    assert!(h.fake.with(|s| s.holds.values().any(|hold| hold.rcpt_to.iter().any(|r| r == "grace@example.com"))), "Bcc and all");
+    let drafts = h.fake.with(|s| {
+        let box_id = s.role_id("drafts").unwrap();
+        s.emails.values().filter(|e| e.mailbox_ids.contains(&box_id) && !e.keywords.contains(mailrs_jmap::HELD)).count()
+    });
+    assert_eq!(drafts, 0, "no draft left beside the hold");
+    h.fake.release_due(i64::MAX);
+    queue(&h).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(sent(&h), 1);
+}
+
+#[tokio::test]
+async fn a_message_the_server_will_not_hold_again_stays_in_send_later_here() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    let id = scheduled(&h, at).await;
+    let outbox = queue(&h);
+    let Reopened::Draft(open) = outbox.reopen_held(id).await.unwrap() else {
+        panic!("the server let go of it");
+    };
+    h.fake.with(|s| s.hold_failure = Some(JmapError::Method { kind: "invalidArguments".into(), description: String::new() }));
+    assert_eq!(outbox.hold_unchanged(open.id).await.unwrap(), Reheld::Here);
+    let kept = row(&h, open.id).await.unwrap();
+    assert!(kept.held.is_none() && kept.problem.is_none() && kept.send_at == at, "still in Send Later, sent from here");
+    queue(&h).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(sent(&h), 1, "once, at its hour");
 }
