@@ -80,6 +80,10 @@ pub enum JmapError {
     /// A redirect address other than the app's own loopback on 127.0.0.1.
     #[error("the sign-in must hand back to the app on 127.0.0.1")]
     BadRedirect,
+    /// The token endpoint handed out a token of a type other than Bearer
+    /// (RFC 6750), which the client cannot present.
+    #[error("the sign-in server handed out a token that is not a Bearer token")]
+    NotBearer,
 }
 
 /// A decode failure for `what`, keeping the error's category and position

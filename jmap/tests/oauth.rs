@@ -3,6 +3,8 @@
 //! authorize URL, Debug output and the loopback. The exchanges against
 //! wiremock live in `oauth.rs`'s unit tests, which alone may use http.
 
+use std::time::Duration;
+
 use mailrs_jmap::JmapError;
 use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens, parse_redirect};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -30,7 +32,17 @@ fn https_metadata() -> Metadata {
         registration_endpoint: Some("https://auth.example.com/register".into()),
         scopes_supported: Vec::new(),
         code_challenge_methods_supported: vec!["S256".into()],
+        authorization_response_iss_parameter_supported: false,
     }
+}
+
+/// `https_metadata`, promising RFC 9207's `iss` on the redirect or not.
+fn promising_iss(promised: bool) -> Metadata {
+    Metadata { authorization_response_iss_parameter_supported: promised, ..https_metadata() }
+}
+
+fn redirect(query: &str) -> String {
+    format!("GET /?{query} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
 }
 
 #[tokio::test]
@@ -91,20 +103,81 @@ fn the_authorize_url_hands_back_only_to_the_apps_own_loopback() {
 
 #[test]
 fn a_redirect_with_another_state_is_refused() {
-    let request = "GET /?code=abc&state=other HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
-    assert!(matches!(parse_redirect(request, "mine"), Some(Err(_))));
-    let good = "GET /?code=abc&state=mine HTTP/1.1\r\n\r\n";
-    assert_eq!(parse_redirect(good, "mine"), Some(Ok("abc".into())));
-    let denied = "GET /?error=access_denied&state=mine HTTP/1.1\r\n\r\n";
-    assert_eq!(parse_redirect(denied, "mine"), Some(Err(JmapError::Declined)));
-    assert_eq!(parse_redirect("GET /favicon.ico HTTP/1.1\r\n\r\n", "mine"), None);
+    let metadata = https_metadata();
+    // Not the consent this sign-in opened: ignored, so the wait goes on.
+    assert_eq!(parse_redirect(&redirect("code=abc&state=other"), "mine", &metadata), None);
+    assert_eq!(parse_redirect(&redirect("code=abc"), "mine", &metadata), None);
+    assert_eq!(parse_redirect(&redirect("code=abc&state=mine"), "mine", &metadata), Some(Ok("abc".into())));
+    assert_eq!(parse_redirect(&redirect("error=access_denied&state=mine"), "mine", &metadata), Some(Err(JmapError::Declined)));
+    assert_eq!(parse_redirect("GET /favicon.ico HTTP/1.1\r\n\r\n", "mine", &metadata), None);
 }
 
 #[test]
-fn a_refusal_with_another_state_is_not_taken_for_the_persons_answer() {
-    let forged = "GET /?error=access_denied&state=other HTTP/1.1\r\n\r\n";
-    let outcome = parse_redirect(forged, "mine");
-    assert!(matches!(outcome, Some(Err(ref e)) if *e != JmapError::Declined), "{outcome:?}");
+fn a_refusal_with_another_state_is_ignored() {
+    assert_eq!(parse_redirect(&redirect("error=access_denied&state=other"), "mine", &https_metadata()), None);
+}
+
+#[test]
+fn a_redirect_from_the_expected_issuer_is_taken() {
+    let request = redirect("code=abc&state=mine&iss=https%3A%2F%2Fauth.example.com");
+    assert_eq!(parse_redirect(&request, "mine", &promising_iss(true)), Some(Ok("abc".into())));
+    assert_eq!(parse_redirect(&request, "mine", &promising_iss(false)), Some(Ok("abc".into())));
+}
+
+#[test]
+fn a_redirect_from_another_issuer_is_refused() {
+    for metadata in [promising_iss(true), promising_iss(false)] {
+        for query in [
+            "code=abc&state=mine&iss=https%3A%2F%2Fevil.example",
+            "code=abc&state=mine&iss=https%3A%2F%2Fauth.example.com%2F",
+            "error=access_denied&state=mine&iss=https%3A%2F%2Fevil.example",
+        ] {
+            let outcome = parse_redirect(&redirect(query), "mine", &metadata);
+            assert_eq!(outcome, Some(Err(JmapError::IssuerMismatch)), "{query}");
+        }
+    }
+}
+
+#[test]
+fn a_missing_iss_is_refused_when_the_server_promised_it() {
+    let outcome = parse_redirect(&redirect("code=abc&state=mine"), "mine", &promising_iss(true));
+    assert_eq!(outcome, Some(Err(JmapError::IssuerMismatch)));
+}
+
+#[test]
+fn a_missing_iss_is_taken_when_the_server_never_promised_it() {
+    let outcome = parse_redirect(&redirect("code=abc&state=mine"), "mine", &promising_iss(false));
+    assert_eq!(outcome, Some(Ok("abc".into())));
+}
+
+#[test]
+fn a_redirect_error_keeps_no_server_text() {
+    let query = "error=server_error&error_description=token+tok-SECRET-123&state=mine";
+    let err = parse_redirect(&redirect(query), "mine", &https_metadata()).unwrap().unwrap_err();
+    assert_eq!(err, JmapError::Forbidden("server_error".into()));
+    for oddity in ["bad%22quote", "back%5Cslash", "line%0Abreak", &"x".repeat(65)] {
+        let err = parse_redirect(&redirect(&format!("error={oddity}&state=mine")), "mine", &https_metadata())
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err, JmapError::Forbidden("unknown".into()), "{oddity}");
+    }
+    let said = format!("{err} {err:?}");
+    assert!(!said.contains("SECRET"), "{said}");
+}
+
+#[tokio::test]
+async fn a_session_url_with_a_password_is_refused_without_echo() {
+    let err = oauth::metadata("https://me:hunter2@api.example.com/jmap/session").await.unwrap_err();
+    assert!(matches!(err, JmapError::BadUrl(_)), "{err:?}");
+    let said = format!("{err} {err:?}");
+    assert!(!said.contains("hunter2") && !said.contains("api.example.com"), "{said}");
+}
+
+#[tokio::test]
+async fn an_unreadable_session_url_is_not_echoed() {
+    let err = oauth::metadata("not a url hunter2").await.unwrap_err();
+    assert!(matches!(err, JmapError::BadUrl(_)), "{err:?}");
+    assert!(!format!("{err} {err:?}").contains("hunter2"), "{err:?}");
 }
 
 #[test]
@@ -116,6 +189,7 @@ fn the_authorize_url_names_pkce_the_scopes_and_the_resource() {
         registration_endpoint: None,
         scopes_supported: Vec::new(),
         code_challenge_methods_supported: vec!["S256".into()],
+        authorization_response_iss_parameter_supported: false,
     };
     let pkce = Pkce::generate();
     let url = oauth::authorize_url(
@@ -165,27 +239,64 @@ fn port_of(loopback: &Loopback) -> u16 {
     url::Url::parse(&loopback.redirect_uri).unwrap().port().unwrap()
 }
 
-#[tokio::test]
-async fn the_loopback_hands_back_the_code_and_closes() {
+/// The loopback waiting for state `mine` from `https_metadata`'s issuer.
+async fn waiting_loopback() -> (u16, tokio::task::JoinHandle<Result<String, JmapError>>) {
     let loopback = Loopback::bind().await.unwrap();
     assert!(loopback.redirect_uri.starts_with("http://127.0.0.1:"), "{}", loopback.redirect_uri);
     let port = port_of(&loopback);
-    let waiting = tokio::spawn(loopback.wait_for_code("mine"));
+    let waiting = tokio::spawn(async move { loopback.wait_for_code("mine", &https_metadata()).await });
+    (port, waiting)
+}
+
+/// What the loopback hands back, or a failure when it takes longer than a
+/// moment. Ten seconds is the per-connection wait, so a result inside two
+/// shows that nothing waited it out.
+async fn promptly(waiting: tokio::task::JoinHandle<Result<String, JmapError>>) -> Result<String, JmapError> {
+    tokio::time::timeout(Duration::from_secs(2), waiting).await.expect("the loopback held up the redirect").unwrap()
+}
+
+#[tokio::test]
+async fn the_loopback_hands_back_the_code_and_closes() {
+    let (port, waiting) = waiting_loopback().await;
     let favicon = send(port, "GET /favicon.ico HTTP/1.1\r\n\r\n").await;
     assert!(favicon.starts_with("HTTP/1.1 404"), "{favicon}");
-    let page = send(port, "GET /?code=abc&state=mine HTTP/1.1\r\n\r\n").await;
+    let page = send(port, &redirect("code=abc&state=mine")).await;
     assert!(page.starts_with("HTTP/1.1 200"), "{page}");
-    assert_eq!(waiting.await.unwrap(), Ok("abc".into()));
+    assert_eq!(promptly(waiting).await, Ok("abc".into()));
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn a_connection_that_sends_nothing_does_not_hold_up_the_redirect() {
-    let loopback = Loopback::bind().await.unwrap();
-    let port = port_of(&loopback);
-    let waiting = tokio::spawn(loopback.wait_for_code("mine"));
-    let _silent = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    let page = send(port, "GET /?code=abc&state=mine HTTP/1.1\r\n\r\n").await;
+    let (port, waiting) = waiting_loopback().await;
+    let _idle = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let page = send(port, &redirect("code=abc&state=mine")).await;
     assert!(page.starts_with("HTTP/1.1 200"), "{page}");
-    assert_eq!(waiting.await.unwrap(), Ok("abc".into()));
+    assert_eq!(promptly(waiting).await, Ok("abc".into()));
+}
+
+#[tokio::test]
+async fn a_redirect_with_another_state_leaves_the_loopback_waiting() {
+    let (port, waiting) = waiting_loopback().await;
+    let forged = send(port, &redirect("error=access_denied&state=other")).await;
+    assert!(forged.starts_with("HTTP/1.1 404"), "{forged}");
+    assert!(!waiting.is_finished());
+    send(port, &redirect("code=abc&state=mine")).await;
+    assert_eq!(promptly(waiting).await, Ok("abc".into()));
+}
+
+#[tokio::test]
+async fn a_request_that_arrives_in_pieces_is_read_whole() {
+    let (port, waiting) = waiting_loopback().await;
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let request = redirect("code=abc&state=mine");
+    let (first, rest) = request.split_at(12);
+    stream.write_all(first.as_bytes()).await.unwrap();
+    stream.flush().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    stream.write_all(rest.as_bytes()).await.unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).await.unwrap();
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+    assert_eq!(promptly(waiting).await, Ok("abc".into()));
 }

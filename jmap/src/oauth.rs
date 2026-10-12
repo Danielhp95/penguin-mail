@@ -19,7 +19,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use url::{Host, Url};
 
 use crate::JmapError;
@@ -38,6 +39,10 @@ const REQUEST_WAIT: Duration = Duration::from_secs(10);
 
 /// What the loopback reads of one request: the request line and headers.
 const REQUEST_LIMIT: usize = 8192;
+
+/// How many connections the loopback reads at once. A browser opens a
+/// few; more come from something else, and those wait in the backlog.
+const MOST_CONNECTIONS: usize = 16;
 
 /// Which addresses a call may reach. Production code has only
 /// `HttpsOnly`; the unit tests' mock servers speak http, and only the
@@ -83,6 +88,10 @@ pub struct Metadata {
     pub scopes_supported: Vec<String>,
     #[serde(default)]
     pub code_challenge_methods_supported: Vec<String>,
+    /// The server puts RFC 9207's `iss` on every redirect, so a redirect
+    /// without one did not come from it.
+    #[serde(default)]
+    pub authorization_response_iss_parameter_supported: bool,
 }
 
 #[derive(Clone)]
@@ -180,12 +189,17 @@ pub async fn metadata(session_url: &str) -> Result<Metadata, JmapError> {
 }
 
 async fn metadata_over(session_url: &str, transport: Transport) -> Result<Metadata, JmapError> {
-    Url::parse(session_url).map_err(|_| JmapError::BadUrl(session_url.into()))?;
+    // The session URL could hold a password or an address, so the errors
+    // name which URL it was and none of it, as `JmapClient::new` does.
+    let parsed = Url::parse(session_url).map_err(|_| JmapError::BadUrl("the session URL".into()))?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(JmapError::BadUrl("the session URL".into()));
+    }
     let session = secure(session_url, transport)?;
     let issuer = session.origin().ascii_serialization();
     let at = session
         .join("/.well-known/oauth-authorization-server")
-        .map_err(|_| JmapError::BadUrl(session_url.into()))?;
+        .map_err(|_| JmapError::BadUrl("the session URL".into()))?;
     let (status, body) = read(http()?.get(at).send().await.map_err(network)?).await?;
     if !(200..300).contains(&status) {
         return Err(JmapError::NotFound);
@@ -287,8 +301,7 @@ async fn register_over(
     });
     let (status, answer) = read(http()?.post(endpoint).json(&body).send().await.map_err(network)?).await?;
     if !(200..300).contains(&status) {
-        let detail = answer["error_description"].as_str().or(answer["error"].as_str()).unwrap_or_default().to_string();
-        return Err(JmapError::Forbidden(detail));
+        return Err(JmapError::Forbidden(error_code(answer["error"].as_str())));
     }
     answer["client_id"]
         .as_str()
@@ -342,17 +355,17 @@ impl OAuthClient {
         let response = http()?.post(endpoint).form(form).send().await.map_err(network)?;
         let (status, body) = read(response).await?;
         if (200..300).contains(&status) {
+            let bearer = body["token_type"].as_str().is_some_and(|kind| kind.eq_ignore_ascii_case("Bearer"));
+            if !bearer {
+                return Err(JmapError::NotBearer);
+            }
             return serde_json::from_value(body).map_err(|e| decode("the token answer", &e));
         }
-        Err(match (status, body["error"].as_str().unwrap_or_default()) {
+        Err(match (status, error_code(body["error"].as_str()).as_str()) {
             (_, "invalid_grant") if body["temporary"].as_bool() == Some(true) => JmapError::SignInLocked,
             (_, "invalid_grant" | "invalid_client" | "unauthorized_client") => JmapError::Unauthorized,
             (429 | 503, _) => JmapError::RateLimited { retry_after: None },
-            (status, error) => JmapError::Problem {
-                status,
-                kind: error.to_string(),
-                detail: body["error_description"].as_str().unwrap_or_default().to_string(),
-            },
+            (status, error) => JmapError::Problem { status, kind: error.to_string(), detail: String::new() },
         })
     }
 }
@@ -372,46 +385,98 @@ impl Loopback {
         Ok(Loopback { listener, redirect_uri: format!("http://127.0.0.1:{port}/") })
     }
 
-    /// Answers requests until one carries the code or an error, then
-    /// closes the listener. A request that is not the redirect, such as a
-    /// favicon, gets a 404 and the listener waits on.
-    pub async fn wait_for_code(self, state: &str) -> Result<String, JmapError> {
+    /// Answers requests until one carries the code or an error for this
+    /// sign-in, then closes the listener. A request that is not that
+    /// redirect, such as a favicon or one with another `state`, gets a 404
+    /// and the listener waits on, so a local process or a web page that
+    /// finds the port cannot end the sign-in. Connections are read side by
+    /// side, so an idle one cannot hold up the browser's.
+    ///
+    /// This waits for as long as the browser takes: the caller bounds the
+    /// whole sign-in with its own timeout and drops this future.
+    pub async fn wait_for_code(self, state: &str, metadata: &Metadata) -> Result<String, JmapError> {
+        let mut reading = JoinSet::new();
         loop {
-            let (mut stream, _) = self.listener.accept().await.map_err(io)?;
-            let mut buf = vec![0u8; REQUEST_LIMIT];
-            let n = match tokio::time::timeout(REQUEST_WAIT, stream.read(&mut buf)).await {
-                Ok(read) => read.map_err(io)?,
-                Err(_) => continue,
-            };
-            let outcome = parse_redirect(&String::from_utf8_lossy(&buf[..n]), state);
-            let finished = match &outcome {
-                Some(Ok(_)) => Finished::Signed,
-                Some(Err(JmapError::Declined)) => Finished::Denied,
-                Some(Err(_)) => Finished::Failed,
-                None => Finished::Nothing,
-            };
-            let (status, body) = sign_in_page::page(finished);
-            let reply = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            let _ = stream.write_all(reply.as_bytes()).await;
-            if let Some(result) = outcome {
-                return result;
+            tokio::select! {
+                accepted = self.listener.accept() => {
+                    let (stream, _) = accepted.map_err(io)?;
+                    // Past the cap a connection is dropped unread; each one
+                    // read holds at most `REQUEST_LIMIT` bytes.
+                    if reading.len() < MOST_CONNECTIONS {
+                        reading.spawn(read_request(stream));
+                    }
+                }
+                Some(read) = reading.join_next() => {
+                    let Ok(Some((mut stream, request))) = read else { continue };
+                    let outcome = parse_redirect(&String::from_utf8_lossy(&request), state, metadata);
+                    let finished = match &outcome {
+                        Some(Ok(_)) => Finished::Signed,
+                        Some(Err(JmapError::Declined)) => Finished::Denied,
+                        Some(Err(_)) => Finished::Failed,
+                        None => Finished::Nothing,
+                    };
+                    let (status, body) = sign_in_page::page(finished);
+                    let reply = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(reply.as_bytes()).await;
+                    if let Some(result) = outcome {
+                        return result;
+                    }
+                }
             }
         }
     }
+}
+
+/// The request head from one connection: bytes up to the blank line that
+/// ends the headers, or `REQUEST_LIMIT` of them. `None` when the
+/// connection sends nothing within `REQUEST_WAIT` or fails.
+async fn read_request(mut stream: TcpStream) -> Option<(TcpStream, Vec<u8>)> {
+    let mut request = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 1024];
+    let reading = async {
+        while request.len() < REQUEST_LIMIT && !request.windows(4).any(|w| w == b"\r\n\r\n") {
+            let room = (REQUEST_LIMIT - request.len()).min(chunk.len());
+            match stream.read(&mut chunk[..room]).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => request.extend_from_slice(&chunk[..n]),
+            }
+        }
+    };
+    tokio::time::timeout(REQUEST_WAIT, reading).await.ok()?;
+    (!request.is_empty()).then_some((stream, request))
 }
 
 fn io(err: std::io::Error) -> JmapError {
     JmapError::Network(format!("loopback listener: {}", err.kind()))
 }
 
-/// The code out of a raw HTTP request; `None` for a request that is not
-/// the redirect, such as a favicon. A code or an error under another
-/// `state` stops the sign-in as a mismatch: it did not come from the
-/// consent this sign-in opened.
-pub fn parse_redirect(request: &str, state: &str) -> Option<Result<String, JmapError>> {
+/// The server's `error` code when it keeps to RFC 6749's error charset
+/// (%x20-21 / %x23-5B / %x5D-7E) and to 64 bytes, and "unknown" otherwise.
+/// The `error_description` is never read: a server can write anything
+/// there, a token among it.
+fn error_code(error: Option<&str>) -> String {
+    match error {
+        Some(code)
+            if !code.is_empty()
+                && code.len() <= 64
+                && code.bytes().all(|b| matches!(b, 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E)) =>
+        {
+            code.to_string()
+        }
+        _ => "unknown".into(),
+    }
+}
+
+/// The code out of a raw HTTP request. `None` for a request that is not
+/// the redirect this sign-in waits for: a favicon, or a code or an error
+/// under another `state`. A redirect whose RFC 9207 `iss` names another
+/// issuer than `metadata`'s, or that lacks the `iss` the metadata
+/// promised, is refused: the code came from a server other than the one
+/// that will be asked to redeem it.
+pub fn parse_redirect(request: &str, state: &str, metadata: &Metadata) -> Option<Result<String, JmapError>> {
     let target = request.lines().next()?.split_whitespace().nth(1)?;
     let url = Url::parse(&format!("http://127.0.0.1{target}")).ok()?;
     let params: HashMap<String, String> = url.query_pairs().into_owned().collect();
@@ -421,12 +486,19 @@ pub fn parse_redirect(request: &str, state: &str) -> Option<Result<String, JmapE
         return None;
     }
     if params.get("state").map(String::as_str) != Some(state) {
-        return Some(Err(JmapError::Forbidden("the redirect's state did not match".into())));
+        return None;
+    }
+    match params.get("iss") {
+        Some(iss) if *iss != metadata.issuer => return Some(Err(JmapError::IssuerMismatch)),
+        None if metadata.authorization_response_iss_parameter_supported => {
+            return Some(Err(JmapError::IssuerMismatch));
+        }
+        _ => {}
     }
     if let Some(error) = error {
         return Some(Err(match error.as_str() {
             "access_denied" => JmapError::Declined,
-            other => JmapError::Forbidden(other.to_string()),
+            other => JmapError::Forbidden(error_code(Some(other))),
         }));
     }
     code.map(|code| Ok(code.clone()))
@@ -458,7 +530,8 @@ mod tests {
             "authorization_endpoint": format!("{}/authorize", server.uri()),
             "token_endpoint": format!("{}/token", server.uri()),
             "code_challenge_methods_supported": ["S256"],
-            "scopes_supported": ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "openid", "offline_access"]
+            "scopes_supported": ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "openid", "offline_access"],
+            "authorization_response_iss_parameter_supported": true
         });
         if registration {
             metadata["registration_endpoint"] = json!(format!("{}/register", server.uri()));
@@ -488,6 +561,7 @@ mod tests {
         serving_metadata(&server, true).await;
         let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
         assert_eq!(found.token_endpoint, format!("{}/token", server.uri()));
+        assert!(found.authorization_response_iss_parameter_supported);
         assert_eq!(
             oauth_scopes(&found),
             ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "offline_access"]
@@ -534,6 +608,7 @@ mod tests {
             registration_endpoint: Some("https://auth.example.com/register".into()),
             scopes_supported: Vec::new(),
             code_challenge_methods_supported: vec!["S256".into()],
+            authorization_response_iss_parameter_supported: false,
         };
         assert_eq!(checked(https.clone(), "https://auth.example.com", Transport::HttpsOnly), Ok(https.clone()));
         let http = "http://auth.example.com/x".to_string();
@@ -586,7 +661,7 @@ mod tests {
             .and(body_string_contains("resource=https%3A%2F%2Fapi.example.com%2Fjmap%2Fsession"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(json!({"access_token": "a1", "expires_in": 3600, "refresh_token": "r1"})),
+                    .set_body_json(json!({"access_token": "a1", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1"})),
             )
             .mount(&server)
             .await;
@@ -612,5 +687,70 @@ mod tests {
             .mount(&server)
             .await;
         assert_eq!(client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    async fn answering_tokens(server: &MockServer, answer: ResponseTemplate) {
+        Mock::given(method("POST")).and(path("/token")).respond_with(answer).mount(server).await;
+    }
+
+    #[tokio::test]
+    async fn a_token_of_another_type_is_refused() {
+        for token_type in [json!("mac"), json!("DPoP"), Value::Null] {
+            let server = MockServer::start().await;
+            let mut answer = json!({"access_token": "a1", "expires_in": 3600});
+            if !token_type.is_null() {
+                answer["token_type"] = token_type.clone();
+            }
+            answering_tokens(&server, ResponseTemplate::new(200).set_body_json(answer)).await;
+            let err = client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err();
+            assert_eq!(err, JmapError::NotBearer, "{token_type}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bearer_token_is_taken_in_any_case() {
+        let server = MockServer::start().await;
+        let answer = json!({"access_token": "a1", "token_type": "bEaReR", "expires_in": 3600});
+        answering_tokens(&server, ResponseTemplate::new(200).set_body_json(answer)).await;
+        assert_eq!(client_of(&server).refresh_over("r1", LOCAL).await.unwrap().access_token, "a1");
+    }
+
+    #[tokio::test]
+    async fn a_token_error_keeps_no_server_text() {
+        let server = MockServer::start().await;
+        let answer = json!({"error": "invalid_request", "error_description": "refresh token tok-SECRET-123 is malformed"});
+        answering_tokens(&server, ResponseTemplate::new(400).set_body_json(answer)).await;
+        let err = client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err();
+        assert_eq!(err, JmapError::Problem { status: 400, kind: "invalid_request".into(), detail: String::new() });
+        let said = format!("{err} {err:?}");
+        assert!(!said.contains("SECRET"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn a_token_error_code_outside_the_rfc_charset_becomes_a_fixed_word() {
+        for code in [json!("tok-SECRET-\\x"), json!("quote\"SECRET"), json!("SECRET".repeat(11)), json!(42)] {
+            let server = MockServer::start().await;
+            answering_tokens(&server, ResponseTemplate::new(400).set_body_json(json!({"error": code}))).await;
+            let err = client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err();
+            assert_eq!(err, JmapError::Problem { status: 400, kind: "unknown".into(), detail: String::new() }, "{code}");
+            assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_registration_error_keeps_no_server_text() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, true).await;
+        Mock::given(method("POST"))
+            .and(path("/register"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(
+                json!({"error": "invalid_redirect_uri", "error_description": "tok-SECRET-123 is not allowed"}),
+            ))
+            .mount(&server)
+            .await;
+        let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
+        let err = register_over(&found, "http://127.0.0.1/", &[], LOCAL).await.unwrap_err();
+        assert_eq!(err, JmapError::Forbidden("invalid_redirect_uri".into()));
+        assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
     }
 }
