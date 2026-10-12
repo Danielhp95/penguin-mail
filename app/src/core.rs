@@ -141,6 +141,9 @@ pub struct Core {
     secrets: Secrets,
     events_tx: async_channel::Sender<ChangeEvent>,
     pub events: async_channel::Receiver<ChangeEvent>,
+    started_tx: async_channel::Sender<AccountId>,
+    /// Each account whose sync started, once per start.
+    pub started: async_channel::Receiver<AccountId>,
     in_flight: Arc<AtomicUsize>,
     /// Whether the computer has a network, as the network monitor last
     /// said. A new engine, after a change to the sync settings, starts
@@ -249,6 +252,7 @@ impl Core {
             None
         };
         let (events_tx, events) = async_channel::bounded(mailrs_sync::events::CHANNEL_EVENTS);
+        let (started_tx, started) = async_channel::unbounded();
         let engine = Arc::new(RunningEngine::default());
         // The demo's newsletters point at addresses nobody owns, so its
         // one-click requests go to a fake.
@@ -312,6 +316,8 @@ impl Core {
             },
             events_tx,
             events,
+            started_tx,
+            started,
             in_flight: Arc::new(AtomicUsize::new(0)),
             network: Cell::new(true),
             window_open: Cell::new(false),
@@ -410,6 +416,7 @@ impl Core {
             running: Arc::clone(&self.engine),
             db: self.db.clone(),
             events: self.events_tx.clone(),
+            started: self.started_tx.clone(),
         });
         let db = self.db.clone();
         self.runtime.spawn(async move {
@@ -1571,6 +1578,7 @@ struct EnginePort {
     running: Arc<RunningEngine>,
     db: Db,
     events: async_channel::Sender<ChangeEvent>,
+    started: async_channel::Sender<AccountId>,
 }
 
 impl EnginePort {
@@ -1586,6 +1594,7 @@ impl Starting<AccountServices> for EnginePort {
     fn start(&self, account: AccountId, services: AccountServices) {
         if self.current() {
             self.engine.start_account(account, services);
+            let _ = self.started.try_send(account);
         }
     }
 

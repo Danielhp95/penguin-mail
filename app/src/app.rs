@@ -1621,8 +1621,9 @@ impl App {
         });
     }
 
-    /// Starts the unread counts, wakes them on each server answer, and
-    /// hands every count to the tray and the Dock badge.
+    /// Starts the unread counts, wakes them on each server answer and on
+    /// each account that starts, and hands every count to the tray and the
+    /// Dock badge.
     fn count_unread(self: &Rc<Self>) {
         glib::spawn_future_local(self.unread.start(glib::timeout_future));
         let mut answers = self.core.lists().counts_changed();
@@ -1631,6 +1632,13 @@ impl App {
             while answers.changed().await.is_ok() {
                 let Some(unread) = weak.upgrade() else { break };
                 unread.answered();
+            }
+        });
+        let (started, weak) = (self.core.started.clone(), Rc::downgrade(&self.unread));
+        glib::spawn_future_local(async move {
+            while let Ok(account_id) = started.recv().await {
+                let Some(unread) = weak.upgrade() else { break };
+                unread.started(account_id);
             }
         });
         let weak = Rc::downgrade(self);
