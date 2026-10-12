@@ -1183,7 +1183,25 @@ fn restore(path: &Path, copy: &Path) -> io::Result<()> {
         side.push(suffix);
         remove_if_present(Path::new(&side))?;
     }
-    std::fs::copy(copy, path).map(drop)
+    std::fs::copy(copy, path)?;
+    mark_tally_stale(path).map_err(io::Error::other)
+}
+
+/// The copy came from a VACUUM, which may number the messages' rowids
+/// differently from the store it replaces, and the correspondents tally
+/// counts by those rowids. A store old enough to have no tally needs
+/// nothing.
+fn mark_tally_stale(path: &Path) -> rusqlite::Result<()> {
+    let conn = Connection::open(path)?;
+    let has_tally: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'contact_marks')",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_tally {
+        conn.execute("UPDATE contact_marks SET stale = 1, counted_row = 0", [])?;
+    }
+    Ok(())
 }
 
 fn remove_if_present(path: &Path) -> io::Result<()> {

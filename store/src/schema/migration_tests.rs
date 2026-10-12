@@ -1247,3 +1247,30 @@ fn migration_64_marks_the_tally_stale_only_for_a_move_into_or_out_of_sent() {
     move_to("SENT");
     assert_eq!(marks(&conn), (true, 0), "a move into Sent");
 }
+
+/// The safety copy is a VACUUM, which may renumber the rowids the tally
+/// counts by, so a store put back from it starts a recount.
+#[test]
+fn a_store_put_back_after_a_failed_migration_recounts_its_correspondents() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mailrs.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
+    )
+    .unwrap();
+    crate::contacts::catch_up(&conn).unwrap();
+    drop(conn);
+    let mut failing = MIGRATIONS.to_vec();
+    failing.push("CREATE TABLE halfway (x INTEGER); INSERT INTO nowhere VALUES (1);");
+
+    open_with(&path, &failing).unwrap_err();
+
+    let back = open_with(&path, MIGRATIONS).unwrap();
+    let marks: (bool, i64) = back
+        .query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    assert_eq!(marks, (true, 0));
+}
