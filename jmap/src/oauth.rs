@@ -344,7 +344,13 @@ impl OAuthClient {
     }
 
     async fn refresh_over(&self, refresh_token: &str, transport: Transport) -> Result<Tokens, JmapError> {
-        self.token(transport, &[
+        self.refresh_answer(refresh_token, transport).await.map_err(|(err, _)| err)
+    }
+
+    /// `refresh_over`, with the refresh token a 2xx answer carried when the
+    /// client refuses the rest of it.
+    async fn refresh_answer(&self, refresh_token: &str, transport: Transport) -> Result<Tokens, Refused> {
+        self.answer(transport, &[
             ("grant_type", "refresh_token"),
             ("client_id", &self.client_id),
             ("refresh_token", refresh_token),
@@ -354,51 +360,106 @@ impl OAuthClient {
     }
 
     async fn token(&self, transport: Transport, form: &[(&str, &str)]) -> Result<Tokens, JmapError> {
-        let endpoint = secure(&self.token_endpoint, transport)?;
-        let response = http()?.post(endpoint).form(form).send().await.map_err(network)?;
-        let (status, body) = read(response).await?;
+        self.answer(transport, form).await.map_err(|(err, _)| err)
+    }
+
+    /// The token endpoint's answer. When a 2xx answer is refused, for a
+    /// token type other than Bearer or a body that does not decode, the
+    /// refresh token it carried comes back beside the error: the server has
+    /// already moved to it.
+    async fn answer(&self, transport: Transport, form: &[(&str, &str)]) -> Result<Tokens, Refused> {
+        let endpoint = secure(&self.token_endpoint, transport).map_err(|err| (err, None))?;
+        let response = http().map_err(|err| (err, None))?.post(endpoint).form(form).send().await;
+        let (status, body) = read(response.map_err(|err| (network(err), None))?).await.map_err(|err| (err, None))?;
         if (200..300).contains(&status) {
+            let rotated = body["refresh_token"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
             let bearer = body["token_type"].as_str().is_some_and(|kind| kind.eq_ignore_ascii_case("Bearer"));
             if !bearer {
-                return Err(JmapError::NotBearer);
+                return Err((JmapError::NotBearer, rotated));
             }
-            return serde_json::from_value(body).map_err(|e| decode("the token answer", &e));
+            return serde_json::from_value(body).map_err(|e| (decode("the token answer", &e), rotated));
         }
-        Err(match (status, error_code(body["error"].as_str()).as_str()) {
+        Err((match (status, error_code(body["error"].as_str()).as_str()) {
             (_, "invalid_grant") if body["temporary"].as_bool() == Some(true) => JmapError::SignInLocked,
             (_, "invalid_grant" | "invalid_client" | "unauthorized_client") => JmapError::Unauthorized,
             (429 | 503, _) => JmapError::RateLimited { retry_after: None },
             (status, error) => JmapError::Problem { status, kind: error.to_string(), detail: String::new() },
-        })
+        }, None))
     }
 }
+
+/// A refused token answer, with the refresh token it carried, if any.
+type Refused = (JmapError, Option<String>);
 
 /// What `OAuthSession::on_rotated` runs with each new refresh token.
 type Keep = Box<dyn Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync>;
 
 /// How long before its expiry an access token stops going out, so it
-/// cannot expire on its way to the server.
+/// cannot expire on its way to the server. A token that lives less than
+/// twice this keeps half its life instead.
 const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
 
 /// The longest lifetime an access token is taken at. A server could name
 /// one past any clock.
 const LONGEST_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// How long saving a rotated refresh token may take before it counts as
+/// failed. A keyring can wait on an unlock prompt nobody answers.
+const KEEP_WAIT: Duration = Duration::from_secs(30);
+
 struct Held {
     refresh_token: String,
-    access: Option<(String, Instant)>,
+    access: Option<Access>,
 }
 
-impl Held {
-    /// The access token while it has more than the margin to live.
-    fn usable(&self) -> Option<&str> {
-        let (token, until) = self.access.as_ref()?;
-        (*until > Instant::now() + EXPIRY_MARGIN).then_some(token.as_str())
+struct Access {
+    token: String,
+    until: Instant,
+    margin: Duration,
+}
+
+impl Access {
+    fn new(token: String, expires_in: u64) -> Access {
+        let life = Duration::from_secs(expires_in).min(LONGEST_LIFETIME);
+        Access { token, until: Instant::now() + life, margin: EXPIRY_MARGIN.min(life / 2) }
     }
 }
 
-fn expiry(expires_in: u64) -> Instant {
-    Instant::now() + Duration::from_secs(expires_in).min(LONGEST_LIFETIME)
+impl Held {
+    /// The access token while it has more than its margin to live.
+    fn usable(&self) -> Option<&str> {
+        let access = self.access.as_ref()?;
+        (access.until > Instant::now() + access.margin).then_some(access.token.as_str())
+    }
+}
+
+/// Saves rotated refresh tokens through the caller's callback, one save
+/// at a time, and holds the newest one until a save of it succeeds.
+struct Keeper {
+    keep: Keep,
+    /// The newest refresh token no save has kept yet. Its lock orders the
+    /// saves, so an older token never lands after a newer one. It is taken
+    /// with `held` locked or alone, never the other way round.
+    unsaved: Arc<tokio::sync::Mutex<Option<String>>>,
+}
+
+impl Keeper {
+    async fn save(&self, rotated: String, wait: Duration) {
+        let mut unsaved = self.unsaved.lock().await;
+        *unsaved = Some(rotated);
+        self.flush(&mut unsaved, wait).await;
+    }
+
+    /// Saves the token in `unsaved`, if any, and clears it once saved.
+    async fn flush(&self, unsaved: &mut Option<String>, wait: Duration) {
+        let Some(token) = unsaved.clone() else { return };
+        // The callback's words stay out of the log: they are the caller's.
+        match tokio::time::timeout(wait, (self.keep)(token)).await {
+            Ok(Ok(())) => *unsaved = None,
+            Ok(Err(_)) => tracing::warn!("could not keep the server's new refresh token; the next call tries again"),
+            Err(_) => tracing::warn!("keeping the server's new refresh token took too long; the next call tries again"),
+        }
+    }
 }
 
 /// One account's OAuth tokens. A refresh runs under the lock, so calls
@@ -409,7 +470,8 @@ fn expiry(expires_in: u64) -> Instant {
 pub struct OAuthSession {
     client: OAuthClient,
     held: Arc<tokio::sync::Mutex<Held>>,
-    keep: Option<Arc<Keep>>,
+    keeper: Option<Arc<Keeper>>,
+    keep_wait: Duration,
     transport: Transport,
 }
 
@@ -428,22 +490,37 @@ impl OAuthSession {
 
     /// A session that starts from the code exchange's tokens.
     pub fn signed_in(client: OAuthClient, tokens: Tokens) -> OAuthSession {
-        let access = Some((tokens.access_token, expiry(tokens.expires_in)));
+        let access = Some(Access::new(tokens.access_token, tokens.expires_in));
         OAuthSession::holding(client, Held { refresh_token: tokens.refresh_token.unwrap_or_default(), access })
     }
 
     fn holding(client: OAuthClient, held: Held) -> OAuthSession {
-        OAuthSession { client, held: Arc::new(tokio::sync::Mutex::new(held)), keep: None, transport: Transport::HttpsOnly }
+        OAuthSession {
+            client,
+            held: Arc::new(tokio::sync::Mutex::new(held)),
+            keeper: None,
+            keep_wait: KEEP_WAIT,
+            transport: Transport::HttpsOnly,
+        }
     }
 
-    /// Runs `keep` with each new refresh token, and waits for it before the
-    /// new access token is used. When `keep` fails, the new token stays in
-    /// memory for this run and the old one is never sent again.
+    /// Runs `keep` with each new refresh token, and waits for it, 30
+    /// seconds at most, before the new access token is used. When `keep`
+    /// fails or takes longer, the new token stays in memory, the old one
+    /// is never sent again, and the next call runs `keep` again, in the
+    /// background, until it succeeds.
     pub fn on_rotated(
         mut self,
         keep: impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static,
     ) -> OAuthSession {
-        self.keep = Some(Arc::new(Box::new(keep)));
+        let keeper = Keeper { keep: Box::new(keep), unsaved: Arc::new(tokio::sync::Mutex::new(None)) };
+        self.keeper = Some(Arc::new(keeper));
+        self
+    }
+
+    #[cfg(test)]
+    fn waiting_for_keep(mut self, wait: Duration) -> OAuthSession {
+        self.keep_wait = wait;
         self
     }
 
@@ -453,10 +530,12 @@ impl OAuthSession {
         self
     }
 
-    /// An access token with a minute or more to live, refreshed first when
-    /// `force` or when the held one is about to expire. A refused refresh
-    /// is `Unauthorized`, which asks the person to sign in again.
+    /// An access token with a minute or more to live (half its life for a
+    /// short-lived one), refreshed first when `force` or when the held one
+    /// is about to expire. A refused refresh is `Unauthorized`, which asks
+    /// the person to sign in again.
     pub async fn bearer(&self, force: bool) -> Result<String, JmapError> {
+        self.save_again();
         let held = Arc::clone(&self.held).lock_owned().await;
         if !force && let Some(token) = held.usable() {
             return Ok(token.to_string());
@@ -468,6 +547,7 @@ impl OAuthSession {
     /// away. When another call refreshed while this one waited for the
     /// lock, its token comes back and no second refresh goes out.
     pub(crate) async fn bearer_instead_of(&self, refused: &str) -> Result<String, JmapError> {
+        self.save_again();
         let held = Arc::clone(&self.held).lock_owned().await;
         if let Some(token) = held.usable()
             && token != refused
@@ -477,11 +557,23 @@ impl OAuthSession {
         self.renewed(held).await
     }
 
+    /// Runs `keep` again in the background for a rotated refresh token an
+    /// earlier save failed to keep, unless a save is running already.
+    fn save_again(&self) {
+        let Some(keeper) = &self.keeper else { return };
+        let Ok(mut unsaved) = Arc::clone(&keeper.unsaved).try_lock_owned() else { return };
+        if unsaved.is_none() {
+            return;
+        }
+        let (keeper, wait) = (Arc::clone(keeper), self.keep_wait);
+        tokio::spawn(async move { keeper.flush(&mut unsaved, wait).await });
+    }
+
     /// Refreshes in a task of its own that holds the lock, so a caller
     /// that gives up halfway cannot drop a rotated refresh token the
     /// server has already moved to.
     async fn renewed(&self, held: tokio::sync::OwnedMutexGuard<Held>) -> Result<String, JmapError> {
-        let refreshing = renew(self.client.clone(), held, self.keep.clone(), self.transport);
+        let refreshing = renew(self.client.clone(), held, self.keeper.clone(), self.keep_wait, self.transport);
         tokio::spawn(refreshing).await.map_err(|_| JmapError::Network("the token refresh stopped".into()))?
     }
 }
@@ -489,23 +581,28 @@ impl OAuthSession {
 async fn renew(
     client: OAuthClient,
     mut held: tokio::sync::OwnedMutexGuard<Held>,
-    keep: Option<Arc<Keep>>,
+    keeper: Option<Arc<Keeper>>,
+    wait: Duration,
     transport: Transport,
 ) -> Result<String, JmapError> {
     if held.refresh_token.is_empty() {
         return Err(JmapError::Unauthorized);
     }
-    let tokens = client.refresh_over(&held.refresh_token, transport).await?;
-    if let Some(rotated) = tokens.refresh_token.filter(|t| *t != held.refresh_token) {
+    let (tokens, rotated) = match client.refresh_answer(&held.refresh_token, transport).await {
+        Ok(mut tokens) => {
+            let rotated = tokens.refresh_token.take();
+            (Ok(tokens), rotated)
+        }
+        Err((err, rotated)) => (Err(err), rotated),
+    };
+    if let Some(rotated) = rotated.filter(|t| *t != held.refresh_token) {
         held.refresh_token = rotated.clone();
-        if let Some(keep) = &keep
-            && keep(rotated).await.is_err()
-        {
-            // The callback's words stay out: they are the caller's to log.
-            tracing::warn!("could not keep the server's new refresh token; it stays in memory for this run");
+        if let Some(keeper) = &keeper {
+            keeper.save(rotated, wait).await;
         }
     }
-    held.access = Some((tokens.access_token.clone(), expiry(tokens.expires_in)));
+    let tokens = tokens?;
+    held.access = Some(Access::new(tokens.access_token.clone(), tokens.expires_in));
     Ok(tokens.access_token)
 }
 
@@ -996,6 +1093,137 @@ mod tests {
         let tokens = Tokens { access_token: "a1".into(), expires_in: 0, refresh_token: None };
         let session = OAuthSession::signed_in(client_of(&server), tokens).over(LOCAL);
         assert_eq!(session.bearer(false).await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    /// A keep that refuses its first `refusals` tokens and keeps the rest.
+    fn refusing_first(refusals: usize) -> (Saved, impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static) {
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&kept);
+        let tries = Arc::new(Mutex::new(0usize));
+        (kept, move |token: String| {
+            let (into, tries) = (Arc::clone(&into), Arc::clone(&tries));
+            Box::pin(async move {
+                let mut tries = tries.lock().unwrap();
+                *tries += 1;
+                if *tries <= refusals {
+                    return Err("the keyring is locked".to_string());
+                }
+                into.lock().unwrap().push(token);
+                Ok(())
+            }) as BoxFuture<'static, Result<(), String>>
+        })
+    }
+
+    /// Waits until `saved` holds `want`, for a second at most.
+    async fn saved_soon(saved: &Saved, want: &[&str]) {
+        for _ in 0..100 {
+            if *saved.lock().unwrap() == want {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(*saved.lock().unwrap(), want);
+    }
+
+    async fn rotating_once(server: &MockServer, expires_in: u64) {
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r1"))
+            .respond_with(bearer_answer(json!({"access_token": "a2", "expires_in": expires_in, "refresh_token": "r2"})))
+            .expect(1)
+            .mount(server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r2"))
+            .respond_with(bearer_answer(json!({"access_token": "a3", "expires_in": 3600})))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn a_rotation_the_keyring_refused_is_saved_again_on_a_later_call() {
+        let server = MockServer::start().await;
+        rotating_once(&server, 3600).await;
+        let (saved, keep) = refusing_first(1);
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        assert!(saved.lock().unwrap().is_empty());
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        saved_soon(&saved, &["r2"]).await;
+        // Saved now: a further call has nothing to save again.
+        session.bearer(false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(*saved.lock().unwrap(), ["r2"]);
+    }
+
+    #[tokio::test]
+    async fn a_keyring_that_never_answers_does_not_hold_up_the_account() {
+        let server = MockServer::start().await;
+        rotating_once(&server, 0).await;
+        let session = OAuthSession::new(client_of(&server), "r1".into())
+            .on_rotated(|_| Box::pin(futures::future::pending()) as BoxFuture<'static, Result<(), String>>)
+            .over(LOCAL)
+            .waiting_for_keep(Duration::from_millis(50));
+        let first = tokio::time::timeout(Duration::from_secs(2), session.bearer(false)).await;
+        assert_eq!(first.expect("the refresh waited on the keyring for good").unwrap(), "a2");
+        let second = tokio::time::timeout(Duration::from_secs(2), session.bearer(false)).await;
+        assert_eq!(second.expect("the refresh waited on the keyring for good").unwrap(), "a3");
+    }
+
+    #[tokio::test]
+    async fn a_refused_token_answer_still_keeps_the_rotation_it_carried() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"access_token": "a2", "token_type": "mac", "expires_in": 3600, "refresh_token": "r2"}),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r2"))
+            .respond_with(bearer_answer(json!({"access_token": "a3", "expires_in": 3600})))
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap_err(), JmapError::NotBearer);
+        assert_eq!(*saved.lock().unwrap(), ["r2"]);
+        assert_eq!(session.bearer(false).await.unwrap(), "a3");
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_does_not_decode_still_keeps_the_rotation_it_carried() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r1"))
+            .respond_with(bearer_answer(json!({"access_token": 42, "refresh_token": "r2"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        assert!(matches!(session.bearer(false).await, Err(JmapError::Decode(_))));
+        assert_eq!(*saved.lock().unwrap(), ["r2"]);
+    }
+
+    #[tokio::test]
+    async fn a_token_that_lives_a_minute_is_used_more_than_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(bearer_answer(json!({"access_token": "a2", "expires_in": 60})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let session = OAuthSession::new(client_of(&server), "r1".into()).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
     }
 
     #[tokio::test]
