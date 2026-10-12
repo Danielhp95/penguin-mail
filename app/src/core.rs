@@ -20,7 +20,7 @@ use mailrs_store::services::{FoundService, Miss, ServiceKind};
 use mailrs_store::{Db, StoreError, accounts};
 use mailrs_sync::config::{Config, config_path, data_dir, migrate_old_dirs};
 use mailrs_sync::lock::{LockError, SyncLock};
-use mailrs_sync::passwords::{PasswordStore, Passwords, Secrets};
+use mailrs_sync::passwords::{PasswordStore, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
     Browser, BrowserSignInError, NewImap, NewJmap, NewPop3, Wanted, check_pop3, google_sign_in,
@@ -935,6 +935,7 @@ impl Core {
                 token,
                 user,
                 secret,
+                dav_password,
             } = attempt;
             let auth = match token {
                 true => mailrs_jmap::Auth::Bearer(secret.clone()),
@@ -969,9 +970,10 @@ impl Core {
                 provider_name,
                 saved,
                 secret,
+                dav_password,
             };
             let account = jmap_signed_in(&db, &secrets, new, now_millis()).await?;
-            let services = connect_jmap(&db, Arc::clone(&secrets.jmap), &account, window_days).await?;
+            let services = connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, window_days).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)
         })
@@ -980,22 +982,27 @@ impl Core {
 
     /// Looks for the account's calendar, contacts and Sieve servers
     /// (calendar and contacts alone for a POP3 account) and keeps what it
-    /// finds. A new confirmed server restarts the account's
-    /// services, so the calendar and contacts show without a restart. The
-    /// demo asks nobody.
+    /// finds. A JMAP account keeps none for what its session gives, and
+    /// looks for nothing when it keeps no password such a server takes. A
+    /// new confirmed server restarts the account's services, so the
+    /// calendar and contacts show without a restart. The demo asks nobody.
     pub async fn find_services(&self, account: Account) -> Result<ServicesFound> {
         if self.demo {
             return Ok(ServicesFound::default());
         }
-        let (db, passwords, engine) = (
-            self.db.clone(),
-            Arc::clone(&self.secrets.passwords),
-            self.engine.current(),
-        );
+        let (db, secrets, engine) = (self.db.clone(), self.secrets.clone(), self.engine.current());
         let connector = self.connector();
         let account_id = account.id;
         let found = self.call(async move {
-            let (host, user, password) = incoming_login(&db, &passwords, account.id).await?;
+            let session = match account.provider {
+                Provider::Jmap => db.read(move |c| mailrs_store::jmap::load(c, account_id)).await?,
+                _ => None,
+            };
+            let offers = |capability: &str| session.as_ref().is_some_and(|saved| saved.offers(capability));
+            let offers_contacts = offers(mailrs_jmap::CONTACTS);
+            let Some((host, user, password)) = dav_login(&db, &secrets, &account).await? else {
+                return Ok(ServicesFound { contacts: offers_contacts, ..ServicesFound::default() });
+            };
             let net = RealNet::new()?;
             let mut found = finding::find_services(
                 &net,
@@ -1012,13 +1019,22 @@ impl Core {
             if account.provider == Provider::Pop3 {
                 found.sieve = None;
             }
+            // Contacts and rules over JMAP win over a server found beside
+            // it, so nothing comes twice.
+            if offers_contacts {
+                found.carddav = None;
+                found.carddav_missed = None;
+            }
+            if offers(mailrs_jmap::SIEVE) {
+                found.sieve = None;
+            }
             let changed = finding::keep_found(&db, account.id, &found).await?;
             if changed {
                 restart_services(&connector, engine, &account).await?;
             }
             Ok::<_, anyhow::Error>(ServicesFound {
                 calendar: found.caldav.is_some_and(|f| f.confirmed),
-                contacts: found.carddav.is_some_and(|f| f.confirmed),
+                contacts: found.carddav.is_some_and(|f| f.confirmed) || offers_contacts,
                 rules_on_server: found.sieve.is_some(),
                 calendar_missed: found.caldav_missed,
                 contacts_missed: found.carddav_missed,
@@ -1063,14 +1079,12 @@ impl Core {
         kind: ServiceKind,
         url: String,
     ) -> Result<()> {
-        let (db, passwords, engine) = (
-            self.db.clone(),
-            Arc::clone(&self.secrets.passwords),
-            self.engine.current(),
-        );
+        let (db, secrets, engine) = (self.db.clone(), self.secrets.clone(), self.engine.current());
         let connector = self.connector();
         self.call(async move {
-            let (_, user, password) = incoming_login(&db, &passwords, account.id).await?;
+            let Some((_, user, password)) = dav_login(&db, &secrets, &account).await? else {
+                bail!(gettext("This account keeps no password a calendar or contacts server takes."));
+            };
             finding::use_typed(
                 &finding::RealProbe,
                 &db,
@@ -1088,14 +1102,12 @@ impl Core {
 
     /// The person said yes to a server found outside their domain.
     pub async fn confirm_server(&self, account: Account, kind: ServiceKind) -> Result<()> {
-        let (db, passwords, engine) = (
-            self.db.clone(),
-            Arc::clone(&self.secrets.passwords),
-            self.engine.current(),
-        );
+        let (db, secrets, engine) = (self.db.clone(), self.secrets.clone(), self.engine.current());
         let connector = self.connector();
         self.call(async move {
-            let (_, _, password) = incoming_login(&db, &passwords, account.id).await?;
+            let Some((_, _, password)) = dav_login(&db, &secrets, &account).await? else {
+                bail!(gettext("This account keeps no password a calendar or contacts server takes."));
+            };
             finding::confirm_found(&finding::RealProbe, &db, account.id, kind, &password)
                 .await?;
             restart_services(&connector, engine, &account).await
@@ -1173,27 +1185,53 @@ impl Core {
     }
 }
 
-/// The incoming server's host, the user name it took, and the password in
-/// the keyring for `account_id`: an IMAP account's, or a POP3 account's.
-async fn incoming_login(
+/// What a DAV or ManageSieve server takes for `account`: the host to look
+/// beside, the user name and the password. An IMAP or POP3 account gives
+/// its incoming server's host, the user name it took and its password. A
+/// JMAP account looks beside its provider's IMAP host, or its session's,
+/// and signs in with the app password kept for DAV, or its own password
+/// over Basic. `None` when a JMAP account keeps no password such a server
+/// would take.
+pub(crate) async fn dav_login(
     db: &Db,
-    passwords: &Arc<Passwords>,
-    account_id: AccountId,
-) -> anyhow::Result<(String, String, String)> {
-    let saved = db
-        .read(move |c| {
-            Ok(match mailrs_store::servers::load(c, account_id)? {
-                Some(servers) => Some(servers.imap),
-                None => mailrs_store::servers::load_pop3(c, account_id)?.map(|servers| servers.pop3),
+    secrets: &Secrets,
+    account: &Account,
+) -> anyhow::Result<Option<(String, String, String)>> {
+    let id = account.id;
+    if account.provider != Provider::Jmap {
+        let saved = db
+            .read(move |c| {
+                Ok(match mailrs_store::servers::load(c, id)? {
+                    Some(servers) => Some(servers.imap),
+                    None => mailrs_store::servers::load_pop3(c, id)?.map(|servers| servers.pop3),
+                })
             })
-        })
+            .await?
+            .ok_or_else(|| anyhow!("no servers kept"))?;
+        let passwords = Arc::clone(&secrets.passwords);
+        let password = tokio::task::spawn_blocking(move || passwords.load(id))
+            .await??
+            .ok_or_else(|| anyhow!("no password kept"))?;
+        return Ok(Some((saved.host, saved.user_name, password)));
+    }
+    let saved = db
+        .read(move |c| mailrs_store::jmap::load(c, id))
         .await?
-        .ok_or_else(|| anyhow!("no servers kept"))?;
-    let passwords = Arc::clone(passwords);
-    let password = tokio::task::spawn_blocking(move || passwords.load(account_id))
-        .await??
-        .ok_or_else(|| anyhow!("no password kept"))?;
-    Ok((saved.host, saved.user_name, password))
+        .ok_or_else(|| anyhow!("no session kept"))?;
+    let host = mailrs_discover::jmap_named(account.provider_name())
+        .and_then(|p| p.imap_host)
+        .or_else(|| url::Url::parse(&saved.session_url).ok().and_then(|u| u.host_str().map(str::to_string)))
+        .unwrap_or_default();
+    let user = saved.user_name.clone().unwrap_or_else(|| account.email.clone());
+    let (dav, jmap) = (Arc::clone(&secrets.passwords), Arc::clone(&secrets.jmap));
+    let password = match tokio::task::spawn_blocking(move || dav.load(id)).await?? {
+        Some(password) => Some(password),
+        None if saved.auth == mailrs_store::jmap::JmapAuth::Basic => {
+            tokio::task::spawn_blocking(move || jmap.load(id)).await??
+        }
+        None => None,
+    };
+    Ok(password.map(|password| (host, user, password)))
 }
 
 /// Builds the account's services again from the store and restarts its
@@ -1395,6 +1433,55 @@ mod tests {
     /// tests hold this for as long as a core lives and the run keeps one
     /// in memory at a time.
     static DEMO: Mutex<()> = Mutex::new(());
+
+    #[tokio::test]
+    async fn an_account_without_a_calendar_password_skips_the_search() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = mailrs_store::Db::open(&dir.path().join("mail.db")).unwrap();
+        let secrets = mailrs_sync::passwords::Secrets::memory();
+        let account = db
+            .write(|c| {
+                let id = mailrs_store::accounts::insert_jmap_account(c, "me@fastmail.com", "Fastmail", 0)?.unwrap();
+                mailrs_store::jmap::save(c, id, &mailrs_store::jmap::JmapSaved {
+                    session_url: "https://api.fastmail.com/jmap/session".into(),
+                    auth: mailrs_store::jmap::JmapAuth::Bearer,
+                    user_name: None,
+                    labels: true,
+                    capabilities: vec![mailrs_jmap::MAIL.into()],
+                })?;
+                Ok(mailrs_store::accounts::account(c, id)?.unwrap())
+            })
+            .await
+            .unwrap();
+        assert_eq!(super::dav_login(&db, &secrets, &account).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn a_token_account_signs_in_to_dav_with_its_app_password_beside_the_imap_host() {
+        use mailrs_sync::passwords::PasswordStore;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = mailrs_store::Db::open(&dir.path().join("mail.db")).unwrap();
+        let secrets = mailrs_sync::passwords::Secrets::memory();
+        let account = db
+            .write(|c| {
+                let id = mailrs_store::accounts::insert_jmap_account(c, "me@fastmail.com", "Fastmail", 0)?.unwrap();
+                mailrs_store::jmap::save(c, id, &mailrs_store::jmap::JmapSaved {
+                    session_url: "https://api.fastmail.com/jmap/session".into(),
+                    auth: mailrs_store::jmap::JmapAuth::Bearer,
+                    user_name: None,
+                    labels: true,
+                    capabilities: vec![mailrs_jmap::MAIL.into()],
+                })?;
+                Ok(mailrs_store::accounts::account(c, id)?.unwrap())
+            })
+            .await
+            .unwrap();
+        secrets.jmap.save(account.id, "token").unwrap();
+        secrets.passwords.save(account.id, "app").unwrap();
+        let login = super::dav_login(&db, &secrets, &account).await.unwrap();
+        assert_eq!(login, Some(("imap.fastmail.com".into(), "me@fastmail.com".into(), "app".into())));
+    }
 
     #[test]
     fn every_tool_run_shares_one_calendar() {

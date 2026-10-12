@@ -11,7 +11,7 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_jmap::{Auth, JmapClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, JmapSettings, MailBackend, SearchQuery, TriageAction,
+    AccountServices, AccountSync, AnyRules, DEFAULT_BODY_CACHE_BYTES, JmapSettings, LocalRules, MailBackend, SearchQuery, TriageAction,
 };
 use mailrs_testmail::{JmapKind, JmapServer};
 use rusqlite::OptionalExtension;
@@ -74,7 +74,7 @@ fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId)
         capabilities: Vec::new(),
         auto_reply_needs_sign_in: false,
     };
-    AccountServices::jmap(db.clone(), account_id, client, settings)
+    AccountServices::jmap(client, settings).with_rules(AnyRules::Local(LocalRules::new(db.clone(), account_id)))
 }
 
 fn incoming(message_id: &str, subject: &str, to: &str) -> Vec<u8> {

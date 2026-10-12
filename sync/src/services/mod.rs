@@ -418,15 +418,14 @@ impl AccountServices {
 
     /// An account on a JMAP server: its mail and the addresses it sends
     /// as. `connect_jmap` adds the calendar, contacts, rules and automatic
-    /// reply its session and its found servers offer; until then its
-    /// rules stay on this computer.
-    pub fn jmap(db: Db, account_id: AccountId, jmap: impl Into<AnyJmap>, settings: JmapSettings) -> Self {
+    /// reply its session and its found servers offer.
+    pub fn jmap(jmap: impl Into<AnyJmap>, settings: JmapSettings) -> Self {
         let adapter = Jmap::new(Arc::new(jmap.into()), settings);
         AccountServices {
             mail: AnyMail::Jmap(adapter.clone()),
             calendar: None,
             contacts: None,
-            rules: Some(AnyRules::Local(LocalRules::new(db, account_id))),
+            rules: None,
             auto_reply: None,
             identities: AnyIdentities::Jmap(adapter),
         }

@@ -315,6 +315,7 @@ fn new_jmap(address: &str, token: &str) -> crate::sign_in::NewJmap {
             capabilities: vec!["urn:ietf:params:jmap:mail".into()],
         },
         secret: token.into(),
+        dav_password: None,
     }
 }
 
@@ -325,11 +326,11 @@ async fn a_jmap_account_connects_from_its_session_row_and_its_secret() {
     let new = new_jmap("me@fastmail.com", "fmu1-token");
     let account = crate::sign_in::jmap_signed_in(&db, &secrets, new, 0).await.unwrap();
     assert_eq!(account.provider, Provider::Jmap);
-    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), &account, 30).await.unwrap();
+    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
     assert!(matches!(services.mail, AnyMail::Jmap(_)));
-    assert!(matches!(services.rules, Some(crate::AnyRules::Local(_))), "rules stay here until part 3");
+    assert!(matches!(services.rules, Some(crate::AnyRules::Local(_))), "a session without Sieve keeps its rules here");
     secrets.forget(&account).await.unwrap();
-    let missing = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), &account, 30).await;
+    let missing = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await;
     assert!(matches!(missing, Err(crate::SyncError::Backend(crate::BackendError::NeedsReauth))));
     assert_eq!(state(&db, &account).await, AccountState::NeedsReauth);
 }
@@ -376,6 +377,86 @@ async fn a_jmap_sign_in_for_an_address_an_imap_account_holds_is_refused() {
     let refused = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap(&dana.email, "token"), 0).await;
     assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::Taken { .. })));
     assert_eq!(secrets.jmap.load(dana.id).unwrap(), None, "nothing reaches the keyring");
+}
+
+fn session_row(capabilities: &[&str], auth: mailrs_store::jmap::JmapAuth) -> mailrs_store::jmap::JmapSaved {
+    mailrs_store::jmap::JmapSaved {
+        session_url: "https://jmap.example.org/jmap/session".into(),
+        auth,
+        user_name: None,
+        labels: true,
+        capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
+    }
+}
+
+async fn jmap_signed_in_with(db: &Db, secrets: &Secrets, saved: mailrs_store::jmap::JmapSaved, dav: Option<&str>) -> Account {
+    let new = crate::sign_in::NewJmap {
+        address: "me@example.org".into(),
+        provider_name: "example.org".into(),
+        saved,
+        secret: "secret".into(),
+        dav_password: dav.map(str::to_string),
+    };
+    crate::sign_in::jmap_signed_in(db, secrets, new, 0).await.unwrap()
+}
+
+#[tokio::test]
+async fn jmap_contacts_win_over_a_found_carddav_server() {
+    use mailrs_jmap::{CONTACTS, MAIL, SIEVE, VACATION};
+    use mailrs_store::jmap::JmapAuth;
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL, CONTACTS, SIEVE, VACATION], JmapAuth::Basic), None).await;
+    let id = account.id;
+    db.write(move |c| {
+        for (kind, url) in [(ServiceKind::CardDav, "https://dav.example.org/card/"), (ServiceKind::CalDav, "https://dav.example.org/cal/")] {
+            mailrs_store::services::save(c, id, &FoundService { kind, url: url.into(), user_name: "me@example.org".into(), confirmed: true, source: "table".into() })?;
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+    assert!(matches!(services.contacts, Some(crate::AnyContacts::Jmap(_))));
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "the calendar comes from CalDAV, with the account password");
+    assert!(matches!(services.rules, Some(crate::AnyRules::JmapSieve(_))));
+    assert!(matches!(services.auto_reply, Some(crate::AnyAutoReply::Jmap(_))));
+}
+
+#[tokio::test]
+async fn a_token_account_reaches_dav_only_with_its_app_password() {
+    use mailrs_jmap::MAIL;
+    use mailrs_store::jmap::JmapAuth;
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL], JmapAuth::Bearer), None).await;
+    let id = account.id;
+    db.write(move |c| {
+        mailrs_store::services::save(c, id, &FoundService { kind: ServiceKind::CalDav, url: "https://caldav.example.org/".into(), user_name: "me@example.org".into(), confirmed: true, source: "table".into() })
+    })
+    .await
+    .unwrap();
+    let without = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+    assert!(without.calendar.is_none(), "a token goes nowhere but JMAP");
+    assert!(matches!(without.rules, Some(crate::AnyRules::Local(_))));
+    let with = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL], JmapAuth::Bearer), Some("app-password")).await;
+    let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &with, 30).await.unwrap();
+    assert!(services.calendar.is_some());
+}
+
+#[tokio::test]
+async fn a_new_jmap_account_keeps_its_calendar_password_beside_its_token() {
+    use mailrs_store::jmap::JmapAuth;
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = jmap_signed_in_with(&db, &secrets, session_row(&[mailrs_jmap::MAIL], JmapAuth::Bearer), Some("app-password")).await;
+    assert_eq!(secrets.passwords.load(account.id).unwrap().as_deref(), Some("app-password"));
+    assert_eq!(secrets.jmap.load(account.id).unwrap().as_deref(), Some("secret"));
 }
 
 /// The page a browser sign-in hands the opener, with the run dropped once
