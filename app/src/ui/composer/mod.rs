@@ -14,6 +14,7 @@ mod recipients;
 mod removals;
 mod richbuffer;
 pub mod spell;
+mod work;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -24,6 +25,7 @@ use mailrs_store::templates::Template;
 
 use self::editor::Editor;
 use self::recipients::Recipients;
+use self::work::Work;
 use super::autocomplete::Contacts;
 use super::{labelled_by, name, name_with_shortcut, roving};
 use crate::attachcheck::Promise;
@@ -304,9 +306,11 @@ pub struct Composer {
     /// of it was saved: either way it is no longer the one it opened as.
     handed: Cell<bool>,
     saved: Cell<bool>,
-    /// Set while the message is built off the GTK thread for sending or
-    /// saving, so a second press does not build and send it twice.
-    building: Cell<bool>,
+    /// The send or save running now. A second press waits, and closing the
+    /// window cancels it.
+    work: Work,
+    /// The Send button's content, which reads "Sending…" while a send builds.
+    send_content: adw::ButtonContent,
     attach: gtk::Button,
     on_send: Box<dyn Fn(Draft, Built, SendWhen)>,
 }
@@ -350,13 +354,12 @@ impl Composer {
             Some("composer.send-later"),
         );
         later.append_section(None, &custom);
+        let send_content = adw::ButtonContent::builder()
+            .icon_name("mail-send-symbolic")
+            .label(gettext("Send"))
+            .build();
         let send = adw::SplitButton::builder()
-            .child(
-                &adw::ButtonContent::builder()
-                    .icon_name("mail-send-symbolic")
-                    .label(gettext("Send"))
-                    .build(),
-            )
+            .child(&send_content)
             .menu_model(&later)
             .dropdown_tooltip(gettext("Send Later"))
             .css_classes(["suggested-action"])
@@ -752,7 +755,8 @@ impl Composer {
             locked: Cell::new(false),
             handed: Cell::new(false),
             saved: Cell::new(false),
-            building: Cell::new(false),
+            work: Work::default(),
+            send_content,
             attach: attach.clone(),
             on_send: Box::new(on_send),
         });
@@ -1112,7 +1116,10 @@ impl Composer {
             let Some(c) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
-            if c.closing.get() || !c.dirty.get() || c.is_blank() {
+            // A send or save still running counts as unsaved work: closing
+            // asks, and Discard cancels it.
+            let idle = !c.work.is_busy();
+            if c.closing.get() || (idle && (!c.dirty.get() || c.is_blank())) {
                 return glib::Propagation::Proceed;
             }
             c.confirm_close();
@@ -1541,7 +1548,7 @@ impl Composer {
                 draft.problem()
             }
         };
-        self.send.set_sensitive(problem.is_none());
+        self.send.set_sensitive(problem.is_none() && !self.work.is_busy());
         let tip = problem.unwrap_or_else(|| gettext("Send (Ctrl+Enter)"));
         self.send.set_tooltip_text(Some(&tip));
     }
@@ -1780,7 +1787,7 @@ impl Composer {
     /// the gate wants asked, and passes it on for sending once nothing
     /// stands in the way.
     fn hand_over(self: &Rc<Self>, when: SendWhen) {
-        if self.locked.get() || self.building.get() {
+        if self.locked.get() || self.work.is_busy() {
             return;
         }
         let this = Rc::clone(self);
@@ -1815,18 +1822,52 @@ impl Composer {
     /// Builds the message and passes it on, then closes. The bytes go
     /// with it, so the app does not build the same message again.
     fn send_off(self: &Rc<Self>, draft: Draft, when: SendWhen) {
-        if self.building.replace(true) {
+        let Some(ticket) = self.work.begin() else {
             return;
-        }
+        };
+        self.show_busy(true);
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let built = built_off_thread(&draft).await;
-            this.building.set(false);
+            // A window closed with Discard while this built has cancelled
+            // the send: nothing goes out.
+            if !this.work.finish(ticket) {
+                return;
+            }
+            this.show_idle();
             match built {
                 Ok(built) => this.pass_on(draft, built, when),
                 Err(err) => this.failed(&gettext("Could not build the message: {reason}"), &err),
             }
         });
+    }
+
+    /// Shows that the message is being sent or saved: the Send button
+    /// reads "Sending…" for a send, and the fields and editor stop taking
+    /// edits, which the finished message would not hold.
+    fn show_busy(&self, sending: bool) {
+        self.send.set_sensitive(false);
+        if sending {
+            self.send_content.set_label(&gettext("Sending…"));
+            self.send_content.set_icon_name("content-loading-symbolic");
+        }
+        self.set_content_sensitive(false);
+    }
+
+    /// Undoes [`Composer::show_busy`] once the send or save came back.
+    fn show_idle(self: &Rc<Self>) {
+        self.send_content.set_label(&gettext("Send"));
+        self.send_content.set_icon_name("mail-send-symbolic");
+        self.set_content_sensitive(true);
+        self.check_send();
+    }
+
+    fn set_content_sensitive(&self, sensitive: bool) {
+        if let Some(toolbar) = self.toasts.child().and_downcast::<adw::ToolbarView>()
+            && let Some(content) = toolbar.content()
+        {
+            content.set_sensitive(sensitive);
+        }
     }
 
     fn pass_on(self: &Rc<Self>, draft: Draft, built: Built, when: SendWhen) {
@@ -1912,7 +1953,7 @@ impl Composer {
     /// their own key, since Gmail would otherwise hold it readable until it
     /// went out. `protection::draft` says how, and how it comes back.
     fn save_draft(self: &Rc<Self>, then_close: bool) {
-        if self.locked.get() || self.building.get() {
+        if self.locked.get() || self.work.is_busy() {
             return;
         }
         let Some(draft) = self.collect() else {
@@ -1929,9 +1970,20 @@ impl Composer {
             true => draft.standard,
             false => self.signing_with.get(),
         };
+        let Some(ticket) = self.work.begin() else {
+            return;
+        };
+        self.show_busy(false);
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            match protection::draft::save(&this.core, &draft, secret, standard).await {
+            let saved = protection::draft::save(&this.core, &draft, secret, standard).await;
+            // Discard in the close dialog cancels the save: its result is
+            // dropped and the window closes as the writer asked.
+            if !this.work.finish(ticket) {
+                return;
+            }
+            this.show_idle();
+            match saved {
                 Ok(saved) => {
                     this.base.borrow_mut().draft_id = Some(saved.draft_id);
                     this.saved.set(true);
@@ -1970,10 +2022,15 @@ impl Composer {
         glib::spawn_future_local(async move {
             match dialog.choose_future(Some(&this.window)).await.as_str() {
                 "discard" => {
+                    this.work.cancel();
                     this.closing.set(true);
                     this.window.close();
                 }
-                "save" => this.save_draft(true),
+                "save" => {
+                    this.work.cancel();
+                    this.show_idle();
+                    this.save_draft(true);
+                }
                 _ => {}
             }
         });
