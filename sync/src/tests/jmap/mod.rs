@@ -11,6 +11,7 @@ mod identities;
 mod mailboxes;
 mod masked;
 mod outgoing;
+mod receipts;
 mod rules;
 mod search;
 mod storage;

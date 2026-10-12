@@ -9,6 +9,7 @@ mod listed;
 mod muted;
 mod outbox;
 mod pop3;
+mod receipts;
 mod refs;
 mod threads;
 mod window;

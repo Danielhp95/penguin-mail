@@ -9805,6 +9805,18 @@ msgstr "Is unread"
 msgid "Is flagged"
 msgstr "Is flagged"
 
+#: sync/src/account/receipts.rs:29
+msgid "Read: {subject}"
+msgstr "Read: {subject}"
+
+#: sync/src/account/receipts.rs:36
+msgid "Your message to {address} was shown on screen. This receipt does not say whether it was read or understood."
+msgstr "Your message to {address} was shown on screen. This receipt does not say whether it was read or understood."
+
+#: sync/src/account/receipts.rs:101
+msgid "This message asks for no read receipt."
+msgstr "This message asks for no read receipt."
+
 #: sync/src/account/writes.rs:760
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} is busy. Still working on {conversations}."
@@ -10220,15 +10232,15 @@ msgstr "Penguin Mail cannot read how this event repeats, so it cannot change the
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail cannot save this repeat to a JMAP calendar."
 
-#: sync/src/services/jmap/mod.rs:262
+#: sync/src/services/jmap/mod.rs:263
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:335
+#: sync/src/services/jmap/mod.rs:336
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 
-#: sync/src/services/jmap/mod.rs:432
+#: sync/src/services/jmap/mod.rs:437
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "The server made an address Penguin Mail cannot read."
 

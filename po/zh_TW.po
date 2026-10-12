@@ -10180,6 +10180,20 @@ msgstr "未讀"
 msgid "Is flagged"
 msgstr "有旗標"
 
+#: sync/src/account/receipts.rs:29
+msgid "Read: {subject}"
+msgstr "已讀：{subject}"
+
+#: sync/src/account/receipts.rs:36
+msgid ""
+"Your message to {address} was shown on screen. This receipt does not say "
+"whether it was read or understood."
+msgstr "寄給 {address} 的郵件已顯示在螢幕上。此回條不表示已閱讀或理解內容。"
+
+#: sync/src/account/receipts.rs:101
+msgid "This message asks for no read receipt."
+msgstr "此郵件未要求已讀回條。"
+
 #: sync/src/account/writes.rs:760
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} 忙碌中。仍在處理 {conversations}。"
@@ -10605,15 +10619,15 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail 無法將此重複設定儲存到 JMAP 行事曆。"
 
-#: sync/src/services/jmap/mod.rs:262
+#: sync/src/services/jmap/mod.rs:263
 msgid "This server keeps no colors for its mailboxes."
 msgstr "此伺服器不會儲存信箱的顏色。"
 
-#: sync/src/services/jmap/mod.rs:335
+#: sync/src/services/jmap/mod.rs:336
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 
-#: sync/src/services/jmap/mod.rs:432
+#: sync/src/services/jmap/mod.rs:437
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "伺服器建立的地址無法由 Penguin Mail 讀取。"
 

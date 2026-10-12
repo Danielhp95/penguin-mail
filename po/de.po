@@ -10753,6 +10753,20 @@ msgstr "Ist ungelesen"
 msgid "Is flagged"
 msgstr "Ist markiert"
 
+#: sync/src/account/receipts.rs:29
+msgid "Read: {subject}"
+msgstr "Gelesen: {subject}"
+
+#: sync/src/account/receipts.rs:36
+msgid ""
+"Your message to {address} was shown on screen. This receipt does not say "
+"whether it was read or understood."
+msgstr "Ihre Nachricht an {address} wurde auf dem Bildschirm angezeigt. Diese Bestätigung sagt nicht, ob sie gelesen oder verstanden wurde."
+
+#: sync/src/account/receipts.rs:101
+msgid "This message asks for no read receipt."
+msgstr "Diese Nachricht fordert keine Lesebestätigung an."
+
 #: sync/src/account/writes.rs:760
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} ist ausgelastet. Noch in Bearbeitung: {conversations}."
@@ -11210,15 +11224,15 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail kann diese Wiederholung nicht in einem JMAP-Kalender speichern."
 
-#: sync/src/services/jmap/mod.rs:262
+#: sync/src/services/jmap/mod.rs:263
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Dieser Server speichert keine Farben für seine Postfächer."
 
-#: sync/src/services/jmap/mod.rs:335
+#: sync/src/services/jmap/mod.rs:336
 msgid "This server files sent mail itself."
 msgstr "Dieser Server legt gesendete E-Mails selbst ab."
 
-#: sync/src/services/jmap/mod.rs:432
+#: sync/src/services/jmap/mod.rs:437
 msgid "The server made an address Penguin Mail cannot read."
 msgstr ""
 "Der Server hat eine Adresse erstellt, die Penguin Mail nicht lesen kann."
