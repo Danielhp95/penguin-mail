@@ -28,7 +28,7 @@ use super::{labelled_by, name, name_with_shortcut, roving};
 use crate::attachcheck::Promise;
 use crate::compose::{
     Asking, Built, Draft, Forwarded, Gate, OutgoingAttachment, SendWhen, build, format_recipients,
-    gate, html_to_send, is_address, new_message_id, opening_identity,
+    gate, html_to_send, is_address, kept_mask, masked_site, new_message_id, opening_identity,
 };
 use crate::core::Core;
 use crate::format::{future_date, human_size, send_later_presets};
@@ -38,6 +38,7 @@ use crate::settings::ComposeFormat;
 use crate::stray_markdown;
 use crate::templates::{self, Filling};
 use crate::web::WebView;
+use mailrs_domain::Address;
 use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
 
 pub use crate::compose::Identity;
@@ -148,7 +149,17 @@ pub struct Composer {
     title: adw::WindowTitle,
     from: gtk::DropDown,
     suffix: gtk::Entry,
+    /// New Masked Address, at the end of the From row for an account that
+    /// makes masked addresses.
+    mask: gtk::Button,
+    /// The masked address made for this message, which it goes out from
+    /// while the From row stays on the identity it was made for.
+    masked: RefCell<Option<Address>>,
+    /// The address the message goes out from, under the From row while a
+    /// suffix or a masked address changes it, and the "Masked" chip.
+    sender_line: gtk::Box,
     sender_preview: gtk::Label,
+    masked_chip: gtk::Label,
     to: Rc<Recipients>,
     cc: Rc<Recipients>,
     bcc: Rc<Recipients>,
@@ -428,20 +439,45 @@ impl Composer {
                     .unwrap_or(""),
             );
         }
+        let mask = gtk::Button::builder()
+            .icon_name("security-high-symbolic")
+            .tooltip_text(gettext("New Masked Address"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat", "composer-mask"])
+            .visible(identities.get(selected).is_some_and(|i| i.masks))
+            .build();
+        crate::ui::name(&mask, &gettext("New Masked Address"));
+        let masked = identities
+            .get(selected)
+            .and_then(|chosen| kept_mask(&identities, chosen, &draft.from));
+        // A masked sender takes the suffix's place.
+        if masked.is_some() {
+            suffix.set_visible(false);
+        }
         let sender_preview = gtk::Label::builder()
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::Middle)
+            .css_classes(["sender-preview"])
             .build();
+        let masked_chip = gtk::Label::builder()
+            .label(gettext("Masked"))
+            .valign(gtk::Align::Center)
+            .css_classes(["masked-chip"])
+            .build();
+        let sender_line = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        sender_line.append(&sender_preview);
+        sender_line.append(&masked_chip);
         let choices = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         choices.append(&from);
         choices.append(&suffix);
+        choices.append(&mask);
         let sender_fields = gtk::Box::new(gtk::Orientation::Vertical, 4);
         sender_fields.set_hexpand(true);
         sender_fields.append(&choices);
-        sender_fields.append(&sender_preview);
+        sender_fields.append(&sender_line);
         let from_row = field(&gettext("From"), &sender_fields, &column);
         crate::ui::name(&from, &gettext("From"));
-        if identities.len() > 1 || identities.iter().any(|i| i.suffixes.enabled()) {
+        if identities.len() > 1 || identities.iter().any(|i| i.suffixes.enabled() || i.masks) {
             fields.append(&from_row);
             fields.append(&line());
         }
@@ -602,7 +638,11 @@ impl Composer {
             title,
             from,
             suffix,
+            mask,
+            masked: RefCell::new(masked),
+            sender_line,
             sender_preview,
+            masked_chip,
             to,
             cc,
             bcc,
@@ -780,6 +820,12 @@ impl Composer {
         self.from.connect_selected_notify(move |row| {
             if let Some(c) = weak.upgrade() {
                 c.identity_changed(row.selected() as usize);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.mask.connect_clicked(move |_| {
+            if let Some(c) = weak.upgrade() {
+                c.mask_for_this_message();
             }
         });
         let weak = Rc::downgrade(self);
@@ -1274,23 +1320,70 @@ impl Composer {
     }
 
     fn identity(&self) -> Option<Identity> {
-        let mut identity = self.identities.get(self.from.selected() as usize)?.clone();
+        let chosen = self.identities.get(self.from.selected() as usize)?;
+        if let Some(masked) = self.masked.borrow().as_ref() {
+            return Some(crate::compose::sender_with_mask(chosen, Some(masked)));
+        }
+        let mut identity = chosen.clone();
         identity.address = identity
             .suffixes
             .address(&identity.address, &self.suffix.text())?;
         Some(identity)
     }
 
+    /// Makes a masked address for the first recipient's site and sends this
+    /// message from it. The subject goes with it as the note, so Hide My
+    /// Email says where the address was given out.
+    fn mask_for_this_message(self: &Rc<Self>) {
+        let Some(chosen) = self.identities.get(self.from.selected() as usize).cloned() else {
+            return;
+        };
+        let site = masked_site(&self.to.addresses());
+        let note = self.subject.text().trim().to_string();
+        self.mask.set_sensitive(false);
+        let this = Rc::clone(self);
+        let settings = self.core.gmail_settings();
+        glib::spawn_future_local(async move {
+            let account_id = chosen.account_id;
+            let made = this
+                .core
+                .call(async move { settings.create_masked_address(account_id, &site, &note).await })
+                .await;
+            this.mask.set_sensitive(true);
+            // The writer moved the From row to another account meanwhile:
+            // the address belongs to the one it was made for.
+            let still = this.identities.get(this.from.selected() as usize);
+            match made {
+                Ok(masked) if still.is_some_and(|i| i.account_id == account_id) => {
+                    this.masked.replace(Some(Address {
+                        name: chosen.address.name.clone(),
+                        email: masked.email.clone(),
+                    }));
+                    this.suffix.set_visible(false);
+                    this.dirty.set(true);
+                    this.check_send();
+                    this.check_own();
+                    this.toast(&fill(&gettext("Sending from {address}"), &[("address", &masked.email)]));
+                }
+                Ok(_) => {}
+                Err(err) => this.failed(&gettext("Could not make a masked address: {reason}"), &err),
+            }
+        });
+    }
+
     /// Follows the From row with the signature, since Gmail keeps one per
     /// send-as address and a message signed by the wrong one looks careless.
     fn identity_changed(self: &Rc<Self>, to: usize) {
         let was = self.showing.replace(to);
+        self.masked.replace(None);
         self.suffix.set_text("");
         self.suffix.set_visible(
             self.identities
                 .get(to)
                 .is_some_and(|i| i.suffixes.enabled()),
         );
+        self.mask
+            .set_visible(self.identities.get(to).is_some_and(|i| i.masks));
         self.dirty.set(true);
         self.check_send();
         let sending = self.identities.get(to).map(|i| i.account_id);
@@ -1348,7 +1441,10 @@ impl Composer {
         } else {
             self.suffix.add_css_class("error");
         }
-        self.sender_preview.set_visible(self.suffix.get_visible());
+        let masked = self.masked.borrow().is_some();
+        self.sender_line
+            .set_visible(self.suffix.get_visible() || masked);
+        self.masked_chip.set_visible(masked);
         self.sender_preview
             .set_text(identity.as_ref().map_or("", |i| i.address.email.as_str()));
         let problem = match identity {

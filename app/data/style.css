@@ -272,6 +272,26 @@ row.account-heading:hover .account-options,
 .composer-from-heading { padding: 6px 10px 2px; font-size: 0.82em; font-weight: 700; }
 .composer-body { font-size: 1.04em; line-height: 1.5; }
 .cc-toggle { font-size: 0.85em; opacity: 0.7; padding: 2px 8px; min-height: 24px; margin-top: 0.1em; }
+/* Under the From row: the address a suffix or a masked address sends
+   from, at 12.5px, and the "Masked" chip beside it, a 24 px capsule of
+   12px bold accent text on a 7 % accent tint (the jmap-34 composer-masked
+   mockup). The chip says the dropdown no longer decides the sender.
+   `text_contrast.rs` checks both. */
+.sender-preview { font-size: 0.85em; opacity: 0.75; }
+.app-dark .sender-preview { opacity: 0.64; }
+.masked-chip {
+  font-size: 0.82em;
+  font-weight: 700;
+  min-height: 24px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background-color: alpha(var(--accent-bg-color), 0.07);
+  color: oklab(from var(--accent-bg-color) min(l, 0.5) calc(a * min(1, 0.5 / l)) calc(b * min(1, 0.5 / l)));
+}
+.app-dark .masked-chip {
+  background-color: alpha(var(--accent-bg-color), 0.07);
+  color: oklab(from var(--accent-bg-color) max(l, 0.75) a b);
+}
 
 /* Recipients, as chips with the address under the pointer. */
 .recipient-chip {

@@ -250,3 +250,26 @@ fn the_selected_mailboxs_count_takes_the_rows_colour() {
     let count = property(".mailboxes > row:selected .mailbox-row .count", "color");
     assert_eq!(count.as_deref(), Some("inherit"));
 }
+
+#[test]
+fn the_composers_sender_preview_passes_aa() {
+    for (dark, prefix) in [(false, ""), (true, ".app-dark ")] {
+        let under = [surface(dark, "--window-bg-color"), surface(dark, "--view-bg-color")];
+        assert_passes(dark, &format!("{prefix}.sender-preview"), &under);
+    }
+}
+
+#[test]
+fn the_masked_chip_passes_aa_for_every_accent() {
+    for (dark, selector) in [(false, ".masked-chip"), (true, ".app-dark .masked-chip")] {
+        let share = accent_share(selector);
+        for under in [surface(dark, "--window-bg-color"), surface(dark, "--view-bg-color")] {
+            for accent in ACCENTS {
+                let drawn = accent_text(selector, dark, accent);
+                let tinted = tint(accent, share, &under);
+                let ratio = contrast(&drawn, &tinted);
+                assert!(ratio >= AA, "{selector} in {accent}: {drawn} on {tinted} is {ratio:.2}:1");
+            }
+        }
+    }
+}
