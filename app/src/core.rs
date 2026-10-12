@@ -23,8 +23,9 @@ use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::passwords::{PasswordStore, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
-    Browser, BrowserSignInError, NewImap, NewJmap, NewPop3, Wanted, check_pop3, google_sign_in,
-    imap_signed_in, in_browser, jmap_signed_in, pop3_signed_in,
+    Browser, BrowserReady, BrowserSignInError, JmapBrowser, NewImap, NewJmap, NewPop3, Wanted,
+    check_pop3, google_sign_in, imap_signed_in, in_browser, jmap_in_browser, jmap_signed_in,
+    pop3_signed_in,
 };
 use mailrs_sync::{
     AccountServices, AccountSettings, AccountSync, Accounts, BackendError, Clients, ContactBook,
@@ -984,6 +985,55 @@ impl Core {
             let services = connect_jmap(&db, &secrets, &account, window_days).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)
+        })
+        .await
+    }
+
+    /// Whether the JMAP server behind `offer` takes a sign-in in the
+    /// browser: its OAuth metadata reads and offers registration. The demo
+    /// asks nobody.
+    pub async fn jmap_browser_ready(&self, offer: JmapBrowser) -> bool {
+        if self.demo {
+            return false;
+        }
+        self.call(async move { Ok::<_, anyhow::Error>(mailrs_sync::sign_in::browser_ready(&offer).await) })
+            .await
+            .is_ok_and(|ready| ready != BrowserReady::NotOffered)
+    }
+
+    /// Signs in to a JMAP server on its own page in the browser, keeps the
+    /// account with its refresh token, and starts its services afresh, so
+    /// nothing keeps the session of an earlier grant. `urls` receives each
+    /// page to open: a second one comes when the server forgot the client
+    /// it had for the account. Dropping the sender behind `cancel` ends
+    /// the wait for the browser. Once the browser came back, the sign-in
+    /// runs to its end however the dialog moves, so an account is never
+    /// left half kept.
+    pub async fn sign_in_jmap_browser(
+        &self,
+        offer: JmapBrowser,
+        address: String,
+        urls: async_channel::Sender<String>,
+        cancel: async_channel::Receiver<()>,
+    ) -> Result<Account> {
+        if self.demo {
+            bail!(gettext("Demo mode cannot add real accounts."));
+        }
+        let engine = self
+            .engine
+            .current()
+            .ok_or_else(|| anyhow!("sync is not running"))?;
+        let connector = self.connector();
+        self.call(async move {
+            let open = move |url: &str| {
+                let _ = urls.try_send(url.to_string());
+            };
+            let canceled = async move {
+                let _ = cancel.recv().await;
+            };
+            let signed = jmap_in_browser(&connector, offer, &address, open, canceled).await?;
+            engine.start_account(signed.account.id, signed.services);
+            Ok::<_, anyhow::Error>(signed.account)
         })
         .await
     }

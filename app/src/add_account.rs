@@ -1762,6 +1762,86 @@ pub fn asks_dav_password(proposal: &JmapProposal, token: bool) -> bool {
             .is_some_and(|host| mailrs_discover::services_of(host).caldav.is_some())
 }
 
+/// The session a browser sign-in for `proposal` goes to.
+pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowser {
+    mailrs_sync::sign_in::JmapBrowser {
+        session_url: proposal.session_url.clone(),
+        provider: proposal.provider.clone(),
+    }
+}
+
+/// The line under Sign In With Browser.
+pub fn browser_line(proposal: &JmapProposal) -> String {
+    fill(
+        &gettext("Sign in on {provider}'s own page instead of making a token."),
+        &[("provider", &post::short_name(&proposal.provider_name))],
+    )
+}
+
+/// Whether Sign In With Browser can start: nothing else is signing in, and
+/// the person said yes to a session outside their domain, since the
+/// account's sign-in goes there as it would with a token.
+pub fn can_sign_in_jmap_browser(proposal: &JmapProposal, confirmed: bool, running: bool) -> bool {
+    !running && (confirmed || !proposal.confirm)
+}
+
+/// The numbered steps the waiting page lists for a JMAP server's own
+/// sign-in page, which may name its buttons in any way.
+pub fn jmap_browser_steps(provider: &str) -> Vec<String> {
+    vec![
+        fill(&gettext("Sign in to {provider} if it asks."), &[("provider", provider)]),
+        gettext("Read what Penguin Mail asks for and allow it."),
+    ]
+}
+
+/// What the password page says after Sign In With Browser failed. The
+/// server's errors get the dialog's own words; the rest say their own
+/// sentence, as the Google and Microsoft sign-ins do.
+pub fn jmap_browser_failure(err: &anyhow::Error, proposal: &JmapProposal) -> Failure {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::sign_in::BrowserSignInError;
+    let Some(BrowserSignInError::Jmap(jmap)) = err.downcast_ref::<BrowserSignInError>() else {
+        return Failure::plain(err.to_string(), gettext("Could not sign in"), err.to_string());
+    };
+    let provider = post::short_name(&proposal.provider_name);
+    let named = [("provider", provider.as_str())];
+    let mut said = None;
+    let (title, body) = match jmap {
+        JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient | JmapError::Forbidden(_) => (
+            fill(&gettext("{provider} refused the sign-in"), &named),
+            gettext("Choose Sign In With Browser to try again."),
+        ),
+        JmapError::Declined => (
+            gettext("The sign-in was declined"),
+            fill(&gettext("Choose Sign In With Browser and allow access on {provider}'s page."), &named),
+        ),
+        JmapError::Network(_) => (
+            fill(&gettext("{provider} does not answer"), &named),
+            gettext("Check your connection, then choose Sign In With Browser."),
+        ),
+        JmapError::RateLimited { .. } | JmapError::SignInLocked => (
+            fill(&gettext("{provider} asked Penguin Mail to wait"), &named),
+            gettext("Wait a minute, then choose Sign In With Browser."),
+        ),
+        other => {
+            said = Some(other.to_string());
+            (
+                gettext("Could not sign in"),
+                fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named),
+            )
+        }
+    };
+    Failure {
+        line: format!("{title}. {body}"),
+        title,
+        body,
+        said,
+        links: Vec::new(),
+        copy: None,
+        kind: FailureKind::Refused,
+    }
+}
+
 /// What the JMAP sign-in says after a failure, in the dialog's own words.
 /// An error that is not the server's, such as an address another account
 /// holds, says its own sentence.
@@ -3330,6 +3410,74 @@ mod tests {
         let proposal = jmap_proposal(fastmail_jmap(), None, &address);
         assert!(asks_dav_password(&proposal, true));
         assert!(!asks_dav_password(&proposal, false), "a password signs in to the calendar as it is");
+    }
+
+    #[test]
+    fn the_browser_button_names_the_provider() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(browser_line(&proposal), "Sign in on Fastmail's own page instead of making a token.");
+    }
+
+    #[test]
+    fn the_browser_sign_in_goes_to_the_proposal_s_session() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let offer = jmap_browser(&proposal);
+        assert_eq!(offer.session_url, "https://api.fastmail.com/jmap/session");
+        assert_eq!(offer.provider.map(|p| p.name), Some("Fastmail".to_string()));
+    }
+
+    #[test]
+    fn the_browser_sign_in_waits_for_a_yes_to_a_host_outside_the_domain() {
+        let address = Address::parse("me@example.org").unwrap();
+        let proposal = jmap_proposal(hoster_jmap(), None, &address);
+        assert!(!can_sign_in_jmap_browser(&proposal, false, false));
+        assert!(can_sign_in_jmap_browser(&proposal, true, false));
+        assert!(!can_sign_in_jmap_browser(&proposal, true, true), "a sign-in already runs");
+    }
+
+    #[test]
+    fn a_grant_the_server_refuses_asks_for_the_browser_again() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let err = anyhow::Error::new(BrowserSignInError::Jmap(mailrs_jmap::JmapError::Unauthorized));
+        let failure = jmap_browser_failure(&err, &proposal);
+        assert_eq!(
+            (failure.title.as_str(), failure.body.as_str()),
+            ("Fastmail refused the sign-in", "Choose Sign In With Browser to try again.")
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_that_cannot_reach_the_server_says_so() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let err = anyhow::Error::new(BrowserSignInError::Jmap(mailrs_jmap::JmapError::Network("reset".into())));
+        let failure = jmap_browser_failure(&err, &proposal);
+        assert_eq!(
+            (failure.title.as_str(), failure.body.as_str()),
+            ("Fastmail does not answer", "Check your connection, then choose Sign In With Browser.")
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_nobody_finished_says_how_long_it_waited() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let failure = jmap_browser_failure(&anyhow::Error::new(BrowserSignInError::GaveUp), &proposal);
+        assert_eq!(failure.body, "Gave up waiting for the browser after ten minutes.");
+    }
+
+    #[test]
+    fn the_waiting_page_lists_the_jmap_server_s_steps() {
+        assert_eq!(
+            jmap_browser_steps("Fastmail"),
+            ["Sign in to Fastmail if it asks.", "Read what Penguin Mail asks for and allow it."]
+        );
     }
 
     #[test]
