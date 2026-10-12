@@ -182,30 +182,47 @@ async fn cyrus_users_made(session_url: &str, web_url: &str, password: &str) -> b
     false
 }
 
+/// Whether James has made a new user's mailboxes. It makes them on the
+/// first Mailbox/get but can list Inbox before Sent, so a send right after
+/// finds nowhere to file its copy.
+async fn james_mailboxes_made(session_url: &str, user: &str, password: &str) -> bool {
+    let http = reqwest::Client::new();
+    let deadline = Instant::now() + READY_WITHIN;
+    while Instant::now() < deadline {
+        if let Some(list) = mailbox_list(&http, session_url, user, password, &["role"]).await
+            && ["inbox", "drafts", "sent", "trash"].iter().all(|role| list.iter().any(|m| m["role"] == *role))
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
 async fn every_mailbox_takes_mail(http: &reqwest::Client, session_url: &str, user: &str, password: &str) -> bool {
-    let session: Option<Value> = match http.get(session_url).basic_auth(user, Some(password)).send().await {
-        Ok(response) if response.status().is_success() => response.json().await.ok(),
-        _ => None,
-    };
-    let Some(session) = session else { return false };
-    let (Some(account), Some(api)) = (
-        session["primaryAccounts"]["urn:ietf:params:jmap:mail"].as_str(),
-        session["apiUrl"].as_str(),
-    ) else {
-        return false;
-    };
-    let calls = json!({
-        "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
-        "methodCalls": [["Mailbox/get", {"accountId": account, "ids": null, "properties": ["role", "myRights"]}, "0"]]
-    });
-    let answer: Option<Value> = match http.post(endpoint(session_url, api, "")).basic_auth(user, Some(password)).json(&calls).send().await {
-        Ok(response) if response.status().is_success() => response.json().await.ok(),
-        _ => None,
-    };
-    let Some(list) = answer.as_ref().and_then(|a| a["methodResponses"][0][1]["list"].as_array()) else {
+    let Some(list) = mailbox_list(http, session_url, user, password, &["role", "myRights"]).await else {
         return false;
     };
     list.iter().any(|m| m["role"] == "inbox") && list.iter().all(|m| m["myRights"]["mayAddItems"] == true)
+}
+
+/// `user`'s mailboxes with `properties`, or None while the server can't say.
+async fn mailbox_list(http: &reqwest::Client, session_url: &str, user: &str, password: &str, properties: &[&str]) -> Option<Vec<Value>> {
+    let session: Value = match http.get(session_url).basic_auth(user, Some(password)).send().await {
+        Ok(response) if response.status().is_success() => response.json().await.ok()?,
+        _ => return None,
+    };
+    let account = session["primaryAccounts"]["urn:ietf:params:jmap:mail"].as_str()?;
+    let api = session["apiUrl"].as_str()?;
+    let calls = json!({
+        "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+        "methodCalls": [["Mailbox/get", {"accountId": account, "ids": null, "properties": properties}, "0"]]
+    });
+    let answer: Value = match http.post(endpoint(session_url, api, "")).basic_auth(user, Some(password)).json(&calls).send().await {
+        Ok(response) if response.status().is_success() => response.json().await.ok()?,
+        _ => return None,
+    };
+    answer["methodResponses"][0][1]["list"].as_array().cloned()
 }
 
 /// One message over SMTP or LMTP to 127.0.0.1 inside a container, in Perl
@@ -413,11 +430,17 @@ impl JmapServer {
             "james-cli AddUser failed: {}",
             String::from_utf8_lossy(&added.stderr)
         );
+        let session_url = format!("{base}/jmap/session");
+        if !james_mailboxes_made(&session_url, "me@james.test", password).await {
+            return container
+                .not_ready(REQUIRE_JMAP, "Apache James", READY_WITHIN)
+                .await;
+        }
         Some(JmapServer {
             container,
             http: reqwest::Client::new(),
             kind: JmapKind::James,
-            session_url: format!("{base}/jmap/session"),
+            session_url,
             user: "me@james.test".into(),
             address: "me@james.test".into(),
         })
