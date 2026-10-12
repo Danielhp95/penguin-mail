@@ -470,7 +470,8 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
 /// The credentials a saved JMAP account signs in with.
 pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: String) -> mailrs_jmap::Auth {
     match saved.auth {
-        mailrs_store::jmap::JmapAuth::Bearer => mailrs_jmap::Auth::Bearer(secret),
+        // An OAuth sign-in sends its access token as a Bearer token.
+        mailrs_store::jmap::JmapAuth::Bearer | mailrs_store::jmap::JmapAuth::OAuth => mailrs_jmap::Auth::Bearer(secret),
         mailrs_store::jmap::JmapAuth::Basic => mailrs_jmap::Auth::Basic {
             user: saved.user_name.clone().unwrap_or_else(|| address.to_string()),
             password: secret,

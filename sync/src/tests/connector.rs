@@ -313,6 +313,7 @@ fn new_jmap(address: &str, token: &str) -> crate::sign_in::NewJmap {
             user_name: None,
             labels: true,
             capabilities: vec!["urn:ietf:params:jmap:mail".into()],
+            oauth: None,
         },
         secret: token.into(),
         dav_password: None,
@@ -386,6 +387,7 @@ fn session_row(capabilities: &[&str], auth: mailrs_store::jmap::JmapAuth) -> mai
         user_name: None,
         labels: true,
         capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
+        oauth: None,
     }
 }
 

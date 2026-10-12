@@ -906,6 +906,28 @@ CREATE TABLE receipts (
     PRIMARY KEY (account_id, message_id)
 );
 "#,
+    // A JMAP account may sign in with OAuth: its client id, which a server
+    // with dynamic registration made for it, and the token endpoint its
+    // refreshes go to. SQLite cannot widen a CHECK in place, so the table
+    // is rebuilt with every row copied across; nothing references it. The
+    // new columns are nullable, so an older app still reads the table. The
+    // tokens and the client secret live in the keyring and never here.
+    r#"
+CREATE TABLE jmap_accounts_new (
+    account_id      INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    session_url     TEXT NOT NULL,
+    auth            TEXT NOT NULL CHECK (auth IN ('basic', 'bearer', 'oauth')),
+    user_name       TEXT,
+    labels          INTEGER NOT NULL DEFAULT 1,
+    capabilities    TEXT NOT NULL DEFAULT '[]',
+    oauth_client_id TEXT,
+    oauth_token_url TEXT
+);
+INSERT INTO jmap_accounts_new (account_id, session_url, auth, user_name, labels, capabilities)
+    SELECT account_id, session_url, auth, user_name, labels, capabilities FROM jmap_accounts;
+DROP TABLE jmap_accounts;
+ALTER TABLE jmap_accounts_new RENAME TO jmap_accounts;
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has

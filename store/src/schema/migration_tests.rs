@@ -1107,7 +1107,7 @@ fn migration_56_adds_jmap_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 57);
+    assert_eq!(schema_version(&conn).unwrap(), 58);
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
          INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
@@ -1118,4 +1118,28 @@ fn migration_56_adds_jmap_accounts() {
     conn.execute("DELETE FROM accounts WHERE id = 3", []).unwrap();
     let left: i64 = conn.query_row("SELECT COUNT(*) FROM jmap_accounts", [], |r| r.get(0)).unwrap();
     assert_eq!(left, 0);
+}
+
+/// Migration 58 lets a JMAP account sign in with OAuth and keeps its
+/// client id and token endpoint; rows from before keep what they held.
+#[test]
+fn migration_58_takes_oauth_jmap_accounts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, &MIGRATIONS[..57]).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (4, 'me@stalwart.test', 0, 'jmap');
+         INSERT INTO jmap_accounts (account_id, session_url, auth, labels, capabilities) VALUES (4, 'https://s/jmap/session', 'basic', 1, '[]');",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), 58);
+    let auth: String = conn.query_row("SELECT auth FROM jmap_accounts WHERE account_id = 4", [], |r| r.get(0)).unwrap();
+    assert_eq!(auth, "basic");
+    conn.execute(
+        "UPDATE jmap_accounts SET auth = 'oauth', oauth_client_id = 'c1', oauth_token_url = 'https://s/token' WHERE account_id = 4",
+        [],
+    )
+    .unwrap();
 }

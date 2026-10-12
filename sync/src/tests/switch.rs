@@ -111,6 +111,7 @@ fn saved() -> JmapSaved {
         user_name: None,
         labels: true,
         capabilities: vec![mailrs_jmap::MAIL.into(), mailrs_jmap::SUBMISSION.into()],
+        oauth: None,
     }
 }
 

@@ -560,6 +560,7 @@ pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo
         user_name: (!to.token && !to.user.eq_ignore_ascii_case(&account.email)).then_some(to.user),
         labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
+        oauth: None,
     };
     to_jmap_over(db, secrets, account, &AnyJmap::from(client), saved, to.secret).await
 }

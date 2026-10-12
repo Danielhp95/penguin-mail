@@ -3537,6 +3537,7 @@ mod tests {
             user_name: None,
             labels: true,
             capabilities: Vec::new(),
+            oauth: None,
         };
         let proposal = saved_jmap(&account, &saved);
         assert_eq!(proposal.session_url, saved.session_url);
@@ -3559,6 +3560,7 @@ mod tests {
             user_name: None,
             labels: true,
             capabilities: Vec::new(),
+            oauth: None,
         };
         assert!(saved_jmap(&account, &saved).token);
         let basic = mailrs_store::jmap::JmapSaved { auth: mailrs_store::jmap::JmapAuth::Basic, ..saved };

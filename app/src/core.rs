@@ -971,6 +971,7 @@ impl Core {
                     .filter(|c| session.offers(c))
                     .cloned()
                     .collect(),
+                oauth: None,
             };
             let new = NewJmap {
                 address,
@@ -1566,6 +1567,7 @@ mod tests {
                     user_name: None,
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
+                    oauth: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })
@@ -1590,6 +1592,7 @@ mod tests {
                     user_name: None,
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
+                    oauth: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })
