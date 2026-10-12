@@ -10068,7 +10068,7 @@ msgid "Review"
 msgstr "Durchsehen"
 
 #: app/src/ui/window/followup.rs:39 app/src/ui/window/followup.rs:43
-#: app/src/ui/window/storage.rs:84 app/src/ui/window/storage.rs:88
+#: app/src/ui/window/storage.rs:84
 msgid "Hide Until Next Launch"
 msgstr "Bis zum nächsten Start ausblenden"
 
@@ -10750,6 +10750,12 @@ msgstr "{address} ist zu {percent} % voll"
 #: app/src/ui/window/storage.rs:79
 msgid "Review Storage"
 msgstr "Speicher prüfen"
+
+#. The Follow Up banner's close has the tooltip's words for its
+#. name, so this one says what it hides.
+#: app/src/ui/window/storage.rs:90
+msgid "Hide Storage Warning Until Next Launch"
+msgstr "Speicherwarnung bis zum nächsten Start ausblenden"
 
 #: app/src/ui/window/thread.rs:658
 msgid "The account is not connected yet."

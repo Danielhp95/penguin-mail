@@ -85,7 +85,9 @@ impl StorageBand {
             .valign(gtk::Align::Center)
             .css_classes(["flat", "circular"])
             .build();
-        crate::ui::name(&close, &gettext("Hide Until Next Launch"));
+        // The Follow Up banner's close has the tooltip's words for its
+        // name, so this one says what it hides.
+        crate::ui::name(&close, &gettext("Hide Storage Warning Until Next Launch"));
         let content = gtk::Box::builder()
             .spacing(10)
             .css_classes(["follow-up-banner", "storage-band"])
