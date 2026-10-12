@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mailrs_jmap::{
-    AddressBook, BodyPart, CORE, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
+    AddressBook, BodyPart, CORE, Canceled, HELD, HeldSubmission, Hold, MDN, MdnOut, QUOTA, Quota, SubmissionState, max_delayed_send, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
     Hit, Identity, Imported, JmapError, Listed, MAIL, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried,
     SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse, SieveScript, Submission, Thread, Threads, VacationResponse,
 };
@@ -58,6 +58,17 @@ pub struct FakeEmail {
     pub keywords: BTreeSet<String>,
     /// Milliseconds since 1970.
     pub received_at: i64,
+}
+
+/// A message the fake holds to send later, by its submission id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeHold {
+    pub email_id: String,
+    /// When it goes, in milliseconds.
+    pub send_at: i64,
+    /// `pending`, `final` or `canceled`.
+    pub status: String,
+    pub rcpt_to: Vec<String>,
 }
 
 /// One submission the server took.
@@ -132,6 +143,17 @@ pub struct JmapState {
     /// Sieve scripts by id: name, text, whether active.
     pub scripts: BTreeMap<String, (String, String, bool)>,
     pub masked: BTreeMap<String, MaskedEmail>,
+    /// Holds by submission id.
+    pub holds: BTreeMap<String, FakeHold>,
+    pub quotas: Vec<Quota>,
+    /// Receipts sent with `MDN/send`.
+    pub mdns: Vec<MdnOut>,
+    /// Whether `EmailSubmission/get` answers; Apache James's does not.
+    pub submission_get: bool,
+    /// The answer the next hold gets in place of a hold, once. A refusal
+    /// leaves nothing behind. [`JmapError::HoldUnknown`] is the lost
+    /// answer: the server keeps the hold and the client never hears.
+    pub hold_failure: Option<JmapError>,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -417,6 +439,11 @@ impl FakeJmap {
             books: vec![AddressBook { id: "AB1".into(), name: "Personal".into(), is_default: true }],
             scripts: BTreeMap::new(),
             masked: BTreeMap::new(),
+            holds: BTreeMap::new(),
+            quotas: Vec::new(),
+            mdns: Vec::new(),
+            submission_get: true,
+            hold_failure: None,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -511,6 +538,40 @@ impl FakeJmap {
     /// How many times the event stream was opened.
     pub fn push_opens(&self) -> usize {
         self.with(|s| s.calls.iter().filter(|c| *c == "push").count())
+    }
+
+    /// A server that holds mail for up to `seconds`, as its submission
+    /// capability's `maxDelayedSend` says.
+    pub fn with_delayed_send(self, seconds: u64) -> FakeJmap {
+        self.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(SUBMISSION.into(), json!({ "maxDelayedSend": seconds }));
+            }
+        });
+        self
+    }
+
+    /// A server whose `EmailSubmission/get` answers `unknownMethod`.
+    pub fn without_submission_get(self) -> FakeJmap {
+        self.with(|s| s.submission_get = false);
+        self
+    }
+
+    /// Sends every pending hold due by `now`, as the server would at its
+    /// hour, and answers how many went. The copy stays where it waited.
+    pub fn release_due(&self, now: i64) -> usize {
+        self.with(|s| {
+            let due: Vec<String> =
+                s.holds.iter().filter(|(_, h)| h.status == "pending" && h.send_at <= now).map(|(id, _)| id.clone()).collect();
+            for id in &due {
+                let Some(hold) = s.holds.get_mut(id) else { continue };
+                hold.status = "final".into();
+                let (email_id, rcpt_to) = (hold.email_id.clone(), hold.rcpt_to.clone());
+                let raw = s.emails.get(&email_id).map(|e| e.raw.clone()).unwrap_or_default();
+                s.sent.push(Sent { identity_id: "I1".into(), mail_from: "me@example.com".into(), rcpt_to, raw });
+            }
+            due.len()
+        })
     }
 
     pub fn without_push(self) -> FakeJmap {
@@ -1225,6 +1286,117 @@ impl JmapApi for FakeJmap {
         }))
     }
 
+    async fn hold(&self, hold: &Hold) -> Answer<HeldSubmission> {
+        self.called("EmailSubmission/set");
+        self.with(|s| {
+            let failure = s.hold_failure.take();
+            if let Some(err) = failure.clone().filter(|e| *e != JmapError::HoldUnknown) {
+                return Err(err);
+            }
+            if hold.hold_for > max_delayed_send(&s.session) {
+                return Err(JmapError::Method { kind: "invalidArguments".into(), description: "HOLDFOR".into() });
+            }
+            if !s.identities.iter().any(|i| i.id == hold.identity_id) {
+                return Err(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
+            }
+            let made = FakeJmap::import_now(s, &hold.blob_id, std::slice::from_ref(&hold.drafts), &["$draft", "$seen", HELD])?;
+            let id = s.id("S");
+            let wait = i64::try_from(hold.hold_for.saturating_mul(1000)).unwrap_or(i64::MAX / 2);
+            let send_at = chrono::Utc::now().timestamp_millis().saturating_add(wait);
+            s.holds.insert(
+                id.clone(),
+                FakeHold { email_id: made.id.clone(), send_at, status: "pending".into(), rcpt_to: hold.rcpt_to.clone() },
+            );
+            match failure {
+                Some(lost) => Err(lost),
+                None => Ok(HeldSubmission { id, email_id: made.id, thread_id: made.thread_id }),
+            }
+        })
+    }
+
+    async fn submissions(&self, ids: &[String]) -> Answer<Vec<SubmissionState>> {
+        self.called("EmailSubmission/get");
+        self.with(|s| {
+            if !s.submission_get {
+                return Err(JmapError::UnknownCapability("unknownMethod".into()));
+            }
+            Ok(ids
+                .iter()
+                .filter_map(|id| {
+                    let hold = s.holds.get(id)?;
+                    let send_at = chrono::DateTime::from_timestamp_millis(hold.send_at)
+                        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+                    Some(SubmissionState { id: id.clone(), email_id: hold.email_id.clone(), undo_status: hold.status.clone(), send_at })
+                })
+                .collect())
+        })
+    }
+
+    async fn answers_submission_get(&self) -> Answer<bool> {
+        self.called("EmailSubmission/get ids=[]");
+        Ok(self.with(|s| s.submission_get))
+    }
+
+    async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {
+        self.called("EmailSubmission/set");
+        self.with(|s| {
+            // A hold that is gone counts as canceled, as the client reads `notFound`.
+            let Some(hold) = s.holds.get_mut(id) else { return Ok(Canceled::Canceled) };
+            match hold.status.as_str() {
+                "final" => Ok(Canceled::TooLate),
+                _ => {
+                    hold.status = "canceled".into();
+                    Ok(Canceled::Canceled)
+                }
+            }
+        })
+    }
+
+    async fn file_held(&self, email_id: &str, drafts: &str, sent: &str) -> Answer<()> {
+        self.called("Email/set");
+        self.with(|s| {
+            let email = s.emails.get_mut(email_id).ok_or(JmapError::NotFound)?;
+            email.mailbox_ids.remove(drafts);
+            email.mailbox_ids.insert(sent.to_string());
+            email.keywords.remove("$draft");
+            email.keywords.remove(HELD);
+            s.record("Email", email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
+    async fn unhold(&self, email_id: &str) -> Answer<()> {
+        self.called("Email/set");
+        self.with(|s| {
+            let email = s.emails.get_mut(email_id).ok_or(JmapError::NotFound)?;
+            email.keywords.remove(HELD);
+            s.record("Email", email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
+    async fn quotas(&self) -> Answer<Vec<Quota>> {
+        self.called("Quota/get");
+        self.with(|s| match s.session.offers(QUOTA) {
+            true => Ok(s.quotas.clone()),
+            false => Err(JmapError::UnknownCapability(QUOTA.into())),
+        })
+    }
+
+    async fn send_mdn(&self, mdn: &MdnOut) -> Answer<()> {
+        self.called("MDN/send");
+        self.with(|s| {
+            if !s.session.offers(MDN) {
+                return Err(JmapError::UnknownCapability(MDN.into()));
+            }
+            let email = s.emails.get_mut(&mdn.for_email_id).ok_or(JmapError::NotFound)?;
+            email.keywords.insert("$mdnsent".into());
+            s.mdns.push(mdn.clone());
+            s.record("Email", &mdn.for_email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
     async fn masked_emails(&self) -> Answer<Vec<MaskedEmail>> {
         Ok(self.with(|s| s.masked.values().cloned().collect()))
     }
@@ -1536,5 +1708,99 @@ mod tests {
         let rest = fake.with(|s| s.changes("Email", &first.new_state, 2)).unwrap();
         assert!(!rest.has_more_changes);
         assert_eq!(rest.created, ids[2..]);
+    }
+
+    fn hold_for(seconds: u64, blob: &str) -> mailrs_jmap::Hold {
+        mailrs_jmap::Hold {
+            blob_id: blob.into(),
+            identity_id: "I1".into(),
+            mail_from: "me@example.com".into(),
+            rcpt_to: vec!["ada@example.com".into()],
+            drafts: "mb-drafts".into(),
+            hold_for: seconds,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hold_waits_until_released_and_then_cannot_be_called_back() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let held = fake.hold(&hold_for(3600, &blob)).await.unwrap();
+        assert_eq!(fake.submissions(std::slice::from_ref(&held.id)).await.unwrap()[0].undo_status, "pending");
+        assert_eq!(fake.release_due(i64::MAX), 1);
+        assert_eq!(fake.with(|s| s.sent.len()), 1, "released mail goes out once");
+        assert_eq!(fake.cancel_submission(&held.id).await.unwrap(), mailrs_jmap::Canceled::TooLate);
+    }
+
+    #[tokio::test]
+    async fn a_hold_past_the_servers_reach_is_refused() {
+        let fake = FakeJmap::new().with_delayed_send(60);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        assert!(matches!(fake.hold(&hold_for(3600, &blob)).await, Err(JmapError::Method { .. })));
+    }
+
+    #[tokio::test]
+    async fn a_server_without_submission_get_answers_unknown_method() {
+        let fake = FakeJmap::new().with_delayed_send(86_400).without_submission_get();
+        assert!(!fake.answers_submission_get().await.unwrap());
+        assert!(matches!(fake.submissions(&[]).await, Err(JmapError::UnknownCapability(_))));
+    }
+
+    #[tokio::test]
+    async fn a_receipt_needs_the_capability_and_marks_the_message() {
+        let fake = FakeJmap::new();
+        let id = fake.deliver("inbox", RAW, 1);
+        let mdn = mailrs_jmap::MdnOut { for_email_id: id, identity_id: "I1".into(), subject: "s".into(), text_body: "t".into() };
+        assert!(matches!(fake.send_mdn(&mdn).await, Err(JmapError::UnknownCapability(_))));
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::MDN);
+        let id = fake.deliver("inbox", RAW, 1);
+        let mdn = mailrs_jmap::MdnOut { for_email_id: id.clone(), ..mdn };
+        fake.send_mdn(&mdn).await.unwrap();
+        assert!(fake.with(|s| s.emails[&id].keywords.contains("$mdnsent")));
+    }
+
+    #[tokio::test]
+    async fn a_refused_hold_leaves_nothing_in_drafts() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let before = fake.with(|s| s.emails.len());
+        fake.with(|s| s.hold_failure = Some(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() }));
+        assert!(matches!(fake.hold(&hold_for(3600, &blob)).await, Err(JmapError::Method { .. })));
+        assert_eq!(fake.with(|s| (s.emails.len(), s.holds.len())), (before, 0));
+        assert!(fake.hold(&hold_for(3600, &blob)).await.is_ok(), "the failure is once");
+    }
+
+    #[tokio::test]
+    async fn a_hold_whose_answer_is_lost_is_still_kept_and_findable_in_drafts() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let drafts = "mb-drafts".to_string();
+        fake.with(|s| s.hold_failure = Some(JmapError::HoldUnknown));
+        let hold = hold_for(3600, &blob);
+        assert_eq!(fake.hold(&hold).await, Err(JmapError::HoldUnknown));
+        assert_eq!(fake.with(|s| s.holds.len()), 1, "the server holds it");
+        let found = fake
+            .with(|s| s.emails.values().filter(|e| e.mailbox_ids.contains(&drafts) && e.keywords.contains(mailrs_jmap::HELD)).count());
+        assert_eq!(found, 1);
+        let query = EmailQuery { filter: Some(json!({ "inMailbox": drafts, "hasKeyword": mailrs_jmap::HELD, "header": ["Message-ID", "<a1@example.com>"] })), position: 0, limit: 10, total: false };
+        assert_eq!(fake.query(&query).await.unwrap().hits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn canceling_a_hold_that_is_gone_counts_as_canceled() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        assert_eq!(fake.cancel_submission("S404").await.unwrap(), mailrs_jmap::Canceled::Canceled);
+    }
+
+    #[tokio::test]
+    async fn a_clamped_server_answers_at_most_its_limit_to_query_and_query_after() {
+        let fake = FakeJmap::new().clamping_queries(2);
+        let ids: Vec<String> = (1..=5).map(|n| fake.deliver("inbox", RAW, n)).collect();
+        let query = EmailQuery { filter: None, position: 0, limit: 10, total: false };
+        let first = fake.query(&query).await.unwrap();
+        assert_eq!(first.hits.len(), 2);
+        let next = fake.query_after(&query, &first.hits[1].id).await.unwrap();
+        assert_eq!(next.hits.len(), 2);
+        assert!(ids.contains(&next.hits[0].id));
     }
 }

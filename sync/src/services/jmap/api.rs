@@ -7,9 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_jmap::{
-    AddressBook, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed,
-    MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried, Saved, Session, SetResponse, SieveScript,
-    Submission, Threads, VacationResponse,
+    AddressBook, Canceled, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Hold, HeldSubmission, Identity, Imported, JmapClient, JmapError, Listed,
+    MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, SieveScript,
+    Submission, SubmissionState, Threads, VacationResponse,
 };
 use serde_json::{Map, Value};
 
@@ -48,6 +48,14 @@ pub trait JmapApi: Send + Sync + 'static {
     fn masked_emails(&self) -> impl Future<Output = Answer<Vec<MaskedEmail>>> + Send;
     fn create_masked(&self, for_domain: &str, description: &str) -> impl Future<Output = Answer<MaskedEmail>> + Send;
     fn set_masked_state(&self, id: &str, state: MaskedState) -> impl Future<Output = Answer<()>> + Send;
+    fn hold(&self, hold: &Hold) -> impl Future<Output = Answer<HeldSubmission>> + Send;
+    fn submissions(&self, ids: &[String]) -> impl Future<Output = Answer<Vec<SubmissionState>>> + Send;
+    fn answers_submission_get(&self) -> impl Future<Output = Answer<bool>> + Send;
+    fn cancel_submission(&self, id: &str) -> impl Future<Output = Answer<Canceled>> + Send;
+    fn file_held(&self, email_id: &str, drafts: &str, sent: &str) -> impl Future<Output = Answer<()>> + Send;
+    fn unhold(&self, email_id: &str) -> impl Future<Output = Answer<()>> + Send;
+    fn quotas(&self) -> impl Future<Output = Answer<Vec<Quota>>> + Send;
+    fn send_mdn(&self, mdn: &MdnOut) -> impl Future<Output = Answer<()>> + Send;
     fn push(&self) -> impl Future<Output = Answer<Pushed>> + Send;
     /// When push comes back, while a stalled call has paused it.
     fn push_paused(&self) -> Option<tokio::time::Instant>;
@@ -142,6 +150,30 @@ impl JmapApi for JmapClient {
     }
     async fn set_masked_state(&self, id: &str, state: MaskedState) -> Answer<()> {
         JmapClient::set_masked_state(self, id, state).await
+    }
+    async fn hold(&self, hold: &Hold) -> Answer<HeldSubmission> {
+        JmapClient::hold(self, hold).await
+    }
+    async fn submissions(&self, ids: &[String]) -> Answer<Vec<SubmissionState>> {
+        JmapClient::submissions(self, ids).await
+    }
+    async fn answers_submission_get(&self) -> Answer<bool> {
+        JmapClient::answers_submission_get(self).await
+    }
+    async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {
+        JmapClient::cancel_submission(self, id).await
+    }
+    async fn file_held(&self, email_id: &str, drafts: &str, sent: &str) -> Answer<()> {
+        JmapClient::file_held(self, email_id, drafts, sent).await
+    }
+    async fn unhold(&self, email_id: &str) -> Answer<()> {
+        JmapClient::unhold(self, email_id).await
+    }
+    async fn quotas(&self) -> Answer<Vec<Quota>> {
+        JmapClient::quotas(self).await
+    }
+    async fn send_mdn(&self, mdn: &MdnOut) -> Answer<()> {
+        JmapClient::send_mdn(self, mdn).await
     }
     async fn push(&self) -> Answer<Pushed> {
         JmapClient::push(self, PUSH_IDLE).await
