@@ -5279,7 +5279,7 @@ msgid "None"
 msgstr "無"
 
 #: app/src/ui/calendar/editor.rs:601 app/src/ui/composer/mod.rs:557
-#: app/src/ui/vacation.rs:249 app/src/ui/vacation.rs:258
+#: app/src/ui/vacation.rs:249 app/src/ui/vacation.rs:271
 msgid "Message"
 msgstr "訊息"
 
@@ -9061,11 +9061,15 @@ msgstr "結束日期"
 msgid "Dates"
 msgstr "日期"
 
-#: app/src/ui/vacation.rs:265
+#: app/src/ui/vacation.rs:253
+msgid "The reply people get while you are away"
+msgstr "您不在時，對方會收到的回覆"
+
+#: app/src/ui/vacation.rs:278
 msgid "The same reply goes to people inside and outside your organization."
 msgstr "組織內外的人都會收到相同回覆。"
 
-#: app/src/ui/vacation.rs:272
+#: app/src/ui/vacation.rs:285
 msgid "Only Reply to My Contacts"
 msgstr "僅回覆聯絡人"
 

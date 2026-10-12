@@ -5635,7 +5635,7 @@ msgid "None"
 msgstr "Keine"
 
 #: app/src/ui/calendar/editor.rs:601 app/src/ui/composer/mod.rs:557
-#: app/src/ui/vacation.rs:249 app/src/ui/vacation.rs:258
+#: app/src/ui/vacation.rs:249 app/src/ui/vacation.rs:271
 msgid "Message"
 msgstr "Nachricht"
 
@@ -9559,12 +9559,16 @@ msgstr "Letzter Tag"
 msgid "Dates"
 msgstr "Daten"
 
-#: app/src/ui/vacation.rs:265
+#: app/src/ui/vacation.rs:253
+msgid "The reply people get while you are away"
+msgstr "Die Antwort, die andere während Ihrer Abwesenheit erhalten"
+
+#: app/src/ui/vacation.rs:278
 msgid "The same reply goes to people inside and outside your organization."
 msgstr ""
 "Dieselbe Antwort geht an Personen innerhalb und außerhalb Ihrer Organisation."
 
-#: app/src/ui/vacation.rs:272
+#: app/src/ui/vacation.rs:285
 msgid "Only Reply to My Contacts"
 msgstr "Nur meinen Kontakten antworten"
 
