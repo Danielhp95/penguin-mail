@@ -2317,15 +2317,15 @@ msgstr ""
 "  FICHEIRO.ics   abre um ficheiro de calendário, para adicionar os seus "
 "eventos a um calendário"
 
-#: app/src/main.rs:171
+#: app/src/main.rs:175
 msgid "penguin-mail: unknown option {option}"
 msgstr "penguin-mail: opção desconhecida {option}"
 
-#: app/src/main.rs:354
+#: app/src/main.rs:358
 msgid "Penguin Mail Could Not Start"
 msgstr "O Penguin Mail não conseguiu arrancar"
 
-#: app/src/main.rs:359 app/src/ui/about.rs:181
+#: app/src/main.rs:363 app/src/ui/about.rs:181
 msgid "Report a Problem"
 msgstr "Comunicar um problema"
 
@@ -11257,7 +11257,7 @@ msgstr "O servidor recusou este pedido."
 msgid "The server could not take this request."
 msgstr "O servidor não conseguiu aceitar este pedido."
 
-#: sync/src/services/jmap/jscal.rs:1127
+#: sync/src/services/jmap/jscal.rs:1113
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
@@ -11265,7 +11265,7 @@ msgstr ""
 "O Penguin Mail não consegue ler como este evento se repete, por isso não "
 "pode alterar a repetição. Altere-a na aplicação que a definiu."
 
-#: sync/src/services/jmap/jscal.rs:1131
+#: sync/src/services/jmap/jscal.rs:1117
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "O Penguin Mail não consegue guardar esta repetição num calendário JMAP."
