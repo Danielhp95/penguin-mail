@@ -7,6 +7,7 @@
 
 mod auth;
 pub mod blob;
+pub mod calendars;
 mod check;
 pub mod contacts;
 pub mod masked;
@@ -46,3 +47,4 @@ pub use vacation::VacationResponse;
 pub use submission::{Canceled, HELD, HeldSubmission, Hold, SubmissionState, max_delayed_send};
 pub use mdn::{MDN, MdnOut};
 pub use quota::{QUOTA, Quota, mail_storage};
+pub use calendars::{CYRUS_JSCALENDAR_BIS, CalendarEvents, CalendarRights, EventWrite, EventsPage, JmapCalendar, fits};
