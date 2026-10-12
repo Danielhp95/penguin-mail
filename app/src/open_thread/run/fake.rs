@@ -168,6 +168,9 @@ pub struct Screen {
     pub offers_receipts: bool,
     /// What the store says about whether a receipt was answered.
     pub receipt_answered: Result<bool, String>,
+    /// Holds the next answer to whether a receipt was answered until the
+    /// test lets go.
+    pub receipt_hold: Option<oneshot::Receiver<()>>,
     /// How sending or declining a receipt ends.
     pub receipt_answer: Result<(), String>,
     pub receipt_cards: Vec<ReceiptCard>,
@@ -458,6 +461,7 @@ impl FakeWindow {
             document: None,
             offers_receipts: true,
             receipt_answered: Ok(false),
+            receipt_hold: None,
             receipt_answer: Ok(()),
             receipt_cards: Vec::new(),
             receipt_answers: Vec::new(),
@@ -841,8 +845,13 @@ impl Effects for FakeWindow {
 
     fn receipt_answered(&self, _account_id: AccountId, _message_id: String) -> Answer<'_, Result<bool, String>> {
         self.reached(Step::ReceiptAnswered);
-        let answered = self.with(|screen| screen.receipt_answered.clone());
-        Box::pin(async move { answered })
+        let (answered, held) = self.with(|screen| (screen.receipt_answered.clone(), screen.receipt_hold.take()));
+        Box::pin(async move {
+            if let Some(held) = held {
+                let _ = held.await;
+            }
+            answered
+        })
     }
 
     fn answer_receipt(&self, _account_id: AccountId, message_id: String, send: bool) -> Answer<'_, Result<(), String>> {

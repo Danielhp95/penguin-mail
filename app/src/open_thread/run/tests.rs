@@ -1460,6 +1460,24 @@ async fn a_redraw_while_the_answer_goes_out_keeps_the_buttons_waiting() {
     assert!(!window.page().contains("mailrs:receipt/"), "{}", window.page());
 }
 
+/// A redraw that asked the store before the answer was kept hears "not
+/// answered" after the receipt went. The card stays down, so a second
+/// press cannot say a receipt was sent when none was.
+#[tokio::test]
+async fn a_stale_redraw_does_not_bring_the_card_back_after_sending() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    let (release, held) = futures::channel::oneshot::channel();
+    window.with(|s| s.receipt_hold = Some(held));
+    futures::join!(run.account_ready(ACCOUNT), async {
+        run.answer_receipt("m1".into(), true).await;
+        let _ = release.send(());
+    });
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(!window.page().contains("mailrs:receipt/send"), "{}", window.page());
+}
+
 /// An account still connecting cannot say whether the receipt was
 /// answered, so the card waits for it and comes up once it can.
 #[tokio::test]

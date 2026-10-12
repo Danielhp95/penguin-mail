@@ -101,6 +101,10 @@ pub struct OpenThread {
     /// The message the receipt card asks about, and whether its answer is
     /// on its way. `None` while the card is down.
     receipt_card: Option<(String, bool)>,
+    /// The messages whose receipt card was answered while this thread
+    /// was open. A store read that started before the answer was kept
+    /// still says "not answered", and must not bring the card back.
+    receipts_answered: HashSet<String>,
     /// The read receipts in the thread checked against the person's Sent
     /// mail, by message id: true for one that answers a message there.
     /// Only those draw as a line.
@@ -157,6 +161,7 @@ impl OpenThread {
             queued: None,
             invitation_at: None,
             receipt_card: None,
+            receipts_answered: HashSet::new(),
             reports: HashMap::new(),
             cleaned: HashMap::new(),
             drawn: page::Drawn::default(),
@@ -588,6 +593,7 @@ mod tests {
             queued: None,
             invitation_at: None,
             receipt_card: None,
+            receipts_answered: HashSet::new(),
             reports: HashMap::new(),
             cleaned: HashMap::new(),
             drawn: super::page::Drawn::default(),

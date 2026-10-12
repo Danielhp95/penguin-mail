@@ -35,6 +35,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
 - The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
 - When Penguin Mail starts in the tray with no window, the tray's unread count includes unread mail on the server older than what this computer keeps.
+- A read receipt you sent no longer comes back to offer itself again while the message redraws.
 
 ### Fixed
 

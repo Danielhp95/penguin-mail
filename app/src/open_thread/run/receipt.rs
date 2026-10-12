@@ -59,7 +59,9 @@ impl ThreadRun {
         else {
             return;
         };
-        if !answered && !self.receipt_working() {
+        // The answer may have gone out while the store was read.
+        let answered_here = self.thread(|open| open.receipt_answered_here(&message_id)).unwrap_or(false);
+        if !answered && !answered_here && !self.receipt_working() {
             wanted.on_screen(|effects| effects.receipt_card(ReceiptCard::Asked { message_id, to }));
         }
     }
