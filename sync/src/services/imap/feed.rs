@@ -51,8 +51,8 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
             // starting point goes only once a look has gone past it. A
             // mailbox neither the state nor a listing has met before, such
             // as an Archive another client made, brings its window as new.
-            let recent = self.known().recent.get(&mailbox).copied();
-            let kept = match state.mailboxes.get(&mailbox).copied().or(recent) {
+            let recent = self.known().recent.get(&mailbox).cloned();
+            let kept = match state.mailboxes.get(&mailbox).cloned().or(recent) {
                 Some(kept) => {
                     self.mailbox_changes(&mailbox, kept, &capabilities, &mut changes)
                         .await
@@ -187,7 +187,10 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
         // CONDSTORE or in full. Either way the look covers every change up
         // to the HIGHESTMODSEQ this SELECT reports, so the state after
         // takes that MODSEQ.
-        match (selected.qresync, capabilities.condstore, kept.modseq) {
+        // The UIDs another client marked `\Deleted`, which the store let go
+        // at an earlier look, and those of them undeleted since, which
+        // come back as new mail does.
+        let (deleted, undeleted) = match (selected.qresync, capabilities.condstore, kept.modseq) {
             (true, _, _) => {
                 // The server's set goes to the engine whole, cut to the
                 // UIDs met before; the engine tests each stored UID
@@ -196,6 +199,22 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
                     true => selected.vanished.intersection(&UidSet::range(met.0, met.1)),
                     false => UidSet::new(),
                 };
+                // QRESYNC names every flag change, so the report says
+                // which messages gained or lost `\Deleted`.
+                let mut deleted: Vec<u32> = kept
+                    .deleted
+                    .iter()
+                    .copied()
+                    .filter(|uid| !vanished.contains(*uid))
+                    .collect();
+                let mut undeleted = Vec::new();
+                for report in selected.changed.iter().filter(|f| f.uid < kept.uidnext) {
+                    match (is_deleted(&report.flags), deleted.binary_search(&report.uid)) {
+                        (true, Err(at)) => deleted.insert(at, report.uid),
+                        (false, Ok(at)) => undeleted.push(deleted.remove(at)),
+                        _ => {}
+                    }
+                }
                 if !vanished.is_empty() {
                     changes.push(RemoteChange::Vanished {
                         mailbox: mailbox.to_string(),
@@ -204,20 +223,30 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
                     });
                 }
                 look.flags(&selected.changed, changes);
+                (deleted, undeleted)
             }
             (false, true, Some(modseq)) => {
-                changes.push(self.holds(mailbox, selected.uidvalidity, top).await?);
+                let found = self.present_and_deleted(&kept, mailbox, &selected, top, changes).await?;
                 if let Some(rest) = self.changed_since(&look, met, modseq, changes).await? {
                     changes.push(look.compare(rest));
                 }
+                found
             }
             _ => {
-                changes.push(self.holds(mailbox, selected.uidvalidity, top).await?);
+                let found = self.present_and_deleted(&kept, mailbox, &selected, top, changes).await?;
                 if met.1 >= met.0 {
                     changes.push(look.compare(met.0..=met.1));
                 }
+                found
             }
-        }
+        };
+        changes.extend(undeleted.into_iter().map(|uid| {
+            let id = look.name(uid);
+            RemoteChange::Added {
+                thread_id: id.clone(),
+                id,
+            }
+        }));
         let mut fresh = Vec::new();
         self.search_windows(mailbox, (kept.uidnext, top), "UNDELETED", |found| {
             fresh.extend(found)
@@ -231,12 +260,46 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
             }
         }));
         let mut after = Kept::of(&selected, top);
+        after.remember_deleted(deleted);
         // A server that leaves UIDNEXT out: new mail counts from above the
         // highest UID met so far, even when the newest message has gone.
         if selected.uidnext.is_none() {
             after.uidnext = after.uidnext.max(kept.uidnext);
         }
         Ok(after)
+    }
+
+    /// For a server that names no expunge or flag change in its SELECT:
+    /// every message `mailbox` holds now, as a change added to `changes`,
+    /// and the UIDs marked `\Deleted` now, with those `kept` remembered as
+    /// deleted that the server holds again undeleted. Two searches a
+    /// window, the second answering only the few marked messages.
+    async fn present_and_deleted(
+        &self,
+        kept: &Kept,
+        mailbox: &str,
+        selected: &Selected,
+        top: u32,
+        changes: &mut Vec<RemoteChange>,
+    ) -> Result<(Vec<u32>, Vec<u32>), BackendError> {
+        let held = self.held(mailbox, top).await?;
+        let mut deleted = Vec::new();
+        self.search_windows(mailbox, (1, top), "DELETED", |found| {
+            deleted.extend(found.into_iter().filter(|uid| *uid < kept.uidnext))
+        })
+        .await?;
+        let undeleted = kept
+            .deleted
+            .iter()
+            .copied()
+            .filter(|uid| held.contains(*uid) && deleted.binary_search(uid).is_err())
+            .collect();
+        changes.push(RemoteChange::Holds {
+            mailbox: mailbox.to_string(),
+            uidvalidity: selected.uidvalidity,
+            uids: held,
+        });
+        Ok((deleted, undeleted))
     }
 
     /// The flags that changed since `modseq` among the messages in `met`,
@@ -335,27 +398,20 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
         self.select(mailbox, None).await
     }
 
-    /// Every message `mailbox` holds now, up to `top`, as one change. A
-    /// server without QRESYNC names no UID it expunged, so this is how an
-    /// expunge made elsewhere reaches the store. The UIDs arrive a window
-    /// at a time and go into the set as runs, so a mailbox with few gaps
-    /// costs a few ranges.
-    async fn holds(
-        &self,
-        mailbox: &str,
-        uidvalidity: u32,
-        top: u32,
-    ) -> Result<RemoteChange, BackendError> {
+    /// Every message `mailbox` holds now, up to `top`. A server without
+    /// QRESYNC names no UID it expunged, so this is how an expunge made
+    /// elsewhere reaches the store. A message marked `\Deleted` and not yet
+    /// expunged counts as gone: a phone that deletes that way has taken it
+    /// out of every list its owner sees. The UIDs arrive a window at a time
+    /// and go into the set as runs, so a mailbox with few gaps costs a few
+    /// ranges.
+    async fn held(&self, mailbox: &str, top: u32) -> Result<UidSet, BackendError> {
         let mut ranges = Vec::new();
-        self.search_windows(mailbox, (1, top), "", |found| {
+        self.search_windows(mailbox, (1, top), "UNDELETED", |found| {
             push_runs(&mut ranges, &found)
         })
         .await?;
-        Ok(RemoteChange::Holds {
-            mailbox: mailbox.to_string(),
-            uidvalidity,
-            uids: UidSet::from(ranges),
-        })
+        Ok(UidSet::from(ranges))
     }
 }
 
@@ -391,14 +447,26 @@ impl Look<'_> {
     }
 
     /// The changes that bring each message met before to the flags in
-    /// `flags`, added to `changes`.
+    /// `flags`, added to `changes`. A message now marked `\Deleted` leaves
+    /// the store, as an expunged one would.
     fn flags(&self, flags: &[FlagsOf], changes: &mut Vec<RemoteChange>) {
+        let mut deleted = Vec::new();
         for changed in flags.iter().filter(|f| f.uid < self.uidnext) {
-            changes.extend(flag_changes(
-                &self.name(changed.uid),
-                &changed.flags,
-                self.stored,
-            ));
+            match is_deleted(&changed.flags) {
+                true => push_runs(&mut deleted, &[changed.uid]),
+                false => changes.extend(flag_changes(
+                    &self.name(changed.uid),
+                    &changed.flags,
+                    self.stored,
+                )),
+            }
+        }
+        if !deleted.is_empty() {
+            changes.push(RemoteChange::Vanished {
+                mailbox: self.mailbox.to_string(),
+                uidvalidity: self.uidvalidity,
+                uids: UidSet::from(deleted),
+            });
         }
     }
 }

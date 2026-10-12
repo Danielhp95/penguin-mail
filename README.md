@@ -17,9 +17,8 @@ Mail and calendar for Linux and macOS, written in Rust.
 
 [Website](https://penguin-mail.com) · [Watch the tour](https://youtu.be/0PyJCsw1FSE) · [Install](#install) · [Features](#features) · [Screenshots](#screenshots) · [Changelog](CHANGELOG.md)
 
-[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/penguin-mail)
-
-[![Penguin Mail | AlternativeTo](https://alternativeto.net/static/badges/badge-wide-dark.svg)](https://alternativeto.net/software/penguin-mail/about/?utm_source=badge&utm_medium=referral)
+<a href="https://snapcraft.io/penguin-mail"><img src="https://snapcraft.io/en/dark/install.svg" height="56" alt="Get it from the Snap Store"></a>
+<a href="https://alternativeto.net/software/penguin-mail/about/?utm_source=badge&utm_medium=referral"><img src="https://alternativeto.net/static/badges/badge-wide-dark.svg" height="56" alt="Penguin Mail | AlternativeTo"></a>
 
 </div>
 
@@ -257,9 +256,11 @@ move `Penguin Mail.app` to Applications, and open it from Finder. The bundle
 includes its GTK libraries, so you do not need Homebrew to run it. The app
 bundle records the minimum macOS version each build requires.
 
-A zip ending in `-unsigned` is a test build without Apple notarization;
-macOS may block it. Download a signed, notarized zip for normal use. To
-update, download the next macOS zip and replace the app in Applications.
+The macOS builds are not notarized yet, so their zips end in `-unsigned`
+and macOS blocks the first launch. Open the app once, then go to System
+Settings → Privacy & Security and choose Open Anyway; from then on it opens
+normally. Notarized builds will come with the first release after the Apple
+certificates are in place. To update, download the next macOS zip and replace the app in Applications.
 Your mail and settings stay in your user folder. The macOS app has no tray
 icon. GnuPG and command-line assistants are not bundled.
 

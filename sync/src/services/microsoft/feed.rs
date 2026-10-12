@@ -73,7 +73,7 @@ impl<G: GraphApi> Microsoft<G> {
             return self.feed_start(synced).await;
         };
         let mut state = MicrosoftState::read(since)?;
-        let (due, slow) = self.due(synced);
+        let (due, slow, requested) = self.due(synced);
         let inbox = self.known().roles.get(&Role::Inbox).cloned();
         let (mut removed, mut present) = (Vec::new(), Vec::new());
         for folder in due {
@@ -94,7 +94,7 @@ impl<G: GraphApi> Microsoft<G> {
             }
         }
         if slow {
-            self.slow_poll_done();
+            self.slow_poll_done(requested);
         }
         let changes = self.changes_from(removed, present).await?;
         // The window changed since the rounds began: start them again over

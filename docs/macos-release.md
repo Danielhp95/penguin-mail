@@ -9,9 +9,10 @@ Finder. The app includes its GTK libraries and does not need Homebrew on
 the computer where you use it. The bundle's `Contents/Info.plist` records
 the minimum macOS version, which depends on the libraries in that build.
 
-A zip with `-unsigned` in its name is an ad hoc signed test build without
-Apple notarization. macOS may block it. Use a signed, notarized zip for
-normal use. To update, download the next macOS zip and replace the app in
+A zip with `-unsigned` in its name is ad hoc signed, without Apple
+notarization. Every macOS build is one of these until the Apple certificates
+are in place, so macOS blocks the first launch: open the app once, then
+choose Open Anyway in System Settings → Privacy & Security. To update, download the next macOS zip and replace the app in
 Applications. Your mail and settings remain in
 `~/Library/Application Support/penguin-mail/`; sign-in tokens stay in
 Keychain. The macOS app has no tray icon or in-app installer. GnuPG and

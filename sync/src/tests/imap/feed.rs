@@ -487,3 +487,54 @@ async fn a_failed_first_look_at_a_followed_mailbox_keeps_its_starting_point() {
 
     assert_eq!(h.ids().await, [format!("Work/{uidvalidity}/{uid}")]);
 }
+
+/// A phone that deletes by marking `\Deleted` and leaves the expunge for
+/// later, or for never, has taken the message away as far as its owner
+/// can see, so the store lets it go at the next look too.
+async fn a_message_marked_deleted_elsewhere_leaves_the_store(h: ImapHarness) {
+    h.imap.deliver_flagged("INBOX", &message("b", "Moss", ""), &[], days_ago(0));
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1", "INBOX/1001/2"]);
+
+    h.imap.set_flags("INBOX", 1, &["\\Seen", "\\Deleted"]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/2"]);
+
+    // Undone on the phone: the message comes back, read as it was left.
+    h.imap.set_flags("INBOX", 1, &["\\Seen"]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1", "INBOX/1001/2"]);
+    assert!(!h.stored("INBOX/1001/1").await.unwrap().is_unread());
+
+    // An unread message undeleted carries no keyword to report a gain of.
+    h.imap.set_flags("INBOX", 2, &["\\Deleted"]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1"]);
+    h.imap.set_flags("INBOX", 2, &[]);
+    h.sync.incremental().await.unwrap();
+    assert_eq!(h.ids().await, ["INBOX/1001/1", "INBOX/1001/2"]);
+}
+
+#[tokio::test]
+async fn under_qresync_a_message_marked_deleted_elsewhere_leaves_the_store() {
+    let h = synced_on(offering(|_| {})).await;
+    a_message_marked_deleted_elsewhere_leaves_the_store(h).await;
+}
+
+#[tokio::test]
+async fn with_condstore_alone_a_message_marked_deleted_elsewhere_leaves_the_store() {
+    let h = synced_on(offering(|c| c.qresync = false)).await;
+    a_message_marked_deleted_elsewhere_leaves_the_store(h).await;
+}
+
+#[tokio::test]
+async fn with_neither_a_message_marked_deleted_elsewhere_leaves_the_store() {
+    let h = synced_on(
+        offering(|c| {
+            c.qresync = false;
+            c.condstore = false;
+        }),
+    )
+    .await;
+    a_message_marked_deleted_elsewhere_leaves_the_store(h).await;
+}

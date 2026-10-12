@@ -2344,7 +2344,7 @@ msgstr "Als gelesen markieren"
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:289
+#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:291
 #: app/src/ui/queued.rs:58 app/src/ui/templates.rs:149
 #: app/src/ui/window/arrange.rs:106 app/src/ui/window/organize.rs:204
 msgid "Delete"
@@ -4115,94 +4115,94 @@ msgstr "Die Aktualisierung auf {version} ist fehlgeschlagen"
 msgid "Copy Command"
 msgstr "Befehl kopieren"
 
-#: app/src/ui/add_account.rs:409 app/src/ui/window.rs:1272
+#: app/src/ui/add_account.rs:411 app/src/ui/window.rs:1272
 msgid "Command copied"
 msgstr "Befehl kopiert"
 
-#: app/src/ui/add_account.rs:539
+#: app/src/ui/add_account.rs:541
 msgid "Signs in through your browser"
 msgstr "Anmeldung über Ihren Browser"
 
-#: app/src/ui/add_account.rs:549
+#: app/src/ui/add_account.rs:551
 msgid "Enter server settings by hand"
 msgstr "Servereinstellungen manuell eingeben"
 
-#: app/src/ui/add_account.rs:563 app/src/ui/add_account.rs:1680
+#: app/src/ui/add_account.rs:565 app/src/ui/add_account.rs:1682
 msgid "Add Account"
 msgstr "Konto hinzufügen"
 
-#: app/src/ui/add_account.rs:566
+#: app/src/ui/add_account.rs:568
 msgid "Add an account"
 msgstr "Ein Konto hinzufügen"
 
-#: app/src/ui/add_account.rs:568
+#: app/src/ui/add_account.rs:570
 msgid "Choose where your mail lives."
 msgstr "Wählen Sie, wo Ihre E-Mails liegen."
 
-#: app/src/ui/add_account.rs:600
+#: app/src/ui/add_account.rs:602
 msgid "Your Email Address"
 msgstr "Ihre E-Mail-Adresse"
 
-#: app/src/ui/add_account.rs:602 app/src/ui/add_account.rs:605
+#: app/src/ui/add_account.rs:604 app/src/ui/add_account.rs:607
 #: app/src/ui/sender_prefs.rs:88
 msgid "Email Address"
 msgstr "E-Mail-Adresse"
 
-#: app/src/ui/add_account.rs:616
+#: app/src/ui/add_account.rs:618
 msgid "Use This Address"
 msgstr "Diese Adresse verwenden"
 
-#: app/src/ui/add_account.rs:633
+#: app/src/ui/add_account.rs:635
 msgid "Continue"
 msgstr "Weiter"
 
 #. The same full-width secondary button as on the address page.
-#: app/src/ui/add_account.rs:634 app/src/ui/add_account.rs:727
+#: app/src/ui/add_account.rs:636 app/src/ui/add_account.rs:729
 msgid "Enter Server Settings"
 msgstr "Servereinstellungen eingeben"
 
-#: app/src/ui/add_account.rs:636
+#: app/src/ui/add_account.rs:638
 msgid "Your email address"
 msgstr "Ihre E-Mail-Adresse"
 
-#: app/src/ui/add_account.rs:638
+#: app/src/ui/add_account.rs:640
 msgid "Penguin Mail finds the servers for you."
 msgstr "Penguin Mail findet die Server für Sie."
 
-#: app/src/ui/add_account.rs:671
+#: app/src/ui/add_account.rs:673
 msgid "Looking Up"
 msgstr "Wird gesucht"
 
-#: app/src/ui/add_account.rs:731
+#: app/src/ui/add_account.rs:733
 msgid "Only the domain leaves this computer, never your full address."
 msgstr "Nur die Domain verlässt diesen Rechner, nie Ihre vollständige Adresse."
 
-#: app/src/ui/add_account.rs:761
+#: app/src/ui/add_account.rs:763
 msgid "Sign In in Your Browser"
 msgstr "Im Browser anmelden"
 
-#: app/src/ui/add_account.rs:778
+#: app/src/ui/add_account.rs:780
 msgid "Time left"
 msgstr "Verbleibende Zeit"
 
-#: app/src/ui/add_account.rs:787
+#: app/src/ui/add_account.rs:789
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail hört nach fünf Minuten auf zu warten."
 
-#: app/src/ui/add_account.rs:792
+#: app/src/ui/add_account.rs:794
 msgid "Open Page Again"
 msgstr "Seite erneut öffnen"
 
-#: app/src/ui/add_account.rs:797
+#: app/src/ui/add_account.rs:799
 msgid "Copy Link"
 msgstr "Link kopieren"
 
-#: app/src/ui/add_account.rs:802 app/src/ui/add_account.rs:940
+#: app/src/ui/add_account.rs:804 app/src/ui/add_account.rs:942
 #: app/src/ui/key_import.rs:213
 msgid "Try Again"
 msgstr "Erneut versuchen"
 
-#: app/src/ui/add_account.rs:807 app/src/ui/assistant_mcp_prefs.rs:347
+#: app/src/ui/add_account.rs:809 app/src/ui/assistant_mcp_prefs.rs:347
 #: app/src/ui/calendar/editor.rs:183 app/src/ui/calendar/manage.rs:252
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/calendar/manage.rs:417
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
@@ -4217,42 +4217,42 @@ msgstr "Erneut versuchen"
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: app/src/ui/add_account.rs:902 app/src/ui/add_account.rs:1019
-#: app/src/ui/add_account.rs:2529 app/src/ui/add_account.rs:2619
+#: app/src/ui/add_account.rs:904 app/src/ui/add_account.rs:1021
+#: app/src/ui/add_account.rs:2535 app/src/ui/add_account.rs:2625
 #: app/src/ui/window.rs:1216
 msgid "Sign In"
 msgstr "Anmelden"
 
-#: app/src/ui/add_account.rs:907 app/src/ui/add_account.rs:910
+#: app/src/ui/add_account.rs:909 app/src/ui/add_account.rs:912
 msgid "Your Name"
 msgstr "Ihr Name"
 
-#: app/src/ui/add_account.rs:926 app/src/ui/add_account.rs:929
+#: app/src/ui/add_account.rs:928 app/src/ui/add_account.rs:931
 msgid "Sign In With a Token"
 msgstr "Mit einem Token anmelden"
 
-#: app/src/ui/add_account.rs:935 app/src/ui/add_account.rs:1557
+#: app/src/ui/add_account.rs:937 app/src/ui/add_account.rs:1559
 msgid "Server Settings"
 msgstr "Servereinstellungen"
 
-#: app/src/ui/add_account.rs:959 app/src/ui/add_account.rs:2675
+#: app/src/ui/add_account.rs:961 app/src/ui/add_account.rs:2681
 msgid "Outgoing"
 msgstr "Ausgehend"
 
-#: app/src/ui/add_account.rs:964
+#: app/src/ui/add_account.rs:966
 msgid "Keep this account's mail on this computer alone"
 msgstr "E-Mails dieses Kontos nur auf diesem Rechner aufbewahren"
 
-#: app/src/ui/add_account.rs:969
+#: app/src/ui/add_account.rs:971
 msgid "Servers"
 msgstr "Server"
 
-#: app/src/ui/add_account.rs:974 app/src/ui/add_account.rs:976
-#: app/src/ui/add_account.rs:2255 app/src/ui/add_account.rs:2259
+#: app/src/ui/add_account.rs:976 app/src/ui/add_account.rs:978
+#: app/src/ui/add_account.rs:2261 app/src/ui/add_account.rs:2265
 msgid "Use these servers"
 msgstr "Diese Server verwenden"
 
-#: app/src/ui/add_account.rs:978 app/src/ui/add_account.rs:2257
+#: app/src/ui/add_account.rs:980 app/src/ui/add_account.rs:2263
 msgid ""
 "Penguin Mail guessed these servers. Your password goes to them only after "
 "you check the box."
@@ -4260,45 +4260,45 @@ msgstr ""
 "Penguin Mail hat diese Server erraten. Ihr Passwort wird erst an sie "
 "gesendet, wenn Sie das Kästchen ankreuzen."
 
-#: app/src/ui/add_account.rs:984 app/src/ui/add_account.rs:1272
-#: app/src/ui/add_account.rs:1513
+#: app/src/ui/add_account.rs:986 app/src/ui/add_account.rs:1274
+#: app/src/ui/add_account.rs:1515
 msgid "Server"
 msgstr "Server"
 
-#: app/src/ui/add_account.rs:988
+#: app/src/ui/add_account.rs:990
 msgid "Use IMAP Instead"
 msgstr "Stattdessen IMAP verwenden"
 
-#: app/src/ui/add_account.rs:1071
+#: app/src/ui/add_account.rs:1073
 msgid "No Other Mail Apps"
 msgstr "Keine anderen E-Mail-Programme"
 
-#: app/src/ui/add_account.rs:1077
+#: app/src/ui/add_account.rs:1079
 msgid "Use another address"
 msgstr "Eine andere Adresse verwenden"
 
-#: app/src/ui/add_account.rs:1078
+#: app/src/ui/add_account.rs:1080
 msgid "Change the address and look it up again"
 msgstr "Adresse ändern und erneut suchen"
 
-#: app/src/ui/add_account.rs:1084
+#: app/src/ui/add_account.rs:1086
 msgid "Choose another provider"
 msgstr "Einen anderen Anbieter wählen"
 
-#: app/src/ui/add_account.rs:1085
+#: app/src/ui/add_account.rs:1087
 msgid "Back to the list"
 msgstr "Zurück zur Liste"
 
-#: app/src/ui/add_account.rs:1131
+#: app/src/ui/add_account.rs:1133
 msgid "Account Added"
 msgstr "Konto hinzugefügt"
 
-#: app/src/ui/add_account.rs:1154
+#: app/src/ui/add_account.rs:1156
 msgctxt "mailbox"
 msgid "Archive"
 msgstr "Archiv"
 
-#: app/src/ui/add_account.rs:1187
+#: app/src/ui/add_account.rs:1189
 msgid ""
 "Grant Access opens Google's page again. You can also do it later in "
 "Preferences."
@@ -4306,52 +4306,52 @@ msgstr ""
 "„Zugriff gewähren“ öffnet die Google-Seite erneut. Sie können das auch "
 "später in den Einstellungen erledigen."
 
-#: app/src/ui/add_account.rs:1190
+#: app/src/ui/add_account.rs:1192
 msgid "Open Inbox"
 msgstr "Posteingang öffnen"
 
-#: app/src/ui/add_account.rs:1192
+#: app/src/ui/add_account.rs:1194
 msgid "Add Another Account"
 msgstr "Weiteres Konto hinzufügen"
 
-#: app/src/ui/add_account.rs:1194 app/src/ui/confirm.rs:46
+#: app/src/ui/add_account.rs:1196 app/src/ui/confirm.rs:46
 msgid "Not Now"
 msgstr "Nicht jetzt"
 
-#: app/src/ui/add_account.rs:1199 app/src/ui/calendar/editor.rs:1606
+#: app/src/ui/add_account.rs:1201 app/src/ui/calendar/editor.rs:1606
 #: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
 #: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1334
 msgid "Grant Access"
 msgstr "Zugriff gewähren"
 
-#: app/src/ui/add_account.rs:1275 app/src/ui/add_account.rs:1276
+#: app/src/ui/add_account.rs:1277 app/src/ui/add_account.rs:1278
 msgid "Port"
 msgstr "Port"
 
-#: app/src/ui/add_account.rs:1286 app/src/ui/add_account.rs:1288
+#: app/src/ui/add_account.rs:1288 app/src/ui/add_account.rs:1290
 msgid "Security"
 msgstr "Sicherheit"
 
-#: app/src/ui/add_account.rs:1350
+#: app/src/ui/add_account.rs:1352
 msgid "Mail on the Server"
 msgstr "E-Mails auf dem Server"
 
-#: app/src/ui/add_account.rs:1352
+#: app/src/ui/add_account.rs:1354
 msgid "Penguin Mail keeps every message it downloads on this computer."
 msgstr ""
 "Penguin Mail bewahrt jede heruntergeladene Nachricht auf diesem Rechner auf."
 
-#: app/src/ui/add_account.rs:1357 app/src/ui/add_account.rs:1358
+#: app/src/ui/add_account.rs:1359 app/src/ui/add_account.rs:1360
 #: app/src/ui/preferences.rs:1106
 msgid "Days"
 msgstr "Tage"
 
-#: app/src/ui/add_account.rs:1432 app/src/ui/add_account.rs:1514
+#: app/src/ui/add_account.rs:1434 app/src/ui/add_account.rs:1516
 msgid "Incoming User Name"
 msgstr "Benutzername für eingehende E-Mails"
 
-#: app/src/ui/add_account.rs:1433
+#: app/src/ui/add_account.rs:1435
 msgid "Outgoing User Name"
 msgstr "Benutzername für ausgehende E-Mails"
 
@@ -4359,65 +4359,65 @@ msgstr "Benutzername für ausgehende E-Mails"
 #. text draws over the title. The rule goes in a tooltip, since a
 #. second line under the group would push this row off a 768-pixel
 #. screen.
-#: app/src/ui/add_account.rs:1439
+#: app/src/ui/add_account.rs:1441
 msgid "Leave it empty to use the incoming user name."
 msgstr "Leer lassen, um den Benutzernamen für eingehende E-Mails zu verwenden."
 
-#: app/src/ui/add_account.rs:1442 app/src/ui/add_account.rs:1444
+#: app/src/ui/add_account.rs:1444 app/src/ui/add_account.rs:1446
 msgid "Outgoing Password"
 msgstr "Passwort für ausgehende E-Mails"
 
-#: app/src/ui/add_account.rs:1446
+#: app/src/ui/add_account.rs:1448
 msgid "Leave it empty to use the password you sign in with."
 msgstr "Leer lassen, um das Anmeldepasswort zu verwenden."
 
-#: app/src/ui/add_account.rs:1449
+#: app/src/ui/add_account.rs:1451
 msgid "Incoming Mail"
 msgstr "Eingehende E-Mails"
 
-#: app/src/ui/add_account.rs:1458 app/src/ui/add_account.rs:1460
+#: app/src/ui/add_account.rs:1460 app/src/ui/add_account.rs:1462
 msgid "Protocol"
 msgstr "Protokoll"
 
-#: app/src/ui/add_account.rs:1472
+#: app/src/ui/add_account.rs:1474
 msgid "Sign-In"
 msgstr "Anmeldung"
 
-#: app/src/ui/add_account.rs:1473 app/src/ui/add_account.rs:1515
+#: app/src/ui/add_account.rs:1475 app/src/ui/add_account.rs:1517
 msgid "Leave the user names empty to sign in with your address."
 msgstr ""
 "Lassen Sie die Benutzernamen leer, um sich mit Ihrer Adresse anzumelden."
 
-#: app/src/ui/add_account.rs:1476
+#: app/src/ui/add_account.rs:1478
 msgid "Outgoing Mail"
 msgstr "Ausgehende E-Mails"
 
-#: app/src/ui/add_account.rs:1508
+#: app/src/ui/add_account.rs:1510
 msgid "Session URL"
 msgstr "Sitzungs-URL"
 
-#: app/src/ui/add_account.rs:1509
+#: app/src/ui/add_account.rs:1511
 msgid "User Name"
 msgstr "Benutzername"
 
-#: app/src/ui/add_account.rs:1510
+#: app/src/ui/add_account.rs:1512
 msgid "Leave the user name empty to sign in with your address."
 msgstr ""
 "Lassen Sie den Benutzernamen leer, um sich mit Ihrer Adresse anzumelden."
 
-#: app/src/ui/add_account.rs:1546 app/src/ui/add_account.rs:2977
+#: app/src/ui/add_account.rs:1548 app/src/ui/add_account.rs:2983
 msgid "Use These Settings"
 msgstr "Diese Einstellungen verwenden"
 
-#: app/src/ui/add_account.rs:2030 app/src/ui/add_account.rs:3516
+#: app/src/ui/add_account.rs:2036 app/src/ui/add_account.rs:3522
 msgid "Looking up {domain}"
 msgstr "{domain} wird gesucht"
 
-#: app/src/ui/add_account.rs:2286
+#: app/src/ui/add_account.rs:2292
 msgid "{domain} uses {provider}"
 msgstr "{domain} verwendet {provider}"
 
-#: app/src/ui/add_account.rs:2310
+#: app/src/ui/add_account.rs:2316
 msgid ""
 "Not your {provider} website password. Make one with mail access in "
 "{provider}'s settings and paste it here."
@@ -4426,28 +4426,28 @@ msgstr ""
 "Einstellungen von {provider} eines mit E-Mail-Zugriff und fügen Sie es hier "
 "ein."
 
-#: app/src/ui/add_account.rs:2521 app/src/ui/add_account.rs:2614
-#: app/src/ui/add_account.rs:3586
+#: app/src/ui/add_account.rs:2527 app/src/ui/add_account.rs:2620
+#: app/src/ui/add_account.rs:3592
 msgid "Signing In…"
 msgstr "Anmeldung läuft …"
 
-#: app/src/ui/add_account.rs:2694
+#: app/src/ui/add_account.rs:2700
 msgid "Could not reach {host}"
 msgstr "{host} ist nicht erreichbar"
 
-#: app/src/ui/add_account.rs:2696
+#: app/src/ui/add_account.rs:2702
 msgid "Your password was not sent."
 msgstr "Ihr Passwort wurde nicht gesendet."
 
-#: app/src/ui/add_account.rs:2957
+#: app/src/ui/add_account.rs:2963
 msgid "Looking Up…"
 msgstr "Suche läuft …"
 
-#: app/src/ui/add_account.rs:3048
+#: app/src/ui/add_account.rs:3054
 msgid "Sign in with {provider} in your browser"
 msgstr "Mit {provider} im Browser anmelden"
 
-#: app/src/ui/add_account.rs:3053
+#: app/src/ui/add_account.rs:3059
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
@@ -4455,7 +4455,7 @@ msgstr ""
 "Die Anmeldeseite von {provider} ist in Ihrem Browser geöffnet. Wenn Sie dort "
 "fertig sind, geht es in diesem Fenster weiter."
 
-#: app/src/ui/add_account.rs:3073
+#: app/src/ui/add_account.rs:3079
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4463,7 +4463,7 @@ msgstr ""
 "Diese Ausgabe von Penguin Mail wurde ohne Google-Anmeldung gebaut. Laden Sie "
 "eine Veröffentlichung von github.com/c9dev/penguin-mail/releases herunter."
 
-#: app/src/ui/add_account.rs:3076
+#: app/src/ui/add_account.rs:3082
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4472,7 +4472,7 @@ msgstr ""
 "Sie eine Veröffentlichung von github.com/c9dev/penguin-mail/releases "
 "herunter."
 
-#: app/src/ui/add_account.rs:3087
+#: app/src/ui/add_account.rs:3093
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
@@ -4481,19 +4481,19 @@ msgstr ""
 "in Ihrem Browser geöffnet. Wenn Sie dort fertig sind, geht es in diesem "
 "Fenster weiter."
 
-#: app/src/ui/add_account.rs:3258
+#: app/src/ui/add_account.rs:3264
 msgid "Link copied"
 msgstr "Link kopiert"
 
-#: app/src/ui/add_account.rs:3285
+#: app/src/ui/add_account.rs:3291
 msgid "{account} is added"
 msgstr "{account} wurde hinzugefügt"
 
-#: app/src/ui/add_account.rs:3305
+#: app/src/ui/add_account.rs:3311
 msgid "{account} is ready"
 msgstr "{account} ist bereit"
 
-#: app/src/ui/add_account.rs:3589
+#: app/src/ui/add_account.rs:3595
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."
@@ -4606,7 +4606,7 @@ msgid "Running"
 msgstr "Läuft"
 
 #: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
-#: app/src/ui/hide_my_email.rs:467
+#: app/src/ui/hide_my_email.rs:471
 msgid "Done"
 msgstr "Fertig"
 
@@ -5863,7 +5863,7 @@ msgstr "Abbestellen fehlgeschlagen: {reason}"
 msgid "New Calendar"
 msgstr "Neuer Kalender"
 
-#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:365
+#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:367
 #: app/src/ui/rules.rs:439 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
@@ -7285,6 +7285,10 @@ msgstr "{color} (Strg+Alt+{number})"
 msgid "Clear Flag"
 msgstr "Markierung entfernen"
 
+#: app/src/ui/copied.rs:90
+msgid "Copied"
+msgstr "Kopiert"
+
 #: app/src/ui/dav_edit.rs:16
 msgid "Calendar (CalDAV) URL"
 msgstr "Kalender-URL (CalDAV)"
@@ -7342,7 +7346,7 @@ msgstr ""
 "erreichen, und Ihre Antworten kommen von Ihrer Hauptadresse."
 
 #: app/src/ui/hide_my_email.rs:73 app/src/ui/hide_my_email.rs:75
-#: app/src/ui/hide_my_email.rs:375
+#: app/src/ui/hide_my_email.rs:377
 msgid "Create Address"
 msgstr "Adresse erstellen"
 
@@ -7374,43 +7378,43 @@ msgstr "Adresse kopieren"
 msgid "Copy {address}"
 msgstr "{address} kopieren"
 
-#: app/src/ui/hide_my_email.rs:216 app/src/ui/hide_my_email.rs:451
+#: app/src/ui/hide_my_email.rs:218 app/src/ui/hide_my_email.rs:455
 msgid "Address copied"
 msgstr "Adresse kopiert"
 
-#: app/src/ui/hide_my_email.rs:224
+#: app/src/ui/hide_my_email.rs:226
 msgid "Receive Mail"
 msgstr "E-Mails empfangen"
 
-#: app/src/ui/hide_my_email.rs:229
+#: app/src/ui/hide_my_email.rs:231
 msgid "Receive mail at {address}"
 msgstr "E-Mails an {address} empfangen"
 
-#: app/src/ui/hide_my_email.rs:244
+#: app/src/ui/hide_my_email.rs:246
 msgid "Mail to this address reaches you again"
 msgstr "E-Mails an diese Adresse erreichen Sie wieder"
 
-#: app/src/ui/hide_my_email.rs:247
+#: app/src/ui/hide_my_email.rs:249
 msgid "Mail to this address now goes to the Trash"
 msgstr "E-Mails an diese Adresse landen jetzt im Papierkorb"
 
-#: app/src/ui/hide_my_email.rs:251
+#: app/src/ui/hide_my_email.rs:253
 msgid "Could not change the address: {reason}"
 msgstr "Die Adresse konnte nicht geändert werden: {reason}"
 
-#: app/src/ui/hide_my_email.rs:262
+#: app/src/ui/hide_my_email.rs:264
 msgid "Delete Address"
 msgstr "Adresse löschen"
 
-#: app/src/ui/hide_my_email.rs:264
+#: app/src/ui/hide_my_email.rs:266
 msgid "Delete {address}"
 msgstr "{address} löschen"
 
-#: app/src/ui/hide_my_email.rs:281
+#: app/src/ui/hide_my_email.rs:283
 msgid "Delete Address?"
 msgstr "Adresse löschen?"
 
-#: app/src/ui/hide_my_email.rs:284
+#: app/src/ui/hide_my_email.rs:286
 msgid ""
 "Mail sent to {address} arrives in your inbox again, without the Hide My "
 "Email label. To stop that mail, turn the address off instead."
@@ -7419,23 +7423,23 @@ msgstr ""
 "Ihrem Posteingang an. Um diese E-Mails zu stoppen, schalten Sie die Adresse "
 "stattdessen aus."
 
-#: app/src/ui/hide_my_email.rs:298
+#: app/src/ui/hide_my_email.rs:300
 msgid "Address deleted"
 msgstr "Adresse gelöscht"
 
-#: app/src/ui/hide_my_email.rs:300
+#: app/src/ui/hide_my_email.rs:302
 msgid "Could not delete the address: {reason}"
 msgstr "Die Adresse konnte nicht gelöscht werden: {reason}"
 
-#: app/src/ui/hide_my_email.rs:315
+#: app/src/ui/hide_my_email.rs:317
 msgid "Allow Hide My Email"
 msgstr "Hide My Email erlauben"
 
-#: app/src/ui/hide_my_email.rs:336 app/src/ui/window.rs:3288
+#: app/src/ui/hide_my_email.rs:338 app/src/ui/window.rs:3288
 msgid "Add an account first"
 msgstr "Fügen Sie zuerst ein Konto hinzu"
 
-#: app/src/ui/hide_my_email.rs:340
+#: app/src/ui/hide_my_email.rs:342
 msgid ""
 "You get a new address that ends in your own, such as "
 "name+kite.fern482@gmail.com. Give it to one site only."
@@ -7444,27 +7448,27 @@ msgstr ""
 "name+kite.fern482@gmail.com. Geben Sie sie nur an eine einzige Website "
 "weiter."
 
-#: app/src/ui/hide_my_email.rs:346
+#: app/src/ui/hide_my_email.rs:348
 msgid "Account"
 msgstr "Konto"
 
-#: app/src/ui/hide_my_email.rs:358
+#: app/src/ui/hide_my_email.rs:360
 msgid "Where Did You Use It?"
 msgstr "Wo haben Sie sie verwendet?"
 
-#: app/src/ui/hide_my_email.rs:403
+#: app/src/ui/hide_my_email.rs:405
 msgid "Could not create the address: {reason}"
 msgstr "Die Adresse konnte nicht erstellt werden: {reason}"
 
-#: app/src/ui/hide_my_email.rs:428
+#: app/src/ui/hide_my_email.rs:430
 msgid "Your New Address"
 msgstr "Ihre neue Adresse"
 
-#: app/src/ui/hide_my_email.rs:443
+#: app/src/ui/hide_my_email.rs:445
 msgid "Copy"
 msgstr "Kopieren"
 
-#: app/src/ui/hide_my_email.rs:458
+#: app/src/ui/hide_my_email.rs:462
 msgid ""
 "It is on your clipboard. Mail sent to it gets the Hide My Email label in "
 "Gmail."
@@ -7472,7 +7476,7 @@ msgstr ""
 "Sie liegt in Ihrer Zwischenablage. E-Mails an diese Adresse erhalten in "
 "Gmail das Label „Hide My Email“."
 
-#: app/src/ui/hide_my_email.rs:482
+#: app/src/ui/hide_my_email.rs:486
 msgid "Address Created"
 msgstr "Adresse erstellt"
 
@@ -7852,7 +7856,7 @@ msgstr[1] "Und {count} weitere"
 msgid "Could not read {file}: {reason}"
 msgstr "{file} konnte nicht gelesen werden: {reason}"
 
-#: app/src/ui/mod.rs:430
+#: app/src/ui/mod.rs:431
 msgid "Gray"
 msgstr "Grau"
 

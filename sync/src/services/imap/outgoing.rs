@@ -138,10 +138,12 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     }
 
     /// The name of the newest message in `mailbox` whose Message-ID is
-    /// `message_id`, given without angle brackets.
+    /// `message_id`, given without angle brackets. `HEADER` matches a
+    /// substring, so the search names the brackets to anchor both ends.
     async fn newest_with(&self, mailbox: &str, message_id: &str) -> Result<Option<String>, BackendError> {
         let uidvalidity = self.select(mailbox, None).await?.uidvalidity;
-        let keys = format!("HEADER Message-ID {} UNDELETED", string(message_id));
+        let anchored = format!("<{message_id}>");
+        let keys = format!("HEADER Message-ID {} UNDELETED", string(&anchored));
         Ok(self
             .api
             .search(mailbox, &keys)
@@ -205,6 +207,16 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     }
 
     /// Sends the draft as the server holds it, then erases it.
+    ///
+    /// The draft stays until a send succeeds, so a send the server took
+    /// whose answer was lost leaves it for the next try. That try looks in
+    /// Sent for the draft's Message-ID first, and when a copy is there it
+    /// erases the draft and answers `NotFound`, the answer for a draft
+    /// already sent: the caller then files no second copy. Only a server
+    /// that files what it sends (Yahoo, AOL and Zoho among the known
+    /// providers) has that copy after a lost answer; on any other the
+    /// client files it after a good answer, so the retry finds nothing and
+    /// sends again. A draft without a Message-ID goes out again too.
     pub(super) async fn send_saved(&self, draft_id: &str) -> Result<String, BackendError> {
         let raw = self
             .raw_messages(&[draft_id.to_string()])
@@ -213,6 +225,19 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
             .next()
             .ok_or(BackendError::NotFound)?
             .bytes;
+        // An empty Message-ID would match every message in Sent.
+        if let Some(message_id) = message_id_of(&raw).filter(|id| !id.is_empty())
+            && self
+                .sent_with(&message_id)
+                .await?
+                .is_some_and(|found| found != draft_id)
+        {
+            tracing::info!("a draft tried before is already in Sent; not sending it again");
+            if let Err(err) = self.erase(draft_id).await {
+                tracing::warn!(%err, "the draft went out before, but could not remove it from Drafts");
+            }
+            return Err(BackendError::NotFound);
+        }
         let sent = self.submit(&raw).await?;
         if let Err(err) = self.erase(draft_id).await {
             tracing::warn!(%err, "sent the draft, but could not remove it from Drafts");

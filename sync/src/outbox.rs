@@ -332,9 +332,11 @@ impl<A: Accounts> Outbox<A> {
     /// what just went out.
     ///
     /// A message tried before may have reached Gmail on a try whose answer
-    /// was lost, so its bytes are looked for in Sent first. A draft needs
-    /// no such look: Gmail deletes a draft it sends, and sending one that
-    /// has gone answers that it is gone, which counts as sent.
+    /// was lost, so its bytes are looked for in Sent first. A draft is
+    /// checked by the provider: Gmail deletes a draft it sends, so sending
+    /// one that has gone answers that it is gone, which counts as sent;
+    /// IMAP looks in Sent for the draft's Message-ID, and Graph sees that
+    /// the message is no longer a draft.
     async fn attempt(&self, message: &Queued) -> Result<String, SyncError> {
         let sync = self
             .accounts

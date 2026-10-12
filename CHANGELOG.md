@@ -15,6 +15,12 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
 - Add a JMAP account, such as Fastmail with an API token or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent.
 
+### Fixed
+
+- Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
+- A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
+- On IMAP, mail another device marks as deleted leaves the list at the next check, and comes back if that device restores it. On Outlook, Check for Mail now refreshes every folder at once; until now folders other than the Inbox waited for their regular check, every five minutes while the window is open ([#35](https://github.com/c9dev/penguin-mail/issues/35)).
+
 ## 1.0.7 (2026-10-10)
 
 ### Fixed

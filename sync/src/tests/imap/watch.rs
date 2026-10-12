@@ -306,6 +306,62 @@ fn new_mail_arrives_by_idle_without_waiting_for_a_poll() {
     });
 }
 
+/// Check for Mail on a QRESYNC account looks at the Inbox at once, so a
+/// message another client moved away (an expunge from the Inbox) leaves
+/// the store then, with IDLE off and the next poll a minute away.
+#[test]
+fn check_for_mail_takes_mail_moved_away_elsewhere_out_of_the_inbox_at_once() {
+    on_worker_stack(async move {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        db.write(|c| accounts::insert_account(c, "me@example.com", 0))
+            .await
+            .unwrap();
+        let config = EngineConfig {
+            poll_interval: Duration::from_secs(60 * 60),
+            ..EngineConfig::default()
+        };
+        let (engine, events) = SyncEngine::new(db.clone(), config);
+        let imap = Arc::new(offering(|c| c.idle = false));
+        imap.deliver_flagged("INBOX", &message("a", "Kites", ""), &[], days_ago(1));
+        engine.start_account(
+            1,
+            AccountServices::fake_imap(Arc::clone(&imap), Arc::new(FakeSmtp::default())),
+        );
+        wait_for(&events, |e| {
+            matches!(
+                e,
+                ChangeEvent::AccountStateChanged {
+                    state: AccountState::Ok,
+                    ..
+                }
+            )
+        })
+        .await;
+        let stored = |db: Db| async move {
+            db.read(|c| mailrs_store::messages::existing_ids(c, 1, &["INBOX/1001/1".to_string()]))
+                .await
+                .unwrap()
+                .len()
+        };
+        assert_eq!(stored(db.clone()).await, 1);
+        // Let the first look finish, so the poke is what finds the change.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        imap.remote_expunge("INBOX", 1);
+        engine.poke(1);
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while stored(db.clone()).await > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Check for Mail took the moved message out of the store");
+        engine.shutdown();
+    });
+}
+
 /// A poke or a poll between changes leaves the IDLE waiting: the watch
 /// runs on across the loop's turns rather than ending at each one, which
 /// would drop the connection with no DONE and sign in again.

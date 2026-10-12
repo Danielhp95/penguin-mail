@@ -48,3 +48,20 @@ documentation:
 build:
   - changed-files:
       - any-glob-to-any-file: [".github/**", "scripts/**", "Cargo.toml", "Cargo.lock", "*/Cargo.toml", "*/build.rs"]
+
+# Files that run during a build or a release, decide which code goes in, or
+# ship with the app. A change here gets a maintainer's line-by-line read.
+security-review:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "**/build.rs"
+          - "Cargo.toml"
+          - "**/Cargo.toml"
+          - "Cargo.lock"
+          - "deny.toml"
+          - "scripts/**"
+          - "packaging/**"
+          - "snap/**"
+          - "app/data/**"
+          - "rust-toolchain*"

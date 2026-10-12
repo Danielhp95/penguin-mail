@@ -42,6 +42,22 @@ async fn sending_a_draft_moves_it_to_sent() {
     assert_eq!(h.fake.with(|s| s.sent.len()), 1);
 }
 
+/// Immutable ids keep the draft's id once Graph moves it to Sent Items,
+/// so a retry after a lost answer finds the message itself, sent.
+#[tokio::test]
+async fn a_draft_whose_send_answer_was_lost_is_not_sent_again() {
+    let h = outlook().await;
+    h.bootstrap_all().await;
+    let mail = &h.sync.services().mail;
+    let saved = mail.save_draft(None, RAW, None).await.unwrap();
+    mail.send_draft(&saved.draft_id).await.unwrap();
+
+    let id = mail.send_draft(&saved.draft_id).await.unwrap();
+
+    assert_eq!(id, "abc@outlook.example");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1);
+}
+
 #[tokio::test]
 async fn a_search_goes_to_graph_as_kql() {
     let h = outlook().await;

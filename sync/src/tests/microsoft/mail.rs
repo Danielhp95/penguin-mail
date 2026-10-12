@@ -82,6 +82,27 @@ async fn mail_erased_elsewhere_leaves_the_store() {
     assert!(!h.stored(&id).await);
 }
 
+/// While the window is open, a look between slow polls reads the Inbox
+/// alone; Check for Mail reads every synced folder at once, so mail
+/// erased elsewhere from the Archive leaves the list then, not five
+/// minutes later.
+#[tokio::test]
+async fn check_for_mail_reads_every_folder_before_the_slow_poll_is_due() {
+    let h = outlook().await;
+    h.sync.services().mail.set_window_open(true);
+    let id = h.fake.deliver(&h.fake.folder_id("archive"), fresh());
+    h.bootstrap_all().await;
+    h.look().await;
+    h.fake.delete(&id);
+    h.look().await;
+    assert!(h.stored(&id).await, "the Archive waits for the slow poll");
+
+    h.sync.services().mail.check_now();
+    h.look().await;
+
+    assert!(!h.stored(&id).await);
+}
+
 #[tokio::test]
 async fn marks_changed_elsewhere_come_back_whole() {
     let h = outlook().await;

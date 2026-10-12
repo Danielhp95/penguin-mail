@@ -120,6 +120,11 @@ pub(super) struct Known {
     pub listed: bool,
     pub window_open: bool,
     pub last_slow: Option<Instant>,
+    /// Engine pokes (Check for Mail, a send, a saved draft, the network
+    /// coming back) counted, and the last one a look at every synced
+    /// folder answered; they differ while one is waiting.
+    pub full_check_requested: u64,
+    pub full_check_completed: u64,
 }
 
 /// The attachment ids of the last structures fetched, by part path, so a
@@ -335,6 +340,10 @@ impl<G: GraphApi> MailBackend for Microsoft<G> {
 
     fn set_window_open(&self, open: bool) {
         self.known().window_open = open;
+    }
+
+    fn check_now(&self) {
+        self.check_every_folder();
     }
 
     fn poll_interval(&self) -> Option<Duration> {

@@ -403,8 +403,10 @@ impl Card {
         );
         button.set_halign(gtk::Align::Start);
         let text = text.to_string();
+        let copied = crate::ui::copied::Copied::new(&button);
         button.connect_clicked(move |button| {
             button.clipboard().set_text(&text);
+            copied.show();
             button.announce(
                 &gettext("Command copied"),
                 gtk::AccessibleAnnouncementPriority::Medium,
@@ -1818,7 +1820,11 @@ impl Dialog {
         let again = on(|this| this.open_page_again());
         self.browser.again.connect_clicked(move |_| again());
         let copy = on(|this| this.copy_link());
-        self.browser.copy.connect_clicked(move |_| copy());
+        let copied = crate::ui::copied::Copied::new(&self.browser.copy);
+        self.browser.copy.connect_clicked(move |_| {
+            copy();
+            copied.show();
+        });
         let retry = on(|this| {
             let expected = this.browser_expected.borrow().clone();
             this.start_browser(this.browser_provider.get(), expected);

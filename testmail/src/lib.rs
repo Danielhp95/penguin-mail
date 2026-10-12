@@ -774,6 +774,23 @@ impl Dovecot {
         .await;
     }
 
+    /// Takes `flags`, space-separated, off one message.
+    pub async fn remove_flags(&self, user: &str, mailbox: &str, uid: u32, flags: &str) {
+        let uid = uid.to_string();
+        self.doveadm(&[
+            "flags", "remove", "-u", user, flags, "mailbox", mailbox, "uid", &uid,
+        ])
+        .await;
+    }
+
+    /// Moves one message to `to`, as a phone's Delete moves it to Trash:
+    /// the server expunges it from `mailbox`.
+    pub async fn move_to(&self, user: &str, mailbox: &str, uid: u32, to: &str) {
+        let uid = uid.to_string();
+        self.doveadm(&["move", "-u", user, to, "mailbox", mailbox, "uid", &uid])
+            .await;
+    }
+
     pub async fn expunge(&self, user: &str, mailbox: &str, uid: u32) {
         let uid = uid.to_string();
         self.doveadm(&["expunge", "-u", user, "mailbox", mailbox, "uid", &uid])

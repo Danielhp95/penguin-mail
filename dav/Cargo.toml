@@ -5,6 +5,7 @@ license.workspace = true
 repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 
 [features]
 # Ships `fake::FakeDav`, a CalDAV and CardDAV server held in memory, to
