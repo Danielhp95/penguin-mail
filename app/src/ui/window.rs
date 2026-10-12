@@ -1096,9 +1096,15 @@ impl MainWindow {
     }
 
     /// The network came back: an IMAP account looked at offline gets its
-    /// look for a JMAP session now, through the accounts' refresh.
+    /// look for a JMAP session now. The sidebar is built again only when
+    /// one turned up, since a rebuild closes any menu open in it.
     pub(crate) fn network_back(self: &Rc<Self>) {
-        self.refresh_accounts(Reload::No);
+        let (looker, accounts) = (Rc::clone(self), self.accounts());
+        glib::spawn_future_local(async move {
+            if looker.core.look_for_jmap(accounts).await {
+                looker.refresh_accounts(Reload::No);
+            }
+        });
     }
 
     /// Re-reads the accounts and their labels, and with [`Reload::Yes`]
