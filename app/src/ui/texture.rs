@@ -27,6 +27,89 @@ pub fn decoded_in_process(bytes: &[u8]) -> bool {
         .any(|signature| bytes.starts_with(signature))
 }
 
+/// The width and height a PNG, JPEG or TIFF says it has, read from its
+/// header without decoding it. A small file can declare a picture of
+/// billions of pixels, which GDK would try to allocate.
+pub fn declared_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        // The IHDR chunk comes first, and starts with the two sides.
+        if bytes.get(12..16)? != b"IHDR" {
+            return None;
+        }
+        let side = |at: usize| Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?));
+        return Some((side(16)?, side(20)?));
+    }
+    if bytes.starts_with(b"\xff\xd8") {
+        return jpeg_size(bytes);
+    }
+    if bytes.starts_with(b"II*\0") {
+        return tiff_size(bytes, false);
+    }
+    if bytes.starts_with(b"MM\0*") {
+        return tiff_size(bytes, true);
+    }
+    None
+}
+
+/// The sides in a JPEG's frame header, the first SOF segment before the
+/// scan starts.
+fn jpeg_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    let mut at = 2;
+    loop {
+        while *bytes.get(at)? != 0xff {
+            at += 1;
+        }
+        // Any number of 0xff may pad before a marker.
+        while *bytes.get(at)? == 0xff {
+            at += 1;
+        }
+        let marker = *bytes.get(at)?;
+        at += 1;
+        if matches!(marker, 0x01 | 0xd0..=0xd8) {
+            continue;
+        }
+        if marker == 0xda || marker == 0xd9 {
+            return None;
+        }
+        let length = usize::from(u16::from_be_bytes(bytes.get(at..at + 2)?.try_into().ok()?));
+        if matches!(marker, 0xc0..=0xcf) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+            let height = u16::from_be_bytes(bytes.get(at + 3..at + 5)?.try_into().ok()?);
+            let width = u16::from_be_bytes(bytes.get(at + 5..at + 7)?.try_into().ok()?);
+            return Some((width.into(), height.into()));
+        }
+        at += length.max(2);
+    }
+}
+
+/// The ImageWidth and ImageLength tags of a TIFF's first directory.
+fn tiff_size(bytes: &[u8], big: bool) -> Option<(u32, u32)> {
+    let u16_at = |at: usize| {
+        let two: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+        Some(if big { u16::from_be_bytes(two) } else { u16::from_le_bytes(two) })
+    };
+    let u32_at = |at: usize| {
+        let four: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
+        Some(if big { u32::from_be_bytes(four) } else { u32::from_le_bytes(four) })
+    };
+    let directory = usize::try_from(u32_at(4)?).ok()?;
+    let entries = usize::from(u16_at(directory)?);
+    let (mut width, mut height) = (None, None);
+    for entry in 0..entries {
+        let at = directory + 2 + entry * 12;
+        let value = match u16_at(at + 2)? {
+            3 => u32::from(u16_at(at + 8)?),
+            4 => u32_at(at + 8)?,
+            _ => continue,
+        };
+        match u16_at(at)? {
+            256 => width = Some(value),
+            257 => height = Some(value),
+            _ => {}
+        }
+    }
+    Some((width?, height?))
+}
+
 /// `bytes` as a texture when GDK decodes them in this process, which takes
 /// no other process and no unbounded wait. `None` for any other format,
 /// and for bytes that are not a picture.
@@ -91,6 +174,31 @@ mod tests {
     const TIFF_BIG: &[u8] = b"MM\0*\0\0\0\x08";
     const GIF: &[u8] = b"GIF89a\x01\0\x01\0";
     const WEBP: &[u8] = b"RIFF\x24\0\0\0WEBPVP8 ";
+
+    #[test]
+    fn the_declared_size_is_read_from_the_header_alone() {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend_from_slice(&[0, 0, 0x4e, 0x20, 0, 0, 0x27, 0x10]);
+        assert_eq!(declared_size(&png), Some((20_000, 10_000)));
+
+        // An APP0 segment, then a baseline frame of 640 by 480.
+        let jpeg = b"\xff\xd8\xff\xe0\0\x04ab\xff\xc0\0\x11\x08\x01\xe0\x02\x80\x03";
+        assert_eq!(declared_size(jpeg), Some((640, 480)));
+
+        // One IFD of two entries: width as a SHORT, height as a LONG.
+        let mut tiff = b"II*\0\x08\0\0\0\x02\0".to_vec();
+        tiff.extend_from_slice(&[0, 1, 3, 0, 1, 0, 0, 0, 0x20, 0x03, 0, 0]);
+        tiff.extend_from_slice(&[1, 1, 4, 0, 1, 0, 0, 0, 0x58, 0x02, 0, 0]);
+        assert_eq!(declared_size(&tiff), Some((800, 600)));
+        let mut big = b"MM\0*\0\0\0\x08\0\x02".to_vec();
+        big.extend_from_slice(&[1, 0, 0, 3, 0, 0, 0, 1, 0x03, 0x20, 0, 0]);
+        big.extend_from_slice(&[1, 1, 0, 4, 0, 0, 0, 1, 0, 0, 0x02, 0x58]);
+        assert_eq!(declared_size(&big), Some((800, 600)));
+
+        for broken in [PNG, JPEG, TIFF_LITTLE, GIF, b"".as_slice()] {
+            assert_eq!(declared_size(broken), None, "{broken:?}");
+        }
+    }
 
     #[test]
     fn png_jpeg_and_tiff_are_decoded_in_process() {
