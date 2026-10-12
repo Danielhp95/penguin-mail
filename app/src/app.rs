@@ -38,6 +38,7 @@ mod calendar_file;
 mod composing;
 mod dock_badge;
 mod hidden;
+mod dictionaries;
 mod reminders;
 mod sending;
 mod storage;
@@ -109,8 +110,9 @@ pub struct App {
     /// Messages waiting out the Undo Send delay.
     pending_sends: Cell<usize>,
     /// Hunspell dictionaries already read, by the languages they cover.
-    /// Every composer shares them, because reading one is slow.
-    dictionaries: RefCell<HashMap<Vec<String>, Rc<spell::Dictionaries>>>,
+    /// Every open composer shares them, because reading one is slow; they
+    /// go when the last composer using them closes.
+    dictionaries: dictionaries::Shared<spell::Dictionaries>,
     /// Which languages a dictionary is installed for, read once.
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
@@ -184,7 +186,7 @@ impl App {
             contacts_stale: Cell::new(true),
             photos: Rc::new(crate::photos::ContactPhotos::new()),
             pending_sends: Cell::new(0),
-            dictionaries: RefCell::new(HashMap::new()),
+            dictionaries: dictionaries::Shared::default(),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
             storage: RefCell::new(HashMap::new()),
@@ -595,7 +597,8 @@ impl App {
     /// Reading a Hunspell dictionary takes long enough to stutter a window,
     /// so this hands back a future: the composer opens straight away and the
     /// squiggles appear a moment later. Every composer that asks for the same
-    /// languages gets the same dictionaries back.
+    /// languages while another still holds them gets the same dictionaries
+    /// back.
     fn dictionaries(
         self: &Rc<Self>,
         account_id: AccountId,
@@ -614,8 +617,7 @@ impl App {
                 settings.spell_words.clone(),
             )
         };
-        if let Some(loaded) = self.dictionaries.borrow().get(&languages) {
-            let loaded = Rc::clone(loaded);
+        if let Some(loaded) = self.dictionaries.get(&languages) {
             for word in &words {
                 loaded.remember(word);
             }
@@ -628,9 +630,7 @@ impl App {
                 .await
                 .map(Rc::new)
                 .unwrap_or_else(|_| Rc::new(spell::Dictionaries::load(&[], &[])));
-            this.dictionaries
-                .borrow_mut()
-                .insert(key, Rc::clone(&loaded));
+            this.dictionaries.keep(key, &loaded);
             loaded
         })
     }
