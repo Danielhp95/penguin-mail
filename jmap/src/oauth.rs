@@ -490,20 +490,21 @@ struct Keeper {
 }
 
 impl Keeper {
+    /// Saves `rotated`, unless the session is retired: its token would
+    /// land over the new grant's, or under an account that is gone. The
+    /// mark is read under the `unsaved` lock, which `retire` takes after
+    /// setting it, so no save starts once `retire` has returned.
     async fn save(&self, rotated: String, wait: Duration) {
         let mut unsaved = self.unsaved.lock().await;
+        if self.retired.load(Ordering::SeqCst) {
+            return;
+        }
         *unsaved = Some(rotated);
         self.flush(&mut unsaved, wait).await;
     }
 
-    /// Saves the token in `unsaved`, if any, and clears it once saved. A
-    /// retired keeper drops it instead: its token would land over the new
-    /// grant's, or under an account that is gone.
+    /// Saves the token in `unsaved`, if any, and clears it once saved.
     async fn flush(&self, unsaved: &mut Option<String>, wait: Duration) {
-        if self.retired.load(Ordering::SeqCst) {
-            *unsaved = None;
-            return;
-        }
         let Some(token) = unsaved.clone() else { return };
         // The callback's words stay out of the log: they are the caller's.
         match tokio::time::timeout(wait, (self.keep)(token)).await {
@@ -624,7 +625,7 @@ impl OAuthSession {
         // holds `unsaved`: both are over once these locks are taken.
         let held = self.held.lock().await;
         if let Some(keeper) = &self.keeper {
-            keeper.unsaved.lock().await.take();
+            drop(keeper.unsaved.lock().await);
         }
         held.refresh_token.clone()
     }
@@ -639,11 +640,9 @@ impl OAuthSession {
     /// session is retired.
     fn save_again(&self) {
         let Some(keeper) = &self.keeper else { return };
-        if self.retired() {
-            return;
-        }
         let Ok(mut unsaved) = Arc::clone(&keeper.unsaved).try_lock_owned() else { return };
-        if unsaved.is_none() {
+        // Read under the lock, as `Keeper::save` reads it.
+        if unsaved.is_none() || self.retired() {
             return;
         }
         let (keeper, wait) = (Arc::clone(keeper), self.keep_wait);
