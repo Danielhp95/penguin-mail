@@ -30,7 +30,7 @@ use mailrs_mime::html::html_to_text;
 use super::{
     AutoReplyService, Backfill, CalendarService, Changes, ContactsService, Found, IdentityService,
     KeywordsPage, MailBackend, MailCapabilities, Priority, RawMessage, Relocated, RemoteRef,
-    RulesService, SearchQuery, SendAsAddress, SyncState, Unapplied, Want, Withheld, priority,
+    RulesService, SearchQuery, SendAsAddress, Storage, SyncState, Unapplied, Want, Withheld, priority,
 };
 use crate::api::{DraftRef, GmailApi, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -207,6 +207,20 @@ pub fn withheld(granted: Option<&Granted>) -> Withheld {
 impl<G: GmailApi> MailBackend for Google<G> {
     fn capabilities(&self) -> MailCapabilities {
         self.capabilities.unwrap_or(GMAIL)
+    }
+
+    /// The Google account's whole storage, which Gmail shares with Drive
+    /// and Photos. It needs the Drive permission; without it, or when
+    /// Google refuses, the account says nothing rather than failing.
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        if self.withheld().drive {
+            return Ok(None);
+        }
+        match self.gmail.drive_storage().await {
+            Ok(found) => Ok(found.limit.and_then(|limit| Storage::new(found.usage, limit, None))),
+            Err(GmailError::MissingScope | GmailError::Http { status: 403, .. }) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn provider_name(&self) -> &str {

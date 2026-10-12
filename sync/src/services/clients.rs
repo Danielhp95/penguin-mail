@@ -160,6 +160,7 @@ either_client! {
         fn import_event(event: &calendar::Event) -> Gmail<calendar::Event>;
         fn upload_to_drive(path: &std::path::Path, name: &str, mime_type: &str, sent: std::sync::Arc<std::sync::atomic::AtomicU64>) -> Gmail<calendar::Attachment>;
         fn share_file(file_id: &str, email: &str) -> Gmail<()>;
+        fn drive_storage() -> Gmail<mailrs_gmail::DriveStorage>;
         fn move_event(event: &calendar::Event, destination: &str, notify: calendar::Notify) -> Gmail<calendar::Event>;
         fn answer_event(calendar: &str, id: &str, me: &str, answer: Answer, note: Option<&str>) -> Gmail<calendar::Event>;
         fn edit_calendar_list(id: &str, edit: &calendar::list::ListEdit) -> Gmail<Option<calendar::Calendar>>;
