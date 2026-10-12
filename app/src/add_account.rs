@@ -1862,6 +1862,12 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::Decode(_) => "decode",
             JmapError::HoldUnknown => "hold unknown",
             JmapError::LocalFile(_) => "local file",
+            JmapError::SignInLocked => "sign-in locked",
+            JmapError::Declined => "declined",
+            JmapError::NotHttps => "not https",
+            JmapError::IssuerMismatch => "issuer mismatch",
+            JmapError::BadRedirect => "bad redirect",
+            JmapError::NotBearer => "not bearer",
         };
     }
     if let Some(browser) = err.downcast_ref::<BrowserSignInError>() {
