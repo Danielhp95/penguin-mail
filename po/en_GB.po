@@ -9882,11 +9882,11 @@ msgstr "Penguin Mail cannot read how this event repeats, so it cannot change the
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail cannot save this repeat to a JMAP calendar."
 
-#: sync/src/services/jmap/mod.rs:259
+#: sync/src/services/jmap/mod.rs:267
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:332
+#: sync/src/services/jmap/mod.rs:340
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 

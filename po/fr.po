@@ -10766,11 +10766,11 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
 
-#: sync/src/services/jmap/mod.rs:259
+#: sync/src/services/jmap/mod.rs:267
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
 
-#: sync/src/services/jmap/mod.rs:332
+#: sync/src/services/jmap/mod.rs:340
 msgid "This server files sent mail itself."
 msgstr "Ce serveur classe lui-même le courrier envoyé."
 

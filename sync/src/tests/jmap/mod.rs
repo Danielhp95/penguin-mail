@@ -2,6 +2,7 @@
 //! account runs.
 
 mod bodies;
+mod calendar;
 mod contacts;
 mod feed;
 mod fetch;

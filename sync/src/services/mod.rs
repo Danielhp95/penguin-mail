@@ -445,6 +445,7 @@ impl AccountServices {
             capabilities: fake.with(|s| s.session.capabilities.keys().filter(|c| s.session.offers(c)).cloned().collect()),
             auto_reply_needs_sign_in: false,
         };
+        let offers_calendar = fake.with(|s| s.session.offers(mailrs_jmap::CALENDARS));
         let offers_contacts = fake.with(|s| s.session.offers(mailrs_jmap::CONTACTS));
         let offers_reply = fake.with(|s| s.session.offers(mailrs_jmap::VACATION));
         let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
@@ -456,6 +457,11 @@ impl AccountServices {
             auto_reply: None,
             identities: AnyIdentities::Jmap(adapter),
         };
+        if offers_calendar
+            && let AnyMail::Jmap(adapter) = &services.mail
+        {
+            services.calendar = Some(AnyCalendar::Jmap(adapter.clone()));
+        }
         if offers_contacts
             && let AnyMail::Jmap(adapter) = &services.mail
         {
@@ -652,6 +658,21 @@ impl CalendarFeatures {
         focus_time: false,
         declines: false,
     };
+    /// JMAP Calendars: an event moves by its `calendarIds`, and a change
+    /// can go without mailing anyone (`sendSchedulingMessages`). No files,
+    /// and no edits to the calendar list here.
+    const JMAP: CalendarFeatures = CalendarFeatures {
+        event_files: false,
+        moves_events: true,
+        calendar_list: false,
+        subscriptions: false,
+        hides: false,
+        quiet_changes: true,
+        out_of_office: false,
+        focus_time: false,
+        declines: false,
+    };
+
     /// CalDAV keeps no files, moves an event by copying its resource, which
     /// the queue must not rely on, and lists the calendars its server
     /// holds without letting the app edit the list.
@@ -688,6 +709,7 @@ impl CalendarFeatures {
             // its calendar, but it lists, makes and changes calendars.
             Some(AnyCalendar::Microsoft(_)) => CalendarFeatures::MICROSOFT,
             Some(AnyCalendar::Dav(_)) => CalendarFeatures::CALDAV,
+            Some(AnyCalendar::Jmap(_)) => CalendarFeatures::JMAP,
         }
     }
 }

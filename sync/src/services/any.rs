@@ -35,6 +35,7 @@ macro_rules! forward_dav {
             $enum::Google(adapter) => adapter.$method($($arg),*).await,
             $enum::Microsoft(adapter) => adapter.$method($($arg),*).await,
             $enum::Dav(adapter) => adapter.$method($($arg),*).await,
+            $enum::Jmap(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -115,6 +116,8 @@ pub enum AnyCalendar {
     Microsoft(MicrosoftAdapter),
     /// A CalDAV server, whose replies go out through the account's mail.
     Dav(CalDav<AnyDav>),
+    /// A JMAP server's own calendars.
+    Jmap(JmapAdapter),
 }
 
 /// An account's address book.
