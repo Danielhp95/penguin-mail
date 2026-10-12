@@ -449,6 +449,11 @@ pub struct Event {
     /// since sending an empty one would take every file off the event.
     #[serde(default)]
     pub attachments: Option<Vec<Attachment>>,
+    /// What another app changed at the same time as a save, in plain
+    /// words ("the time"), where the provider's version stayed. Only a
+    /// save's answer carries it; the copy never stores it.
+    #[serde(skip)]
+    pub kept_theirs: Vec<String>,
 }
 
 impl Event {

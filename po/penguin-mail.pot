@@ -9523,15 +9523,21 @@ msgid ""
 "could upload"
 msgstr ""
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid ""
+"Someone else changed {field} on “{title}” at the same time; their version "
+"was kept"
+msgstr ""
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr ""
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr ""
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr ""
 
@@ -9928,18 +9934,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] ""
 msgstr[1] ""
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr ""
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr ""
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10165,6 +10171,74 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr ""
 
+#: sync/src/services/jmap/calendar.rs:184
+msgid "the title"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:185
+msgid "the time"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:186
+msgid "the repeat"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:187
+msgid "the place"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:188
+msgid "the meeting link"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:189
+msgid "the notes"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:190
+msgid "the reminders"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:191
+msgid "the guests"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:192
+msgid "your answer"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:193
+msgid "the color"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:194
+msgid "the privacy"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:195
+msgid "whether it shows as busy"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:196
+msgid "the status"
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:322
+msgid "The server kept the event but did not say its id."
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:572
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:576
+msgid "This JMAP calendar has no files to share."
+msgstr ""
+
+#: sync/src/services/jmap/calendar.rs:637
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr ""
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr ""
@@ -10187,11 +10261,11 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr ""
 

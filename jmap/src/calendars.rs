@@ -171,12 +171,16 @@ impl JmapClient {
     }
 
     /// Writes one event. `send` asks the server to mail the guests the
-    /// iTIP the change calls for.
-    pub async fn set_calendar_event(&self, write: &EventWrite, send: bool) -> Result<Option<Value>, JmapError> {
+    /// iTIP the change calls for. With `state`, the server refuses the
+    /// write with `stateMismatch` once any event changed since that state.
+    pub async fn set_calendar_event(&self, write: &EventWrite, send: bool, state: Option<&str>) -> Result<Option<Value>, JmapError> {
         let session = self.session().await?;
         let (account, _) = calendar_account(&session)?;
         let mut request = calendar_request(&session);
         let mut args = json!({ "accountId": account, "sendSchedulingMessages": send });
+        if let Some(state) = state {
+            args["ifInState"] = json!(state);
+        }
         let key = match write {
             EventWrite::Create(object) => {
                 args["create"] = json!({ "e": object });

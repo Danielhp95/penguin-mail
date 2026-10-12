@@ -86,11 +86,23 @@ async fn a_write_says_whether_to_mail_the_guests() {
     ]})).await;
     let mut object = Map::new();
     object.insert("title".into(), json!("Rota"));
-    let created = client(&server).set_calendar_event(&EventWrite::Create(object), false).await.unwrap();
+    let created = client(&server).set_calendar_event(&EventWrite::Create(object), false, None).await.unwrap();
     assert_eq!(created.unwrap()["id"], "ev-9");
     let body = sent(&server).await;
     assert_eq!(body["methodCalls"][0][1]["sendSchedulingMessages"], false);
     assert_eq!(body["methodCalls"][0][1]["create"]["e"]["title"], "Rota");
+    assert!(body["methodCalls"][0][1].get("ifInState").is_none(), "no state, no ifInState");
+}
+
+#[tokio::test]
+async fn a_write_names_the_state_it_was_made_from() {
+    let server = MockServer::start().await;
+    answering(&server, false, json!({"sessionState": "s1", "methodResponses": [
+        ["CalendarEvent/set", {"accountId": "A1", "oldState": "e1", "newState": "e2", "updated": {"ev-1": null}}, "c0"]
+    ]})).await;
+    let write = EventWrite::Update { id: "ev-1".into(), patch: Map::new() };
+    client(&server).set_calendar_event(&write, false, Some("e1")).await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["ifInState"], "e1");
 }
 
 #[tokio::test]
@@ -100,6 +112,6 @@ async fn a_refused_update_says_why() {
         ["CalendarEvent/set", {"accountId": "A1", "notUpdated": {"ev-1": {"type": "noSupportedScheduleMethods"}}}, "c0"]
     ]})).await;
     let write = EventWrite::Update { id: "ev-1".into(), patch: Map::new() };
-    let refused = client(&server).set_calendar_event(&write, true).await.unwrap_err();
+    let refused = client(&server).set_calendar_event(&write, true, None).await.unwrap_err();
     assert!(matches!(refused, mailrs_jmap::JmapError::Method { ref kind, .. } if kind == "noSupportedScheduleMethods"));
 }

@@ -6936,7 +6936,10 @@ msgstr "Servidores de calendario, contactos y reglas"
 msgid ""
 "Penguin Mail looks for these when you add an account, and signs in with the "
 "account's password, or the app password you gave for its calendar."
-msgstr "Penguin Mail busca estos servidores al añadir una cuenta e inicia sesión con la contraseña de la cuenta o con la contraseña de aplicación que indicó para el calendario."
+msgstr ""
+"Penguin Mail busca estos servidores al añadir una cuenta e inicia sesión con "
+"la contraseña de la cuenta o con la contraseña de aplicación que indicó para "
+"el calendario."
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"
@@ -10047,16 +10050,24 @@ msgstr ""
 "«{title}» se ha guardado sin «{file}», que se movió o eliminó antes de poder "
 "subirse"
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid ""
+"Someone else changed {field} on “{title}” at the same time; their version "
+"was kept"
+msgstr ""
+"Otra persona cambió {field} de «{title}» al mismo tiempo; se ha conservado "
+"su versión"
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr ""
 "Tu cambio en «{title}» no se ha guardado porque ha cambiado en otro sitio"
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "Tu cambio en «{title}» no se ha guardado: {reason}"
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr "Mostrar evento"
 
@@ -10467,18 +10478,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} tendrá una etiqueta nueva."
 msgstr[1] "{accounts} tendrán etiquetas nuevas."
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr "eliminado en otro sitio"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr "el calendario ya no existe"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10710,6 +10721,77 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "El mensaje no indica a nadie a quien enviarlo."
 
+#: sync/src/services/jmap/calendar.rs:184
+msgid "the title"
+msgstr "el título"
+
+#: sync/src/services/jmap/calendar.rs:185
+msgid "the time"
+msgstr "la hora"
+
+#: sync/src/services/jmap/calendar.rs:186
+msgid "the repeat"
+msgstr "la repetición"
+
+#: sync/src/services/jmap/calendar.rs:187
+msgid "the place"
+msgstr "el lugar"
+
+#: sync/src/services/jmap/calendar.rs:188
+msgid "the meeting link"
+msgstr "el enlace de la reunión"
+
+#: sync/src/services/jmap/calendar.rs:189
+msgid "the notes"
+msgstr "las notas"
+
+#: sync/src/services/jmap/calendar.rs:190
+msgid "the reminders"
+msgstr "los recordatorios"
+
+#: sync/src/services/jmap/calendar.rs:191
+msgid "the guests"
+msgstr "los invitados"
+
+#: sync/src/services/jmap/calendar.rs:192
+msgid "your answer"
+msgstr "tu respuesta"
+
+#: sync/src/services/jmap/calendar.rs:193
+msgid "the color"
+msgstr "el color"
+
+#: sync/src/services/jmap/calendar.rs:194
+msgid "the privacy"
+msgstr "la privacidad"
+
+#: sync/src/services/jmap/calendar.rs:195
+msgid "whether it shows as busy"
+msgstr "si aparece como ocupado"
+
+#: sync/src/services/jmap/calendar.rs:196
+msgid "the status"
+msgstr "el estado"
+
+#: sync/src/services/jmap/calendar.rs:322
+msgid "The server kept the event but did not say its id."
+msgstr "El servidor guardó el evento, pero no dijo su identificador."
+
+#: sync/src/services/jmap/calendar.rs:572
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr ""
+"Penguin Mail no puede adjuntar archivos a los eventos de este calendario "
+"JMAP."
+
+#: sync/src/services/jmap/calendar.rs:576
+msgid "This JMAP calendar has no files to share."
+msgstr "Este calendario JMAP no tiene archivos que compartir."
+
+#: sync/src/services/jmap/calendar.rs:637
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr ""
+"Penguin Mail no puede cambiar la lista de calendarios de un servidor JMAP."
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr "El servidor no lo permite."
@@ -10734,11 +10816,11 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail no puede guardar esta repetición en un calendario JMAP."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 

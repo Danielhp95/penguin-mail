@@ -1301,9 +1301,12 @@ impl JmapApi for FakeJmap {
         })
     }
 
-    async fn set_calendar_event(&self, write: &EventWrite, send: bool) -> Answer<Option<Value>> {
+    async fn set_calendar_event(&self, write: &EventWrite, send: bool, state: Option<&str>) -> Answer<Option<Value>> {
         self.called("CalendarEvent/set");
         self.with(|s| {
+            if state.is_some_and(|state| state != s.state.to_string()) {
+                return Err(JmapError::StateMismatch);
+            }
             if s.state_mismatches > 0 {
                 s.state_mismatches -= 1;
                 return Err(JmapError::StateMismatch);
@@ -1988,7 +1991,7 @@ mod tests {
         let id = fake.add_event(json!({"title": "Rota", "calendarIds": {"cal-1": true}, "start": "2026-10-06T09:00:00"}));
         let mut patch = Map::new();
         patch.insert("participants/p1/participationStatus".into(), json!("accepted"));
-        fake.set_calendar_event(&mailrs_jmap::EventWrite::Update { id: id.clone(), patch }, false).await.unwrap();
+        fake.set_calendar_event(&mailrs_jmap::EventWrite::Update { id: id.clone(), patch }, false, None).await.unwrap();
         assert_eq!(fake.event(&id).unwrap()["participants"]["p1"]["participationStatus"], "accepted");
         let changes = fake.calendar_event_changes(&state, 50).await.unwrap();
         assert_eq!(changes.created, [id]);
@@ -2000,8 +2003,8 @@ mod tests {
         fake.with(|s| s.schedules = false);
         let id = fake.add_event(json!({"title": "Rota", "participants": {"p1": {"calendarAddress": "mailto:a@x.example"}}}));
         let write = mailrs_jmap::EventWrite::Update { id, patch: Map::new() };
-        assert!(matches!(fake.set_calendar_event(&write, true).await, Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods"));
-        assert!(fake.set_calendar_event(&write, false).await.is_ok());
+        assert!(matches!(fake.set_calendar_event(&write, true, None).await, Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods"));
+        assert!(fake.set_calendar_event(&write, false, None).await.is_ok());
     }
 
     #[tokio::test]
@@ -2012,9 +2015,25 @@ mod tests {
         let mut patch = Map::new();
         patch.insert("title".into(), json!("Changed"));
         let write = mailrs_jmap::EventWrite::Update { id: id.clone(), patch };
-        assert_eq!(fake.set_calendar_event(&write, false).await, Err(JmapError::StateMismatch));
+        assert_eq!(fake.set_calendar_event(&write, false, None).await, Err(JmapError::StateMismatch));
         assert_eq!(fake.event(&id).unwrap()["title"], "Rota");
-        fake.set_calendar_event(&write, false).await.unwrap();
+        fake.set_calendar_event(&write, false, None).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["title"], "Changed");
+    }
+
+    #[tokio::test]
+    async fn a_write_from_an_older_state_answers_state_mismatch() {
+        let fake = FakeJmap::new().with_calendars();
+        let id = fake.add_event(json!({"title": "Rota"}));
+        let old = fake.calendar_events(&[]).await.unwrap().state;
+        fake.add_event(json!({"title": "Another"}));
+        let mut patch = Map::new();
+        patch.insert("title".into(), json!("Changed"));
+        let write = mailrs_jmap::EventWrite::Update { id: id.clone(), patch };
+        assert_eq!(fake.set_calendar_event(&write, false, Some(&old)).await, Err(JmapError::StateMismatch));
+        assert_eq!(fake.event(&id).unwrap()["title"], "Rota");
+        let now = fake.calendar_events(&[]).await.unwrap().state;
+        fake.set_calendar_event(&write, false, Some(&now)).await.unwrap();
         assert_eq!(fake.event(&id).unwrap()["title"], "Changed");
     }
 }

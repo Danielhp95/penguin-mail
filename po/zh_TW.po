@@ -6637,7 +6637,9 @@ msgstr "行事曆、聯絡人與規則伺服器"
 msgid ""
 "Penguin Mail looks for these when you add an account, and signs in with the "
 "account's password, or the app password you gave for its calendar."
-msgstr "新增帳號時，Penguin Mail 會尋找這些伺服器，並以帳號的密碼或您為其行事曆提供的應用程式密碼登入。"
+msgstr ""
+"新增帳號時，Penguin Mail 會尋找這些伺服器，並以帳號的密碼或您為其行事曆提供的"
+"應用程式密碼登入。"
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"
@@ -9603,15 +9605,21 @@ msgid ""
 "could upload"
 msgstr "已儲存「{title}」，但未包含「{file}」；檔案在上傳前已移動或刪除"
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid ""
+"Someone else changed {field} on “{title}” at the same time; their version "
+"was kept"
+msgstr "其他人同時變更了「{title}」的{field}，已保留對方的版本"
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr "「{title}」已在其他地方變更，因此未儲存此次變更"
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "未儲存「{title}」的變更：{reason}"
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr "顯示活動"
 
@@ -10001,18 +10009,18 @@ msgid "{accounts} will get a new label."
 msgid_plural "{accounts} will get new labels."
 msgstr[0] "將為 {accounts} 新增標籤。"
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr "已在其他地方刪除"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr "行事曆已不存在"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10235,6 +10243,74 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
+#: sync/src/services/jmap/calendar.rs:184
+msgid "the title"
+msgstr "標題"
+
+#: sync/src/services/jmap/calendar.rs:185
+msgid "the time"
+msgstr "時間"
+
+#: sync/src/services/jmap/calendar.rs:186
+msgid "the repeat"
+msgstr "重複設定"
+
+#: sync/src/services/jmap/calendar.rs:187
+msgid "the place"
+msgstr "地點"
+
+#: sync/src/services/jmap/calendar.rs:188
+msgid "the meeting link"
+msgstr "會議連結"
+
+#: sync/src/services/jmap/calendar.rs:189
+msgid "the notes"
+msgstr "備註"
+
+#: sync/src/services/jmap/calendar.rs:190
+msgid "the reminders"
+msgstr "提醒"
+
+#: sync/src/services/jmap/calendar.rs:191
+msgid "the guests"
+msgstr "參與者"
+
+#: sync/src/services/jmap/calendar.rs:192
+msgid "your answer"
+msgstr "您的回覆"
+
+#: sync/src/services/jmap/calendar.rs:193
+msgid "the color"
+msgstr "顏色"
+
+#: sync/src/services/jmap/calendar.rs:194
+msgid "the privacy"
+msgstr "隱私設定"
+
+#: sync/src/services/jmap/calendar.rs:195
+msgid "whether it shows as busy"
+msgstr "是否顯示為忙碌"
+
+#: sync/src/services/jmap/calendar.rs:196
+msgid "the status"
+msgstr "狀態"
+
+#: sync/src/services/jmap/calendar.rs:322
+msgid "The server kept the event but did not say its id."
+msgstr "伺服器已儲存活動，但未提供其識別碼。"
+
+#: sync/src/services/jmap/calendar.rs:572
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr "Penguin Mail 無法在此 JMAP 行事曆中為活動附加檔案。"
+
+#: sync/src/services/jmap/calendar.rs:576
+msgid "This JMAP calendar has no files to share."
+msgstr "此 JMAP 行事曆沒有可共用的檔案。"
+
+#: sync/src/services/jmap/calendar.rs:637
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr "Penguin Mail 無法變更 JMAP 伺服器的行事曆清單。"
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr "伺服器不允許此操作。"
@@ -10259,11 +10335,11 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail 無法將此重複設定儲存到 JMAP 行事曆。"
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr "此伺服器不會儲存信箱的顏色。"
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 

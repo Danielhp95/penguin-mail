@@ -91,6 +91,10 @@ pub struct TurnedDown {
     /// the queue could upload it. The change itself went out, without the
     /// file; `reason` is then `None`.
     pub left_out: Option<String>,
+    /// The parts of the event, in plain words, that another app changed
+    /// while this change waited, where the provider kept its version. The
+    /// rest of the change went out; `reason` is then `None`.
+    pub kept_theirs: Vec<String>,
 }
 
 /// An id for an event made on this computer. Google takes a client's own
@@ -841,6 +845,7 @@ impl<A: Accounts> CalendarCopy<A> {
             match (change.kind, answer) {
                 (_, Ok(Some(mut sent))) => {
                     sent.pending = false;
+                    let kept_theirs = std::mem::take(&mut sent.kept_theirs);
                     let mut attempted = attempted.clone().expect("a create or save always has a body");
                     let new_etag = sent.etag.clone();
                     // A provider may name a new event itself, as Graph does.
@@ -886,7 +891,19 @@ impl<A: Accounts> CalendarCopy<A> {
                         title: title_of(&change),
                         reason: None,
                         left_out: Some(file),
+                        kept_theirs: Vec::new(),
                     }));
+                    if !kept_theirs.is_empty() {
+                        turned_down.push(TurnedDown {
+                            account_id,
+                            calendar: change.calendar.clone(),
+                            event: change.event.clone(),
+                            title: title_of(&change),
+                            reason: None,
+                            left_out: None,
+                            kept_theirs,
+                        });
+                    }
                 }
                 // Gone already or not, the removal is done.
                 (_, Ok(None)) | (store::ChangeKind::Remove, Err(BackendError::NotFound)) => {
@@ -1045,6 +1062,7 @@ impl<A: Accounts> CalendarCopy<A> {
             title: title_of(change),
             reason: Some(reason),
             left_out: None,
+            kept_theirs: Vec::new(),
         })
     }
 
@@ -1093,6 +1111,7 @@ impl<A: Accounts> CalendarCopy<A> {
             title,
             reason,
             left_out: None,
+            kept_theirs: Vec::new(),
         })
     }
 

@@ -953,6 +953,7 @@ fn read_event(row: &Row) -> rusqlite::Result<Event> {
         meet_request: None,
         kind: row.get::<_, Option<String>>(25)?.map(|k| parse(&k)).unwrap_or_default(),
         attachments: row.get::<_, Option<String>>(26)?.map(|a| parse(&a)),
+        kept_theirs: Vec::new(),
     })
 }
 
