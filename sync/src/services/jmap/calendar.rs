@@ -43,6 +43,10 @@ pub(crate) const ROUNDS: usize = 20;
 /// values of one part match by chance once in 16 million.
 const DIGITS: usize = 6;
 const DAY: EpochMillis = 86_400_000;
+/// Tries at one write. `ifInState` covers every event of the account, so
+/// another app's write anywhere answers `stateMismatch`; each try reads
+/// the event again first.
+const TRIES: usize = 3;
 
 /// One page of the account's event changes since a state: at most
 /// [`PAGE`] changed events, the ones destroyed, and the state they lead to.
@@ -739,8 +743,8 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
             return self.create(event, send).await;
         }
         // Another write between the read and the write: read again and
-        // apply the person's parts once more, once.
-        for _ in 0..2 {
+        // apply the person's parts once more, at most twice.
+        for _ in 0..TRIES {
             if let Some(saved) = self.try_change(event, etag, send).await? {
                 return Ok(saved);
             }
@@ -750,7 +754,7 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
 
     async fn remove_event(&self, calendar: &str, id: &str, etag: Option<&str>, notify: Notify) -> Result<(), BackendError> {
         let send = notify == Notify::Guests;
-        for _ in 0..2 {
+        for _ in 0..TRIES {
             if let Some(()) = self.try_remove(calendar, id, etag, send).await? {
                 return Ok(());
             }

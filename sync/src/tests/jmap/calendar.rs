@@ -251,21 +251,31 @@ async fn an_etag_without_a_fingerprint_is_refused_once_the_event_changed() {
 }
 
 #[tokio::test]
-async fn a_write_whose_state_moved_meanwhile_is_tried_once_more() {
+async fn a_write_whose_state_moved_meanwhile_is_tried_twice_more() {
     let h = calendared().await;
     let id = h.fake.add_event(rota("cal-1"));
     let mut event = first_event(&h).await;
     let held = event.etag.clone();
     event.title = "Rota, retried".into();
-    h.fake.with(|s| s.state_mismatches = 1);
+    h.fake.with(|s| s.state_mismatches = 2);
     let mut saved = calendar(&h).put_event(&event, Some(&held), false, Notify::Nobody).await.unwrap();
     assert_eq!(h.fake.event(&id).unwrap()["title"], "Rota, retried");
     let held = saved.etag.clone();
     saved.title = "Rota, given up".into();
-    h.fake.with(|s| s.state_mismatches = 2);
+    h.fake.with(|s| s.state_mismatches = 3);
     let refused = calendar(&h).put_event(&saved, Some(&held), false, Notify::Nobody).await.unwrap_err();
-    assert!(matches!(refused, BackendError::Changed), "a second mismatch is not retried");
+    assert!(matches!(refused, BackendError::Changed), "a third mismatch is not retried");
     assert_eq!(h.fake.event(&id).unwrap()["title"], "Rota, retried");
+}
+
+#[tokio::test]
+async fn a_delete_whose_state_moved_twice_is_tried_again() {
+    let h = calendared().await;
+    let id = h.fake.add_event(rota("cal-1"));
+    let event = first_event(&h).await;
+    h.fake.with(|s| s.state_mismatches = 2);
+    calendar(&h).remove_event("cal-1", &event.id, Some(&event.etag), Notify::Nobody).await.unwrap();
+    assert!(h.fake.event(&id).is_none());
 }
 
 #[tokio::test]
