@@ -121,6 +121,12 @@ impl Check {
 fn more_menu(template_menu: &gio::Menu, has_engine: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     let writing = gio::Menu::new();
+    // Attach Files moves here on a narrow window, where its button goes
+    // so Send keeps its word; the action is off, and the item hidden,
+    // while the button shows.
+    let attach = gio::MenuItem::new(Some(&gettext("Attach Files…")), Some("composer.attach"));
+    attach.set_attribute_value("hidden-when", Some(&"action-disabled".to_variant()));
+    writing.append_item(&attach);
     writing.append_submenu(Some(&gettext("Templates")), template_menu);
     writing.append(Some(&gettext("Preview")), Some("composer.preview"));
     menu.append_section(None, &writing);
@@ -627,17 +633,16 @@ impl Composer {
             .height_request(400)
             .build();
         super::window::track_dark_class(&window);
-        // On a phone the composer has 360 px. The header drops its title
-        // and Send its word, and the format bar's buttons pack closer
-        // (style.css, .composer-narrow), which brings the narrowest the
-        // window goes from 443 px to under 360.
+        // On a phone the composer has 360 px. The header drops its title,
+        // Attach Files moves into More so Send keeps its word, and the
+        // format bar's buttons pack closer (style.css, .composer-narrow),
+        // which brings the narrowest the window goes from 443 px to under
+        // 360.
         let narrow = adw::Breakpoint::new(
             adw::BreakpointCondition::parse("max-width: 480sp").expect("valid breakpoint"),
         );
         narrow.add_setter(&title, "visible", Some(&false.to_value()));
-        if let Some(content) = send.child().and_downcast::<adw::ButtonContent>() {
-            narrow.add_setter(&content, "label", Some(&"".to_value()));
-        }
+        narrow.add_setter(&attach, "visible", Some(&false.to_value()));
         let marked = window.downgrade();
         narrow.connect_apply(move |_| {
             if let Some(window) = marked.upgrade() {
@@ -958,6 +963,7 @@ impl Composer {
             ),
             ("edit-markdown", Box::new(|c| c.edit_as_markdown())),
             ("clear-format", Box::new(|c| c.clear_format())),
+            ("attach", Box::new(|c| c.pick_files())),
             ("save-template", Box::new(|c| c.save_as_template())),
         ] {
             let action = gio::SimpleAction::new(name, None);
@@ -986,6 +992,10 @@ impl Composer {
         }
         self.window.insert_action_group("composer", Some(&actions));
 
+        if let Some(item) = actions.lookup_action("attach").and_downcast::<gio::SimpleAction>() {
+            item.set_enabled(!attach.get_visible());
+            attach.connect_visible_notify(move |button| item.set_enabled(!button.get_visible()));
+        }
         let weak = Rc::downgrade(self);
         attach.connect_clicked(move |_| {
             if let Some(c) = weak.upgrade() {
