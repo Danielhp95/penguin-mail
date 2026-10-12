@@ -84,29 +84,6 @@ macro_rules! server_finding {
     };
 }
 
-// Cyrus 3.13 test image: `SieveScript/set` with `onSuccessActivateScript`
-// answers once, with `created.s.isActive: true` and `updated: null`. RFC
-// 9661's second implicit answer never comes, so `put_sieve_active` fails
-// with "no answer to SieveScript/set" after Cyrus has made and activated
-// the script.
-server_finding!(
-    cyrus_rule_lands_in_sieve,
-    Cyrus,
-    "Cyrus activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
-    a_rule_lands_in_sieve_where_offered
-);
-
-// Stalwart 0.16.25: the same single answer. `SieveScript/set` with
-// `onSuccessActivateScript` returns one response with the script created
-// and active (`SieveScript/get` shows `isActive: true`), and no second
-// `SieveScript/set` response.
-server_finding!(
-    stalwart_rule_lands_in_sieve,
-    Stalwart,
-    "Stalwart activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
-    a_rule_lands_in_sieve_where_offered
-);
-
 // Cyrus 3.13 test image: `CalendarEvent/set` create without `version`
 // answers `notCreated: {"e": {"type": "invalidProperties", "properties":
 // ["version"]}}` (with or without the jscalendarbis capability in
@@ -266,11 +243,7 @@ impl<'a> Run<'a> {
         self.identities_name_the_account().await;
         self.the_reply_round_trips_where_offered().await;
         self.a_contact_round_trips_where_offered().await;
-        if self.kind() != JmapKind::James {
-            eprintln!("{:?}: the Sieve rule skipped, see the ignored *_rule_lands_in_sieve test", self.kind());
-        } else {
-            self.a_rule_lands_in_sieve_where_offered().await;
-        }
+        self.a_rule_lands_in_sieve_where_offered().await;
         self.masked_email_is_hidden_where_not_offered().await;
         if self.kind() == JmapKind::Cyrus {
             eprintln!("Cyrus: the calendar write skipped, see cyrus_calendar_round_trips (ignored)");

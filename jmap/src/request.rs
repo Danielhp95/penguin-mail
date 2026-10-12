@@ -101,6 +101,12 @@ impl Response {
         Ok(Response { session_state: wire.session_state, answers: wire.method_responses })
     }
 
+    /// Whether an answer to call `id` named `name`, or an error in its
+    /// place, is still there to take.
+    pub fn answered(&self, id: &CallId, name: &str) -> bool {
+        self.answers.iter().any(|(n, _, i)| *i == id.0 && (n == name || n == "error"))
+    }
+
     /// The `name` answer to call `id`, or the error the server put in its
     /// place. Each answer is taken once.
     pub fn take<T: DeserializeOwned>(&mut self, id: &CallId, name: &str) -> Result<T, JmapError> {
