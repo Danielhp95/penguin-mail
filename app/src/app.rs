@@ -41,6 +41,7 @@ mod hidden;
 mod photos;
 mod reminders;
 mod sending;
+mod storage;
 
 pub use composing::Signature;
 mod updates;
@@ -113,6 +114,8 @@ pub struct App {
     /// Which languages a dictionary is installed for, read once.
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
+    /// How full each account's server said it was, read hourly.
+    storage: RefCell<HashMap<AccountId, mailrs_sync::Storage>>,
     /// The timer for the next event reminder check. Each check replaces
     /// it with one set for the next reminder due, at most a minute away.
     reminder_wake: RefCell<Option<glib::SourceId>>,
@@ -184,6 +187,7 @@ impl App {
             dictionaries: RefCell::new(HashMap::new()),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
+            storage: RefCell::new(HashMap::new()),
             reminder_wake: RefCell::new(None),
             reminders_running: Cell::new(false),
             updater: crate::update::Updater::for_this_copy(core_demo).map(Rc::new),
@@ -237,6 +241,7 @@ impl App {
         });
         app.load_accounts();
         app.start_scheduler();
+        app.start_storage_checks();
         app.start_event_reminders();
         app.watch_contacts();
         app.watch_calendars();

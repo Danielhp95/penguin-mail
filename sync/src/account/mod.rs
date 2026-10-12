@@ -11,6 +11,7 @@ mod outbox;
 mod pop3;
 mod receipts;
 mod refs;
+mod space;
 mod threads;
 mod window;
 mod writes;
