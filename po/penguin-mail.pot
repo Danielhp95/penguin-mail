@@ -11023,12 +11023,12 @@ msgstr ""
 msgid "A folder needs a name."
 msgstr ""
 
-#: sync/src/services/pop3/mod.rs:456
+#: sync/src/services/pop3/mod.rs:461
 msgid ""
 "Penguin Mail keeps the names of Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 
-#: sync/src/services/pop3/mod.rs:472
+#: sync/src/services/pop3/mod.rs:477
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 

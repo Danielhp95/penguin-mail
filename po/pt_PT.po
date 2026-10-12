@@ -11631,14 +11631,14 @@ msgstr "O Outlook respondeu, mas não guardou a resposta automática."
 msgid "A folder needs a name."
 msgstr "Uma pasta precisa de um nome."
 
-#: sync/src/services/pop3/mod.rs:456
+#: sync/src/services/pop3/mod.rs:461
 msgid ""
 "Penguin Mail keeps the names of Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "O Penguin Mail mantém os nomes de Caixa de entrada, Enviadas, Rascunhos, "
 "Lixo, Spam e Arquivo."
 
-#: sync/src/services/pop3/mod.rs:472
+#: sync/src/services/pop3/mod.rs:477
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "O Penguin Mail mantém Caixa de entrada, Enviadas, Rascunhos, Lixo, Spam e "

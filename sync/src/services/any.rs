@@ -21,7 +21,7 @@ use super::beside::RulesBeside;
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    Claimed, Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
+    Claimed, Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, Look, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
     Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, Settled, SieveRules, Storage, SyncState, Unapplied,
     Unheld, Want, Withheld,
 };
@@ -416,6 +416,10 @@ impl MailBackend for AnyMail {
 
     async fn watch(&self) {
         forward_all!(AnyMail, self, watch())
+    }
+
+    async fn look_for_mail(&self) -> Look {
+        forward_all!(AnyMail, self, look_for_mail())
     }
 
     async fn uidvalidity(&self, mailbox: &str) -> Result<Option<u32>, BackendError> {

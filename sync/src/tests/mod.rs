@@ -37,6 +37,7 @@ mod outgoing_heap;
 mod parity;
 mod pop3;
 mod pop3_check;
+mod pop3_look;
 mod priority;
 mod quota;
 mod rsvp;

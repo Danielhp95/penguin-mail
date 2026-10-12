@@ -11715,14 +11715,14 @@ msgstr "Outlook a répondu mais n’a pas conservé la réponse automatique."
 msgid "A folder needs a name."
 msgstr "Un dossier a besoin d’un nom."
 
-#: sync/src/services/pop3/mod.rs:456
+#: sync/src/services/pop3/mod.rs:461
 msgid ""
 "Penguin Mail keeps the names of Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "Penguin Mail réserve les noms Boîte de réception, Envoyés, Brouillons, "
 "Corbeille, Indésirables et Archives."
 
-#: sync/src/services/pop3/mod.rs:472
+#: sync/src/services/pop3/mod.rs:477
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "Penguin Mail conserve Boîte de réception, Envoyés, Brouillons, Corbeille, "
