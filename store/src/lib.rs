@@ -32,6 +32,7 @@ pub mod remote_refs;
 pub mod rule_changes;
 mod schema;
 pub mod servers;
+pub mod switch;
 pub mod services;
 pub mod templates;
 pub mod threading;
