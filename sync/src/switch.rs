@@ -151,8 +151,9 @@ async fn hits<J: JmapApi>(api: &J, message_ids: &[&str]) -> Result<HashMap<Strin
 /// How a stored message the Message-ID and date left out is looked for
 /// again before the switch counts it as gone from the server.
 enum SecondKey<'a> {
-    /// Arrived within a day of `date`, with exactly this size.
-    DateAndSize { date: i64, size: u64 },
+    /// Arrived within a day of `date`, with exactly this size and
+    /// subject, and no other Message-ID than this one when both have one.
+    DateAndSize { date: i64, size: u64, subject: &'a str, message_id: Option<&'a str> },
     /// The date is unknown: the one copy under this bare Message-ID.
     MessageId(&'a str),
     /// No Message-ID and no date: the subject and the sender.
@@ -164,7 +165,12 @@ impl<'a> SecondKey<'a> {
         let message_id = message.message_id.as_deref().map(bare_message_id).filter(|i| !i.is_empty());
         let from = message.from.as_deref().filter(|f| !f.trim().is_empty());
         match (message.date > 0, message_id) {
-            (true, _) => u64::try_from(message.size).ok().filter(|s| *s > 0).map(|size| SecondKey::DateAndSize { date: message.date, size }),
+            (true, _) => u64::try_from(message.size).ok().filter(|s| *s > 0).map(|size| SecondKey::DateAndSize {
+                date: message.date,
+                size,
+                subject: message.subject.trim(),
+                message_id,
+            }),
             (false, Some(id)) => Some(SecondKey::MessageId(id)),
             (false, None) if !message.subject.trim().is_empty() || from.is_some() => {
                 Some(SecondKey::SubjectAndFrom { subject: message.subject.trim(), from })
@@ -180,7 +186,7 @@ impl<'a> SecondKey<'a> {
             chrono::DateTime::from_timestamp_millis(millis).unwrap_or_default().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
         };
         match self {
-            SecondKey::DateAndSize { date, size } => json!({
+            SecondKey::DateAndSize { date, size, .. } => json!({
                 "after": stamp(date - SAME_MESSAGE_WITHIN),
                 "before": stamp(date + SAME_MESSAGE_WITHIN + 1000),
                 "minSize": size,
@@ -202,8 +208,16 @@ impl<'a> SecondKey<'a> {
 
     fn holds(&self, email: &Email) -> bool {
         match self {
-            SecondKey::DateAndSize { date, size } => {
-                email.size == *size && (received_millis(email) - date).abs() <= SAME_MESSAGE_WITHIN
+            SecondKey::DateAndSize { date, size, subject, message_id } => {
+                // Mail the server no longer holds may share a day and a
+                // size with mail the store never had.
+                let other_id = message_id.is_some_and(|wanted| {
+                    email.message_id.iter().flatten().map(|m| bare_message_id(m)).any(|m| !m.is_empty() && m != wanted)
+                });
+                email.size == *size
+                    && (received_millis(email) - date).abs() <= SAME_MESSAGE_WITHIN
+                    && email.subject.as_deref().unwrap_or_default().trim() == *subject
+                    && !other_id
             }
             SecondKey::MessageId(id) => email.message_id.iter().flatten().any(|m| bare_message_id(m) == *id),
             SecondKey::SubjectAndFrom { subject, from } => {
@@ -215,7 +229,8 @@ impl<'a> SecondKey<'a> {
 }
 
 /// Pairs each stored message left out of `out` with the one JMAP message
-/// its second key finds, when exactly one untaken message answers it.
+/// its second key finds, when exactly one untaken message answers it and
+/// no other stored message the second look reaches picks that one too.
 async fn match_again<J: JmapApi>(
     api: &J,
     stored: &[StoredMessage],
@@ -225,6 +240,7 @@ async fn match_again<J: JmapApi>(
     let matched: BTreeSet<String> = out.iter().map(|m| m.from.clone()).collect();
     let left: Vec<(&StoredMessage, SecondKey)> =
         stored.iter().filter(|m| !matched.contains(&m.id)).filter_map(|m| SecondKey::of(m).map(|key| (m, key))).collect();
+    let mut picked: Vec<Moved> = Vec::new();
     for chunk in left.chunks(KEYS_PER_QUERY) {
         let conditions: Vec<Value> = chunk.iter().map(|(_, key)| key.condition()).collect();
         let ids = found_with(api, &json!({ "operator": "OR", "conditions": conditions })).await?;
@@ -235,9 +251,18 @@ async fn match_again<J: JmapApi>(
         for (message, key) in chunk {
             let mut answers = found.iter().filter(|e| !taken.contains(&e.id) && key.holds(e));
             if let (Some(email), None) = (answers.next(), answers.next()) {
-                taken.insert(email.id.clone());
-                out.push(Moved { from: message.id.clone(), to: email.id.clone(), thread: email.thread_id.clone() });
+                picked.push(Moved { from: message.id.clone(), to: email.id.clone(), thread: email.thread_id.clone() });
             }
+        }
+    }
+    let mut picks: HashMap<String, usize> = HashMap::new();
+    for moved in &picked {
+        *picks.entry(moved.to.clone()).or_default() += 1;
+    }
+    for moved in picked {
+        if picks.get(&moved.to) == Some(&1) {
+            taken.insert(moved.to.clone());
+            out.push(moved);
         }
     }
     Ok(())
