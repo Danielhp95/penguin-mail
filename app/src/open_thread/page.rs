@@ -250,13 +250,36 @@ impl ToClean {
             .collect()
     }
 
+    /// What it takes to make failed copies of all of them once these have
+    /// gone to a worker, without making the copies yet: a worker almost
+    /// never fails to answer.
+    pub fn stand_ins(&self) -> StandIns {
+        StandIns(
+            self.0
+                .iter()
+                .map(|dirty| (dirty.message_id.clone(), dirty.of(), dirty.version))
+                .collect(),
+        )
+    }
+
+    /// Failed copies for all of them, for a worker that never answered.
+    #[cfg(test)]
+    pub fn failures(&self) -> HashMap<String, Cleaned> {
+        self.stand_ins().failures()
+    }
+}
+
+/// The message, body and version of each body sent to be cleaned.
+pub struct StandIns(Vec<(String, Option<Arc<MessageBody>>, u32)>);
+
+impl StandIns {
     /// Failed copies for all of them, for a worker that never answered.
     /// Taken in place of the cleaned ones, they stop the same bodies from
     /// being sent out again.
-    pub fn failures(&self) -> HashMap<String, Cleaned> {
+    pub fn failures(self) -> HashMap<String, Cleaned> {
         self.0
-            .iter()
-            .map(|dirty| (dirty.message_id.clone(), Cleaned::failure(dirty.of(), dirty.version)))
+            .into_iter()
+            .map(|(id, of, version)| (id, Cleaned::failure(of, version)))
             .collect()
     }
 }
