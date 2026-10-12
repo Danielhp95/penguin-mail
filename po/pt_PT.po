@@ -3733,7 +3733,9 @@ msgstr ""
 
 #: app/src/rules.rs:27
 msgid "A rule moves, labels or marks mail from a sender or with a subject."
-msgstr "Uma regra move, etiqueta ou marca o correio de um remetente ou com um assunto."
+msgstr ""
+"Uma regra move, etiqueta ou marca o correio de um remetente ou com um "
+"assunto."
 
 #: app/src/rules.rs:35
 msgid "{provider} is not answering. Changes wait here and go out when it does."
@@ -4393,7 +4395,7 @@ msgid "Your Email Address"
 msgstr "O seu endereço de e-mail"
 
 #: app/src/ui/add_account.rs:604 app/src/ui/add_account.rs:607
-#: app/src/ui/sender_prefs.rs:88
+#: app/src/ui/sender_prefs.rs:90
 msgid "Email Address"
 msgstr "Endereço de e-mail"
 
@@ -4462,7 +4464,7 @@ msgstr "Tentar de novo"
 #: app/src/ui/composer/mod.rs:1870 app/src/ui/composer/mod.rs:1949
 #: app/src/ui/composer/mod.rs:2276 app/src/ui/composer/mod.rs:2730
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:497 app/src/ui/rules.rs:681
-#: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
+#: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:150
 #: app/src/ui/switch_jmap.rs:143 app/src/ui/switch_jmap.rs:168
 #: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
 #: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
@@ -4923,7 +4925,7 @@ msgstr "Editar {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:2051 app/src/ui/composer/recipients.rs:317
-#: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3090
+#: app/src/ui/sender_prefs.rs:136 app/src/ui/window.rs:3090
 msgid "Remove"
 msgstr "Remover"
 
@@ -5002,7 +5004,7 @@ msgstr "Testar"
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2730
 #: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:490
-#: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
+#: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
 msgid "Save"
@@ -8883,23 +8885,23 @@ msgstr ""
 msgid "Replace"
 msgstr "Substituir"
 
-#: app/src/ui/sender_prefs.rs:21
-msgid "Sender Addresses"
-msgstr "Endereços de remetente"
-
 #: app/src/ui/sender_prefs.rs:24
+msgid "Addresses you send from with this account"
+msgstr "Endereços de onde envia com esta conta"
+
+#: app/src/ui/sender_prefs.rs:26
 msgid "Add Address"
 msgstr "Adicionar endereço"
 
-#: app/src/ui/sender_prefs.rs:57 app/src/ui/sender_prefs.rs:97
+#: app/src/ui/sender_prefs.rs:59 app/src/ui/sender_prefs.rs:99
 msgid "Default sender"
 msgstr "Remetente predefinido"
 
-#: app/src/ui/sender_prefs.rs:81
+#: app/src/ui/sender_prefs.rs:83
 msgid "Sender Address"
 msgstr "Endereço de remetente"
 
-#: app/src/ui/sender_prefs.rs:82
+#: app/src/ui/sender_prefs.rs:84
 msgid ""
 "Uses this account's outgoing server. Replies use the address the message was "
 "sent to."
@@ -8907,27 +8909,27 @@ msgstr ""
 "Utiliza o servidor de envio desta conta. As respostas utilizam o endereço "
 "para o qual a mensagem foi enviada."
 
-#: app/src/ui/sender_prefs.rs:93
+#: app/src/ui/sender_prefs.rs:95
 msgid "Sender Name"
 msgstr "Nome do remetente"
 
-#: app/src/ui/sender_prefs.rs:101
+#: app/src/ui/sender_prefs.rs:103
 msgid "Allow +suffix"
 msgstr "Permitir +sufixo"
 
-#: app/src/ui/sender_prefs.rs:102
+#: app/src/ui/sender_prefs.rs:104
 msgid "For example, user+shop@example.com"
 msgstr "Por exemplo, user+shop@example.com"
 
-#: app/src/ui/sender_prefs.rs:106
+#: app/src/ui/sender_prefs.rs:108
 msgid "Allow .suffix"
 msgstr "Permitir .sufixo"
 
-#: app/src/ui/sender_prefs.rs:107
+#: app/src/ui/sender_prefs.rs:109
 msgid "For example, user.shop@example.com"
 msgstr "Por exemplo, user.shop@example.com"
 
-#: app/src/ui/sender_prefs.rs:122
+#: app/src/ui/sender_prefs.rs:124
 msgid "Enter a valid address that is not already listed."
 msgstr "Introduza um endereço válido que ainda não conste da lista."
 
@@ -11765,6 +11767,9 @@ msgstr "Marcar como não sendo spam"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "Mover para {folder}"
+
+#~ msgid "Sender Addresses"
+#~ msgstr "Endereços de remetente"
 
 #~ msgid "Waiting for the account to switch to JMAP"
 #~ msgstr "À espera de que a conta mude para JMAP"

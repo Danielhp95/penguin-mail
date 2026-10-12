@@ -92,7 +92,7 @@ A message it drafts opens in a composer for you to finish. One it sends
 waits for you to allow it, and the question names every recipient, the
 blind copies, the files, and whether it goes out signed or encrypted.
 Replies use a configured sender address matching the original To or Cc,
-including suffixes enabled under Preferences > Writing > Sender Addresses.
+including suffixes enabled in the account's group under Preferences > Writing.
 
 Signing and encrypting follow your settings under Preferences unless you
 ask otherwise. It encrypts only when it has a key or certificate for

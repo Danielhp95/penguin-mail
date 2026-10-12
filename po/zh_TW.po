@@ -4163,7 +4163,7 @@ msgid "Your Email Address"
 msgstr "電子郵件地址"
 
 #: app/src/ui/add_account.rs:604 app/src/ui/add_account.rs:607
-#: app/src/ui/sender_prefs.rs:88
+#: app/src/ui/sender_prefs.rs:90
 msgid "Email Address"
 msgstr "電子郵件地址"
 
@@ -4232,7 +4232,7 @@ msgstr "重試"
 #: app/src/ui/composer/mod.rs:1870 app/src/ui/composer/mod.rs:1949
 #: app/src/ui/composer/mod.rs:2276 app/src/ui/composer/mod.rs:2730
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:497 app/src/ui/rules.rs:681
-#: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
+#: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:150
 #: app/src/ui/switch_jmap.rs:143 app/src/ui/switch_jmap.rs:168
 #: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
 #: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
@@ -4678,7 +4678,7 @@ msgstr "編輯 {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:2051 app/src/ui/composer/recipients.rs:317
-#: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3090
+#: app/src/ui/sender_prefs.rs:136 app/src/ui/window.rs:3090
 msgid "Remove"
 msgstr "移除"
 
@@ -4756,7 +4756,7 @@ msgstr "測試"
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2730
 #: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:490
-#: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
+#: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
 msgid "Save"
@@ -8507,49 +8507,49 @@ msgstr ""
 msgid "Replace"
 msgstr "取代"
 
-#: app/src/ui/sender_prefs.rs:21
-msgid "Sender Addresses"
-msgstr "寄件地址"
-
 #: app/src/ui/sender_prefs.rs:24
+msgid "Addresses you send from with this account"
+msgstr "您用此帳號寄信時使用的地址"
+
+#: app/src/ui/sender_prefs.rs:26
 msgid "Add Address"
 msgstr "新增地址"
 
-#: app/src/ui/sender_prefs.rs:57 app/src/ui/sender_prefs.rs:97
+#: app/src/ui/sender_prefs.rs:59 app/src/ui/sender_prefs.rs:99
 msgid "Default sender"
 msgstr "預設寄件者"
 
-#: app/src/ui/sender_prefs.rs:81
+#: app/src/ui/sender_prefs.rs:83
 msgid "Sender Address"
 msgstr "寄件地址"
 
-#: app/src/ui/sender_prefs.rs:82
+#: app/src/ui/sender_prefs.rs:84
 msgid ""
 "Uses this account's outgoing server. Replies use the address the message was "
 "sent to."
 msgstr "使用此帳號的寄件伺服器。回覆時會以原郵件的收件地址寄出。"
 
-#: app/src/ui/sender_prefs.rs:93
+#: app/src/ui/sender_prefs.rs:95
 msgid "Sender Name"
 msgstr "寄件者名稱"
 
-#: app/src/ui/sender_prefs.rs:101
+#: app/src/ui/sender_prefs.rs:103
 msgid "Allow +suffix"
 msgstr "允許 + 字尾"
 
-#: app/src/ui/sender_prefs.rs:102
+#: app/src/ui/sender_prefs.rs:104
 msgid "For example, user+shop@example.com"
 msgstr "例如 user+shop@example.com"
 
-#: app/src/ui/sender_prefs.rs:106
+#: app/src/ui/sender_prefs.rs:108
 msgid "Allow .suffix"
 msgstr "允許 . 字尾"
 
-#: app/src/ui/sender_prefs.rs:107
+#: app/src/ui/sender_prefs.rs:109
 msgid "For example, user.shop@example.com"
 msgstr "例如 user.shop@example.com"
 
-#: app/src/ui/sender_prefs.rs:122
+#: app/src/ui/sender_prefs.rs:124
 msgid "Enter a valid address that is not already listed."
 msgstr "請輸入有效且尚未加入清單的地址。"
 
@@ -11227,6 +11227,9 @@ msgstr "標示為非垃圾郵件"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "移至 {folder}"
+
+#~ msgid "Sender Addresses"
+#~ msgstr "寄件地址"
 
 #~ msgid "Waiting for the account to switch to JMAP"
 #~ msgstr "正在等候帳號切換至 JMAP"
