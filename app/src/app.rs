@@ -585,7 +585,9 @@ impl App {
                 sender.name = self.names.borrow().get(&account_id).cloned();
             }
         }
-        crate::compose::reply_addresses(&senders, original)
+        let mail = self.core.account(account_id).map(|sync| sync.services().mail.clone());
+        let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+        crate::compose::reply_addresses(&senders, original, masked)
     }
 
     /// The dictionaries a composer for `account_id` should check against.
@@ -816,8 +818,30 @@ impl App {
             });
         }
         self.refresh_send_as(arrived);
+        self.list_masked(arrived);
         self.dock_badge.recount();
         self.update_tray();
+    }
+
+    /// Lists the masked addresses of each account in `arrived` whose server
+    /// makes them, so a reply to mail sent to one goes out from it. The
+    /// account's adapter keeps the list. Until it has one, or when the
+    /// listing fails, a reply comes from the account's own address.
+    fn list_masked(self: &Rc<Self>, arrived: &[Account]) {
+        for account in arrived {
+            let Some(sync) = self.core.account(account.id) else {
+                continue;
+            };
+            if !sync.services().offers().masked_email {
+                continue;
+            }
+            let (core, settings, id) = (Rc::clone(&self.core), self.core.gmail_settings(), account.id);
+            glib::spawn_future_local(async move {
+                if core.call(async move { settings.masked_addresses(id).await }).await.is_err() {
+                    tracing::warn!(account = id, "could not list the masked addresses");
+                }
+            });
+        }
     }
 
     fn load_accounts(self: &Rc<Self>) {

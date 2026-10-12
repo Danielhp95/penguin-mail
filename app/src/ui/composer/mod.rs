@@ -461,9 +461,12 @@ impl Composer {
             .visible(identities.get(selected).is_some_and(|i| i.masks))
             .build();
         crate::ui::name(&mask, &gettext("New Masked Address"));
+        let listed_mask = core
+            .account(draft.account_id)
+            .and_then(|sync| sync.services().mail.is_masked(&draft.from.email));
         let masked = identities
             .get(selected)
-            .and_then(|chosen| kept_mask(&identities, chosen, &draft.from));
+            .and_then(|chosen| kept_mask(&identities, chosen, &draft.from, listed_mask));
         // A masked sender takes the suffix's place.
         if masked.is_some() {
             suffix.set_visible(false);

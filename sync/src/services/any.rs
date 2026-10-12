@@ -171,6 +171,16 @@ impl AnyMail {
         }
     }
 
+    /// Whether `address` is one of the account's masked addresses: `None`
+    /// until a JMAP account has listed them, `Some(false)` on an account
+    /// that makes none.
+    pub fn is_masked(&self, address: &str) -> Option<bool> {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.is_masked(address),
+            _ => Some(false),
+        }
+    }
+
     /// The server keeps an automatic reply this account's sign-in cannot
     /// reach. Only a JMAP account signed in with a token can say so.
     pub fn auto_reply_needs_sign_in(&self) -> bool {
