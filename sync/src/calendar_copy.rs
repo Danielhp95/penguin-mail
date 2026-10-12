@@ -711,6 +711,7 @@ impl<A: Accounts> CalendarCopy<A> {
     #[cfg(test)]
     pub(crate) async fn save(&self, account_id: AccountId, mut event: Event) -> Result<(), SyncError> {
         event.pending = true;
+        give_uid(&mut event);
         let now = crate::now_millis();
         self.db
             .write(move |c| {
@@ -1134,9 +1135,10 @@ impl<A: Accounts> CalendarCopy<A> {
     pub(crate) async fn hold_with(
         &self,
         account_id: AccountId,
-        steps: Vec<Step>,
+        mut steps: Vec<Step>,
         notify: Notify,
     ) -> Result<Permitted<Held>, SyncError> {
+        given_uids(&mut steps);
         if self.calendar(account_id)?.is_none() {
             return Err(SyncError::Backend(BackendError::Unsupported));
         }
@@ -1246,9 +1248,10 @@ impl<A: Accounts> CalendarCopy<A> {
     pub(crate) async fn apply_with(
         &self,
         account_id: AccountId,
-        steps: Vec<Step>,
+        mut steps: Vec<Step>,
         notify: Notify,
     ) -> Result<Permitted<()>, SyncError> {
+        given_uids(&mut steps);
         if self.calendar(account_id)?.is_none() {
             return Err(SyncError::Backend(BackendError::Unsupported));
         }
@@ -1478,6 +1481,24 @@ fn with_etag(steps: &mut [Step], before: &mut [Event], answer: &Event) {
     }
     for event in before.iter_mut().filter(|e| same(e)) {
         event.etag = answer.etag.clone();
+    }
+}
+
+/// Gives each new event among `steps` its UID before the copy or the
+/// queue sees it, so both carry the same one, and a create tried again
+/// after a lost answer finds the event the first try made.
+fn given_uids(steps: &mut [Step]) {
+    for step in steps {
+        if let Step::Save(event) = step {
+            give_uid(event);
+        }
+    }
+}
+
+/// [`given_uids`] for one event: a new one, with no version and no series.
+fn give_uid(event: &mut Event) {
+    if event.uid.trim().is_empty() && event.etag.is_empty() && event.series.is_none() {
+        event.uid = calendar::made_uid(&event.id);
     }
 }
 

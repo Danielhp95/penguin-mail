@@ -413,8 +413,39 @@ impl<J: JmapApi> Jmap<J> {
         Ok(model::Event { etag: String::new(), ..occurrence })
     }
 
+    /// The object with `uid` on `calendar`, if the server holds one.
+    async fn by_uid(&self, calendar: &str, uid: &str) -> Result<Option<Value>, BackendError> {
+        let filter = json!({ "inCalendar": calendar, "uid": uid });
+        let found = self.api().calendar_events_page(&filter, 0, 1).await.map_err(backend)?;
+        Ok(found.events.into_iter().next())
+    }
+
+    /// Changes the server's `object` to match `event`, the version the
+    /// person chose to keep, and answers it as the server then holds it.
+    async fn overwrite(&self, object: &Value, event: &model::Event, send: bool) -> Result<model::Event, BackendError> {
+        let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
+        let same = model::Event { id: id.clone(), series: None, original_start: None, ..event.clone() };
+        let patch = jscal::patch_of(&same, object, &self.me())?;
+        if !patch.is_empty() {
+            self.write_event(&EventWrite::Update { id: id.clone(), patch }, send, None).await.map_err(backend)?;
+        }
+        self.read_back(&event.calendar, &id, &id).await
+    }
+
+    /// Creates `event` under the UID the copy gave it. JMAP takes no id
+    /// from the client, so a create whose answer was lost, or whose read
+    /// back failed, would make a second event and invite the guests twice
+    /// when tried again. The UID finds the event the first try made, and
+    /// the try goes onto it.
     async fn create(&self, event: &model::Event, send: bool) -> Result<model::Event, BackendError> {
-        let mut object = jscal::object_of(event)?;
+        let mut event = event.clone();
+        if event.uid.trim().is_empty() {
+            event.uid = model::made_uid(&event.id);
+        }
+        if let Some(object) = self.by_uid(&event.calendar, &event.uid).await? {
+            return self.overwrite(&object, &event, send).await;
+        }
+        let mut object = jscal::object_of(&event)?;
         object.insert("calendarIds".into(), json!({ event.calendar.clone(): true }));
         let created = self.write_event(&EventWrite::Create(object), send, None).await.map_err(backend)?;
         let id = created
@@ -696,31 +727,24 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         if event.uid.trim().is_empty() {
             return Err(BackendError::Refused(gettext("An event needs an ID to be imported.")));
         }
-        let filter = json!({ "inCalendar": event.calendar, "uid": event.uid });
-        let found = self.api().calendar_events_page(&filter, 0, 1).await.map_err(backend)?;
-        let Some(object) = found.events.first() else {
+        let Some(object) = self.by_uid(&event.calendar, &event.uid).await? else {
             return self.create(event, false).await;
         };
-        let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
-        let me = self.me();
         // A file holding one occurrence (a RECURRENCE-ID and no rule) of a
         // series the calendar has changes that occurrence, as CalDAV does.
         if let Some(original) = event.original_start {
-            let series = read_events(object, &event.calendar, &me).into_iter().next().ok_or(BackendError::NotFound)?;
+            let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
+            let me = self.me();
+            let series = read_events(&object, &event.calendar, &me).into_iter().next().ok_or(BackendError::NotFound)?;
             let one = model::Event { id: occurrence_id(&series, original), series: Some(id.clone()), ..event.clone() };
-            let key = jscal::override_key(object, original);
-            let entry = override_entry(object, &key, None, jscal::override_of(&one, object, &me)?);
+            let key = jscal::override_key(&object, original);
+            let entry = override_entry(&object, &key, None, jscal::override_of(&one, &object, &me)?);
             let update = EventWrite::Update { id: id.clone(), patch: Map::from_iter([entry]) };
             self.write_event(&update, false, None).await.map_err(backend)?;
             return self.read_back(&event.calendar, &id, &one.id).await;
         }
         // The file is the version the person chose to keep, whole.
-        let same = model::Event { id: id.clone(), series: None, original_start: None, ..event.clone() };
-        let patch = jscal::patch_of(&same, object, &me)?;
-        if !patch.is_empty() {
-            self.write_event(&EventWrite::Update { id: id.clone(), patch }, false, None).await.map_err(backend)?;
-        }
-        self.read_back(&event.calendar, &id, &id).await
+        self.overwrite(&object, event, false).await
     }
 
     async fn upload_attachment(&self, _file: &model::Attachment, _sent: Arc<std::sync::atomic::AtomicU64>) -> Result<model::Attachment, BackendError> {

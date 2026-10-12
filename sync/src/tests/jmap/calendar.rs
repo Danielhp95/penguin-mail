@@ -669,3 +669,80 @@ async fn an_occurrence_moved_here_while_its_series_moved_elsewhere_keeps_the_ser
     assert_eq!((saved.start, saved.kept_theirs.as_slice()), (original + HOUR, ["the time".to_string()].as_slice()));
     assert!(h.fake.event(&id).unwrap().get("recurrenceOverrides").is_none(), "nothing to write, so no empty override");
 }
+
+/// A new event made on this computer, with a guest, as the editor queues
+/// it: a client-made id and no version yet.
+fn new_meeting() -> Event {
+    Event {
+        calendar: "cal-1".into(),
+        id: crate::calendar_copy::new_event_id(),
+        title: "Seed swap".into(),
+        start: 1_791_000_000_000,
+        end: 1_791_003_600_000,
+        zone: "Europe/Lisbon".into(),
+        busy: true,
+        organizer: Some("me@example.com".into()),
+        guests: vec![mailrs_domain::calendar::Guest { email: "ines@allotment.example".into(), ..Default::default() }],
+        ..Event::default()
+    }
+}
+
+/// The account's calendar copy, with the calendar list read.
+async fn copy_of(h: &Harness) -> crate::calendar_copy::CalendarCopy<crate::tests::Connected> {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let copy = crate::calendar_copy::CalendarCopy::new(Arc::new(crate::tests::Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone());
+    copy.refresh(h.account_id, 1_790_000_000_000).await.unwrap();
+    copy
+}
+
+#[tokio::test]
+async fn a_create_whose_answer_was_lost_makes_one_event_and_one_invitation() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    copy.apply(h.account_id, vec![mailrs_domain::calendar::series::Step::Save(new_meeting())]).await.unwrap();
+    h.fake.with(|s| s.lose_event_answer = true);
+    assert!(copy.send(h.account_id).await.is_err(), "a lost answer keeps the change queued");
+    copy.send(h.account_id).await.unwrap();
+    let (events, scheduled) = h.fake.with(|s| (s.events.len(), s.scheduled.len()));
+    assert_eq!((events, scheduled), (1, 1));
+    let account = h.account_id;
+    assert!(h.db.read(move |c| mailrs_store::calendar::queued(c, account)).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_create_whose_read_back_failed_makes_one_event_and_one_invitation() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    copy.apply(h.account_id, vec![mailrs_domain::calendar::series::Step::Save(new_meeting())]).await.unwrap();
+    h.fake.with(|s| s.failing_event_gets = 1);
+    assert!(copy.send(h.account_id).await.is_err(), "a failed read keeps the change queued");
+    copy.send(h.account_id).await.unwrap();
+    let (events, scheduled) = h.fake.with(|s| (s.events.len(), s.scheduled.len()));
+    assert_eq!((events, scheduled), (1, 1));
+}
+
+#[tokio::test]
+async fn a_new_event_carries_its_uid_in_the_copy_and_the_queue() {
+    let h = calendared().await;
+    let copy = copy_of(&h).await;
+    let new = new_meeting();
+    let (account, id) = (h.account_id, new.id.clone());
+    copy.apply(account, vec![mailrs_domain::calendar::series::Step::Save(new)]).await.unwrap();
+    let key = id.clone();
+    let stored = h.db.read(move |c| mailrs_store::calendar::event(c, account, "cal-1", &key)).await.unwrap().unwrap();
+    let queued = h.db.read(move |c| mailrs_store::calendar::queued(c, account)).await.unwrap();
+    assert_eq!(stored.uid, format!("{id}@penguin-mail"));
+    assert_eq!(queued[0].body.as_ref().map(|b| b.uid.as_str()), Some(stored.uid.as_str()));
+}
+
+#[tokio::test]
+async fn a_create_queued_without_a_uid_still_goes_up_with_one() {
+    let h = calendared().await;
+    let new = new_meeting();
+    h.fake.with(|s| s.lose_event_answer = true);
+    calendar(&h).put_event(&new, None, true, Notify::Guests).await.unwrap_err();
+    let made = calendar(&h).put_event(&new, None, true, Notify::Guests).await.unwrap();
+    assert_eq!(made.uid, format!("{}@penguin-mail", new.id));
+    assert_eq!(h.fake.with(|s| (s.events.len(), s.scheduled.len())), (1, 1));
+}

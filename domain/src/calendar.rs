@@ -540,6 +540,13 @@ impl Occurrence {
     }
 }
 
+/// The iCalendar UID of an event made on this computer, from the id the
+/// copy gave it. A CalDAV or JMAP create sends it, so a create tried again
+/// after its answer was lost finds the event the first try made.
+pub fn made_uid(id: &str) -> String {
+    format!("{id}@penguin-mail")
+}
+
 /// Google's id for one occurrence: the series id, an underscore and the
 /// original start in UTC, as a date for an all-day series and as a
 /// timestamp for a timed one. [`Occurrence::id`] calls this with the
