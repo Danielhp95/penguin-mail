@@ -925,8 +925,8 @@ const GUESTS_OF: &str = "SELECT g.calendar, g.event, g.email, g.name, g.answer, 
      CROSS JOIN event_guests g ON g.account_id = ?1 AND g.calendar = j.calendar AND g.event = j.event \
      ORDER BY g.organizer DESC, g.email";
 
-/// Gives each of `events`, rows of the account each named once, its
-/// guests, organizer first, then by address. One query reads the guests of them all, so a
+/// Gives each of `events`, all the account's, its guests, organizer
+/// first, then by address. Two copies of one event each get the list. One query reads the guests of them all, so a
 /// month of events costs one read rather than one per event.
 fn read_guests<'e>(
     conn: &Connection,
@@ -956,7 +956,7 @@ fn read_guests<'e>(
     }
     for event in events {
         let key = (event.calendar.clone(), event.id.clone());
-        event.guests = by_event.remove(&key).unwrap_or_default();
+        event.guests = by_event.get(&key).cloned().unwrap_or_default();
     }
     Ok(())
 }
@@ -2165,6 +2165,19 @@ mod tests {
                 ("team", vec![]),
             ]
         );
+    }
+
+    #[test]
+    fn two_copies_of_one_event_both_get_its_guests() {
+        let (conn, id) = store();
+        let mut lunch = event("primary", "lunch", MONDAY + 12 * HOUR, 1);
+        lunch.guests = vec![Guest { email: "ana@example.com".into(), ..Guest::default() }];
+        save_events(&conn, id, &[lunch.clone()], 0).unwrap();
+        let (mut first, mut second) = (lunch.clone(), lunch.clone());
+        first.guests.clear();
+        second.guests.clear();
+        read_guests(&conn, id, [&mut first, &mut second]).unwrap();
+        assert_eq!((first.guests, second.guests), (lunch.guests.clone(), lunch.guests));
     }
 
     #[test]
