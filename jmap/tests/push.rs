@@ -305,3 +305,24 @@ async fn a_call_stalled_while_the_watch_sits_unpolled_in_its_probe_completes() {
     let watched = tokio::time::timeout(Duration::from_secs(5), watch).await.expect("the watch kept going");
     assert!(matches!(&watched, Err(JmapError::Network(said)) if said.contains("stalled")), "{watched:?}");
 }
+
+#[tokio::test]
+async fn a_slow_download_beside_the_stream_leaves_push_on() {
+    let events = silent_server().await;
+    let server = MockServer::start().await;
+    let mut session = session_on(&server.uri(), json!({}));
+    session["eventSourceUrl"] = json!(format!("{events}/events/"));
+    Mock::given(method("GET")).and(path("/jmap/session")).respond_with(ResponseTemplate::new(200).set_body_json(session)).mount(&server).await;
+    answer_echo(&server).await;
+    let slow = ResponseTemplate::new(200).set_body_bytes(b"blob".to_vec()).set_delay(Duration::from_secs(21));
+    Mock::given(method("GET")).and(path("/download/A1/b1/x")).respond_with(slow).mount(&server).await;
+    let client = client(&server);
+    let watching = client.clone();
+    let mut watch = tokio::spawn(async move { watching.push(Duration::from_secs(120)).await });
+    // Let the stream open and the probe pass.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(client.download("A1", "b1", "x", "text/plain", 100).await.unwrap(), b"blob");
+    let watched = tokio::time::timeout(Duration::from_millis(500), &mut watch).await;
+    assert!(watched.is_err(), "the watch ended: {watched:?}");
+    watch.abort();
+}
