@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use mailrs_jmap::{
-    Email, EmailQuery, Got, Identity, Imported, JmapError, Listed, MailChanges, Mailbox, MailboxWrite, Pushed, Queried, Saved,
-    Session, SetResponse, Submission, Threads,
+    AddressBook, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Identity, Imported, JmapError, Listed, MailChanges,
+    Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried, Saved, Session, SetResponse, SieveScript, Submission,
+    Threads, VacationResponse,
 };
 use mailrs_store::switch::{StoredMailbox, StoredMessage};
 use serde_json::{Map, Value};
@@ -81,6 +82,48 @@ impl JmapApi for Clamped {
     }
     fn push_paused(&self) -> Option<tokio::time::Instant> {
         self.fake.push_paused()
+    }
+    async fn vacation(&self) -> Answer<VacationResponse> {
+        self.fake.vacation().await
+    }
+    async fn set_vacation(&self, reply: &VacationResponse) -> Answer<()> {
+        self.fake.set_vacation(reply).await
+    }
+    async fn address_books(&self) -> Answer<Vec<AddressBook>> {
+        self.fake.address_books().await
+    }
+    async fn cards_page(&self, position: u64, limit: usize) -> Answer<CardsPage> {
+        self.fake.cards_page(position, limit).await
+    }
+    async fn card_changes(&self, since: &str, max: usize) -> Answer<CardChanges> {
+        self.fake.card_changes(since, max).await
+    }
+    async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
+        self.fake.set_card(write).await
+    }
+    async fn sieve_scripts(&self) -> Answer<Vec<SieveScript>> {
+        self.fake.sieve_scripts().await
+    }
+    async fn sieve_text(&self, blob_id: &str) -> Answer<String> {
+        self.fake.sieve_text(blob_id).await
+    }
+    async fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> Answer<String> {
+        self.fake.put_sieve(name, existing, text).await
+    }
+    async fn activate_sieve(&self, id: &str) -> Answer<()> {
+        self.fake.activate_sieve(id).await
+    }
+    async fn sieve_extensions(&self) -> Answer<Vec<String>> {
+        self.fake.sieve_extensions().await
+    }
+    async fn masked_emails(&self) -> Answer<Vec<MaskedEmail>> {
+        self.fake.masked_emails().await
+    }
+    async fn create_masked(&self, for_domain: &str, description: &str) -> Answer<MaskedEmail> {
+        self.fake.create_masked(for_domain, description).await
+    }
+    async fn set_masked_state(&self, id: &str, state: MaskedState) -> Answer<()> {
+        self.fake.set_masked_state(id, state).await
     }
 }
 
