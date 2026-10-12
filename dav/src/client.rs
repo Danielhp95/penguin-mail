@@ -5,6 +5,7 @@
 //! home set elsewhere gets no credentials, and the request fails as
 //! unauthorized. Every answer is read up to [`crate::MOST_BYTES`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_domain::EpochMillis;
@@ -132,11 +133,19 @@ pub fn same_site(host: &str, other: &str) -> bool {
     }
 }
 
+/// Where a bearer token comes from, for an account that signs in with
+/// OAuth. `force` asks for a fresh one, after the server refused the last.
+pub trait TokenSource: Send + Sync {
+    fn token(&self, force: bool) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>>;
+}
+
 pub struct DavClient {
     base: Url,
     /// Which well-known URL `homes` falls back on (RFC 6764).
     kind: Kind,
     login: Login,
+    /// Set for an OAuth account: the token goes where the password would.
+    bearer: Option<Arc<dyn TokenSource>>,
     http: reqwest::Client,
 }
 
@@ -171,7 +180,7 @@ impl DavClient {
         if base.scheme() != "https" {
             return Err(DavError::Forbidden("Penguin Mail reaches calendar and contact servers over HTTPS only".into()));
         }
-        Ok(DavClient { base, kind, login, http: http_client(true)? })
+        Ok(DavClient { base, kind, login, bearer: None, http: http_client(true)? })
     }
 
     /// A client with no https check, for tests against a local mock
@@ -179,7 +188,22 @@ impl DavClient {
     /// hand as `new` does and a test exercises the real credential rule.
     #[cfg(any(test, feature = "fake"))]
     pub fn over(base: Url, kind: Kind, login: Login) -> Result<DavClient, DavError> {
-        Ok(DavClient { base, kind, login, http: http_client(false)? })
+        Ok(DavClient { base, kind, login, bearer: None, http: http_client(false)? })
+    }
+
+    /// Signs in with tokens from `source` in place of the password.
+    pub fn with_bearer(mut self, source: Arc<dyn TokenSource>) -> DavClient {
+        self.bearer = Some(source);
+        self
+    }
+
+    /// Adds the credentials for a host of the account's own site: the
+    /// bearer token when there is a source, else the password.
+    async fn authorize(&self, request: reqwest::RequestBuilder, force: bool) -> Result<reqwest::RequestBuilder, DavError> {
+        match &self.bearer {
+            Some(source) => Ok(request.bearer_auth(source.token(force).await.map_err(DavError::Network)?)),
+            None => Ok(request.basic_auth(&self.login.user, Some(&self.login.password))),
+        }
     }
 
     fn url(&self, href: &str) -> Result<Url, DavError> {
@@ -192,10 +216,12 @@ impl DavClient {
         let method = Method::from_bytes(method.as_bytes()).map_err(|err| DavError::Parse(err.to_string()))?;
         let mut url = self.url(href)?;
         let home = self.base.host_str().unwrap_or_default().to_string();
+        let mut refreshed = false;
         for _ in 0..4 {
             let mut request = self.http.request(method.clone(), url.clone());
-            if url.host_str().is_some_and(|h| same_site(&home, h)) {
-                request = request.basic_auth(&self.login.user, Some(&self.login.password));
+            let trusted = url.host_str().is_some_and(|h| same_site(&home, h));
+            if trusted {
+                request = self.authorize(request, refreshed).await?;
             }
             if let Some(depth) = depth {
                 request = request.header("Depth", depth);
@@ -208,6 +234,11 @@ impl DavClient {
             }
             let mut response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
             let status = response.status();
+            // A bearer token may have expired: ask for a fresh one, once.
+            if status == StatusCode::UNAUTHORIZED && trusted && self.bearer.is_some() && !refreshed {
+                refreshed = true;
+                continue;
+            }
             if status.is_redirection() {
                 let Some(next) = response.headers().get("Location").and_then(|l| l.to_str().ok()) else {
                     return Err(DavError::Http { status: status.as_u16(), detail: "a redirect with nowhere to go".into() });
@@ -456,14 +487,23 @@ impl DavApi for DavClient {
         // The body is not XML, so it goes through `send` without the XML
         // content type: a request built here, as `send` builds one.
         let url = self.url(href)?;
-        let mut request = self.http.put(url.clone()).body(body.to_string());
-        if url.host_str().is_some_and(|h| same_site(self.base.host_str().unwrap_or_default(), h)) {
-            request = request.basic_auth(&self.login.user, Some(&self.login.password));
-        }
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        let response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
+        let trusted = url.host_str().is_some_and(|h| same_site(self.base.host_str().unwrap_or_default(), h));
+        let mut refreshed = false;
+        let response = loop {
+            let mut request = self.http.put(url.clone()).body(body.to_string());
+            if trusted {
+                request = self.authorize(request, refreshed).await?;
+            }
+            for (name, value) in &headers {
+                request = request.header(*name, value);
+            }
+            let response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
+            if response.status() == StatusCode::UNAUTHORIZED && trusted && self.bearer.is_some() && !refreshed {
+                refreshed = true;
+                continue;
+            }
+            break response;
+        };
         let status = response.status();
         let etag = response.headers().get("ETag").and_then(|e| e.to_str().ok()).map(str::to_string);
         let text = response.text().await.unwrap_or_default();
