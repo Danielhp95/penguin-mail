@@ -450,12 +450,16 @@ impl JmapClient {
         let mut answer = self.send(&request).await?;
         let listed: QueryAnswer = answer.take(&found, "Email/query")?;
         let got: Got<Email> = answer.take(&threads, "Email/get")?;
-        let thread_of: BTreeMap<String, String> = got.list.into_iter().map(|e| (e.id, e.thread_id)).collect();
-        let hits = listed
-            .ids
-            .into_iter()
-            .map(|id| Hit { thread_id: thread_of.get(&id).cloned().unwrap_or_else(|| id.clone()), id })
-            .collect();
+        let mut thread_of: BTreeMap<String, String> = got.list.into_iter().map(|e| (e.id, e.thread_id)).collect();
+        // A hit the get no longer finds went between the two calls, and
+        // has no thread to report. Leaving it out only moves the next page
+        // back over what this one listed; a page left empty would read as
+        // the end of the listing, so the caller asks again instead.
+        let named = listed.ids.len();
+        let hits: Vec<Hit> = listed.ids.into_iter().filter_map(|id| Some(Hit { thread_id: thread_of.remove(&id)?, id })).collect();
+        if hits.is_empty() && named > 0 {
+            return Err(JmapError::StateMismatch);
+        }
         Ok(Queried { hits, position: listed.position, total: listed.total, query_state: listed.query_state })
     }
 

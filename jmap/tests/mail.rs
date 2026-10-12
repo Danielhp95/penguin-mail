@@ -106,6 +106,34 @@ async fn a_query_sorts_newest_first_and_fetches_threads_by_back_reference() {
     assert_eq!(body["methodCalls"][0][1]["calculateTotal"], true);
 }
 
+/// A hit gone before the back-referenced `Email/get` read it has no thread
+/// to report, and is gone anyway.
+#[tokio::test]
+async fn a_hit_the_get_no_longer_finds_is_left_out() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/query", {"accountId": "A1", "queryState": "q", "canCalculateChanges": false, "position": 0, "ids": ["M2", "M1"]}, "c0"],
+        ["Email/get", {"accountId": "A1", "state": "e", "notFound": ["M2"], "list": [{"id": "M1", "threadId": "T1"}]}, "c1"]
+    ]})).await;
+    let query = EmailQuery { filter: None, position: 0, limit: 50, total: false };
+    let found = client(&server).query(&query).await.unwrap();
+    let ids: Vec<(&str, &str)> = found.hits.iter().map(|h| (h.id.as_str(), h.thread_id.as_str())).collect();
+    assert_eq!(ids, [("M1", "T1")]);
+}
+
+/// A page whose every hit went is no end of the listing: the caller tries
+/// again rather than stop short.
+#[tokio::test]
+async fn a_page_whose_every_hit_went_is_a_changed_listing() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/query", {"accountId": "A1", "queryState": "q", "canCalculateChanges": false, "position": 0, "ids": ["M2"]}, "c0"],
+        ["Email/get", {"accountId": "A1", "state": "e", "notFound": ["M2"], "list": []}, "c1"]
+    ]})).await;
+    let query = EmailQuery { filter: None, position: 0, limit: 50, total: false };
+    assert_eq!(client(&server).query(&query).await.unwrap_err(), mailrs_jmap::JmapError::StateMismatch);
+}
+
 #[tokio::test]
 async fn a_page_after_an_anchor_names_the_anchor_and_no_position() {
     let server = MockServer::start().await;
