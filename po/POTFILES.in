@@ -32,6 +32,7 @@ app/src/language_names.rs
 app/src/main.rs
 app/src/notify.rs
 app/src/offered.rs
+app/src/open_thread/run/receipt.rs
 app/src/open_thread/run/translation.rs
 app/src/packaging.rs
 app/src/permission.rs
@@ -39,6 +40,7 @@ app/src/pgp.rs
 app/src/protection/draft.rs
 app/src/protection.rs
 app/src/render.rs
+app/src/render/receipt.rs
 app/src/rules.rs
 app/src/search.rs
 app/src/settings/mod.rs
@@ -134,6 +136,7 @@ app/src/ui/window/scheduled.rs
 app/src/ui/window/senders.rs
 app/src/ui/window/shortcuts.rs
 app/src/ui/window/spaces.rs
+app/src/ui/window/thread.rs
 app/src/ui/window/translation.rs
 app/src/unsubscribe_page.rs
 app/src/unsubscribe_page/hidden.rs

@@ -15,6 +15,7 @@ use crate::translation::{Body, Language, Prose, Translation};
 pub mod inline;
 mod page;
 pub mod queued;
+mod receipt;
 pub mod run;
 
 pub use inline::{InlineImage, Served};
@@ -94,6 +95,13 @@ pub struct OpenThread {
     /// The message the event card sits in, which keeps a place for it in
     /// the page. `None` while the card is down.
     invitation_at: Option<String>,
+    /// The message the receipt card asks about, and whether its answer is
+    /// on its way. `None` while the card is down.
+    receipt_card: Option<(String, bool)>,
+    /// The read receipts in the thread checked against the person's Sent
+    /// mail, by message id: true for one that answers a message there.
+    /// Only those draw as a line.
+    reports: HashMap<String, bool>,
     /// The cleaned HTML of each body the page draws, by message id.
     cleaned: HashMap<String, page::Cleaned>,
     /// What the page on screen holds, or `None` before the first draw.
@@ -145,6 +153,8 @@ impl OpenThread {
             translations: HashMap::new(),
             queued: None,
             invitation_at: None,
+            receipt_card: None,
+            reports: HashMap::new(),
             cleaned: HashMap::new(),
             drawn: None,
         }
@@ -562,6 +572,8 @@ mod tests {
             translations: HashMap::new(),
             queued: None,
             invitation_at: None,
+            receipt_card: None,
+            reports: HashMap::new(),
             cleaned: HashMap::new(),
             drawn: None,
         }

@@ -11,6 +11,7 @@ use std::rc::{Rc, Weak};
 
 use gtk::glib;
 use mailrs_domain::invitation::{Invitation, When};
+use mailrs_domain::translate::gettext;
 use mailrs_domain::{AccountId, EpochMillis, FlagColor, MessageBody, MessageMeta, Target, ThreadSummary};
 use mailrs_store::calendar::CalendarScope;
 use mailrs_store::outbox::Queued;
@@ -21,11 +22,11 @@ use super::pictures::Pictures;
 use super::{BODY_FETCHES, MainWindow, read_cached_body};
 use crate::core::Core;
 use crate::open_thread::run::{
-    Answer, Card, Desk, Effects, Fetched, InlinePictures, Stored, ThreadRun,
+    Answer, Card, Desk, Effects, Fetched, InlinePictures, ReceiptCard, Stored, ThreadRun,
 };
 use crate::open_thread::{Cleaned, OpenThread, ToClean, Unsent};
 use crate::protection::Read;
-use crate::settings::MarkRead;
+use crate::settings::{MarkRead, ReadReceipts};
 use crate::translation::{self, Language, Prose, Translation};
 use crate::ui::conversation::ConversationView;
 use crate::ui::invitation::strip::{self, Strip};
@@ -100,6 +101,16 @@ impl MainWindow {
     pub(super) fn translate_message(self: &Rc<Self>, view: &Rc<ConversationView>) {
         let run = self.thread_run(view);
         glib::spawn_future_local(async move { run.translate().await });
+    }
+
+    /// The read receipt card's buttons. A card already at work has no
+    /// message to answer for, so a second press sends nothing.
+    pub(super) fn answer_receipt(self: &Rc<Self>, view: &Rc<ConversationView>, send: bool) {
+        let Some(message_id) = view.find(OpenThread::receipt_asked) else {
+            return;
+        };
+        let run = self.thread_run(view);
+        glib::spawn_future_local(async move { run.answer_receipt(message_id, send).await });
     }
 }
 
@@ -262,6 +273,21 @@ impl Desk for Ports {
     fn never_translate(&self) -> Vec<String> {
         self.window()
             .map(|window| window.settings_with(|s| s.never_translate.clone()))
+            .unwrap_or_default()
+    }
+
+    fn asks_receipt(&self) -> Option<(String, String)> {
+        self.view.find(OpenThread::asks_receipt)
+    }
+
+    fn offers_receipts(&self) -> bool {
+        self.window()
+            .is_some_and(|window| window.settings_with(|s| s.read_receipts == ReadReceipts::Ask))
+    }
+
+    fn unchecked_reports(&self) -> Vec<(String, String)> {
+        self.view
+            .read(OpenThread::unchecked_reports)
             .unwrap_or_default()
     }
 }
@@ -589,6 +615,55 @@ impl Effects for Ports {
         Box::pin(glib::timeout_future_seconds(seconds))
     }
 
+    fn receipt_answered(&self, account_id: AccountId, message_id: String) -> Answer<'_, Result<bool, String>> {
+        Box::pin(async move {
+            // Not connected yet: ask later rather than twice.
+            let Some(sync) = self.core.account(account_id) else {
+                return Ok(true);
+            };
+            self.core
+                .call(async move { sync.receipt_answered(&message_id).await })
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn answer_receipt(
+        &self,
+        account_id: AccountId,
+        message_id: String,
+        send: bool,
+    ) -> Answer<'_, Result<(), String>> {
+        Box::pin(async move {
+            let sync = self
+                .core
+                .account(account_id)
+                .ok_or_else(|| gettext("The account is not connected yet."))?;
+            self.core
+                .call(async move { sync.answer_receipt(&message_id, send).await })
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn sent_here(&self, account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<bool, String>> {
+        Box::pin(async move {
+            self.core
+                .read(move |c| {
+                    // Stores keep a Message-ID with its angle brackets or
+                    // without, as the server gave it.
+                    for id in [format!("<{rfc822_msgid}>"), rfc822_msgid] {
+                        if mailrs_store::pop3::sent_with(c, account_id, &id)?.is_some() {
+                            return Ok(true);
+                        }
+                    }
+                    Ok(false)
+                })
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
     fn queued(&self, id: i64) -> Answer<'_, Result<Option<Queued>, String>> {
         let outbox = self.core.outbox();
         Box::pin(async move {
@@ -669,6 +744,14 @@ impl Effects for Ports {
         if let Some(window) = self.window() {
             window.start_pgp(&self.view);
         }
+    }
+
+    fn receipt_card(&self, card: ReceiptCard) {
+        self.view.receipt_card(card);
+    }
+
+    fn report_checked(&self, message_id: String, sent: bool) {
+        self.view.report_checked(message_id, sent);
     }
 
     fn translation_card(&self, card: Card) {

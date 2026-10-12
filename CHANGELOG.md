@@ -18,6 +18,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Send Later on a JMAP server that can hold mail, such as Fastmail, leaves the message with the server, which sends it at its hour even with Penguin Mail closed. Such a message shows "On the server" in Send Later, and Cancel Send says when the server had already sent it, when another app canceled it, or when Penguin Mail could not find out and you should check Sent. Going back to an older Penguin Mail while a message waits on the server can send it twice.
 - Make, turn off and delete Fastmail masked addresses from Hide My Email, and write from a new one with the shield button on the composer's From row.
 - Switch an IMAP account to JMAP from its menu when its server speaks both, keeping its reminders, flags, rules and drafts.
+- When a sender asks for a read receipt, the message offers to send one, and nothing goes until you choose. Set Read Receipts to Never ask in Preferences to stop the question. A receipt for mail you sent shows as one line that says who read it and when.
 
 ## 1.0.7 (2026-10-10)
 

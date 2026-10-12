@@ -1726,6 +1726,7 @@ impl MainWindow {
         match action {
             Action::Invitation(action) => self.invitation_action(view, action),
             Action::Summarize => self.summarize(view),
+            Action::Receipt(send) => self.answer_receipt(view, send),
             Action::Reply(kind) => self.reply(view, kind),
             Action::EditDraft => self.edit_draft_from(view),
             Action::Archive

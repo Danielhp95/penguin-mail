@@ -27,7 +27,11 @@ fn body(text: &str) -> MessageBody {
             encrypted: Some(true),
         },
         receipt_to: Some("ines@allotment.example".into()),
-        read_report: Some(mailrs_domain::ReadReport { by: "tomas@allotment.example".into(), displayed: true }),
+        read_report: Some(mailrs_domain::ReadReport {
+            by: "tomas@allotment.example".into(),
+            displayed: true,
+            original: Some("rota@fastmail.example".into()),
+        }),
     }
 }
 

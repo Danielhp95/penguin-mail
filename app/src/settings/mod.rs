@@ -105,6 +105,9 @@ pub struct Settings {
     pub compose_format: ComposeFormat,
     /// Ask before sending a message that promises a file and carries none.
     pub check_attachments: bool,
+    /// Whether a message that asks for a read receipt shows the card that
+    /// offers to send one. Never ask leaves every such request unanswered.
+    pub read_receipts: ReadReceipts,
     /// Open the composer with Sign on. It does nothing without a gpg.
     pub sign_by_default: bool,
     /// Turn Encrypt on as soon as gpg holds a key for every recipient.
@@ -477,6 +480,7 @@ impl Default for Settings {
             send_as_checked: BTreeMap::new(),
             compose_format: ComposeFormat::Rich,
             check_attachments: true,
+            read_receipts: ReadReceipts::Ask,
             sign_by_default: false,
             encrypt_when_possible: false,
             contacts: false,
@@ -589,6 +593,24 @@ impl Choice for RemoteImages {
         match self {
             RemoteImages::Ask => gettext("Ask each time"),
             RemoteImages::Always => gettext("Always load"),
+        }
+    }
+}
+
+/// Whether to offer the read receipts senders ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReadReceipts {
+    Ask,
+    Never,
+}
+
+impl Choice for ReadReceipts {
+    const ALL: &'static [Self] = &[ReadReceipts::Ask, ReadReceipts::Never];
+    fn label(self) -> String {
+        match self {
+            ReadReceipts::Ask => gettext("Ask each time"),
+            ReadReceipts::Never => gettext("Never ask"),
         }
     }
 }

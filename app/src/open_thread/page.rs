@@ -317,6 +317,8 @@ impl OpenThread {
                 history: cleaned.history.clone(),
             }),
             event_slot: self.invitation_at.as_deref() == Some(meta.id.as_str()),
+            receipt: self.receipt_view(meta),
+            read_by: self.read_by(&meta.id),
         }
     }
 

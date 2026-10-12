@@ -21,7 +21,7 @@ use mailrs_domain::{
 use mailrs_store::outbox::Queued;
 use mailrs_sync::{Opened, Spot};
 
-use super::{Answer, Card, Desk, Effects, Fetched, InlinePictures, Stored, ThreadRun};
+use super::{Answer, Card, Desk, Effects, Fetched, InlinePictures, ReceiptCard, Stored, ThreadRun};
 use crate::open_thread::{Document, InlineImage, OpenThread, Page, ToClean, Unsent};
 use crate::protection::Read;
 use crate::render::Theme;
@@ -78,6 +78,11 @@ pub enum Step {
     SetFlag,
     Queued,
     Unsent,
+    ReceiptAnswered,
+    ReceiptCard,
+    AnswerReceipt,
+    SentHere,
+    ReportChecked,
 }
 
 /// The window the run reads and writes.
@@ -153,6 +158,17 @@ pub struct Screen {
     pub patches: Vec<Vec<String>>,
     /// The page on screen, with every patch applied.
     pub document: Option<Document>,
+    /// The Read Receipts setting: ask, or never ask.
+    pub offers_receipts: bool,
+    /// What the store says about whether a receipt was answered.
+    pub receipt_answered: Result<bool, String>,
+    /// How sending or declining a receipt ends.
+    pub receipt_answer: Result<(), String>,
+    pub receipt_cards: Vec<ReceiptCard>,
+    /// Every answer given, with whether it sent.
+    pub receipt_answers: Vec<(String, bool)>,
+    /// The Message-IDs the person's Sent mail holds.
+    pub sent: Vec<String>,
 }
 
 pub struct FakeWindow(pub RefCell<Screen>);
@@ -430,6 +446,12 @@ impl FakeWindow {
             loads: Vec::new(),
             patches: Vec::new(),
             document: None,
+            offers_receipts: true,
+            receipt_answered: Ok(false),
+            receipt_answer: Ok(()),
+            receipt_cards: Vec::new(),
+            receipt_answers: Vec::new(),
+            sent: Vec::new(),
         })))
     }
 
@@ -629,6 +651,18 @@ impl Desk for FakeWindow {
     fn never_translate(&self) -> Vec<String> {
         self.with(|screen| screen.never.clone())
     }
+
+    fn asks_receipt(&self) -> Option<(String, String)> {
+        self.open(OpenThread::asks_receipt).flatten()
+    }
+
+    fn offers_receipts(&self) -> bool {
+        self.with(|screen| screen.offers_receipts)
+    }
+
+    fn unchecked_reports(&self) -> Vec<(String, String)> {
+        self.read(OpenThread::unchecked_reports)
+    }
 }
 
 impl Effects for FakeWindow {
@@ -826,6 +860,27 @@ impl Effects for FakeWindow {
         Box::pin(async move { Ok(found) })
     }
 
+    fn receipt_answered(&self, _account_id: AccountId, _message_id: String) -> Answer<'_, Result<bool, String>> {
+        self.reached(Step::ReceiptAnswered);
+        let answered = self.with(|screen| screen.receipt_answered.clone());
+        Box::pin(async move { answered })
+    }
+
+    fn answer_receipt(&self, _account_id: AccountId, message_id: String, send: bool) -> Answer<'_, Result<(), String>> {
+        self.reached(Step::AnswerReceipt);
+        let answer = self.with(|screen| {
+            screen.receipt_answers.push((message_id, send));
+            screen.receipt_answer.clone()
+        });
+        Box::pin(async move { answer })
+    }
+
+    fn sent_here(&self, _account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<bool, String>> {
+        self.reached(Step::SentHere);
+        let sent = self.with(|screen| screen.sent.contains(&rfc822_msgid));
+        Box::pin(async move { Ok(sent) })
+    }
+
     fn sender_vip(&self, _vip: bool) {}
 
     fn messages_arrived(&self, fresh: Vec<MessageMeta>) -> Vec<String> {
@@ -918,6 +973,17 @@ impl Effects for FakeWindow {
     fn translation_card(&self, card: Card) {
         self.reached(Step::Card);
         self.with(|screen| screen.cards.push(card));
+    }
+
+    fn receipt_card(&self, card: ReceiptCard) {
+        self.change(Step::ReceiptCard, |open| open.take_receipt_card(card.clone()));
+        self.with(|screen| screen.receipt_cards.push(card));
+        self.draw();
+    }
+
+    fn report_checked(&self, message_id: String, sent: bool) {
+        self.change(Step::ReportChecked, |open| open.report_checked(message_id, sent));
+        self.draw();
     }
 
     fn translated(&self, message_id: String, translation: Translation) {
