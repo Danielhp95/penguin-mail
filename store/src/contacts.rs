@@ -268,24 +268,24 @@ fn take_off_deleted(conn: &Connection) -> Result<bool> {
         return Ok(true);
     };
     // Only the correspondents these messages name.
-    let mut found = HashMap::new();
-    let mut load = conn.prepare_cached("SELECT email, name, score, last_seen FROM correspondents WHERE key = ?1")?;
+    let mut named = HashSet::new();
     for g in &gone {
         g.spread(|address, _, _| {
-            if let Some((key, _, _)) = counted(address) {
-                if !found.contains_key(&key) {
-                    let person = load
-                        .query_row([&key], |row| {
-                            Ok(Correspondent { email: row.get(0)?, name: row.get(1)?, score: row.get(2)?, last_seen: row.get(3)? })
-                        })
-                        .optional()?;
-                    if let Some(person) = person {
-                        found.insert(key, person);
-                    }
-                }
-            }
+            named.extend(counted(address).map(|(key, _, _)| key));
             Ok(())
         })?;
+    }
+    let mut found = HashMap::new();
+    let mut load = conn.prepare_cached("SELECT email, name, score, last_seen FROM correspondents WHERE key = ?1")?;
+    for key in named {
+        let person = load
+            .query_row([&key], |row| {
+                Ok(Correspondent { email: row.get(0)?, name: row.get(1)?, score: row.get(2)?, last_seen: row.get(3)? })
+            })
+            .optional()?;
+        if let Some(person) = person {
+            found.insert(key, person);
+        }
     }
     let keys: Vec<String> = found.keys().cloned().collect();
     if !take_off(&mut found, &gone) {
