@@ -10,6 +10,9 @@
 //! it leaves the IMAP account as it was. Drafts the JMAP server lacks go
 //! up to it first, from the bytes kept here, so the switch loses none; a
 //! draft without a Message-ID gets one first, the one change made earlier.
+//! A Send Later message whose draft only the IMAP server holds takes the
+//! draft's bytes from it before the swap, since the JMAP send could not
+//! find the draft by its IMAP place.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
@@ -28,7 +31,7 @@ use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
-use crate::{AnyJmap, BackendError, SyncError};
+use crate::{AccountSync, AnyJmap, BackendError, SyncError};
 
 /// Message-IDs one search asks for.
 const IDS_PER_QUERY: usize = 100;
@@ -386,6 +389,48 @@ fn new_message_id(address: &str) -> String {
     format!("{}.{}@{domain}", mailrs_gmail::random_token(12), std::process::id())
 }
 
+/// A Send Later message whose draft only the IMAP server holds: its row,
+/// the draft's IMAP id and the bytes read from the server.
+struct Waiting {
+    row: i64,
+    draft_id: String,
+    raw: Vec<u8>,
+}
+
+/// Reads from the IMAP server the draft of every Send Later message that
+/// keeps no bytes here. Scheduled online, such a row names its draft by
+/// its IMAP place alone, which means nothing to JMAP. Any draft the
+/// server does not give stops the switch.
+async fn waiting_drafts(db: &Db, id: AccountId, imap: Option<&AccountSync>) -> Result<Vec<Waiting>, SwitchError> {
+    let named: Vec<(i64, String)> = db
+        .read(move |c| {
+            let mut stmt = c.prepare("SELECT id, draft_id FROM outbox WHERE account_id = ?1 AND raw IS NULL AND draft_id IS NOT NULL")?;
+            let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .await?;
+    let mut waiting = Vec::with_capacity(named.len());
+    for (row, draft_id) in named {
+        let imap = imap.ok_or(SwitchError::Drafts(SyncError::UnknownAccount(id)))?;
+        let raw = imap.raw(&draft_id).await.map_err(SwitchError::Drafts)?.to_vec();
+        waiting.push(Waiting { row, draft_id, raw });
+    }
+    Ok(waiting)
+}
+
+/// The JMAP id of the one copy in Drafts that carries `raw`'s Message-ID.
+async fn in_jmap_drafts<J: JmapApi>(api: &J, drafts: Option<&str>, raw: &[u8]) -> Result<Option<String>, BackendError> {
+    let (Some(drafts), Some(message_id)) = (drafts, message_id_header(raw)) else {
+        return Ok(None);
+    };
+    let filter = json!({ "operator": "AND", "conditions": [has_message_id(&message_id), { "inMailbox": drafts }] });
+    let mut found = found_with(api, &filter).await?;
+    Ok(match found.len() {
+        1 => found.pop(),
+        _ => None,
+    })
+}
+
 /// Pairs each stored draft the date match left out with a JMAP copy:
 /// one the server holds under its Message-ID at any date, or one imported
 /// now from the bytes kept here. An import dates its copy on arrival, so a
@@ -475,6 +520,10 @@ pub enum SwitchError {
     SignIn(JmapError),
     #[error("only an IMAP account can switch to JMAP")]
     NotImap,
+    /// The IMAP server did not give the draft of a message waiting in
+    /// Send Later.
+    #[error("could not read a Send Later draft from the IMAP server: {0}")]
+    Drafts(SyncError),
     #[error(transparent)]
     Sync(#[from] SyncError),
 }
@@ -543,7 +592,15 @@ async fn forget_imap_passwords(db: &Db, secrets: &Secrets, id: AccountId) {
 }
 
 /// Signs in to the JMAP session with what the person typed, then switches.
-pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo) -> Result<Switched, SwitchError> {
+/// `imap` is the IMAP account's sync, which reads the drafts Send Later
+/// messages name; None when it is not running.
+pub async fn to_jmap(
+    db: &Db,
+    secrets: &Secrets,
+    account: &Account,
+    imap: Option<&AccountSync>,
+    to: SwitchTo,
+) -> Result<Switched, SwitchError> {
     if account.provider != Provider::Imap {
         return Err(SwitchError::NotImap);
     }
@@ -562,7 +619,7 @@ pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
         oauth: None,
     };
-    to_jmap_over(db, secrets, account, &AnyJmap::from(client), saved, to.secret).await
+    to_jmap_over(db, secrets, account, imap, &AnyJmap::from(client), saved, to.secret).await
 }
 
 /// The switch over `api`, already signed in. The JMAP secret goes into the
@@ -574,6 +631,7 @@ pub async fn to_jmap_over<J: JmapApi>(
     db: &Db,
     secrets: &Secrets,
     account: &Account,
+    imap: Option<&AccountSync>,
     api: &J,
     saved: JmapSaved,
     secret: String,
@@ -604,9 +662,21 @@ pub async fn to_jmap_over<J: JmapApi>(
     let listed = api.mailboxes().await.map_err(backend)?.list;
     let (stored, boxes, drafts) =
         db.read(move |c| Ok((stored_messages(c, id)?, stored_mailboxes(c, id)?, stored_drafts(c, id)?))).await?;
+    let waiting = waiting_drafts(db, id, imap).await?;
     let mut messages = match_messages(api, &stored).await?;
     carry_drafts(db, account, api, &listed, &stored, &drafts, &mut messages).await?;
     drop(stored);
+    // A draft the swap gives an Email id keeps it; any other takes the
+    // JMAP copy in Drafts, or none, and the message sends from its bytes.
+    let drafts_mailbox = listed.iter().find(|m| m.role.as_deref() == Some("drafts")).map(|m| m.id.as_str());
+    let mut fill = Vec::with_capacity(waiting.len());
+    for Waiting { row, draft_id, raw } in waiting {
+        let draft = match messages.iter().any(|m| m.from == draft_id) {
+            true => None,
+            false => Some(in_jmap_drafts(api, drafts_mailbox, &raw).await?),
+        };
+        fill.push((row, raw, draft));
+    }
     let mailboxes = match_mailboxes(&boxes, &listed);
     let found = db.read(move |c| mailrs_store::services::load(c, id)).await?;
     let contacts_from_jmap = saved.offers(mailrs_jmap::CONTACTS);
@@ -635,6 +705,12 @@ pub async fn to_jmap_over<J: JmapApi>(
                  AND thread_id NOT IN (SELECT thread_id FROM messages WHERE account_id = ?1)",
                 params![id],
             )?;
+            for (row, raw, draft) in &fill {
+                c.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1 AND raw IS NULL", params![row, raw])?;
+                if let Some(draft) = draft {
+                    c.execute("UPDATE outbox SET draft_id = ?2 WHERE id = ?1", params![row, draft])?;
+                }
+            }
             Ok(Some(adopted))
         })
         .await;

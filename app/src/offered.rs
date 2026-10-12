@@ -733,6 +733,9 @@ pub fn switch_failure(err: &anyhow::Error, provider: &str, token: bool) -> Switc
         Some(SwitchError::SignIn(_)) => {
             fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
         }
+        Some(SwitchError::Drafts(_)) => {
+            fill(&gettext("{provider} did not give the draft of a message waiting in Send Later."), &named)
+        }
         Some(SwitchError::Sync(SyncError::Backend(BackendError::Changed))) => {
             again = true;
             fill(&gettext("The mail on {provider} kept changing while Penguin Mail matched it."), &named)
@@ -964,6 +967,19 @@ mod tests {
             "Could not switch to JMAP: Fastmail did not accept the token. Your IMAP account is unchanged."
         );
         assert!(!failed.again);
+    }
+
+    #[test]
+    fn a_send_later_draft_the_server_kept_back_says_so() {
+        let kept = anyhow::Error::new(mailrs_sync::switch::SwitchError::Drafts(mailrs_sync::SyncError::Backend(
+            mailrs_sync::BackendError::NotFound,
+        )));
+        let failed = super::switch_failure(&kept, "Fastmail", true);
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail did not give the draft of a message waiting in Send Later. \
+             Your IMAP account is unchanged."
+        );
     }
 
     #[test]

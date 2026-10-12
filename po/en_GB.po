@@ -1852,7 +1852,7 @@ msgstr "Gave up waiting for the browser after five minutes."
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "This account keeps no password a calendar or contacts server takes."
 
-#: app/src/core.rs:1316
+#: app/src/core.rs:1319
 msgid "The demo cannot switch accounts."
 msgstr "The demo cannot switch accounts."
 
@@ -2521,23 +2521,27 @@ msgstr "The password holds a character that cannot be sent."
 msgid "{provider} does not answer."
 msgstr "{provider} does not answer."
 
-#: app/src/offered.rs:738
+#: app/src/offered.rs:737
+msgid "{provider} did not give the draft of a message waiting in Send Later."
+msgstr "{provider} did not give the draft of a message waiting in Send Later."
+
+#: app/src/offered.rs:741
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr "The mail on {provider} kept changing while Penguin Mail matched it."
 
-#: app/src/offered.rs:750
+#: app/src/offered.rs:753
 msgid "Could not switch to JMAP: {reason}"
 msgstr "Could not switch to JMAP: {reason}"
 
-#: app/src/offered.rs:751
+#: app/src/offered.rs:754
 msgid "Your IMAP account is unchanged."
 msgstr "Your IMAP account is unchanged."
 
-#: app/src/offered.rs:761
+#: app/src/offered.rs:764
 msgid "{address} now uses JMAP"
 msgstr "{address} now uses JMAP"
 
-#: app/src/offered.rs:765
+#: app/src/offered.rs:768
 msgid "{address} now uses JMAP. {count} rule is off because its folder is not on the server."
 msgid_plural "{address} now uses JMAP. {count} rules are off because their folders are not on the server."
 msgstr[0] "{address} now uses JMAP. {count} rule is off because its folder is not on the server."

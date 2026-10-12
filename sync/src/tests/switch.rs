@@ -171,7 +171,7 @@ fn draft_in_imap(h: &ImapHarness, message_id: &str) {
 async fn a_switch_keeps_the_account_and_its_mail_under_jmap_ids() {
     let (h, fake, secrets) = imap_with_jmap_twin().await;
     let account = account(&h).await;
-    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let switched = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     assert_eq!(switched.account.provider, Provider::Jmap);
     assert_eq!(switched.account.id, h.account_id);
     assert_eq!(switched.kept, 2);
@@ -198,7 +198,7 @@ async fn the_imap_password_stays_when_a_calendar_server_needs_it() {
     .await
     .unwrap();
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     assert_eq!(secrets.passwords.load(id).unwrap().as_deref(), Some("imap-app-password"));
 }
 
@@ -209,7 +209,7 @@ async fn a_refused_sign_in_leaves_the_imap_account_as_it_was() {
     fake.with(|s| s.session.capabilities.remove(mailrs_jmap::MAIL));
     let id = h.account_id;
     let account = account(&h).await;
-    let refused = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    let refused = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await;
     assert!(matches!(refused, Err(SwitchError::Sync(_)) | Err(SwitchError::SignIn(_))), "{refused:?}");
     assert_eq!(h.ids().await, before);
     let row = h.db.read(move |c| mailrs_store::accounts::account(c, id)).await.unwrap().unwrap();
@@ -224,7 +224,7 @@ async fn only_an_imap_account_switches() {
     let id = h.account_id;
     h.db.write(move |c| Ok(c.execute("UPDATE accounts SET provider = 'pop3' WHERE id = ?1", [id])?)).await.unwrap();
     let account = account(&h).await;
-    assert!(matches!(to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "t".into()).await, Err(SwitchError::NotImap)));
+    assert!(matches!(to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "t".into()).await, Err(SwitchError::NotImap)));
 }
 
 #[tokio::test]
@@ -239,7 +239,7 @@ async fn a_swap_that_fails_takes_the_token_back_out() {
     .await
     .unwrap();
     let account = account(&h).await;
-    let failed = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    let failed = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await;
     assert!(matches!(failed, Err(SwitchError::Sync(_))), "{failed:?}");
     assert_eq!(h.ids().await, before);
     assert_eq!(secrets.jmap.load(id).unwrap(), None, "no token is left behind");
@@ -254,7 +254,7 @@ async fn an_unsent_draft_kept_only_here_crosses_to_jmap_drafts() {
     let old_id = old.clone();
     h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old_id, &raw("draft@x"))).await.unwrap();
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     let new = stored_id(&h, "draft@x").await.expect("the draft is still stored");
     assert_ne!(new, old);
     let drafts = fake.mailbox("drafts");
@@ -280,7 +280,7 @@ async fn a_send_later_draft_crosses_with_the_bytes_its_outbox_row_holds() {
     };
     h.db.write(move |c| mailrs_store::outbox::put(c, &queued)).await.unwrap();
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     let new = stored_id(&h, "later@x").await.expect("the draft is still stored");
     assert!(fake.with(|s| s.emails.contains_key(&new)));
     let row = outbox_rows(&h).await.remove(0);
@@ -297,7 +297,7 @@ async fn a_draft_the_server_already_holds_is_not_uploaded_again() {
     let (id, old) = (h.account_id, stored_id(&h, "again@x").await.unwrap());
     h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old, &raw("again@x"))).await.unwrap();
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     assert_eq!(stored_id(&h, "again@x").await.as_deref(), Some(earlier.as_str()));
     assert!(!fake.with(|s| s.calls.iter().any(|c| c == "Email/import")));
 }
@@ -328,7 +328,7 @@ async fn an_outbox_row_lets_go_of_a_message_the_switch_dropped() {
     };
     h.db.write(move |c| mailrs_store::outbox::put(c, &queued)).await.unwrap();
     let account = account(&h).await;
-    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let switched = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     assert_eq!(switched.dropped, 1);
     let row = outbox_rows(&h).await.remove(0);
     assert_eq!((row.message_id, row.thread_id), (None, None));
@@ -409,7 +409,7 @@ async fn the_swap_is_in_the_database_file_before_the_passwords_go() {
     // The IMAP account is in the file; only what the switch writes is not.
     assert!(h.db.checkpoint().await.unwrap());
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     assert_eq!(secrets.passwords.load(h.account_id).unwrap(), None);
     // The file without its write-ahead log, as a power cut can leave it.
     let copies = tempfile::tempdir().unwrap();
@@ -429,7 +429,7 @@ async fn the_passwords_stay_while_the_swap_is_only_in_the_log() {
     reader.execute_batch("BEGIN").unwrap();
     let _: i64 = reader.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
     let account = account(&h).await;
-    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let switched = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     reader.execute_batch("COMMIT").unwrap();
     assert_eq!(switched.account.provider, Provider::Jmap);
     assert_eq!(secrets.passwords.load(h.account_id).unwrap().as_deref(), Some("imap-app-password"));
@@ -442,7 +442,7 @@ async fn a_password_the_keyring_will_not_delete_leaves_the_switch_done() {
         memory.refuse_deletes();
     }
     let account = account(&h).await;
-    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    let switched = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await;
     assert_eq!(switched.map(|s| s.account.provider).ok(), Some(Provider::Jmap));
 }
 
@@ -453,7 +453,7 @@ async fn a_secret_a_crashed_switch_left_goes_at_the_next_try() {
     secrets.jmap.save(id, "left-by-a-crash").unwrap();
     fake.with(|s| s.session.capabilities.remove(mailrs_jmap::MAIL));
     let account = account(&h).await;
-    assert!(to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.is_err());
+    assert!(to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.is_err());
     assert_eq!(secrets.jmap.load(id).unwrap(), None);
 }
 
@@ -461,10 +461,10 @@ async fn a_secret_a_crashed_switch_left_goes_at_the_next_try() {
 async fn two_switches_in_a_row_keep_the_mail_and_the_token() {
     let (h, fake, secrets) = imap_with_jmap_twin().await;
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     let after_first = h.ids().await;
     // The second click still holds the IMAP account it was shown.
-    let again = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    let again = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await;
     assert!(matches!(again, Err(SwitchError::NotImap)), "{again:?}");
     assert_eq!(h.ids().await, after_first);
     assert_eq!(secrets.jmap.load(h.account_id).unwrap().as_deref(), Some("fmu1-token"));
@@ -491,9 +491,9 @@ async fn a_draft_without_a_message_id_goes_up_once_across_a_retry() {
     .await
     .unwrap();
     let account = account(&h).await;
-    assert!(to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.is_err());
+    assert!(to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.is_err());
     h.db.write(|c| Ok(c.execute_batch("DROP TRIGGER temp.no_switch;")?)).await.unwrap();
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     let imports = fake.with(|s| s.calls.iter().filter(|c| *c == "Email/import").count());
     assert_eq!(imports, 1);
     let new: String = h
@@ -552,7 +552,7 @@ async fn a_draft_whose_bytes_carry_a_message_id_keeps_it_and_gets_no_second() {
     // The row knows no Message-ID, but the bytes kept here carry one.
     h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old, &raw("kept@x"))).await.unwrap();
     let account = account(&h).await;
-    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
     let new = stored_id(&h, "kept@x").await.expect("the row now names the bytes' Message-ID");
     let uploaded = fake.with(|s| s.emails[&new].raw.clone());
     let headers = String::from_utf8_lossy(&uploaded).matches("Message-ID:").count();
@@ -564,8 +564,8 @@ async fn two_switches_at_once_leave_the_secret_of_the_one_that_went_through() {
     let (h, fake, secrets) = imap_with_jmap_twin().await;
     let account = account(&h).await;
     let (first, second) = tokio::join!(
-        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-a".into()),
-        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-b".into()),
+        to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "token-a".into()),
+        to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "token-b".into()),
     );
     let went = match (&first, &second) {
         (Ok(_), Err(SwitchError::NotImap)) => "token-a",
@@ -573,4 +573,98 @@ async fn two_switches_at_once_leave_the_secret_of_the_one_that_went_through() {
         other => panic!("one switch goes through, the other finds a JMAP account: {other:?}"),
     };
     assert_eq!(secrets.jmap.load(h.account_id).unwrap().as_deref(), Some(went));
+}
+
+/// A Send Later message scheduled on IMAP while online: the row keeps the
+/// draft's place on the server and no bytes, and the store has not read
+/// the draft yet.
+async fn send_later_on_imap(h: &ImapHarness, message_id: &str) -> String {
+    let saved = h.sync.save_draft(raw(message_id), None, None).await.unwrap();
+    let queued = Queued {
+        account_id: h.account_id,
+        draft_id: Some(saved.draft_id.clone()),
+        message_id: Some(saved.message_id),
+        thread_id: Some(saved.thread_id),
+        subject: "s".into(),
+        recipients: "a@example.com".into(),
+        send_at: crate::now_millis() + 86_400_000,
+        ..Queued::default()
+    };
+    h.db.write(move |c| mailrs_store::outbox::put(c, &queued)).await.unwrap();
+    saved.draft_id
+}
+
+#[tokio::test]
+async fn a_send_later_draft_only_the_imap_server_holds_crosses_with_its_bytes() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    send_later_on_imap(&h, "later@x").await;
+    // The same server shows the draft over JMAP.
+    let on_jmap = fake.deliver("drafts", &raw("later@x"), crate::now_millis());
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let row = outbox_rows(&h).await.remove(0);
+    assert_eq!(row.raw, Some(raw("later@x")), "the row now holds the draft's bytes");
+    assert_eq!(row.draft_id.as_deref(), Some(on_jmap.as_str()), "and names the draft by its Email id");
+}
+
+#[tokio::test]
+async fn a_send_later_draft_the_jmap_side_lacks_still_sends_from_its_bytes() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    send_later_on_imap(&h, "later@x").await;
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let row = outbox_rows(&h).await.remove(0);
+    assert_eq!(row.raw, Some(raw("later@x")));
+    assert_eq!(row.draft_id, None, "no IMAP place is left for the JMAP send to look up");
+}
+
+#[tokio::test]
+async fn a_draft_the_imap_server_cannot_give_stops_the_switch() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let place = send_later_on_imap(&h, "later@x").await;
+    let before = outbox_rows(&h).await;
+    h.imap.fail_on("body Drafts", mailrs_imap::ImapError::Protocol("no such message".into()));
+    let account = account(&h).await;
+    let refused = to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "fmu1-token".into()).await;
+    assert!(matches!(refused, Err(SwitchError::Drafts(_))), "{refused:?}");
+    assert_eq!(self::account(&h).await.provider, Provider::Imap);
+    assert_eq!(outbox_rows(&h).await, before, "the row is as it was");
+    assert_eq!(outbox_rows(&h).await[0].draft_id.as_deref(), Some(place.as_str()));
+    assert_eq!(secrets.jmap.load(h.account_id).unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_switch_with_no_imap_connection_leaves_a_send_later_draft_as_it_was() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    send_later_on_imap(&h, "later@x").await;
+    let account = account(&h).await;
+    let refused = to_jmap_over(&h.db, &secrets, &account, None, &fake, saved(), "fmu1-token".into()).await;
+    assert!(matches!(refused, Err(SwitchError::Drafts(_))), "{refused:?}");
+    assert_eq!(self::account(&h).await.provider, Provider::Imap);
+}
+
+/// After a switch, a waiting row can name its draft by an IMAP place that
+/// the JMAP server never heard of. The row's bytes go out, and the row is
+/// not forgotten as if the draft had gone out elsewhere.
+#[tokio::test]
+async fn a_row_with_bytes_and_an_imap_draft_place_sends_from_its_bytes() {
+    let h = super::jmap::over(FakeJmap::new()).await;
+    let id = h.account_id;
+    let queued = Queued {
+        account_id: id,
+        draft_id: Some("Drafts/5/12".into()),
+        subject: "s".into(),
+        recipients: "a@example.com".into(),
+        send_at: crate::now_millis() - 1000,
+        raw: Some(b"From: me@example.com\r\nTo: a@example.com\r\nSubject: s\r\nMessage-ID: <later@x>\r\n\r\nx\r\n".to_vec()),
+        ..Queued::default()
+    };
+    h.db.write(move |c| mailrs_store::outbox::put(c, &queued)).await.unwrap();
+    let outbox = crate::Outbox::new(
+        std::sync::Arc::new(crate::tests::Connected(std::collections::HashMap::from([(id, std::sync::Arc::clone(&h.sync))]))),
+        h.db.clone(),
+    );
+    let drained = outbox.send_due(crate::now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1, "{drained:?}");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1, "the bytes reached the server");
 }

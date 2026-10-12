@@ -1311,11 +1311,17 @@ impl Core {
                 // A send already under way finishes first; anything due
                 // later waits for the account the switch leaves.
                 let _held = outbox.hold(id).await;
+                // Kept past the stop: it reads from the IMAP server the
+                // drafts Send Later messages name.
+                let imap = engine.account(id).ok();
                 engine.stop_account(id);
                 let switched = match demo {
                     true => Err(anyhow!(gettext("The demo cannot switch accounts."))),
-                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, to).await.map_err(anyhow::Error::from),
+                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, imap.as_deref(), to)
+                        .await
+                        .map_err(anyhow::Error::from),
                 };
+                drop(imap);
                 let now = match &switched {
                     Ok(switched) => Some(switched.account.clone()),
                     Err(_) => db.read(move |c| accounts::account(c, id)).await.ok().flatten(),

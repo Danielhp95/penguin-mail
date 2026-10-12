@@ -2093,7 +2093,7 @@ msgstr ""
 "Esta conta não guarda nenhuma palavra-passe que um servidor de calendário ou "
 "de contactos aceite."
 
-#: app/src/core.rs:1316
+#: app/src/core.rs:1319
 msgid "The demo cannot switch accounts."
 msgstr "O modo de demonstração não muda contas."
 
@@ -2838,25 +2838,29 @@ msgstr "A palavra-passe tem um carácter que não pode ser enviado."
 msgid "{provider} does not answer."
 msgstr "{provider} não responde."
 
-#: app/src/offered.rs:738
+#: app/src/offered.rs:737
+msgid "{provider} did not give the draft of a message waiting in Send Later."
+msgstr "{provider} não entregou o rascunho de uma mensagem à espera em Enviar mais tarde."
+
+#: app/src/offered.rs:741
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 "O correio em {provider} continuou a mudar enquanto o Penguin Mail o "
 "associava."
 
-#: app/src/offered.rs:750
+#: app/src/offered.rs:753
 msgid "Could not switch to JMAP: {reason}"
 msgstr "Não foi possível mudar para JMAP: {reason}"
 
-#: app/src/offered.rs:751
+#: app/src/offered.rs:754
 msgid "Your IMAP account is unchanged."
 msgstr "A sua conta IMAP fica como estava."
 
-#: app/src/offered.rs:761
+#: app/src/offered.rs:764
 msgid "{address} now uses JMAP"
 msgstr "{address} usa agora JMAP"
 
-#: app/src/offered.rs:765
+#: app/src/offered.rs:768
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."
