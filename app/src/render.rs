@@ -247,6 +247,11 @@ pub fn face<'a>(photos: &'a Photos, address: &str, earlier: &[&str]) -> Option<F
 
 /// One message's `<article>`, whole, as a patch puts it in place of the
 /// one before.
+/// The message whose source a "View Source" link on the page asks for.
+pub fn source_of(uri: &str) -> Option<&str> {
+    uri.strip_prefix("mailrs:source/").filter(|id| !id.is_empty())
+}
+
 pub fn article(view: &MessageView, me: &[String], face: Option<Face>) -> String {
     let mut html = String::new();
     render_message(&mut html, view, me, face);
@@ -402,10 +407,15 @@ fn render_body(html: &mut String, view: &MessageView) {
             let _ = write!(html, "<div class=\"body status\">{}</div>", escape(&said));
         }
         BodyState::Unreadable => {
+            // The source is still there to read, or to save as an .eml
+            // file from the window that shows it.
             let _ = write!(
                 html,
-                "<div class=\"body status\">{}</div>",
-                escape(&gettext("This message could not be displayed"))
+                "<div class=\"body status unreadable\"><span>{}</span>\
+                 <a class=\"pill\" role=\"button\" href=\"mailrs:source/{}\">{}</a></div>",
+                escape(&gettext("This message could not be displayed")),
+                escape(&view.meta.id),
+                escape(&gettext("View Source"))
             );
         }
         BodyState::Loaded(body) => {
@@ -969,6 +979,8 @@ border:1px solid var(--line);overflow:hidden;margin-left:0}}\
 .body-frame{{contain:paint;margin:14px 0 2px}}.body-frame>.html{{margin:0}}\
 .html.plain{{background:none;border:none;padding:0;border-radius:0}}\
 .status{{color:var(--dim);font-style:italic}}\
+.unreadable{{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}}\
+.unreadable .pill{{font-style:normal}}\
 blockquote.quote{{margin:6px 0;padding:0 0 0 12px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,transparent);color:var(--dim)}}\
 .signature{{color:var(--dim)}}{trimmed}{receipts}\
 a{{color:var(--accent-text)}}\
@@ -2205,6 +2217,23 @@ mod tests {
         let no_thumbs = HashMap::new();
         let page = page("Read", vec![receipt_view(&one, &body, &no_thumbs)]);
         assert!(page.contains("<strong>&lt;b&gt;x&lt;/b&gt;@y</strong>"), "{page}");
+    }
+
+    /// A body that could not be drawn offers its source, so the person can
+    /// still read it or save it as an .eml file.
+    #[test]
+    fn a_body_that_could_not_be_displayed_offers_its_source() {
+        let one = meta("m/1", "Ann", &[]);
+        let body = MessageBody::default();
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.body = BodyState::Unreadable;
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("This message could not be displayed"), "{page}");
+        assert!(page.contains("href=\"mailrs:source/m/1\""), "{page}");
+        assert_eq!(source_of("mailrs:source/m/1"), Some("m/1"));
+        assert_eq!(source_of("mailrs:source/"), None);
+        assert_eq!(source_of("mailrs:receipt/send/m1"), None);
     }
 
     #[test]

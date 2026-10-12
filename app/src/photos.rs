@@ -40,6 +40,16 @@ const URI_BYTES: usize = 4 * 1024 * 1024;
 /// A photo file this small goes in the page as it is, without decoding.
 const SMALL_FILE: usize = 48 * 1024;
 
+/// The most pixels a photo may say it has before it is decoded: 4096 on
+/// each side, 64 MB once decoded. No address book photo comes near it.
+const MOST_PIXELS: u64 = 4096 * 4096;
+
+/// Whether a photo GDK decodes in this process says it is small enough
+/// to decode. A file whose header cannot be read is refused too.
+pub(crate) fn fits(bytes: &[u8]) -> bool {
+    texture::declared_size(bytes).is_some_and(|(width, height)| u64::from(width) * u64::from(height) <= MOST_PIXELS)
+}
+
 impl Weighed for gdk::Texture {
     fn weight(&self) -> usize {
         self.width() as usize * self.height() as usize * 4
@@ -169,6 +179,10 @@ fn face_at(path: &Path) -> Face {
     if !texture::decoded_in_process(&bytes) {
         return Face::Elsewhere(bytes);
     }
+    if !fits(&bytes) {
+        tracing::warn!(path = %path.display(), "a contact photo says it is too large to decode");
+        return Face::Decoded(None);
+    }
     Face::Decoded(gdk::Texture::from_bytes(&bytes).ok().map(|t| shrunk(&t)))
 }
 
@@ -246,6 +260,12 @@ fn page_at(path: &Path) -> Page {
     let Ok(bytes) = std::fs::read(path) else {
         return Page::Uri(None);
     };
+    // The page would decode it in WebKit's process, which runs out of
+    // memory the same way.
+    if texture::decoded_in_process(&bytes) && !fits(&bytes) {
+        tracing::warn!(path = %path.display(), "a contact photo says it is too large to decode");
+        return Page::Uri(None);
+    }
     if bytes.len() <= SMALL_FILE {
         return Page::Uri(Some(uri_of("image/jpeg", &bytes)));
     }
@@ -584,6 +604,23 @@ mod tests {
                 body(&settle);
             })
             .expect("the context is free");
+    }
+
+    /// A small file can declare a picture of billions of pixels. Its
+    /// header is enough to refuse it, before anything decodes it.
+    #[test]
+    fn a_photo_declaring_too_many_pixels_is_not_decoded() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bomb = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        bomb.extend_from_slice(&[0, 1, 0, 0, 0, 1, 0, 0, 8, 6, 0, 0, 0]);
+        let path = dir.path().join("bomb.png");
+        std::fs::write(&path, &bomb).unwrap();
+        assert!(matches!(face_at(&path), Face::Decoded(None)));
+        assert!(matches!(page_at(&path), Page::Uri(None)));
+        assert!(!fits(&bomb));
+        let mut face = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        face.extend_from_slice(&[0, 0, 1, 0, 0, 0, 1, 0]);
+        assert!(fits(&face), "a 256 pixel photo is fine");
     }
 
     #[test]

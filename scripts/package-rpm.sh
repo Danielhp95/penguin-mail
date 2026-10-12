@@ -5,8 +5,10 @@
 # they must be Fedora's own.
 #
 #   scripts/package-rpm.sh <version> <out>
-#   RPM_SIGN_KEY=<fingerprint> ...   also signs the rpm with that key,
-#                                    which must be in gpg's keyring
+#
+# The rpm comes out unsigned. Signing is a step of its own that runs no
+# build, so no build script or proc macro ever shares a process
+# environment with the signing key; see the rpm job in release.yml.
 #
 # The build turns on the packaging-rpm feature, so the app leaves updates
 # to dnf instead of offering to install a .deb. Besides the staged tree,
@@ -88,12 +90,5 @@ rpmbuild --quiet -bb \
     "$work/SPECS/penguin-mail.spec"
 rpm="penguin-mail-$version-1.x86_64.rpm"
 mv "$work/RPMS/x86_64/$rpm" "$out/$rpm"
-
-if [ -n "${RPM_SIGN_KEY:-}" ]; then
-    rpmsign --addsign \
-        --define "_gpg_name $RPM_SIGN_KEY" \
-        --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ''" \
-        "$out/$rpm" >/dev/null
-fi
 
 echo "Packed $out/$rpm"

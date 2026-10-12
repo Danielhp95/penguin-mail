@@ -59,7 +59,9 @@ impl ThreadRun {
         else {
             return;
         };
-        if !answered && !self.receipt_working() {
+        // The answer may have gone out while the store was read.
+        let answered_here = self.thread(|open| open.receipt_answered_here(&message_id)).unwrap_or(false);
+        if !answered && !answered_here && !self.receipt_working() {
             wanted.on_screen(|effects| effects.receipt_card(ReceiptCard::Asked { message_id, to }));
         }
     }
@@ -121,20 +123,21 @@ impl ThreadRun {
                 }
             }
             Err(problem) => {
-                // The answer is kept before the receipt goes, so a send
-                // that failed after that is never tried again, and the
-                // card must not offer it.
+                // The answer is kept before the receipt goes. A send the
+                // server refused outright takes it back, and the card asks
+                // again; one that may have gone keeps it, and the card must
+                // not offer it.
                 let answered = wanted
                     .wait(|effects| effects.receipt_answered(account_id, message_id))
                     .await;
                 let (card, said) = match (answered, wanted.on_screen(|_| self.find(OpenThread::asks_receipt))) {
                     (Some(Ok(false)), Some(Some((message_id, to)))) => (
                         ReceiptCard::Asked { message_id, to },
-                        gettext("Could not send the receipt: {reason}"),
+                        gettext("The receipt was not sent, and you can try again: {reason}"),
                     ),
                     _ => (
                         ReceiptCard::Hidden,
-                        gettext("The receipt was not sent, and Penguin Mail will not try again: {reason}"),
+                        gettext("The receipt may have gone out, so Penguin Mail will not send it again: {reason}"),
                     ),
                 };
                 wanted.on_screen(|effects| effects.receipt_card(card));

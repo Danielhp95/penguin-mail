@@ -1330,20 +1330,20 @@ pub fn build(draft: &Draft, date_secs: i64, message_id: &str) -> Result<Built, S
 /// over a large one, so every build the GTK thread waits for goes here.
 /// `gio::spawn_blocking` would answer only through a running GLib main
 /// loop, which the tests and the tokio runtime do not have.
-pub async fn off_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+///
+/// A panic in `work` comes back as an error rather than going on: raised
+/// again on the GTK thread it would take the app down, and the composer
+/// and its unsent draft with it.
+pub async fn off_thread<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
     let (done, answer) = futures::channel::oneshot::channel();
-    let worker = std::thread::spawn(move || {
-        let _ = done.send(work());
+    std::thread::spawn(move || {
+        let _ = done.send(std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)));
     });
     match answer.await {
-        Ok(value) => value,
-        // The sender went without a value: `work` panicked.
-        Err(_) => std::panic::resume_unwind(
-            worker
-                .join()
-                .err()
-                .unwrap_or_else(|| Box::new("the build thread stopped")),
-        ),
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) | Err(_) => Err(gettext("Penguin Mail could not put the message together.")),
     }
 }
 
@@ -1663,6 +1663,16 @@ mod tests {
 
     fn me() -> Address {
         addr(Some("Dana Reyes"), "dana@example.com")
+    }
+
+    /// A build that panics comes back as an error on the waiting side, so
+    /// the composer reopens with its draft instead of the app going down.
+    #[test]
+    fn a_worker_that_panics_answers_with_an_error() {
+        let answer = futures::executor::block_on(off_thread(|| -> u8 { panic!("broken part") }));
+        assert!(answer.is_err());
+        let fine = futures::executor::block_on(off_thread(|| 7));
+        assert_eq!(fine, Ok(7));
     }
 
     #[test]
@@ -3316,7 +3326,7 @@ mod tests {
         draft.attachments = held.clone();
         let building = off_thread(move || build(&draft, 0, "a@example.com"));
         let stall = started.elapsed();
-        let built = futures::executor::block_on(building).unwrap();
+        let built = futures::executor::block_on(building).unwrap().unwrap();
         let peak = peak_kib() - before;
         let Built::Message(raw) = built else { panic!("a plain draft builds whole") };
         eprintln!(

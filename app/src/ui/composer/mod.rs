@@ -13,6 +13,7 @@ mod pictures;
 mod recipients;
 mod removals;
 mod richbuffer;
+mod saving;
 pub mod spell;
 mod work;
 
@@ -25,6 +26,7 @@ use mailrs_store::templates::Template;
 
 use self::editor::Editor;
 use self::recipients::Recipients;
+use self::saving::{Landed, Saving};
 use self::work::Work;
 use super::autocomplete::Contacts;
 use super::{labelled_by, name, name_with_shortcut, roving};
@@ -309,6 +311,9 @@ pub struct Composer {
     /// The send or save running now. A second press waits, and closing the
     /// window cancels it.
     work: Work,
+    /// The draft save running now, which the close dialog waits for or
+    /// discards.
+    saving: Saving,
     /// The Send button's content, which reads "Sending…" while a send builds.
     send_content: adw::ButtonContent,
     attach: gtk::Button,
@@ -756,6 +761,7 @@ impl Composer {
             handed: Cell::new(false),
             saved: Cell::new(false),
             work: Work::default(),
+            saving: Saving::default(),
             send_content,
             attach: attach.clone(),
             on_send: Box::new(on_send),
@@ -1974,9 +1980,17 @@ impl Composer {
             return;
         };
         self.show_busy(false);
+        self.saving.began();
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let saved = protection::draft::save(&this.core, &draft, secret, standard).await;
+            let made = saved.as_ref().ok().map(|saved| saved.draft_id.as_str());
+            // Whoever waits on this save hears of it here, and runs only
+            // once this has set the draft id below, since nothing in
+            // between awaits.
+            if let Landed::Delete(draft_id) = this.saving.landed(draft.draft_id.as_deref(), made) {
+                this.delete_discarded(draft.account_id, draft_id);
+            }
             // Discard in the close dialog cancels the save: its result is
             // dropped and the window closes as the writer asked.
             if !this.work.finish(ticket) {
@@ -2002,6 +2016,18 @@ impl Composer {
         });
     }
 
+    /// Deletes the draft a save made after the writer chose Discard.
+    fn delete_discarded(&self, account_id: mailrs_domain::AccountId, draft_id: String) {
+        let Some(sync) = self.core.account(account_id) else {
+            return;
+        };
+        self.core.spawn(async move {
+            if let Err(err) = sync.delete_draft(&draft_id).await {
+                tracing::warn!(error = %err, "could not delete a draft saved after Discard");
+            }
+        });
+    }
+
     fn confirm_close(self: &Rc<Self>) {
         let dialog = adw::AlertDialog::new(
             Some(&gettext("Save as Draft?")),
@@ -2022,13 +2048,25 @@ impl Composer {
         glib::spawn_future_local(async move {
             match dialog.choose_future(Some(&this.window)).await.as_str() {
                 "discard" => {
+                    this.saving.discard();
                     this.work.cancel();
                     this.closing.set(true);
                     this.window.close();
                 }
                 "save" => {
-                    this.work.cancel();
-                    this.show_idle();
+                    // A save already running makes the draft; this one
+                    // then writes what the window holds now over it,
+                    // rather than making a second draft beside it.
+                    // A send still building is dropped, as before.
+                    match this.saving.wait() {
+                        Some(running) => {
+                            let _ = running.await;
+                        }
+                        None => {
+                            this.work.cancel();
+                            this.show_idle();
+                        }
+                    }
                     this.save_draft(true);
                 }
                 _ => {}
@@ -2961,7 +2999,9 @@ fn now_secs() -> i64 {
 /// `draft` built on a worker thread; the copy shares the files' bytes.
 async fn built_off_thread(draft: &Draft) -> Result<Built, String> {
     let draft = draft.clone();
-    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email))).await
+    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email)))
+        .await
+        .and_then(|built| built)
 }
 
 /// The formatting menu's name for a paragraph style, the target of

@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 CRATES_IO = {
@@ -54,12 +55,22 @@ def lock_packages(text: str) -> set[tuple[str, str, str]]:
 
 
 def proc_macro_names() -> set[str] | None:
-    """Names of proc-macro crates in the checked-out workspace, or None."""
-    result = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--locked"],
-        capture_output=True,
-        text=True,
-    )
+    """Names of proc-macro crates in the checked-out workspace, or None.
+
+    Cargo reads .cargo/config.toml, and rustup reads rust-toolchain.toml,
+    from the directory it starts in and its parents, and a pull request
+    can bring either. Starting in an empty folder outside the checkout
+    keeps them out: the workspace is reached only by its manifest.
+    """
+    manifest = os.path.abspath("Cargo.toml")
+    with tempfile.TemporaryDirectory() as outside:
+        result = subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--locked",
+             "--manifest-path", manifest],
+            capture_output=True,
+            text=True,
+            cwd=outside,
+        )
     if result.returncode != 0:
         return None
     meta = json.loads(result.stdout)

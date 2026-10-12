@@ -747,9 +747,11 @@ fn question_box() -> (gtk::Overlay, gtk::TextView) {
         .build();
     // Until the question passes the limit the box takes its whole height,
     // with no scrollbar. A scrollbar would set the box's least height to
-    // its own, about two lines.
-    let bar = scroller.clone();
+    // its own, about two lines. Both closures hold the scroller weakly:
+    // it owns them, and a strong hold would keep every pane alive.
+    let bar = scroller.downgrade();
     scroller.vadjustment().connect_changed(move |adjustment| {
+        let Some(bar) = bar.upgrade() else { return };
         let limit = f64::from(bar.max_content_height());
         bar.set_vscrollbar_policy(match limit >= 0.0 && adjustment.upper() > limit {
             true => gtk::PolicyType::Automatic,
@@ -758,8 +760,9 @@ fn question_box() -> (gtk::Overlay, gtk::TextView) {
     });
     // The view's font is known once it is on screen, so the limit waits
     // for that.
-    let limit = scroller.clone();
+    let limit = scroller.downgrade();
     input.connect_realize(move |view| {
+        let Some(limit) = limit.upgrade() else { return };
         let line = view.pango_context().metrics(None, None).height() / pango::SCALE;
         let edges = view.top_margin() + view.bottom_margin();
         limit.set_max_content_height(line * QUESTION_LINES + edges);

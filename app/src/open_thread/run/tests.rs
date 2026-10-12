@@ -1364,11 +1364,11 @@ async fn a_failed_send_puts_the_question_back() {
         window.with(|s| s.receipt_cards.last().cloned()),
         Some(ReceiptCard::Asked { .. })
     ));
-    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Could not send the receipt: offline")));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "The receipt was not sent, and you can try again: offline")));
 }
 
-/// The answer is kept before the receipt goes, so a send that failed
-/// after that is not tried again, and the card does not offer it.
+/// A send that may have gone keeps its answer, so it is not tried again,
+/// and the card does not offer it.
 #[tokio::test]
 async fn a_failed_send_already_recorded_takes_the_card_down() {
     let window = FakeWindow::with_body(asking());
@@ -1382,7 +1382,7 @@ async fn a_failed_send_already_recorded_takes_the_card_down() {
         window.with(|s| s
             .toasts
             .iter()
-            .any(|t| t == "The receipt was not sent, and Penguin Mail will not try again: offline")),
+            .any(|t| t == "The receipt may have gone out, so Penguin Mail will not send it again: offline")),
         "{:?}",
         window.with(|s| s.toasts.clone())
     );
@@ -1458,6 +1458,24 @@ async fn a_redraw_while_the_answer_goes_out_keeps_the_buttons_waiting() {
     run.engine_answered(target(None), "m1".into(), opened(asking())).await;
     assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Working));
     assert!(!window.page().contains("mailrs:receipt/"), "{}", window.page());
+}
+
+/// A redraw that asked the store before the answer was kept hears "not
+/// answered" after the receipt went. The card stays down, so a second
+/// press cannot say a receipt was sent when none was.
+#[tokio::test]
+async fn a_stale_redraw_does_not_bring_the_card_back_after_sending() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    let (release, held) = futures::channel::oneshot::channel();
+    window.with(|s| s.receipt_hold = Some(held));
+    futures::join!(run.account_ready(ACCOUNT), async {
+        run.answer_receipt("m1".into(), true).await;
+        let _ = release.send(());
+    });
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(!window.page().contains("mailrs:receipt/send"), "{}", window.page());
 }
 
 /// An account still connecting cannot say whether the receipt was

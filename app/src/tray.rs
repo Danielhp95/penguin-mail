@@ -115,11 +115,13 @@ fn argb_from_rgba(width: usize, height: usize, stride: usize, rgba: &[u8]) -> Ve
     argb
 }
 
-/// The name the tray sends for `unread`; see `MailTray::icon_name`.
-fn icon_name(unread: i64) -> &'static str {
-    match unread {
-        ..=0 => "mail-read-symbolic",
-        _ => "",
+/// The name the tray sends for `unread`, and whether a badged pixmap
+/// went with it; see `MailTray::icon_name`.
+fn icon_name(unread: i64, badged: bool) -> &'static str {
+    match (unread, badged) {
+        (..=0, _) => "mail-read-symbolic",
+        (_, true) => "",
+        (_, false) => "mail-unread-symbolic",
     }
 }
 
@@ -197,9 +199,10 @@ impl ksni::Tray for MailTray {
     /// A host draws the icon it finds by this name and passes over the
     /// pixmap, so with mail unread the name goes empty and every host
     /// draws the pixmap that carries the count. With none, the name stays
-    /// for a host that draws only themed icons.
+    /// for a host that draws only themed icons, and so it does when the
+    /// pixmaps could not be made, which would leave nothing to draw.
     fn icon_name(&self) -> String {
-        icon_name(self.unread).into()
+        icon_name(self.unread, !self.badged.is_empty()).into()
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
@@ -405,8 +408,16 @@ mod tests {
 
     #[test]
     fn with_mail_unread_the_name_steps_aside_for_the_badged_pixmap() {
-        assert_eq!(super::icon_name(0), "mail-read-symbolic");
-        assert_eq!(super::icon_name(5), "");
+        assert_eq!(super::icon_name(0, true), "mail-read-symbolic");
+        assert_eq!(super::icon_name(5, true), "");
+    }
+
+    /// With no picture to send, an empty name would leave every host with
+    /// nothing to draw.
+    #[test]
+    fn with_no_badged_pixmap_the_name_stays() {
+        assert_eq!(super::icon_name(5, false), "mail-unread-symbolic");
+        assert_eq!(super::icon_name(0, false), "mail-read-symbolic");
     }
 
     #[test]

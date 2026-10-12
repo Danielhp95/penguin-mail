@@ -1095,6 +1095,18 @@ impl MainWindow {
         }
     }
 
+    /// The network came back: an IMAP account looked at offline gets its
+    /// look for a JMAP session now. The sidebar is built again only when
+    /// one turned up, since a rebuild closes any menu open in it.
+    pub(crate) fn network_back(self: &Rc<Self>) {
+        let (looker, accounts) = (Rc::clone(self), self.accounts());
+        glib::spawn_future_local(async move {
+            if looker.core.look_for_jmap(accounts).await {
+                looker.refresh_accounts(Reload::No);
+            }
+        });
+    }
+
     /// Re-reads the accounts and their labels, and with [`Reload::Yes`]
     /// lists the mailbox again. A remote mailbox lists through Gmail, so
     /// only a change that can alter its rows is worth that.
@@ -1527,6 +1539,7 @@ impl MainWindow {
             Action::SaveAllAttachments { message_id } => {
                 self.save_all_attachments_from(view, message_id)
             }
+            Action::ViewSource { message_id } => self.view_source_of(view, Some(message_id)),
             Action::Mailto(address) => {
                 if let Some(app) = self.app.upgrade() {
                     app.new_message(self.account_in_view(), &address);
@@ -2807,11 +2820,18 @@ impl MainWindow {
             // The server sends what it holds whether or not the account is
             // here, so those messages are called back first.
             let (outbox, account_id) = (this.core.outbox(), account.id);
-            let held = this
-                .core
-                .call(async move { outbox.held_count(account_id).await })
-                .await
-                .unwrap_or_default();
+            // Not knowing is not zero: removing the account then would
+            // leave the server to send what it holds.
+            let held = match this.core.call(async move { outbox.held_count(account_id).await }).await {
+                Ok(held) => held,
+                Err(err) => {
+                    return this.toast(&with_reason(
+                        &gettext("Could not check for messages the server holds to send later, so {account} stays: {reason}"),
+                        &err,
+                        &[("account", &account.email)],
+                    ));
+                }
+            };
             let mut body = crate::offered::remove_account_body(&account, remove);
             if let Some(line) = crate::offered::held_back_line(held) {
                 body = format!("{body}\n\n{line}");
@@ -3535,8 +3555,6 @@ impl MainWindow {
         shortcuts::dialog(Filing::of(offers)).present(Some(&self.window));
     }
 
-    /// The messages a POP3 account's server would not hand over after
-    /// three tries, each with the server's words.
     /// Opens Switch to JMAP for `account`, when a look found its session.
     fn switch_to_jmap(self: &Rc<Self>, account: Account) {
         let Some(found) = self.core.offer_of(&account) else {
@@ -3575,6 +3593,8 @@ impl MainWindow {
         self.refresh_accounts(Reload::Yes);
     }
 
+    /// The messages a POP3 account's server would not hand over after
+    /// three tries, each with the server's words.
     fn show_not_downloading(self: &Rc<Self>, account: Account) {
         let win = Rc::clone(self);
         glib::spawn_future_local(async move {

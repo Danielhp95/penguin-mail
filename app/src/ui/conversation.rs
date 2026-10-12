@@ -81,6 +81,11 @@ pub enum Action {
     SaveAllAttachments {
         message_id: String,
     },
+    /// Show one message as it arrived, from where it could save it as an
+    /// .eml file: the way out for a body the page could not draw.
+    ViewSource {
+        message_id: String,
+    },
     Mailto(String),
     /// The card for one sender, asked for by clicking their name.
     ShowContact(String),
@@ -1868,6 +1873,10 @@ impl ConversationView {
                     y,
                 });
             }
+        } else if let Some(message_id) = crate::render::source_of(uri) {
+            actions(Action::ViewSource {
+                message_id: message_id.to_string(),
+            });
         } else if let Some(address) = uri.strip_prefix("mailrs:contact/") {
             actions(Action::ShowContact(address.to_string()));
         } else if uri == "mailrs:summarize" {

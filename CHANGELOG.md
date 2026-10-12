@@ -26,6 +26,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 - The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
 - Sending or saving a message with a large attachment no longer freezes the window, and holds the file in memory once rather than three times.
+- A message that cannot be displayed offers View Source beside the notice, to read it as it arrived or save it as an .eml file.
 
 ### Fixed
 
@@ -34,6 +35,9 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
 - The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
+- When Penguin Mail starts in the tray with no window, the tray's unread count includes unread mail on the server older than what this computer keeps.
+- Closing a message while its draft saves no longer leaves two drafts behind, and choosing Discard then leaves none.
+- A read receipt you sent no longer comes back to offer itself again while the message redraws.
 
 ### Fixed
 

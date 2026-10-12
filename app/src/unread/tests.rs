@@ -298,11 +298,83 @@ async fn with_a_window_every_event_asks_the_servers_as_before() {
             }));
             started(&unread);
             settle().await;
+            tokio::time::sleep(REFRESH_GAP).await;
             unread.heard(&mailrs_domain::ChangeEvent::LabelsChanged { account_id: 1 });
             settle().await;
             let asks = fake.asks.borrow();
             assert_eq!(asks.len(), 2);
             assert!(asks[1].refresh);
+        })
+        .await;
+}
+
+/// A new account's first sync sends events for seconds on end. With a
+/// window open each one gets its own store read at once, but the servers
+/// are asked again only once the gap since the last time has passed.
+#[tokio::test(start_paused = true)]
+async fn with_a_window_a_long_burst_asks_the_servers_once_per_gap() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let fake = Rc::new(Fake::default());
+            let unread = Unread::new(Rc::clone(&fake));
+            unread.show_in(Box::new(Window {
+                mailboxes: vec![ALL_INBOXES],
+                shown: Rc::default(),
+            }));
+            started(&unread);
+            settle().await;
+            for _ in 0..30 {
+                unread.heard(&threads_changed());
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            settle().await;
+            settle().await;
+            let asks = fake.asks.borrow();
+            assert!(asks.len() > 30, "each event read the store: {}", asks.len());
+            let refreshes = asks.iter().filter(|a| a.refresh).count();
+            assert_eq!(refreshes, 2, "the first count, then one after the gap");
+            assert!(asks.last().is_some_and(|a| a.refresh), "the owed refresh still came");
+            // A count that waits on the servers still reads every mailbox
+            // the window shows, not only the inboxes.
+            assert!(asks.iter().all(|a| a.full), "{asks:?}");
+        })
+        .await;
+}
+
+/// With no window open, the tray asks each account's server once, when the
+/// account has started, so it counts unread mail older than what this
+/// computer keeps. After that it reads only what is kept.
+#[tokio::test(start_paused = true)]
+async fn with_no_window_each_account_asks_its_server_once_when_it_starts() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let fake = Rc::new(Fake::default());
+            let unread = Unread::new(Rc::clone(&fake));
+            started(&unread);
+            unread.set_accounts(vec![1, 2]);
+            settle().await;
+            assert!(fake.asks.borrow().iter().all(|a| !a.refresh), "nothing started yet");
+            unread.started(1);
+            settle().await;
+            // The second account starts soon after the first.
+            unread.started(2);
+            for _ in 0..10 {
+                settle().await;
+            }
+            let refreshed = fake.asks.borrow().iter().filter(|a| a.refresh).count();
+            assert_eq!(refreshed, 2, "one server count for each account");
+
+            // Mail moves, servers answer, and a sync settings change starts
+            // the accounts again: none of it asks a server.
+            unread.heard(&threads_changed());
+            unread.answered();
+            unread.started(1);
+            unread.started(2);
+            for _ in 0..10 {
+                settle().await;
+            }
+            let refreshed = fake.asks.borrow().iter().filter(|a| a.refresh).count();
+            assert_eq!(refreshed, 2, "no more server counts without a window");
         })
         .await;
 }

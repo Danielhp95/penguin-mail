@@ -4,6 +4,7 @@
 //! so the tray never says something the sidebar does not.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
@@ -17,6 +18,10 @@ pub const ALL_INBOXES: Mailbox = Mailbox::Unified(Standard::Inbox);
 /// while no window shows the counts. Sync reports each batch of changed
 /// threads on its own, and a new account's first sync sends hundreds.
 pub const QUIET: Duration = Duration::from_millis(500);
+
+/// The shortest time between two counts that ask the servers. The store
+/// is read at once for every burst; only the servers wait.
+pub const REFRESH_GAP: Duration = Duration::from_secs(5);
 
 /// What the window shows besides the inboxes: its sidebar's mailboxes,
 /// and the mailbox on screen with the view that shapes its categories.
@@ -36,6 +41,9 @@ pub struct Ask {
     /// False reads only the server answers already kept, so a count woken
     /// by a server answer while no window is open starts no polling.
     pub refresh: bool,
+    /// A window shows the counts, so every mailbox it lists is read, not
+    /// only the inboxes the tray and the Dock show.
+    pub full: bool,
 }
 
 /// What reads the counts: `Lists::counts` in the app.
@@ -53,11 +61,14 @@ pub async fn read<A: mailrs_sync::Accounts>(
         shown,
         view,
         refresh,
+        full,
     } = ask;
-    match refresh {
-        true => lists.counts(&mailboxes, &shown, &view).await,
+    match (refresh, full) {
+        (true, _) => lists.counts(&mailboxes, &shown, &view).await,
+        // A window's count waiting for its turn to ask the servers.
+        (false, true) => lists.cached_counts(&mailboxes, &shown, &view).await,
         // Only the tray and the Dock ask this way, for the inboxes.
-        false => lists.inbox_counts(&mailboxes).await,
+        (false, false) => lists.inbox_counts(&mailboxes).await,
     }
 }
 
@@ -106,6 +117,8 @@ pub struct Unread<C> {
     listeners: RefCell<Vec<Listener>>,
     /// A count is wanted; true when it may ask the servers again.
     asked: Cell<Option<bool>>,
+    /// The accounts whose server was asked once on starting.
+    started: RefCell<HashSet<AccountId>>,
     wake: Rc<tokio::sync::Notify>,
 }
 
@@ -117,6 +130,7 @@ impl<C: Counter + 'static> Unread<C> {
             window: RefCell::default(),
             listeners: RefCell::default(),
             asked: Cell::new(None),
+            started: RefCell::default(),
             wake: Rc::default(),
         })
     }
@@ -147,6 +161,16 @@ impl<C: Counter + 'static> Unread<C> {
     /// Hears every count from here on.
     pub fn listen(&self, listener: Listener) {
         self.listeners.borrow_mut().push(listener);
+    }
+
+    /// The account's sync has started, so its server can answer. With no
+    /// window open the counts read only what is kept, which leaves out
+    /// unread mail older than this computer holds; so each account's
+    /// server is asked once, the first time it starts.
+    pub fn started(&self, account_id: AccountId) {
+        if self.started.borrow_mut().insert(account_id) {
+            self.ask(true);
+        }
     }
 
     /// Mail or a setting changed what the counts say. Only an open window
@@ -195,6 +219,7 @@ impl<C: Counter + 'static> Unread<C> {
             .collect();
         mailboxes.push(ALL_INBOXES);
         let wanted = self.window.borrow().as_ref().map(|w| w.wanted());
+        let full = matches!(wanted, Some(Some(_)));
         let (shown, view) = match wanted {
             Some(Some(wanted)) => {
                 for mailbox in wanted.mailboxes {
@@ -215,6 +240,7 @@ impl<C: Counter + 'static> Unread<C> {
             shown,
             view,
             refresh,
+            full,
         })
     }
 
@@ -234,12 +260,42 @@ async fn run<C: Counter + 'static, P: Future<Output = ()>>(
     wake: Rc<tokio::sync::Notify>,
     pause: impl Fn(Duration) -> P,
 ) {
+    use futures::future::{Either, select};
+    use tokio::time::Instant;
+
+    // When the servers were last asked, and whether a count since then
+    // wanted them asked again and was told to wait.
+    let mut refreshed: Option<Instant> = None;
+    let mut owed = false;
     loop {
-        wake.notified().await;
+        let due = refreshed.filter(|_| owed).map(|at| at + REFRESH_GAP);
+        match due {
+            Some(due) => {
+                let woken = std::pin::pin!(wake.notified());
+                let waited = std::pin::pin!(pause(due.saturating_duration_since(Instant::now())));
+                if let Either::Right(_) = select(woken, waited).await {
+                    let Some(unread) = weak.upgrade() else { return };
+                    unread.ask(true);
+                    owed = false;
+                }
+            }
+            None => wake.notified().await,
+        }
         // Whatever else this turn of the main loop asks joins this count.
         pause(Duration::ZERO).await;
         let Some(unread) = weak.upgrade() else { return };
-        let Some(ask) = unread.take() else { continue };
+        let Some(mut ask) = unread.take() else { continue };
+        if ask.refresh {
+            let now = Instant::now();
+            if refreshed.is_some_and(|at| now < at + REFRESH_GAP) {
+                // The store answers now; the servers wait for the gap.
+                ask.refresh = false;
+                owed = true;
+            } else {
+                refreshed = Some(now);
+                owed = false;
+            }
+        }
         match unread.counter.count(ask).await {
             Ok(counts) => unread.publish(Counted { counts }),
             Err(error) => tracing::warn!(%error, "could not count unread mail"),
