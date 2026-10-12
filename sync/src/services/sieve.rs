@@ -84,6 +84,14 @@ impl<M: ManageSieveApi> SieveRules<M> {
         self.server_reply == Some(name)
     }
 
+    /// Takes out an include of the server's own reply script, which an
+    /// older build wrote.
+    fn drop_server_reply(&self, script: &mut Script) {
+        if script.include.as_deref().is_some_and(|name| self.is_server_reply(name)) {
+            script.include = None;
+        }
+    }
+
     /// The rules, and the text on the server nobody here wrote, in one
     /// read of the script.
     pub async fn listing(&self) -> Result<(Vec<Filter>, Vec<String>), BackendError> {
@@ -114,6 +122,7 @@ impl<M: ManageSieveApi> SieveRules<M> {
             }
         }
         self.turn_off_orphans(&mut script, &ext, None).await?;
+        self.drop_server_reply(&mut script);
         let text = script::write(&script, &self.address, &|set| self.folder(set), &ext).map_err(|e| self.words(e))?;
         if text != held {
             self.api.put(SCRIPT_NAME, &text).await.map_err(|e| self.err(e))?;
@@ -272,9 +281,7 @@ impl<M: ManageSieveApi> SieveRules<M> {
         keep: Option<&str>,
     ) -> Result<(), BackendError> {
         self.turn_off_orphans(&mut script, ext, keep).await?;
-        if script.include.as_deref().is_some_and(|name| self.is_server_reply(name)) {
-            script.include = None;
-        }
+        self.drop_server_reply(&mut script);
         if let Running::Theirs(name) = &running {
             if ext.has("include") && !self.is_server_reply(name) {
                 script.include = Some(name.clone());
