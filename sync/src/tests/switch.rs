@@ -731,7 +731,6 @@ async fn a_sieve_server_running_the_persons_own_script_leaves_the_rules_here() {
 /// with the same UID, and never goes out under the CalDAV ids, which the
 /// JMAP server would answer as unknown and the queue would drop.
 #[tokio::test]
-#[ignore = "needs plan 7 ruling 2"]
 async fn an_offline_calendar_change_reaches_the_jmap_calendar_after_a_switch() {
     let (h, fake, secrets) = imap_with_jmap_twin().await;
     let fake = std::sync::Arc::new(fake.with_calendars());
