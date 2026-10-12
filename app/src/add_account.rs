@@ -1728,9 +1728,17 @@ pub struct JmapAttempt {
     /// The user name Basic sends.
     pub user: String,
     pub secret: String,
+    /// The app password for the calendar, when the person typed one.
+    pub dav_password: Option<String>,
 }
 
-pub fn jmap_attempt(address: &Address, proposal: &JmapProposal, secret: &str, token: bool) -> JmapAttempt {
+pub fn jmap_attempt(
+    address: &Address,
+    proposal: &JmapProposal,
+    secret: &str,
+    dav_password: &str,
+    token: bool,
+) -> JmapAttempt {
     JmapAttempt {
         address: address.full(),
         provider_name: proposal.provider_name.clone(),
@@ -1738,7 +1746,20 @@ pub fn jmap_attempt(address: &Address, proposal: &JmapProposal, secret: &str, to
         token,
         user: proposal.user.clone().unwrap_or_else(|| address.full()),
         secret: secret.to_string(),
+        dav_password: (!dav_password.is_empty()).then(|| dav_password.to_string()),
     }
+}
+
+/// Whether the JMAP sign-in offers an app password for the calendar: a
+/// token signs in to JMAP alone, and the provider's table entry names a
+/// CalDAV server.
+pub fn asks_dav_password(proposal: &JmapProposal, token: bool) -> bool {
+    token
+        && proposal
+            .provider
+            .as_ref()
+            .and_then(|p| p.imap_host.as_deref())
+            .is_some_and(|host| mailrs_discover::services_of(host).caldav.is_some())
 }
 
 /// What the JMAP sign-in says after a failure, in the dialog's own words.
@@ -3296,6 +3317,29 @@ mod tests {
     }
 
     #[test]
+    fn fastmail_s_token_sign_in_offers_the_calendar_password() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert!(asks_dav_password(&proposal, true));
+        assert!(!asks_dav_password(&proposal, false), "a password signs in to the calendar as it is");
+    }
+
+    #[test]
+    fn a_server_the_table_does_not_know_asks_for_no_calendar_password() {
+        let address = Address::parse("me@example.org").unwrap();
+        let proposal = jmap_proposal(hoster_jmap(), None, &address);
+        assert!(!asks_dav_password(&proposal, true));
+    }
+
+    #[test]
+    fn an_empty_calendar_password_is_left_out_of_the_attempt() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(jmap_attempt(&address, &proposal, "token", "", true).dav_password, None);
+        assert_eq!(jmap_attempt(&address, &proposal, "token", "app", true).dav_password.as_deref(), Some("app"));
+    }
+
+    #[test]
     fn jmap_is_offered_before_imap_when_both_are_found() {
         let address = Address::parse("me@fastmail.com").unwrap();
         let found = mailrs_discover::table_only("fastmail.com");
@@ -3407,9 +3451,9 @@ mod tests {
     fn the_attempt_logs_in_with_the_address_unless_a_user_name_was_typed() {
         let address = Address::parse("me@example.org").unwrap();
         let bare = typed_jmap("mail.example.org", "", &address, None).unwrap();
-        assert_eq!(jmap_attempt(&address, &bare, "pw", false).user, "me@example.org");
+        assert_eq!(jmap_attempt(&address, &bare, "pw", "", false).user, "me@example.org");
         let named = typed_jmap("mail.example.org", "me", &address, None).unwrap();
-        assert_eq!(jmap_attempt(&address, &named, "pw", false).user, "me");
+        assert_eq!(jmap_attempt(&address, &named, "pw", "", false).user, "me");
     }
 
     #[test]

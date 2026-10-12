@@ -896,6 +896,9 @@ struct PasswordPage {
     imap_instead: adw::ActionRow,
     /// A token in place of the password, for a server that takes either.
     use_token: adw::SwitchRow,
+    /// An app password for the provider's calendar, which a JMAP token
+    /// does not reach. Optional.
+    dav_password: adw::PasswordEntryRow,
 }
 
 fn password_page() -> PasswordPage {
@@ -928,6 +931,13 @@ fn password_page() -> PasswordPage {
         .build();
     crate::ui::name(&use_token, &gettext("Sign In With a Token"));
     password_list.append(&use_token);
+    let dav_password = adw::PasswordEntryRow::builder()
+        .title(gettext("App Password for Calendar"))
+        .tooltip_text(gettext("Optional. Make an app password with calendar access in the provider's settings."))
+        .visible(false)
+        .build();
+    crate::ui::name(&dav_password, &gettext("App Password for Calendar"));
+    password_list.append(&dav_password);
     let hint = Card::new();
     let failed = Card::new();
     let failed_servers = icon_button(
@@ -1050,6 +1060,7 @@ fn password_page() -> PasswordPage {
         session,
         imap_instead,
         use_token,
+        dav_password,
     }
 }
 
@@ -2252,6 +2263,7 @@ impl Dialog {
         page.session.set_visible(false);
         page.imap_instead.set_visible(false);
         page.use_token.set_visible(false);
+        page.dav_password.set_visible(false);
         page.agree.set_title(&gettext("Use these servers"));
         page.agree.set_subtitle(&gettext(
             "Penguin Mail guessed these servers. Your password goes to them only after you check the box.",
@@ -2352,6 +2364,7 @@ impl Dialog {
         };
         if !add_account::keeps_password(self.password_for.borrow().as_deref(), &address) {
             page.password.set_text("");
+            page.dav_password.set_text("");
         }
         self.smtp_password.replace(String::new());
         self.password_for.replace(Some(address));
@@ -2408,6 +2421,7 @@ impl Dialog {
         let title = add_account::jmap_secret_title(token);
         page.password.set_title(&title);
         crate::ui::name(&page.password, &title);
+        page.dav_password.set_visible(add_account::asks_dav_password(proposal, token));
         match add_account::jmap_hint(proposal, token) {
             Some((heading, body, link)) => page.hint.show(
                 "advice",
@@ -2630,7 +2644,8 @@ impl Dialog {
         ticket: add_account::Ticket,
     ) {
         let token = self.token.get();
-        let attempt = add_account::jmap_attempt(&address, &proposal, &secret, token);
+        let dav_password = self.password.dav_password.text();
+        let attempt = add_account::jmap_attempt(&address, &proposal, &secret, &dav_password, token);
         match self.core.sign_in_jmap(attempt).await {
             // The account is kept whether or not the dialog is still
             // open, so the window hears about it either way.

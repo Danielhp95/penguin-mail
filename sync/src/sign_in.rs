@@ -398,6 +398,9 @@ pub struct NewJmap {
     pub saved: mailrs_store::jmap::JmapSaved,
     /// The password or the token.
     pub secret: String,
+    /// An app password for the account's CalDAV and CardDAV servers, when
+    /// the JMAP secret is a token those servers will not take.
+    pub dav_password: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -428,6 +431,7 @@ pub async fn jmap_signed_in(
         provider_name,
         saved,
         secret,
+        dav_password,
     } = new;
     let email = address.clone();
     let before = db
@@ -441,6 +445,9 @@ pub async fn jmap_signed_in(
             });
         }
         keep_secret(Arc::clone(&secrets.jmap), held.id, secret.clone()).await?;
+        if let Some(password) = dav_password.clone() {
+            keep_secret(Arc::clone(&secrets.passwords), held.id, password).await?;
+        }
     }
     let (email, again) = (address.clone(), before.as_ref().map(|held| held.state));
     let added = db
@@ -463,7 +470,7 @@ pub async fn jmap_signed_in(
         provider: provider.unwrap_or_default(),
     })?;
     if before.is_none()
-        && let Err(err) = clear_and_keep(secrets, id, secret).await
+        && let Err(err) = clear_and_keep(secrets, id, secret, dav_password).await
     {
         db.write(move |c| accounts::delete_account(c, id)).await?;
         return Err(err);
@@ -476,15 +483,25 @@ pub async fn jmap_signed_in(
 }
 
 /// Deletes the passwords a removed account may have left under `id`, then
-/// keeps `secret` as the JMAP account's.
-async fn clear_and_keep(secrets: &Secrets, id: AccountId, secret: String) -> Result<(), JmapSignInError> {
+/// keeps `secret` as the JMAP account's and `dav_password`, when given, as
+/// its calendar and contacts servers' password.
+async fn clear_and_keep(
+    secrets: &Secrets,
+    id: AccountId,
+    secret: String,
+    dav_password: Option<String>,
+) -> Result<(), JmapSignInError> {
     let passwords = Arc::clone(&secrets.passwords);
     tokio::task::spawn_blocking(move || {
         crate::passwords::first_error([passwords.delete(id), passwords.delete_outgoing(id)])
     })
     .await
     .map_err(|err| PasswordError::Keyring(err.to_string()))??;
-    keep_secret(Arc::clone(&secrets.jmap), id, secret).await
+    keep_secret(Arc::clone(&secrets.jmap), id, secret).await?;
+    if let Some(password) = dav_password {
+        keep_secret(Arc::clone(&secrets.passwords), id, password).await?;
+    }
+    Ok(())
 }
 
 async fn keep_secret<P: PasswordStore + 'static>(

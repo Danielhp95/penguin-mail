@@ -180,7 +180,9 @@ impl Connector {
             }
             Provider::Imap => connect_imap(db, Arc::clone(&self.secrets.passwords), account, window_days).await,
             Provider::Pop3 => connect_pop3(db, Arc::clone(&self.secrets.passwords), account).await,
-            Provider::Jmap => connect_jmap(db, Arc::clone(&self.secrets.jmap), account, window_days).await,
+            Provider::Jmap => {
+                connect_jmap(db, Arc::clone(&self.secrets.jmap), Arc::clone(&self.secrets.passwords), account, window_days).await
+            }
             Provider::Microsoft => {
                 let Some(client) = self.clients.microsoft.clone() else {
                     tracing::warn!(account = account.id, "no Microsoft client in this build");
@@ -477,35 +479,44 @@ pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: Str
 }
 
 /// The services for a JMAP account, from its session row and the secret in
-/// `secrets`. Without either, the store records that the account needs to
-/// sign in again before this answers `NeedsReauth`. Nothing here connects;
-/// the client reads the session when sync first asks.
+/// `jmap`. Without either, the store records that the account needs to
+/// sign in again before this answers `NeedsReauth`. Each service follows
+/// the session's capabilities; a confirmed CalDAV, CardDAV or ManageSieve
+/// server serves what the session lacks, signed in with the app password
+/// in `dav`, or the account's own password over Basic. Nothing here
+/// connects; the client reads the session when sync first asks.
 pub async fn connect_jmap<P: PasswordStore + 'static>(
     db: &Db,
-    secrets: Arc<P>,
+    jmap: Arc<P>,
+    dav: Arc<P>,
     account: &Account,
     window_days: i64,
 ) -> Result<AccountServices, SyncError> {
-    connect_jmap_within(db, secrets, account, window_days, STEP_WAIT).await
+    connect_jmap_within(db, jmap, dav, account, window_days, STEP_WAIT).await
 }
 
 pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
     db: &Db,
-    secrets: Arc<P>,
+    jmap: Arc<P>,
+    dav: Arc<P>,
     account: &Account,
     window_days: i64,
     wait: Duration,
 ) -> Result<AccountServices, SyncError> {
     let id = account.id;
     let saved = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::jmap::load(c, id))).await?;
-    let secret = read_secret(secrets, id, wait).await?;
+    let secret = read_secret(jmap, id, wait).await?;
     let (Some(saved), Some(secret)) = (saved, secret) else {
         let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
         bounded(id, "the mail store", wait, marked).await?;
         return Err(BackendError::NeedsReauth.into());
     };
+    let secret_for_dav = secret.clone();
     let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth_of(&saved, &account.email, secret))
         .map_err(crate::services::jmap::backend)?;
+    // The adapter and the Sieve rules share one client: clones share the
+    // session, the pool and the permits.
+    let jmap_api = Arc::new(crate::AnyJmap::from(client.clone()));
     let token = saved.auth == mailrs_store::jmap::JmapAuth::Bearer;
     let table_says_no_reply = mailrs_discover::jmap_named(account.provider_name())
         .is_some_and(|p| p.token_lacks.iter().any(|c| c == mailrs_jmap::VACATION));
@@ -517,12 +528,48 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
         capabilities: saved.capabilities.clone(),
         auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION),
     };
-    let mut services = AccountServices::jmap(db.clone(), id, client, settings);
-    if saved.offers(mailrs_jmap::VACATION)
-        && let AnyMail::Jmap(adapter) = &services.mail
+    let mut services = AccountServices::jmap(client, settings);
+    // DAV and ManageSieve servers take the account password over Basic, or
+    // the app password kept beside a token.
+    let dav_secret = match read_secret(dav, id, wait).await? {
+        Some(password) => Some(password),
+        None if saved.auth == mailrs_store::jmap::JmapAuth::Basic => Some(secret_for_dav),
+        None => None,
+    };
+    if saved.offers(mailrs_jmap::CONTACTS)
+        && let AnyMail::Jmap(adapter) = services.mail.clone()
     {
-        let reply = AnyAutoReply::Jmap(adapter.clone());
-        services = services.with_auto_reply(reply);
+        services = services.with_contacts(AnyContacts::Jmap(adapter));
+    }
+    if saved.offers(mailrs_jmap::SIEVE) {
+        let api = Arc::new(crate::JmapSieve::new(Arc::clone(&jmap_api)));
+        let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string());
+        services = services.with_rules(AnyRules::JmapSieve(rules));
+    }
+    if let Some(secret) = &dav_secret {
+        let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
+        // The password goes only to a server the person confirmed, and
+        // never for a service the session already gives.
+        for service in found.into_iter().filter(|f| f.confirmed) {
+            let skip = match service.kind {
+                ServiceKind::CardDav => saved.offers(mailrs_jmap::CONTACTS),
+                ServiceKind::Sieve => saved.offers(mailrs_jmap::SIEVE),
+                ServiceKind::CalDav => false,
+            };
+            if !skip {
+                services = attach(services, &service, secret, account, account.provider_name());
+            }
+        }
+    }
+    // A ManageSieve server brings its own automatic reply with its rules;
+    // JMAP's own reply wins where the session offers it.
+    if saved.offers(mailrs_jmap::VACATION)
+        && let AnyMail::Jmap(adapter) = services.mail.clone()
+    {
+        services = services.with_auto_reply(AnyAutoReply::Jmap(adapter));
+    }
+    if services.rules.is_none() {
+        services = services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), id)));
     }
     Ok(services)
 }
