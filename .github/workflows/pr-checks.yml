@@ -46,6 +46,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The rules come from the base branch, so a pull request cannot loosen
+      # them for its own check. On a push or a schedule the base is the
+      # commit itself.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: base
+          persist-credentials: false
+          sparse-checkout: deny.toml
+          sparse-checkout-cone-mode: false
       - name: Install cargo-deny
         run: |
           set -euo pipefail
@@ -56,9 +66,15 @@ jobs:
           tar -xzf "$RUNNER_TEMP/deny.tar.gz" -C "$RUNNER_TEMP"
           install -m 755 "$RUNNER_TEMP/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
       # deny.toml says what passes. --locked fails rather than let cargo
-      # rewrite a Cargo.lock that no longer matches the manifests.
+      # rewrite a Cargo.lock that no longer matches the manifests. Cargo
+      # reads .cargo/config.toml, and rustup rust-toolchain.toml, from the
+      # folder it starts in, so it starts outside the checkout and reaches
+      # the workspace only by its manifest.
       - name: Check
-        run: cargo deny --locked check --show-stats
+        working-directory: ${{ runner.temp }}
+        run: |
+          cargo deny --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" \
+              --config "$GITHUB_WORKSPACE/base/deny.toml" --locked check --show-stats
 
   dependency-review:
     name: New dependencies with known vulnerabilities
@@ -106,9 +122,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+          path: pr
           persist-credentials: false
+      # The checker comes from the base branch: a pull request that changed
+      # it would otherwise pass its own check.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+          sparse-checkout: scripts/pr-review-summary.py
+          sparse-checkout-cone-mode: false
       # Writes the list to the run's summary page. It fails only on a
       # binary file outside docs/, app/data/ and testmail/, or a crate from
       # anywhere but crates.io; the rest is for a person to read.
       - name: List what to read closely
-        run: python3 scripts/pr-review-summary.py HEAD^1 HEAD
+        working-directory: pr
+        run: python3 ../base/scripts/pr-review-summary.py HEAD^1 HEAD
