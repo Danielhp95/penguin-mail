@@ -11272,7 +11272,7 @@ msgstr ""
 msgid "Waiting for the account to switch to JMAP"
 msgstr "En attente du passage du compte à JMAP"
 
-#: sync/src/outbox.rs:1366
+#: sync/src/outbox.rs:1394
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 

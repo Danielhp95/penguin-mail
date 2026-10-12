@@ -827,3 +827,20 @@ async fn a_hold_hours_away_is_asked_about_at_most_hourly() {
     outbox.send_due(now + HOUR + MINUTE).await.unwrap();
     assert_eq!(asked(&h), looks + 1, "once the hour has passed");
 }
+
+#[tokio::test]
+async fn a_hold_another_install_sent_now_reads_as_sent_here() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + 3 * HOUR).await;
+    let other = beside(&h).await;
+    other.bootstrap_all().await;
+    queue(&other).send_due(now_millis()).await.unwrap();
+    let theirs = other.db.read(outbox::scheduled).await.unwrap().remove(0);
+    assert!(matches!(queue(&other).send_one(theirs.id).await.unwrap(), Posted::Sent(_)));
+    h.look().await;
+    let drained = queue(&h).send_due(now_millis()).await.unwrap();
+    assert!(row(&h, id).await.is_none(), "it leaves Send Later here");
+    assert!(drained.stuck.is_empty(), "not an Outbox row saying it was canceled: {:?}", drained.stuck);
+    assert_eq!(drained.sent.len(), 1, "it reads as sent");
+    assert_eq!(sent(&h), 1);
+}

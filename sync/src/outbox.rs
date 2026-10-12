@@ -1003,6 +1003,13 @@ impl<A: Accounts> Outbox<A> {
                 drained.sent.push(message);
                 drained.changed = true;
             }
+            // Another install's Send Now calls the hold back and sends the
+            // message itself, so a canceled hold may still have gone.
+            Ok(Settled::Canceled) if self.went_out(&sync, &message).await => {
+                self.forget(&message).await?;
+                drained.sent.push(message);
+                drained.changed = true;
+            }
             Ok(Settled::Canceled) if self.copy_left(&sync, &message).await => {
                 self.forget(&message).await?;
                 drained.changed = true;
@@ -1083,6 +1090,10 @@ impl<A: Accounts> Outbox<A> {
             Ok(Unheld::InDrafts) => {
                 message.held = None;
                 self.looked(id);
+                if self.went_out(&sync, &message).await {
+                    self.forget(&message).await?;
+                    return Ok(Recalled::Done(Posted::Sent(copy)));
+                }
                 if !self.copy_left(&sync, &message).await {
                     self.forget(&message).await?;
                     return Ok(Recalled::Gone);
@@ -1124,6 +1135,22 @@ impl<A: Accounts> Outbox<A> {
             Some(_) => Recalled::Here(Box::new(Queued { id, ..message })),
             None => Recalled::Done(Posted::Waiting(id)),
         })
+    }
+
+    /// Whether a hold someone called back went out all the same: another
+    /// install's Send Now cancels the hold and sends the message itself,
+    /// so its `Message-ID` is in Sent. A look that fails says no.
+    async fn went_out(&self, sync: &AccountSync, message: &Queued) -> bool {
+        let Some(raw) = &message.raw else {
+            return false;
+        };
+        match sync.sent_copy(raw).await {
+            Ok(found) => found.is_some(),
+            Err(err) => {
+                tracing::info!(error = %quiet_text(err), "could not look in Sent for a called-back hold");
+                false
+            }
+        }
     }
 
     /// Whether the copy a called-back hold left is still on the server.
@@ -1215,6 +1242,7 @@ impl<A: Accounts> Outbox<A> {
                 item.held = None;
                 return self.back_in_drafts(&sync, item, cancelled).await;
             }
+            Ok(Unheld::InDrafts) if self.went_out(&sync, &item).await => cancelled.already_sent += 1,
             Ok(Unheld::InDrafts) => cancelled.cancelled_elsewhere += 1,
             Ok(Unheld::AlreadySent) => cancelled.already_sent += 1,
             Ok(Unheld::Unknown) => {

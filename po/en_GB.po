@@ -10300,7 +10300,7 @@ msgstr "The server still holds this message and could not be asked to let it go.
 msgid "Waiting for the account to switch to JMAP"
 msgstr "Waiting for the account to switch to JMAP"
 
-#: sync/src/outbox.rs:1366
+#: sync/src/outbox.rs:1394
 msgid "The server could not be asked to let go of the message."
 msgstr "The server could not be asked to let go of the message."
 

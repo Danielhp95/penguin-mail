@@ -10700,7 +10700,7 @@ msgstr "伺服器仍保留這封郵件，且無法要求它釋出。請稍後再
 msgid "Waiting for the account to switch to JMAP"
 msgstr "正在等候帳號切換至 JMAP"
 
-#: sync/src/outbox.rs:1366
+#: sync/src/outbox.rs:1394
 msgid "The server could not be asked to let go of the message."
 msgstr "無法要求伺服器釋出這封郵件。"
 
