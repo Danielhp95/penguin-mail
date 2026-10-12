@@ -237,7 +237,7 @@ row.account-heading:hover .account-options,
 .composer-field text:hover,
 .composer-field text:focus,
 .composer-field flowboxchild:hover,
-.composer-field > .composer-from > button {
+.composer-field .composer-from > button {
   background: none;
   box-shadow: none;
   border: none;
@@ -246,12 +246,15 @@ row.account-heading:hover .account-options,
   padding-left: 0;
   padding-right: 0;
 }
-.composer-field > .composer-from > button {
+.composer-field .composer-from > button {
   padding-top: 0;
   padding-bottom: 0;
   min-height: 1.9em;
 }
-.composer-field > .composer-from > button > box > label { padding-left: 0; }
+.composer-field .composer-from > button > box > label { padding-left: 0; }
+/* The chosen sender reads as field text, as the To and Subject rows do,
+   not as a button label. */
+.composer-field .composer-from > button label { font-weight: 400; }
 /* Taking the frame off took the focus ring with it. The colour on the
    label is the only other sign of where the cursor is, and a colour is no
    sign at all to someone who cannot tell it apart, so the row holding the

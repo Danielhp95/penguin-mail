@@ -378,7 +378,7 @@ impl Composer {
         super::name_menu_items_of(&send);
         super::name_menu_items_of(&more);
         let protection = gtk::Button::builder()
-            .icon_name("security-high-symbolic")
+            .icon_name("penguin-mail-mask-symbolic")
             .css_classes(["flat", "protected"])
             .visible(false)
             .build();
@@ -440,7 +440,7 @@ impl Composer {
             );
         }
         let mask = gtk::Button::builder()
-            .icon_name("security-high-symbolic")
+            .icon_name("penguin-mail-mask-symbolic")
             .tooltip_text(gettext("New Masked Address"))
             .valign(gtk::Align::Center)
             .css_classes(["flat", "composer-mask"])
@@ -783,15 +783,23 @@ impl Composer {
             let weak = Rc::downgrade(self);
             let here = Rc::downgrade(field);
             let back = back.map(Rc::downgrade);
+            let before = Rc::downgrade(self);
             field.on_tab(
                 move || {
                     if let (Some(c), Some(here)) = (weak.upgrade(), here.upgrade()) {
                         c.after(&here);
                     }
                 },
-                move || {
-                    if let Some(previous) = back.as_ref().and_then(|b| b.upgrade()) {
-                        previous.entry.grab_focus();
+                move || match back.as_ref() {
+                    Some(previous) => {
+                        if let Some(previous) = previous.upgrade() {
+                            previous.entry.grab_focus();
+                        }
+                    }
+                    None => {
+                        if let Some(c) = before.upgrade() {
+                            c.before_to();
+                        }
                     }
                 },
             );
@@ -1062,6 +1070,16 @@ impl Composer {
             Some(field) => field.entry.grab_focus(),
             None => self.subject.grab_focus(),
         };
+    }
+
+    /// Shift+Tab out of To: the last control on the From row that shows,
+    /// New Masked Address, the suffix or the sender. With no From row the
+    /// focus stays in To.
+    fn before_to(&self) {
+        let from_row: [&gtk::Widget; 3] = [self.mask.upcast_ref(), self.suffix.upcast_ref(), self.from.upcast_ref()];
+        if let Some(widget) = from_row.into_iter().find(|w| w.is_mapped() && w.is_sensitive()) {
+            widget.grab_focus();
+        }
     }
 
     /// Shows or hides the Cc and Bcc rows.
