@@ -30,7 +30,7 @@ use mailrs_imap::{
     SmtpClient, UidSet, Woke,
 };
 use mailrs_jmap::{
-    Canceled, Email, EmailQuery, Got, HeldSubmission, Hold, Identity, Imported, JmapClient, JmapError, Listed as JmapListed, MailChanges,
+    CalendarEvents, Canceled, ChangesResponse, Email, EmailQuery, EventWrite, EventsPage, Got, HeldSubmission, Hold, Identity, Imported, JmapCalendar, JmapClient, JmapError, Listed as JmapListed, MailChanges,
     Mailbox, MailboxWrite, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, Submission, SubmissionState, Threads,
 };
 use mailrs_pop3::{ListItem, Pop3Api, Pop3Client, Pop3Error, Stat, UidlListing};
@@ -329,6 +329,11 @@ either_client! {
     }
     later {
         fn session() -> Jmapped<std::sync::Arc<Session>>;
+        fn calendars() -> Jmapped<Vec<JmapCalendar>>;
+        fn calendar_event_changes(since: &str, max: usize) -> Jmapped<ChangesResponse>;
+        fn calendar_events(ids: &[String]) -> Jmapped<CalendarEvents>;
+        fn calendar_events_page(filter: &Value, position: u64, limit: usize) -> Jmapped<EventsPage>;
+        fn set_calendar_event(write: &EventWrite, send: bool) -> Jmapped<Option<Value>>;
         fn mailboxes() -> Jmapped<JmapListed<Mailbox>>;
         fn mail_changes(email: &str, mailbox: &str, max: usize) -> Jmapped<MailChanges>;
         fn email_state() -> Jmapped<String>;
