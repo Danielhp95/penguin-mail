@@ -93,3 +93,31 @@ async fn an_edited_body_replaces_the_html() {
     assert_eq!(kept.text_body.as_deref(), Some("New words"));
     assert_eq!(kept.html_body, None);
 }
+
+/// Preferences shows whole days, so a reply set elsewhere to stop at
+/// 17:00 reads as ending that day. Turning it off and on again keeps the
+/// 17:00, since the person changed no date.
+#[tokio::test]
+async fn toggling_a_reply_set_elsewhere_keeps_its_times() {
+    let h = over(FakeJmap::new().with_capability(VACATION)).await;
+    h.fake.with(|s| {
+        s.vacation = mailrs_jmap::VacationResponse {
+            is_enabled: true,
+            text_body: Some("Away".into()),
+            from_date: Some("2026-10-12T09:30:00Z".into()),
+            to_date: Some("2026-10-20T17:00:00Z".into()),
+            ..Default::default()
+        }
+    });
+    let connected = std::collections::HashMap::from([(h.account_id, std::sync::Arc::clone(&h.sync))]);
+    let settings = crate::AccountSettings::new(std::sync::Arc::new(crate::tests::Connected(connected)), h.db.clone());
+    let read = settings.automatic_reply(h.account_id).await.unwrap().done().unwrap();
+    for enabled in [false, true] {
+        let toggled = crate::settings::AutomaticReply { enabled, ..read.clone() };
+        settings.set_automatic_reply(h.account_id, &toggled).await.unwrap();
+    }
+    let kept = h.fake.with(|s| s.vacation.clone());
+    assert!(kept.is_enabled);
+    assert_eq!(kept.from_date.as_deref(), Some("2026-10-12T09:30:00Z"));
+    assert_eq!(kept.to_date.as_deref(), Some("2026-10-20T17:00:00Z"));
+}

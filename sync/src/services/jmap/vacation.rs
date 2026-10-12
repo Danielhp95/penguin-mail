@@ -3,7 +3,7 @@
 //! original's) and a text or HTML body. A save patches only what the
 //! person changed.
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Local, NaiveDate, SecondsFormat, TimeZone, Utc};
 use mailrs_domain::{EpochMillis, Vacation};
 use mailrs_jmap::{VacationPatch, VacationResponse};
 
@@ -38,16 +38,27 @@ fn shown(reply: &VacationResponse) -> Vacation {
     }
 }
 
+/// The local date `at` falls on.
+fn day_of(at: EpochMillis) -> Option<NaiveDate> {
+    Local.timestamp_millis_opt(at).single().map(|at| at.date_naive())
+}
+
 /// What turns `held`, the server's reply, into `wanted`: only the fields
-/// that differ from what the app showed. An edited body goes out as text
-/// and clears the HTML, which would say something else.
+/// that differ from what the app showed. Preferences works in whole days,
+/// so a start or end on the same day as the server's keeps the server's
+/// time. An edited body goes out as text and clears the HTML, which would
+/// say something else.
 fn patch(held: &VacationResponse, wanted: &Vacation) -> VacationPatch {
     let was = shown(held);
     let subject = wanted.subject.trim();
+    let first_day = |start: Option<EpochMillis>| start.map(day_of);
+    // The end is the moment replies stop, so the last day is the one just
+    // before it.
+    let last_day = |end: Option<EpochMillis>| end.map(|end| day_of(end - 1));
     VacationPatch {
         is_enabled: (wanted.enabled != was.enabled).then_some(wanted.enabled),
-        from_date: (wanted.start != was.start).then(|| date(wanted.start)),
-        to_date: (wanted.end != was.end).then(|| date(wanted.end)),
+        from_date: (first_day(wanted.start) != first_day(was.start)).then(|| date(wanted.start)),
+        to_date: (last_day(wanted.end) != last_day(was.end)).then(|| date(wanted.end)),
         subject: (subject != was.subject.trim()).then(|| Some(subject.to_string()).filter(|s| !s.is_empty())),
         text_body: (wanted.body != was.body).then(|| Some(wanted.body.clone())),
         html_body: (wanted.body != was.body && held.html_body.is_some()).then_some(None),
