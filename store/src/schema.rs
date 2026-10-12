@@ -13,7 +13,7 @@ use crate::{Result, StoreError};
 ///
 /// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
 /// `local_messages_follow`, which takes a POP3 message's bytes with its
-/// row, and the contact triggers of migrations 61 to 63. Such a migration must
+/// row, and the contact triggers of migrations 61 to 64. Such a migration must
 /// create them again. It also renumbers the implicit rowids the
 /// correspondents tally counts by, as a VACUUM may, so either must mark
 /// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
@@ -1089,6 +1089,21 @@ BEGIN
     UPDATE contact_marks SET stale = 1, counted_row = 0;
 END;
 "#,
+    // A filing that moved marked the tally stale whatever the folders were.
+    // Only a move into or out of a Sent folder changes what it counts, and
+    // only for a message it already counted, as the other filing triggers
+    // check.
+    r#"
+DROP TRIGGER contacts_filing_moved;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes
+WHEN (EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+        OR EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent'))
+    AND (SELECT rowid FROM messages WHERE account_id = OLD.account_id AND id = OLD.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
@@ -1168,7 +1183,25 @@ fn restore(path: &Path, copy: &Path) -> io::Result<()> {
         side.push(suffix);
         remove_if_present(Path::new(&side))?;
     }
-    std::fs::copy(copy, path).map(drop)
+    std::fs::copy(copy, path)?;
+    mark_tally_stale(path).map_err(io::Error::other)
+}
+
+/// The copy came from a VACUUM, which may number the messages' rowids
+/// differently from the store it replaces, and the correspondents tally
+/// counts by those rowids. A store old enough to have no tally needs
+/// nothing.
+fn mark_tally_stale(path: &Path) -> rusqlite::Result<()> {
+    let conn = Connection::open(path)?;
+    let has_tally: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'contact_marks')",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_tally {
+        conn.execute("UPDATE contact_marks SET stale = 1, counted_row = 0", [])?;
+    }
+    Ok(())
 }
 
 fn remove_if_present(path: &Path) -> io::Result<()> {

@@ -131,3 +131,22 @@ fn a_folder_a_server_no_longer_lists_leaves_with_its_filings() {
     assert_eq!(mailboxes::gone(&conn, id, "Projects").unwrap(), Some(vec!["t1".to_string()]));
     assert!(labels_of(&conn, id, "a").is_empty());
 }
+
+#[test]
+fn an_empty_folder_a_relisting_leaves_out_stays_in_a_pop3_account() {
+    let conn = open_in_memory().unwrap();
+    let id = accounts::insert_pop3_account(&conn, "dana@example.org", "example.org", RemoveSetting::Never, 0)
+        .unwrap()
+        .expect("a new account");
+    let folder = mailrs_domain::RemoteMailbox {
+        id: "Projects".into(),
+        name: "Projects".into(),
+        kind: mailrs_domain::MailboxKind::Folder,
+        role: None,
+        color: None,
+        hidden: false,
+    };
+    mailboxes::upsert(&conn, id, &folder).unwrap();
+    mailboxes::replace_listed(&conn, id, &[]).unwrap();
+    assert_eq!(mailboxes::listed(&conn, id).unwrap().len(), 1);
+}

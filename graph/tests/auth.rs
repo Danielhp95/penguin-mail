@@ -165,3 +165,24 @@ async fn a_refused_refresh_token_needs_a_new_sign_in() {
         Err(GraphError::NeedsReauth)
     ));
 }
+
+#[tokio::test]
+async fn a_token_answer_past_the_cap_is_refused() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    let padding = "a".repeat(200 << 10);
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "at", "expires_in": 3599, "junk": padding
+        })))
+        .mount(&server)
+        .await;
+    let client = MicrosoftClient::new(CLIENT).with_endpoints(
+        format!("{}/authorize", server.uri()),
+        format!("{}/token", server.uri()),
+    );
+    let result = client.refresh("old").await;
+    assert!(matches!(result, Err(GraphError::TooLarge { .. })), "{result:?}");
+}

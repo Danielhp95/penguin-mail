@@ -21,6 +21,11 @@ const CHUNK: usize = 64 << 10;
 /// The most a header block may take before the part is read whole instead.
 const HEAD_LIMIT: usize = 1 << 20;
 
+/// The most of one text part's encoded bytes the outline keeps to show. The
+/// part's size and span still cover all of it, so saving it or showing the
+/// original reads the stored message and loses nothing.
+const TEXT_KEPT: usize = 8 << 20;
+
 /// [`super::outline`] of the `len` bytes `source` holds. A part that cannot
 /// be walked from the stream, one with no headers or an enormous header
 /// block, is read whole and walked in memory.
@@ -123,9 +128,20 @@ impl<R: Read + Seek> Walk<'_, R> {
             let wanted = (is_readable(&skimmed.mime_type) && !is_attachment(&skimmed))
                 || is_calendar(&skimmed.mime_type, name);
             if wanted {
-                let body = self.read(body_start, end)?;
-                skimmed.data = undo_transfer_encoding(encoding, &body);
-                skimmed.size = skimmed.data.as_ref().map_or(0, |d| d.len() as i64);
+                if end - body_start > TEXT_KEPT as u64 {
+                    // Keep whole lines of the start, so a transfer encoding
+                    // decodes cleanly; the size counts all of the part.
+                    let mut body = self.read(body_start, body_start + TEXT_KEPT as u64)?;
+                    if let Some(newline) = body.iter().rposition(|b| *b == b'\n') {
+                        body.truncate(newline + 1);
+                    }
+                    skimmed.data = undo_transfer_encoding(encoding, &body);
+                    skimmed.size = self.size(encoding, body_start, end)? as i64;
+                } else {
+                    let body = self.read(body_start, end)?;
+                    skimmed.data = undo_transfer_encoding(encoding, &body);
+                    skimmed.size = skimmed.data.as_ref().map_or(0, |d| d.len() as i64);
+                }
             } else {
                 skimmed.size = self.size(encoding, body_start, end)? as i64;
             }
@@ -283,6 +299,12 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
     /// Makes the bytes from `pos` on available, up to `want` of them.
     fn fill(&mut self, want: usize) -> io::Result<()> {
         let target = (self.pos + want as u64).min(self.end);
+        // A lookahead that stepped back to a saved offset may land before
+        // bytes a refill already dropped; read from there again.
+        if self.pos < self.base {
+            self.buf.clear();
+            self.base = self.pos;
+        }
         while self.base + (self.buf.len() as u64) < target {
             let consumed = (self.pos - self.base) as usize;
             if consumed >= CHUNK {
@@ -347,13 +369,35 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
         Ok(())
     }
 
+    /// Moves past the buffered bytes that are neither `a` nor `b`, and
+    /// answers the last two of them, if there were that many. Scanning a
+    /// byte at a time through `next` costs a refill check for each.
+    fn skip_to(&mut self, a: u8, b: u8) -> io::Result<(Option<u8>, Option<u8>)> {
+        if self.pos >= self.end {
+            return Ok((None, None));
+        }
+        self.fill(1)?;
+        let rest = &self.buf[(self.pos - self.base) as usize..];
+        let skipped = rest.iter().position(|c| *c == a || *c == b).unwrap_or(rest.len());
+        let passed = (
+            skipped.checked_sub(2).map(|i| rest[i]),
+            skipped.checked_sub(1).map(|i| rest[i]),
+        );
+        self.pos += skipped as u64;
+        Ok(passed)
+    }
+
     fn seek_next_part(&mut self, boundary: &[u8]) -> io::Result<bool> {
         if boundary.is_empty() {
             return Ok(false);
         }
         let saved = self.pos;
         let mut last = 0;
-        while let Some(ch) = self.next()? {
+        loop {
+            if let (_, Some(passed)) = self.skip_to(b'-', b'-')? {
+                last = passed;
+            }
+            let Some(ch) = self.next()? else { break };
             if ch == b'-' && last == b'-' && self.try_skip(boundary)? {
                 return Ok(true);
             }
@@ -366,7 +410,13 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
     fn seek_part_end(&mut self, boundary: &[u8]) -> io::Result<(u64, bool)> {
         let (mut last, mut before) = (b'\n', 0u8);
         let mut end_pos = self.offset();
-        while let Some(ch) = self.next()? {
+        loop {
+            match self.skip_to(b'\n', b'-')? {
+                (Some(second_last), Some(passed)) => (before, last) = (second_last, passed),
+                (None, Some(passed)) => (before, last) = (last, passed),
+                _ => {}
+            }
+            let Some(ch) = self.next()? else { break };
             if ch == b'\n' {
                 end_pos = match last == b'\r' {
                     true => self.offset() - 2,
@@ -596,5 +646,71 @@ mod tests {
         let file = parts.find("2").expect("the pdf");
         assert!(file.data.is_none() && file.size > 29_000_000);
         assert_eq!(spans.get("2").map(|s| s.size), Some(file.size as u64));
+    }
+
+    /// A lookahead that has to refill the buffer must not lose the byte it
+    /// stepped back to.
+    #[test]
+    fn stepping_back_across_a_refill_keeps_the_byte() {
+        let mut data = vec![b'x'; CHUNK + 10];
+        data[CHUNK - 1] = b'y';
+        let len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        let mut scan = Scan::new(&mut cursor, 0, len);
+        scan.fill(1).unwrap();
+        scan.pos = (CHUNK - 1) as u64;
+        assert!(!scan.is_multipart_end().unwrap());
+        assert_eq!(scan.peek().unwrap(), Some(b'y'));
+    }
+
+    #[test]
+    fn a_boundary_line_at_a_chunk_edge_outlines_as_it_does_from_memory() {
+        for pad in CHUNK - 40..CHUNK + 40 {
+            for nl in ["\r\n", "\n"] {
+                let mut raw = format!(
+                    "Content-Type: multipart/mixed; boundary=b{nl}{nl}--b{nl}Content-Type: text/plain{nl}{nl}"
+                )
+                .into_bytes();
+                raw.resize(raw.len() + pad, b'a');
+                raw.extend_from_slice(
+                    format!("{nl}--b{nl}Content-Type: text/plain{nl}{nl}second{nl}--b--{nl}").as_bytes(),
+                );
+                let from_memory = super::super::outline(&raw);
+                let from_stream = outline_from(&mut Cursor::new(raw.clone()), raw.len() as u64).unwrap();
+                assert_eq!(from_stream, from_memory, "pad {pad}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_boundary_that_never_comes_in_a_long_body_leaves_the_scan_usable() {
+        let mut data = vec![b'x'; 3 * CHUNK];
+        data.extend_from_slice(b"--b");
+        let len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        let mut scan = Scan::new(&mut cursor, 0, len);
+        assert!(!scan.seek_next_part(b"zz").unwrap());
+        assert_eq!(scan.peek().unwrap(), Some(b'x'));
+    }
+
+    #[test]
+    fn a_huge_text_part_keeps_a_capped_preview_and_its_whole_span() {
+        let line = "a".repeat(76) + "\r\n";
+        let text = line.repeat(TEXT_KEPT / line.len() + 1000);
+        let raw = format!(
+            "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{text}\r\n--b\r\nContent-Type: text/plain\r\n\r\nsecond\r\n--b--\r\n"
+        )
+        .into_bytes();
+        let (parts, spans) = outline_from(&mut Cursor::new(raw.clone()), raw.len() as u64).unwrap().unwrap();
+        let first = parts.find("1").expect("the long text");
+        let kept = first.data.as_ref().expect("a preview");
+        assert!(kept.len() <= TEXT_KEPT && kept.len() > TEXT_KEPT / 2, "{} bytes kept", kept.len());
+        assert!(text.as_bytes().starts_with(kept));
+        assert_eq!(first.size, text.len() as i64, "the size is the whole part's");
+        let span = spans.get("1").expect("its span");
+        assert_eq!(span.size, text.len() as u64);
+        let whole = super::super::decode_span(&mut Cursor::new(raw), span).unwrap().expect("the whole part");
+        assert_eq!(whole, text.as_bytes());
+        assert_eq!(parts.find("2").and_then(|p| p.data.clone()), Some(b"second".to_vec()));
     }
 }
