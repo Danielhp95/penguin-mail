@@ -121,6 +121,8 @@ pub fn body(parts: &Parts) -> MessageBody {
             .is_some_and(|v| v.contains("One-Click")),
         protection: protection(&parts.root),
         provenance: crate::provenance::provenance(|name| parts.header(name).map(str::to_string)),
+        receipt_to: crate::receipt::asked_at(parts.header("Disposition-Notification-To")),
+        read_report: crate::receipt::report(&parts.root),
         ..MessageBody::default()
     };
     let start = match body.protection {
