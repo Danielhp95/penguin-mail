@@ -12,9 +12,9 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_jmap::{Auth, JmapClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, AnyAutoReply, AnyCalendar, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService, CalendarService,
+    AccountServices, AccountSync, AnyAutoReply, AnyCalendar, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService, BackendError, CalendarService,
     ContactsService, DEFAULT_BODY_CACHE_BYTES, IdentityService, JmapSettings, JmapSieve, LocalRules, MailBackend, RulesService,
-    SearchQuery, SieveRules, TriageAction,
+    SearchQuery, Settled, SieveRules, TriageAction, Unheld,
 };
 use mailrs_testmail::{JmapKind, JmapServer};
 use rusqlite::OptionalExtension;
@@ -205,9 +205,81 @@ impl<'a> Run<'a> {
         self.a_rule_lands_in_sieve_where_offered().await;
         self.masked_email_is_hidden_where_not_offered().await;
         self.the_calendar_round_trips().await;
+        self.send_later_waits_on_the_server().await;
+        self.storage_answers().await;
+        self.a_receipt_goes_out().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;
+    }
+
+    /// Cyrus and Stalwart hold and call back; James lists a hold it cannot
+    /// call back, so the app keeps the message in its own queue.
+    async fn send_later_waits_on_the_server(&self) {
+        let raw = format!(
+            "From: {0}\r\nTo: {0}\r\nSubject: Later\r\nMessage-ID: <{1}>\r\n\r\nLater\r\n",
+            self.server.address,
+            self.id("later-held")
+        );
+        let mail = self.mail();
+        let at = mailrs_sync::now_millis() + 3_600_000;
+        match mail.schedule(raw.as_bytes(), at).await {
+            Ok(held) => {
+                let (_, waiting) = self.on_server(&held.message_id).await.expect("the held copy");
+                assert_eq!(waiting.get(mailrs_jmap::HELD), Some(&true), "{:?}: the copy is marked held", self.kind());
+                let settled = mail.settle(&held.handle, &held.message_id, at).await.expect("a settle");
+                assert!(matches!(settled, Settled::Waiting(_)), "{:?}: {settled:?}", self.kind());
+                let unheld = mail.unschedule(&held.handle, &held.message_id, at).await.expect("a cancel");
+                assert_eq!(unheld, Unheld::InDrafts, "{:?}", self.kind());
+                let (_, keywords) = self.on_server(&held.message_id).await.expect("the copy stays as a draft");
+                assert!(!keywords.contains_key(mailrs_jmap::HELD), "{:?}: a cancelled hold is a plain draft", self.kind());
+                mail.delete_draft(&held.message_id).await.expect("the draft goes");
+                eprintln!("{:?}: the server held the message and gave it back", self.kind());
+            }
+            Err(BackendError::Unsupported) => {
+                eprintln!("{:?}: no hold the server can call back; the app keeps the message", self.kind());
+            }
+            Err(err) => panic!("{:?}: {err}", self.kind()),
+        }
+    }
+
+    /// James reports a quota once one is set; Cyrus and Stalwart test
+    /// users have none, which reads as nothing to show.
+    async fn storage_answers(&self) {
+        if self.kind() == JmapKind::James {
+            let root = format!("#private&{}", self.server.address);
+            let status = std::process::Command::new("docker")
+                .args(["exec", self.server.id(), "james-cli", "SetMaxStorageQuota", &root, "1G"])
+                .status()
+                .expect("docker runs");
+            assert!(status.success(), "james-cli sets the quota");
+        }
+        let storage = self.sync.storage().await.expect("a storage answer");
+        eprintln!("{:?}: storage {storage:?}", self.kind());
+        match self.kind() {
+            JmapKind::James => assert_eq!(storage.map(|s| s.limit), Some(1 << 30)),
+            _ => assert!(storage.is_none_or(|s| s.limit > 0), "{:?}", self.kind()),
+        }
+    }
+
+    /// MDN/send where the session offers it; a report sent as mail where
+    /// not. Either way `$mdnsent` lands on the server's copy.
+    async fn a_receipt_goes_out(&self) {
+        let raw = format!(
+            "From: {0}\r\nTo: {0}\r\nSubject: Asks\r\nMessage-ID: <{1}>\r\nDisposition-Notification-To: {0}\r\nDate: {2}\r\n\r\nAsks\r\n",
+            self.server.address,
+            self.id("asks"),
+            chrono::Utc::now().to_rfc2822()
+        );
+        self.server.deliver(self.password, raw.as_bytes()).await;
+        self.sync.incremental().await.expect("a look");
+        let (id, _) = self.stored(&self.id("asks")).await.expect("stored");
+        self.sync.body(&id).await.expect("the body");
+        assert!(!self.sync.receipt_answered(&id).await.expect("the record"));
+        self.sync.answer_receipt(&id, true).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert!(self.sync.receipt_answered(&id).await.expect("the record"));
+        let (_, keywords) = self.on_server(&id).await.expect("still there");
+        assert_eq!(keywords.get("$mdnsent"), Some(&true), "{:?}", self.kind());
     }
 
     async fn mail_arrives_and_lands_in_the_store(&self) {
