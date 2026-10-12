@@ -766,6 +766,14 @@ fn switch_line(reason: &str) -> String {
     )
 }
 
+/// The words for a failure the switch has no sentence of its own for.
+/// Its text may hold an address or a server's own words, so it goes to
+/// the log as a kind, and the toast says a fixed sentence.
+fn unexpected(err: &anyhow::Error) -> String {
+    tracing::warn!(kind = crate::add_account::failure_kind(err), "the switch to JMAP failed");
+    gettext("Something unexpected stopped it.")
+}
+
 /// The failure toast's words for `err` from `Core::switch_to_jmap`.
 pub fn switch_failure(err: &anyhow::Error, asked: &SwitchAsked) -> SwitchFailure {
     use mailrs_jmap::JmapError;
@@ -806,13 +814,7 @@ pub fn switch_failure(err: &anyhow::Error, asked: &SwitchAsked) -> SwitchFailure
             again = true;
             fill(&gettext("The mail on {provider} kept changing while Penguin Mail matched it."), &named)
         }
-        _ => {
-            let said = err.to_string();
-            match said.ends_with(['.', '!', '?']) {
-                true => said,
-                false => format!("{said}."),
-            }
-        }
+        _ => unexpected(err),
     };
     SwitchFailure { line: switch_line(&reason), again }
 }
@@ -835,13 +837,7 @@ pub fn switch_browser_failure(err: &anyhow::Error, provider: &str) -> Option<Swi
         Some(BrowserSignInError::Jmap(_)) => {
             fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
         }
-        _ => {
-            let said = err.to_string();
-            match said.ends_with(['.', '!', '?']) {
-                true => said,
-                false => format!("{said}."),
-            }
-        }
+        _ => unexpected(err),
     };
     Some(SwitchFailure { line: switch_line(&reason), again: false })
 }
@@ -1114,6 +1110,16 @@ mod tests {
             failed.line,
             "Could not switch to JMAP: Fastmail refused the sign-in in the browser. Your IMAP account is unchanged."
         );
+    }
+
+    /// An error the switch does not know may carry an address or a
+    /// server's own words, which do not belong in a toast.
+    #[test]
+    fn an_unknown_failure_says_a_fixed_sentence() {
+        let raw = || anyhow::anyhow!("imap.example.com refused dana@fastmail.com: BAD [x]");
+        let expected = "Could not switch to JMAP: Something unexpected stopped it. Your IMAP account is unchanged.";
+        assert_eq!(super::switch_failure(&raw(), &TOKEN).line, expected);
+        assert_eq!(super::switch_browser_failure(&raw(), "Fastmail").expect("words").line, expected);
     }
 
     #[test]
