@@ -1137,6 +1137,9 @@ pub(crate) fn object_of(event: &model::Event) -> Result<Map<String, Value>, Back
     let clock = clock_for(event);
     let mut object = Map::new();
     object.insert("@type".into(), json!("Event"));
+    // Both calendars drafts the gate accepts write JSCalendar 2.0, where an
+    // event of its own must name its version. Cyrus refuses one without.
+    object.insert("version".into(), json!("2.0"));
     if !event.uid.is_empty() {
         object.insert("uid".into(), json!(event.uid));
     }
@@ -1636,6 +1639,15 @@ mod tests {
         with_id["id"] = json!("ev-1");
         let back = series_of(&with_id, &me());
         assert_eq!((back.start, back.end, &back.rules, back.status), (series.start, series.end, &series.rules, Status::Confirmed));
+    }
+
+    /// Cyrus 3.13 refuses a create without `version` (`invalidProperties`),
+    /// though draft 32 has the server fill it; JSCalendar 2.0 makes it
+    /// mandatory on an event of its own.
+    #[test]
+    fn a_new_event_names_jscalendar_2() {
+        let object = object_of(&series_of(&lisbon_weekly(), &me())).unwrap();
+        assert_eq!((&object["@type"], &object["version"]), (&json!("Event"), &json!("2.0")));
     }
 
     #[test]
