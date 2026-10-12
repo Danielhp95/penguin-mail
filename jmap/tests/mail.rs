@@ -46,7 +46,33 @@ async fn the_change_feed_fetches_changed_places_in_the_same_request() {
     let body = sent(&server).await;
     assert_eq!(body["methodCalls"][1][1]["#ids"], json!({"resultOf": "c0", "name": "Email/changes", "path": "/created"}));
     assert_eq!(body["methodCalls"][2][1]["#ids"]["path"], "/updated");
-    assert_eq!(body["methodCalls"][0][1]["maxChanges"], 500);
+    assert_eq!(body["methodCalls"][0][1]["maxChanges"], 50, "no more than one Email/get takes");
+}
+
+/// Each change comes back through a back-referenced `Email/get`, which a
+/// server refuses past its `maxObjectsInGet`.
+#[tokio::test]
+async fn the_change_feed_asks_for_no_more_than_one_get_takes() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxObjectsInGet": 40}))))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sessionState": "s1", "methodResponses": [
+            ["Email/changes", {"accountId": "A1", "oldState": "e1", "newState": "e1", "hasMoreChanges": false,
+                "created": [], "updated": [], "destroyed": []}, "c0"],
+            ["Email/get", {"accountId": "A1", "state": "e1", "notFound": [], "list": []}, "c1"],
+            ["Email/get", {"accountId": "A1", "state": "e1", "notFound": [], "list": []}, "c2"],
+            ["Mailbox/changes", {"accountId": "A1", "oldState": "m1", "newState": "m1", "hasMoreChanges": false,
+                "created": [], "updated": [], "destroyed": []}, "c3"]
+        ]})))
+        .mount(&server)
+        .await;
+    client(&server).mail_changes("e1", "m1", 500).await.unwrap();
+    assert_eq!(sent(&server).await["methodCalls"][0][1]["maxChanges"], 40);
 }
 
 #[tokio::test]

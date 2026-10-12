@@ -384,9 +384,12 @@ impl JmapClient {
     }
 
     /// The changes since `email_since` and `mailbox_since`, at most `max`
-    /// messages, with where each created or updated message now sits.
+    /// messages, with where each created or updated message now sits. The
+    /// back-referenced `Email/get` is refused past `maxObjectsInGet`, so
+    /// `max` goes no higher.
     pub async fn mail_changes(&self, email_since: &str, mailbox_since: &str, max: usize) -> Result<MailChanges, JmapError> {
         let account = self.mail_account().await?;
+        let max = max.min(self.session().await?.limits().max_objects_in_get.clamp(1, 500));
         let mut request = Request::new();
         let changes = request.call(MAIL, "Email/changes", json!({ "accountId": account, "sinceState": email_since, "maxChanges": max }));
         let created = request.call(MAIL, "Email/get", json!({
