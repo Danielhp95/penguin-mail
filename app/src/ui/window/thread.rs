@@ -635,8 +635,11 @@ impl Effects for Ports {
             let Some(sync) = self.core.account(account_id) else {
                 return Ok(true);
             };
+            // A receipt nobody answered still needs an address of the
+            // account's that the mail came to, or the card would offer one
+            // from another address; such a message counts as settled.
             self.core
-                .call(async move { sync.receipt_answered(&message_id).await })
+                .call(async move { sync.receipt_open(&message_id).await.map(|open| !open) })
                 .await
                 .map_err(|err| err.to_string())
         })

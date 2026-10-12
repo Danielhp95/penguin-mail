@@ -10471,7 +10471,7 @@ msgstr "{address} está {percent}% cheio"
 msgid "Review Storage"
 msgstr "Rever armazenamento"
 
-#: app/src/ui/window/thread.rs:655
+#: app/src/ui/window/thread.rs:658
 msgid "The account is not connected yet."
 msgstr "A conta ainda não está ligada."
 
@@ -10835,7 +10835,7 @@ msgstr ""
 "A sua mensagem para {address} foi mostrada no ecrã. Este recibo não diz se "
 "foi lida ou compreendida."
 
-#: sync/src/account/receipts.rs:101
+#: sync/src/account/receipts.rs:143
 msgid "This message asks for no read receipt."
 msgstr "Esta mensagem não pede recibo de leitura."
 
@@ -11304,31 +11304,31 @@ msgstr "Este servidor arquiva o correio enviado por si próprio."
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "O servidor criou um endereço que o Penguin Mail não consegue ler."
 
-#: sync/src/services/jmap/outgoing.rs:70
+#: sync/src/services/jmap/outgoing.rs:78
 msgid "The server does not let this account send from {address}."
 msgstr "O servidor não deixa esta conta enviar a partir de {address}."
 
-#: sync/src/services/jmap/outgoing.rs:71
+#: sync/src/services/jmap/outgoing.rs:79
 msgid "The server does not let this account send mail now."
 msgstr "O servidor não deixa esta conta enviar correio agora."
 
-#: sync/src/services/jmap/outgoing.rs:72
+#: sync/src/services/jmap/outgoing.rs:80
 msgid "The message names more recipients than the server sends to at once."
 msgstr "A mensagem tem mais destinatários do que o servidor envia de uma vez."
 
-#: sync/src/services/jmap/outgoing.rs:73
+#: sync/src/services/jmap/outgoing.rs:81
 msgid "The server could not send to one of the recipients."
 msgstr "O servidor não conseguiu enviar para um dos destinatários."
 
-#: sync/src/services/jmap/outgoing.rs:74
+#: sync/src/services/jmap/outgoing.rs:82
 msgid "The message is larger than the server sends."
 msgstr "A mensagem é maior do que o servidor envia."
 
-#: sync/src/services/jmap/outgoing.rs:75
+#: sync/src/services/jmap/outgoing.rs:83
 msgid "The server could not read the message to send it."
 msgstr "O servidor não conseguiu ler a mensagem para a enviar."
 
-#: sync/src/services/jmap/outgoing.rs:87
+#: sync/src/services/jmap/outgoing.rs:95
 msgid ""
 "This account can read mail but not send it: its sign-in has no access to "
 "sending."
@@ -11336,24 +11336,24 @@ msgstr ""
 "Esta conta pode ler correio, mas não enviá-lo: o início de sessão não tem "
 "acesso ao envio."
 
-#: sync/src/services/jmap/outgoing.rs:100
+#: sync/src/services/jmap/outgoing.rs:108
 msgid "This account has no address the server lets it send from."
 msgstr ""
 "Esta conta não tem nenhum endereço a partir do qual o servidor a deixe "
 "enviar."
 
-#: sync/src/services/jmap/outgoing.rs:120
+#: sync/src/services/jmap/outgoing.rs:128
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr ""
 "O servidor não tem caixa de Rascunhos nem de Enviados onde guardar a "
 "mensagem."
 
-#: sync/src/services/jmap/outgoing.rs:139
+#: sync/src/services/jmap/outgoing.rs:147
 msgid "The server has no Drafts mailbox."
 msgstr "O servidor não tem caixa de Rascunhos."
 
-#: sync/src/services/jmap/outgoing.rs:147
+#: sync/src/services/jmap/outgoing.rs:155
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."
