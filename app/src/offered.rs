@@ -512,12 +512,24 @@ pub fn missing_lines(
                 .missing()
                 .into_iter()
                 .filter(|m| *m != Missing::Categories)
-                .map(|m| reason(account, m, missed(account.id, m)))
+                .map(|m| match (m, offers.auto_reply_needs_sign_in) {
+                    (Missing::AutoReply, true) => sign_in_reason(account),
+                    _ => reason(account, m, missed(account.id, m)),
+                })
                 .collect();
             reasons.dedup();
             (!reasons.is_empty()).then(|| (account.email.clone(), reasons))
         })
         .collect()
+}
+
+/// Why a JMAP account signed in with a token has no automatic reply.
+pub fn sign_in_reason(account: &Account) -> String {
+    let provider = mailrs_discover::resolved_provider_name(account.provider_name());
+    fill(
+        &gettext("{provider} does not let an API token change the automatic reply. Change it on {provider}'s website."),
+        &[("provider", &provider)],
+    )
 }
 
 /// What a screen reader calls a Not Available row: the account's address
@@ -1351,5 +1363,13 @@ mod tests {
         assert_eq!(categorize_choices(Offers::EVERYTHING), [Category::Primary, Category::Updates, Category::Promotions, Category::Social]);
         let on = sender_actions(microsoft());
         assert!(on.contains(&("categorize-sender", true)));
+    }
+
+    #[test]
+    fn a_reply_a_token_cannot_reach_names_the_browser_sign_in() {
+        let jmap = Account { provider: Provider::Jmap, provider_name: Some("Fastmail".into()), ..fastmail() };
+        let lacking = Offers { auto_reply: false, auto_reply_needs_sign_in: true, ..Offers::EVERYTHING };
+        let lines = missing_lines(&[(jmap, lacking)], |_, _| None);
+        assert_eq!(lines[0].1, ["Fastmail does not let an API token change the automatic reply. Change it on Fastmail's website."]);
     }
 }

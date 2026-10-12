@@ -446,6 +446,7 @@ impl AccountServices {
             auto_reply_needs_sign_in: false,
         };
         let offers_contacts = fake.with(|s| s.session.offers(mailrs_jmap::CONTACTS));
+        let offers_reply = fake.with(|s| s.session.offers(mailrs_jmap::VACATION));
         let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
         let mut services = AccountServices {
             mail: AnyMail::Jmap(adapter.clone()),
@@ -459,6 +460,11 @@ impl AccountServices {
             && let AnyMail::Jmap(adapter) = &services.mail
         {
             services.contacts = Some(AnyContacts::Jmap(adapter.clone()));
+        }
+        if offers_reply
+            && let AnyMail::Jmap(adapter) = &services.mail
+        {
+            services.auto_reply = Some(AnyAutoReply::Jmap(adapter.clone()));
         }
         services
     }
@@ -559,6 +565,7 @@ impl AccountServices {
             contacts: self.contacts.is_some() && !refused.contacts,
             rules: self.rules.is_some() && !refused.rules,
             auto_reply: self.auto_reply.is_some() && !refused.auto_reply,
+            auto_reply_needs_sign_in: self.auto_reply.is_none() && self.mail.auto_reply_needs_sign_in(),
             auto_reply_subject: self.auto_reply.as_ref().is_some_and(AutoReplyService::keeps_subject),
             auto_reply_contacts_only: self.auto_reply.as_ref().is_some_and(AutoReplyService::limits_to_contacts),
             // Gmail, IMAP and Graph search on the server. A POP3 account's
@@ -741,6 +748,9 @@ pub struct Offers {
     pub contacts: bool,
     pub rules: bool,
     pub auto_reply: bool,
+    /// The server keeps an automatic reply that this sign-in cannot reach,
+    /// as a Fastmail API token cannot. Preferences says why.
+    pub auto_reply_needs_sign_in: bool,
     /// The automatic reply has a subject of its own. Outlook keeps only
     /// the message.
     pub auto_reply_subject: bool,
@@ -790,6 +800,7 @@ impl Offers {
         contacts: true,
         rules: true,
         auto_reply: true,
+        auto_reply_needs_sign_in: false,
         auto_reply_subject: true,
         auto_reply_contacts_only: true,
         search: true,

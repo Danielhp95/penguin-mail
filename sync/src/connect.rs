@@ -19,7 +19,7 @@ use crate::passwords::{PasswordError, PasswordStore, Secrets};
 use crate::sign_in::account_client;
 use crate::sign_in::own_client::{self, OwnClient, OwnClientError};
 use crate::{
-    AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyRules, AnySieve, BackendError,
+    AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyMail, AnyRules, AnySieve, BackendError,
     CalDav, CardDav, ImapSettings, JmapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
 };
 
@@ -506,15 +506,25 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
     };
     let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth_of(&saved, &account.email, secret))
         .map_err(crate::services::jmap::backend)?;
+    let token = saved.auth == mailrs_store::jmap::JmapAuth::Bearer;
+    let table_says_no_reply = mailrs_discover::jmap_named(account.provider_name())
+        .is_some_and(|p| p.token_lacks.iter().any(|c| c == mailrs_jmap::VACATION));
     let settings = JmapSettings {
         address: account.email.clone(),
         provider_name: account.provider_name().to_string(),
         window_days,
         labels: saved.labels,
         capabilities: saved.capabilities.clone(),
-        auto_reply_needs_sign_in: false,
+        auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION),
     };
-    Ok(AccountServices::jmap(db.clone(), id, client, settings))
+    let mut services = AccountServices::jmap(db.clone(), id, client, settings);
+    if saved.offers(mailrs_jmap::VACATION)
+        && let AnyMail::Jmap(adapter) = &services.mail
+    {
+        let reply = AnyAutoReply::Jmap(adapter.clone());
+        services = services.with_auto_reply(reply);
+    }
+    Ok(services)
 }
 
 /// `services` with the server `service` names put behind the service it

@@ -60,6 +60,7 @@ macro_rules! forward_reply {
             AnyAutoReply::Google(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Microsoft(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Sieve(adapter) => adapter.$method($($arg),*).await,
+            AnyAutoReply::Jmap(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -139,6 +140,7 @@ pub enum AnyAutoReply {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Sieve(SieveRules<AnySieve>),
+    Jmap(JmapAdapter),
 }
 
 /// The addresses an account sends as.
@@ -152,6 +154,15 @@ pub enum AnyIdentities {
 }
 
 impl AnyMail {
+    /// The server keeps an automatic reply this account's sign-in cannot
+    /// reach. Only a JMAP account signed in with a token can say so.
+    pub fn auto_reply_needs_sign_in(&self) -> bool {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.auto_reply_needs_sign_in(),
+            _ => false,
+        }
+    }
+
     /// What Google's account withholds, read from the scopes it granted.
     /// An IMAP account withholds nothing: it grants Google nothing to
     /// begin with.
@@ -598,6 +609,7 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Microsoft(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Sieve(adapter) => adapter.keeps_subject(),
+            AnyAutoReply::Jmap(adapter) => adapter.keeps_subject(),
         }
     }
 
@@ -606,6 +618,7 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Microsoft(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Sieve(adapter) => adapter.limits_to_contacts(),
+            AnyAutoReply::Jmap(adapter) => adapter.limits_to_contacts(),
         }
     }
 }

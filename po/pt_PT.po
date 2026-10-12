@@ -2598,43 +2598,49 @@ msgstr ""
 msgid "{provider} does not sort the inbox into categories."
 msgstr "{provider} não organiza a caixa de entrada em categorias."
 
-#: app/src/offered.rs:527
+#: app/src/offered.rs:530
+msgid ""
+"{provider} does not let an API token change the automatic reply. Change it "
+"on {provider}'s website."
+msgstr "{provider} não deixa um token de API alterar a resposta automática. Altere-a no site de {provider}."
+
+#: app/src/offered.rs:539
 msgid "{address}: {reason}"
 msgstr "{address}: {reason}"
 
-#: app/src/offered.rs:542
+#: app/src/offered.rs:554
 msgid "The server would not hand it over."
 msgstr "O servidor não a entregou."
 
-#: app/src/offered.rs:544
+#: app/src/offered.rs:556
 msgid "The message is larger than Penguin Mail downloads."
 msgstr "A mensagem é maior do que o Penguin Mail transfere."
 
-#: app/src/offered.rs:547
+#: app/src/offered.rs:559
 msgid "Penguin Mail could not read the server's answer."
 msgstr "O Penguin Mail não conseguiu ler a resposta do servidor."
 
-#: app/src/offered.rs:550
+#: app/src/offered.rs:562
 msgid "The connection closed while the message downloaded."
 msgstr "A ligação fechou-se durante a transferência da mensagem."
 
-#: app/src/offered.rs:556
+#: app/src/offered.rs:568
 msgid "“{subject}” from {sender}: {words}"
 msgstr "“{subject}” de {sender}: {words}"
 
-#: app/src/offered.rs:560
+#: app/src/offered.rs:572
 msgid "“{subject}”: {words}"
 msgstr "“{subject}”: {words}"
 
-#: app/src/offered.rs:564
+#: app/src/offered.rs:576
 msgid "A message from {sender}: {words}"
 msgstr "Uma mensagem de {sender}: {words}"
 
-#: app/src/offered.rs:568
+#: app/src/offered.rs:580
 msgid "Message {number}: {words}"
 msgstr "Mensagem {number}: {words}"
 
-#: app/src/offered.rs:583
+#: app/src/offered.rs:595
 msgid ""
 "Removing the account deletes this computer's copy of its mail and the saved "
 "sign-in. Mail still on the server stays there."
@@ -2642,7 +2648,7 @@ msgstr ""
 "Remover a conta elimina a cópia do correio neste computador e a sessão "
 "guardada. O correio que ainda está no servidor fica lá."
 
-#: app/src/offered.rs:587
+#: app/src/offered.rs:599
 msgid ""
 "Mail already removed from the server exists only on this computer, and "
 "removing the account deletes it with the saved sign-in. Mail still on the "
@@ -2652,7 +2658,7 @@ msgstr ""
 "conta elimina-o com a sessão guardada. O correio que ainda está no servidor "
 "fica lá."
 
-#: app/src/offered.rs:593
+#: app/src/offered.rs:605
 msgid ""
 "Its downloaded mail and saved sign-in are deleted from this computer. "
 "Nothing changes in {provider}."
@@ -2660,7 +2666,7 @@ msgstr ""
 "O correio transferido e a sessão guardada são eliminados deste computador. "
 "Nada muda em {provider}."
 
-#: app/src/offered.rs:609
+#: app/src/offered.rs:621
 msgid ""
 "Mail from {address} is kept only on this computer. To keep a copy, quit "
 "Penguin Mail, then back up this file."
