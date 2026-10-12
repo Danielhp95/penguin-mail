@@ -10873,7 +10873,7 @@ msgstr "Este servidor não guarda cores para as caixas de correio."
 msgid "This server files sent mail itself."
 msgstr "Este servidor arquiva o correio enviado por si próprio."
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:432
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "O servidor criou um endereço que o Penguin Mail não consegue ler."
 

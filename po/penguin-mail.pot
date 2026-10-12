@@ -10336,7 +10336,7 @@ msgstr ""
 msgid "This server files sent mail itself."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:437
+#: sync/src/services/jmap/mod.rs:432
 msgid "The server made an address Penguin Mail cannot read."
 msgstr ""
 
