@@ -862,6 +862,9 @@ pub enum Unheld {
     InDrafts,
     /// The server sent it before the call arrived, and it is filed in Sent.
     AlreadySent,
+    /// The server no longer knows the hold, and its copy cannot say whether
+    /// it went. Nothing may send it again; the person checks Sent.
+    Unknown,
 }
 
 /// Where a hold stands once its hour came.
@@ -873,6 +876,9 @@ pub enum Settled {
     Sent,
     /// Called back elsewhere; the copy is a draft.
     Canceled,
+    /// The server no longer knows the hold, and its copy cannot say whether
+    /// it went. Nothing may send it again; the person checks Sent.
+    Unknown,
 }
 
 /// How much of the account's space on its server its mail takes, in
@@ -1171,15 +1177,18 @@ pub trait MailBackend: Send + Sync + 'static {
         async { Err(BackendError::Unsupported) }
     }
 
-    /// Calls the hold `handle` back.
-    fn unschedule(&self, handle: &str) -> impl Future<Output = Result<Unheld, BackendError>> + Send {
-        let _ = handle;
+    /// Calls the hold `handle` back. `message_id` is the copy the hold
+    /// left in Drafts and `send_at` the hour it was held for, which say
+    /// what happened once the server forgets the hold.
+    fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> impl Future<Output = Result<Unheld, BackendError>> + Send {
+        let _ = (handle, message_id, send_at);
         async { Err(BackendError::Unsupported) }
     }
 
-    /// Where the hold `handle` stands now. A sent one is filed in Sent.
-    fn settle(&self, handle: &str) -> impl Future<Output = Result<Settled, BackendError>> + Send {
-        let _ = handle;
+    /// Where the hold `handle` stands now, with its copy and hour as for
+    /// `unschedule`. A sent one is filed in Sent.
+    fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> impl Future<Output = Result<Settled, BackendError>> + Send {
+        let _ = (handle, message_id, send_at);
         async { Err(BackendError::Unsupported) }
     }
 
@@ -1431,8 +1440,8 @@ mod tests {
     async fn an_adapter_that_holds_nothing_says_so() {
         let services = AccountServices::google(Arc::new(FakeGmail::new()));
         assert!(matches!(services.mail.schedule(b"raw", 0).await, Err(BackendError::Unsupported)));
-        assert!(matches!(services.mail.unschedule("S1").await, Err(BackendError::Unsupported)));
-        assert!(matches!(services.mail.settle("S1").await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.unschedule("S1", "M1", 0).await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.settle("S1", "M1", 0).await, Err(BackendError::Unsupported)));
         let receipt = ReceiptOut {
             message_id: "m".into(),
             from: "a@x".into(),

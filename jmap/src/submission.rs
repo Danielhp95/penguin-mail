@@ -71,6 +71,10 @@ pub enum Canceled {
     Canceled,
     /// It went before the cancel arrived (`cannotUnsend`).
     TooLate,
+    /// The server no longer has the submission (`notFound`). A cancel
+    /// whose answer was lost leaves this, and so does a server that sent
+    /// the message and forgot it, so it says nothing about whether it went.
+    Gone,
 }
 
 #[derive(Deserialize)]
@@ -224,8 +228,7 @@ impl JmapClient {
         if let Some(refused) = said.not_updated.as_ref().and_then(|n| n.get(id)) {
             return match refused.kind.as_str() {
                 "cannotUnsend" => Ok(Canceled::TooLate),
-                // Gone already, as after a cancel whose answer was lost.
-                "notFound" => Ok(Canceled::Canceled),
+                "notFound" => Ok(Canceled::Gone),
                 _ => Err(refused.error()),
             };
         }

@@ -154,6 +154,11 @@ pub struct JmapState {
     /// leaves nothing behind. [`JmapError::HoldUnknown`] is the lost
     /// answer: the server keeps the hold and the client never hears.
     pub hold_failure: Option<JmapError>,
+    /// The next cancel arrives just after the server sent the hold and
+    /// forgot it, so it answers `notFound`.
+    pub cancel_races_send: bool,
+    /// How long an upload takes.
+    pub upload_delay: std::time::Duration,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -444,6 +449,8 @@ impl FakeJmap {
             mdns: Vec::new(),
             submission_get: true,
             hold_failure: None,
+            cancel_races_send: false,
+            upload_delay: std::time::Duration::ZERO,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -1070,6 +1077,10 @@ impl JmapApi for FakeJmap {
 
     async fn upload(&self, bytes: Vec<u8>) -> Answer<String> {
         self.called("upload");
+        let delay = self.with(|s| s.upload_delay);
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
         Ok(self.with(|s| {
             let id = s.id("G");
             s.blobs.insert(id.clone(), bytes);
@@ -1340,8 +1351,15 @@ impl JmapApi for FakeJmap {
     async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {
         self.called("EmailSubmission/set");
         self.with(|s| {
-            // A hold that is gone counts as canceled, as the client reads `notFound`.
-            let Some(hold) = s.holds.get_mut(id) else { return Ok(Canceled::Canceled) };
+            if std::mem::take(&mut s.cancel_races_send)
+                && let Some(hold) = s.holds.remove(id)
+            {
+                let raw = s.emails.get(&hold.email_id).map(|e| e.raw.clone()).unwrap_or_default();
+                s.sent.push(Sent { identity_id: "I1".into(), mail_from: "me@example.com".into(), rcpt_to: hold.rcpt_to, raw });
+                return Ok(Canceled::Gone);
+            }
+            // The client reads `notFound` as gone.
+            let Some(hold) = s.holds.get_mut(id) else { return Ok(Canceled::Gone) };
             match hold.status.as_str() {
                 "final" => Ok(Canceled::TooLate),
                 _ => {
@@ -1787,9 +1805,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn canceling_a_hold_that_is_gone_counts_as_canceled() {
+    async fn canceling_a_hold_that_is_gone_says_so() {
         let fake = FakeJmap::new().with_delayed_send(86_400);
-        assert_eq!(fake.cancel_submission("S404").await.unwrap(), mailrs_jmap::Canceled::Canceled);
+        assert_eq!(fake.cancel_submission("S404").await.unwrap(), mailrs_jmap::Canceled::Gone);
     }
 
     #[tokio::test]

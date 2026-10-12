@@ -79,7 +79,7 @@ fn refused_send(err: JmapError, from: &str) -> BackendError {
 
 impl<J: JmapApi> Jmap<J> {
     /// Refuses in words when the sign-in carries no access to sending.
-    async fn sending(&self) -> Result<(), BackendError> {
+    pub(super) async fn sending(&self) -> Result<(), BackendError> {
         let session = self.api().session().await.map_err(backend)?;
         match session.offers(SUBMISSION) {
             true => Ok(()),
@@ -91,7 +91,7 @@ impl<J: JmapApi> Jmap<J> {
 
     /// The identity for `from`, read again from the server when the ones
     /// kept have no exact match.
-    async fn identity(&self, from: &str) -> Result<Identity, BackendError> {
+    pub(super) async fn identity(&self, from: &str) -> Result<Identity, BackendError> {
         let kept = identity_for(&self.known().identities, from).filter(|i| i.email.eq_ignore_ascii_case(from)).cloned();
         if let Some(identity) = kept {
             return Ok(identity);

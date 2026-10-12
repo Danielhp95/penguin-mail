@@ -300,12 +300,12 @@ impl MailBackend for AnyMail {
         forward_all!(AnyMail, self, schedule(raw, at))
     }
 
-    async fn unschedule(&self, handle: &str) -> Result<Unheld, BackendError> {
-        forward_all!(AnyMail, self, unschedule(handle))
+    async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
+        forward_all!(AnyMail, self, unschedule(handle, message_id, send_at))
     }
 
-    async fn settle(&self, handle: &str) -> Result<Settled, BackendError> {
-        forward_all!(AnyMail, self, settle(handle))
+    async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
+        forward_all!(AnyMail, self, settle(handle, message_id, send_at))
     }
 
     async fn storage(&self) -> Result<Option<Storage>, BackendError> {

@@ -11,6 +11,7 @@ mod contacts;
 mod errors;
 mod feed;
 mod fetch;
+mod held;
 mod identities;
 mod mailboxes;
 mod outgoing;
@@ -25,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use mailrs_domain::mailbox::keyword::{ANSWERED, DRAFT, FLAGGED, MUTED, SEEN};
-use mailrs_domain::{MailSet, RemoteMailbox, Role};
+use mailrs_domain::{EpochMillis, MailSet, RemoteMailbox, Role};
 use mailrs_gmail::LabelColor;
 use mailrs_jmap::{Identity, Mailbox};
 use mailrs_mime::Parts;
@@ -38,8 +39,8 @@ pub(crate) use outgoing::{bare_message_id, has_message_id};
 pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
-    Backfill, Changes, Found, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
-    RemoteRef, SearchQuery, SyncState, Unapplied, Want,
+    Backfill, Changes, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
+    RemoteRef, SearchQuery, Settled, SyncState, Unapplied, Unheld, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -109,6 +110,9 @@ pub(super) struct Known {
     pub push: Option<bool>,
     pub push_failures: u32,
     pub push_pause: Option<Duration>,
+    /// Whether the server can call a hold back (`EmailSubmission/get`
+    /// answers), asked the first time a message would be held.
+    pub holds: Option<bool>,
     /// When the open push stream was opened; `None` while none is open.
     pub push_opened: Option<tokio::time::Instant>,
 }
@@ -364,5 +368,17 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
 
     async fn list_drafts(&self) -> Result<Vec<DraftRef>, BackendError> {
         self.drafts().await
+    }
+
+    async fn schedule(&self, raw: &[u8], at: EpochMillis) -> Result<Held, BackendError> {
+        self.hold_message(raw, at).await
+    }
+
+    async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
+        self.release(handle, message_id, send_at).await
+    }
+
+    async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
+        self.settle_hold(handle, message_id, send_at).await
     }
 }
