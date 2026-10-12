@@ -48,6 +48,9 @@ const REQUEST_LIMIT: usize = 8192;
 /// few; more come from something else, and those wait in the backlog.
 const MOST_CONNECTIONS: usize = 16;
 
+/// How long the sign-in listener waits after a failed accept.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(50);
+
 /// Which addresses a call may reach. Production code has only
 /// `HttpsOnly`; the unit tests' mock servers speak http, and only the
 /// tests can name the other variant.
@@ -718,8 +721,7 @@ impl Loopback {
                 // connection waits in the backlog until a read ends (at most
                 // `REQUEST_WAIT`) rather than being dropped. Each read holds
                 // at most `REQUEST_LIMIT` bytes.
-                accepted = self.listener.accept(), if reading.len() < MOST_CONNECTIONS => {
-                    let (stream, _) = accepted.map_err(io)?;
+                stream = accept_one(|| self.listener.accept()), if reading.len() < MOST_CONNECTIONS => {
                     reading.spawn(read_request(stream));
                 }
                 Some(read) = reading.join_next() => {
@@ -741,6 +743,27 @@ impl Loopback {
                         return result;
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The next connection `accept` hands over. A failed accept, such as a
+/// connection aborted before it was taken or a moment out of file
+/// handles, is no reason to end a sign-in the browser has yet to finish:
+/// it is logged, and the next try waits `ACCEPT_PAUSE` so a lasting
+/// failure does not spin.
+async fn accept_one<F, Fut>(mut accept: F) -> TcpStream
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::io::Result<(TcpStream, std::net::SocketAddr)>>,
+{
+    loop {
+        match accept().await {
+            Ok((stream, _)) => return stream,
+            Err(err) => {
+                tracing::warn!(kind = %err.kind(), "the sign-in listener could not take a connection");
+                tokio::time::sleep(ACCEPT_PAUSE).await;
             }
         }
     }
@@ -832,6 +855,29 @@ mod tests {
     // The mock servers speak http, which only this module's transport
     // takes.
     const LOCAL: Transport = Transport::LocalHttp;
+
+    /// A connection the kernel aborted before the accept, or a moment out
+    /// of file handles, leaves the sign-in waiting for the browser.
+    #[tokio::test]
+    async fn a_failed_accept_waits_on_for_the_next_connection() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut failures = 2;
+        let accepted = accept_one(|| {
+            let fail = failures > 0;
+            failures -= 1;
+            let listener = &listener;
+            async move {
+                match fail {
+                    true => Err(std::io::Error::from(std::io::ErrorKind::ConnectionAborted)),
+                    false => listener.accept().await,
+                }
+            }
+        });
+        let connect = TcpStream::connect(address);
+        let (accepted, _) = tokio::join!(accepted, connect);
+        assert_eq!(accepted.peer_addr().unwrap().ip(), address.ip());
+    }
 
     async fn serving(server: &MockServer, metadata: Value) {
         Mock::given(method("GET"))
