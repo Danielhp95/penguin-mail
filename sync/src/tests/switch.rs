@@ -557,3 +557,19 @@ async fn a_draft_whose_bytes_carry_a_message_id_keeps_it_and_gets_no_second() {
     let headers = String::from_utf8_lossy(&uploaded).matches("Message-ID:").count();
     assert_eq!(headers, 1);
 }
+
+#[tokio::test]
+async fn two_switches_at_once_leave_the_secret_of_the_one_that_went_through() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let account = account(&h).await;
+    let (first, second) = tokio::join!(
+        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-a".into()),
+        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-b".into()),
+    );
+    let went = match (&first, &second) {
+        (Ok(_), Err(SwitchError::NotImap)) => "token-a",
+        (Err(SwitchError::NotImap), Ok(_)) => "token-b",
+        other => panic!("one switch goes through, the other finds a JMAP account: {other:?}"),
+    };
+    assert_eq!(secrets.jmap.load(h.account_id).unwrap().as_deref(), Some(went));
+}

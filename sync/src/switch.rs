@@ -12,7 +12,7 @@
 //! draft without a Message-ID gets one first, the one change made earlier.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use mailrs_domain::translate::gettext;
 use mailrs_domain::{Account, AccountId, Provider};
@@ -510,6 +510,15 @@ async fn keyring<T: Send + 'static>(work: impl FnOnce() -> Result<T, PasswordErr
     tokio::task::spawn_blocking(work).await.map_err(|e| PasswordError::Keyring(e.to_string()))?
 }
 
+/// The lock one account's switch holds. The map keeps an entry only while
+/// a switch holds or waits for it.
+fn switch_lock(id: AccountId) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: LazyLock<Mutex<HashMap<AccountId, Arc<tokio::sync::Mutex<()>>>>> = LazyLock::new(Mutex::default);
+    let mut locks = LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
+    locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+    Arc::clone(locks.entry(id).or_default())
+}
+
 /// Deletes the IMAP and SMTP passwords once the swap is in the database
 /// file. With `synchronous = NORMAL` a commit is not synced, and a power
 /// cut before the next checkpoint would bring the IMAP account back
@@ -572,6 +581,11 @@ pub async fn to_jmap_over<J: JmapApi>(
         return Err(SwitchError::NotImap);
     }
     let id = account.id;
+    // A second switch of this account waits for the first, then finds it
+    // switched. Run side by side, its opening delete could take out the
+    // secret the first saved for its swap.
+    let lock = switch_lock(id);
+    let _one = lock.lock().await;
     // The account shown may be stale: a second click, or a retry after a
     // switch that went through.
     let provider = db.read(move |c| Ok(mailrs_store::accounts::account(c, id)?.map(|a| a.provider))).await?;
