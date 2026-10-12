@@ -365,6 +365,54 @@ async fn an_unclear_submission_is_retried_with_a_look_and_goes_once() {
     assert_eq!(h.fake.with(|s| s.sent.len()), 1, "and sends it once");
 }
 
+/// The app stops while a first try is on its way, after the server may
+/// have taken it. The row already counts the try, so the pass after the
+/// claim lapses looks in Sent and finds it there rather than send again.
+#[tokio::test]
+async fn a_first_try_cut_off_mid_send_is_looked_for_in_sent() {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use mailrs_store::outbox::{self, Queued};
+
+    use crate::tests::Connected;
+    use crate::{Outbox, now_millis};
+
+    let h = fastmail().await;
+    h.sync.refresh_labels().await.unwrap();
+    let queue = Outbox::new(Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))), h.db.clone());
+    let raw = letter("me@example.com", "");
+    let message = Queued {
+        account_id: h.account_id,
+        subject: "Hi".into(),
+        recipients: "ada@example.com".into(),
+        send_at: now_millis(),
+        raw: Some(raw.clone()),
+        composer: "{}".into(),
+        ..Queued::default()
+    };
+    let id = h.db.write(move |c| outbox::put(c, &message)).await.unwrap();
+    h.fake.with(|s| s.upload_delay = std::time::Duration::from_secs(3600));
+    let uploading = async {
+        while !h.fake.with(|s| s.calls.iter().any(|c| c == "upload")) {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::select! {
+        _ = queue.send_due(now_millis()) => panic!("the send was meant to hang"),
+        () = uploading => {}
+    }
+    let row = h.db.read(move |c| outbox::find(c, id)).await.unwrap().unwrap();
+    assert_eq!(row.attempts, 1, "the try counts before it goes");
+    // The server took it before the app stopped, and the claim lapsed.
+    h.fake.deliver("sent", &raw, now_millis());
+    h.db.write(move |c| outbox::release(c, id)).await.unwrap();
+    h.fake.with(|s| s.upload_delay = std::time::Duration::ZERO);
+    let drained = queue.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1);
+    assert!(h.fake.with(|s| s.sent.is_empty()), "found in Sent, not sent again");
+}
+
 /// Deleting a draft by an id that names a message without `$draft`, such
 /// as the sent copy a one-copy server made of it, leaves that message and
 /// counts the draft as gone.

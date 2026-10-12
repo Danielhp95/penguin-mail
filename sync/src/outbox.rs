@@ -328,7 +328,7 @@ impl<A: Accounts> Outbox<A> {
         }
         match self.attempt(&message).await {
             Ok(sent) => {
-                self.forget(&message).await?;
+                self.forget_sent(&message).await;
                 Ok(Posted::Sent(sent))
             }
             // An account that is not connected has told us nothing about
@@ -488,7 +488,7 @@ impl<A: Accounts> Outbox<A> {
                     continue;
                 }
                 Ok(_) => {
-                    self.forget(&message).await?;
+                    self.forget_sent(&message).await;
                     drained.sent.push(message);
                 }
                 Err(err) => {
@@ -834,6 +834,13 @@ impl<A: Accounts> Outbox<A> {
             .accounts
             .account(message.account_id)
             .ok_or(SyncError::UnknownAccount(message.account_id))?;
+        // The try counts before anything goes, so one the app never hears
+        // back from, because it stopped, makes the next look in Sent. The
+        // caller counts it again on a failure, which writes the same number.
+        if message.id > 0 {
+            let id = message.id;
+            self.db.write(move |c| outbox::count_try(c, id)).await?;
+        }
         match (&message.raw, &message.draft_id) {
             (Some(raw), draft_id) => {
                 if message.attempts > 0
@@ -891,6 +898,15 @@ impl<A: Accounts> Outbox<A> {
             })
             .await?;
         Ok(())
+    }
+
+    /// Forgets a message that went out. A failure here must not read as a
+    /// failed send, or the message would go again: the row stays claimed,
+    /// counts its try, and the pass after the claim lapses finds it in Sent.
+    async fn forget_sent(&self, message: &Queued) {
+        if let Err(err) = self.forget(message).await {
+            tracing::warn!(account = message.account_id, error = %err, "sent, but could not take the message out of the outbox");
+        }
     }
 
     /// Keeps a message that would not go out, with why and when to try
