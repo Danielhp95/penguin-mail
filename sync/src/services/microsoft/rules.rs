@@ -68,6 +68,7 @@ fn filter_of_override(o: &Override) -> Option<Filter> {
         criteria: FilterCriteria { from: Some(sender), ..FilterCriteria::default() },
         action: FilterAction { add, remove, forward: None },
         read_only: false,
+        off: false,
     })
 }
 
@@ -129,7 +130,7 @@ impl<G: GraphApi> Microsoft<G> {
             action.add.push(MailSet::Role(Role::Trash));
         }
         action.add.extend(actions.assign_categories.iter().map(|name| MailSet::Mailbox(tag_id(name))));
-        Filter { id: Some(rule.id.clone()), criteria, action, read_only }
+        Filter { id: Some(rule.id.clone()), criteria, action, read_only, off: false }
     }
 
     /// The folder a rule moves to for a set, when Outlook can move there.

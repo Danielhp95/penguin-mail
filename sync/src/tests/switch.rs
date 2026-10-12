@@ -17,7 +17,7 @@ fn raw(message_id: &str) -> Vec<u8> {
 }
 
 fn stored(id: &str, message_id: Option<&str>, date: i64) -> StoredMessage {
-    StoredMessage { id: id.into(), message_id: message_id.map(str::to_string), date }
+    StoredMessage { id: id.into(), message_id: message_id.map(str::to_string), date, size: 0, subject: "s".into(), from: Some("a@example.com".into()) }
 }
 
 #[tokio::test]
@@ -332,4 +332,244 @@ async fn an_outbox_row_lets_go_of_a_message_the_switch_dropped() {
     let row = outbox_rows(&h).await.remove(0);
     assert_eq!((row.message_id, row.thread_id), (None, None));
     assert_eq!(row.raw, Some(raw("reply@x")), "the row still sends");
+}
+
+/// The same message without a Message-ID header.
+fn raw_without_id(subject: &str) -> Vec<u8> {
+    format!("From: a@example.com\r\nTo: me@example.com\r\nSubject: {subject}\r\n\r\nx\r\n").into_bytes()
+}
+
+fn stored_as(id: &str, message_id: Option<&str>, date: i64, raw: &[u8], subject: &str) -> StoredMessage {
+    StoredMessage {
+        size: raw.len() as i64,
+        subject: subject.into(),
+        ..stored(id, message_id, date)
+    }
+}
+
+#[tokio::test]
+async fn a_message_gone_between_two_pages_hides_no_other() {
+    let fake = FakeJmap::new().clamping_queries(2);
+    let ids: Vec<String> = (0..5).map(|n| format!("p{n}@x")).collect();
+    let jmap: Vec<String> = ids.iter().enumerate().map(|(n, id)| fake.deliver("inbox", &raw(id), 1_000_000 + n as i64 * 1000)).collect();
+    // The newest is on the first page and goes right after it, so a page
+    // by position would start one further on and skip p2.
+    fake.with(|s| s.vanish_after_query = Some(jmap[4].clone()));
+    let kept: Vec<StoredMessage> = ids.iter().enumerate().map(|(n, id)| stored(&format!("INBOX/7/{n}"), Some(id), 1_000_000 + n as i64 * 1000)).collect();
+    let moved = match_messages(&fake, &kept).await.unwrap();
+    let mut to: Vec<_> = moved.into_iter().map(|m| m.to).collect();
+    to.sort();
+    let mut want = jmap[..4].to_vec();
+    want.sort();
+    assert_eq!(to, want);
+}
+
+#[tokio::test]
+async fn a_message_without_a_message_id_matches_by_date_and_size() {
+    let fake = FakeJmap::new();
+    let mail = raw_without_id("Trip");
+    let jmap_id = fake.deliver("inbox", &mail, 1_000_000);
+    // Same day, another size: not the same message.
+    fake.deliver("inbox", &raw_without_id("A longer subject"), 1_000_000);
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", None, 1_000_500, &mail, "Trip")]).await.unwrap();
+    assert_eq!(moved.iter().map(|m| m.to.as_str()).collect::<Vec<_>>(), [jmap_id.as_str()]);
+}
+
+#[tokio::test]
+async fn a_message_with_no_date_matches_its_one_copy_by_message_id() {
+    let fake = FakeJmap::new();
+    let jmap_id = fake.deliver("inbox", &raw("nodate@x"), crate::now_millis());
+    let moved = match_messages(&fake, &[stored("INBOX/7/1", Some("nodate@x"), 0)]).await.unwrap();
+    assert_eq!(moved.iter().map(|m| m.to.as_str()).collect::<Vec<_>>(), [jmap_id.as_str()]);
+}
+
+#[tokio::test]
+async fn a_message_with_no_message_id_and_no_date_matches_by_subject_and_sender() {
+    let fake = FakeJmap::new();
+    let mail = raw_without_id("Trip");
+    let jmap_id = fake.deliver("inbox", &mail, crate::now_millis());
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", None, 0, &mail, "Trip")]).await.unwrap();
+    assert_eq!(moved.iter().map(|m| m.to.as_str()).collect::<Vec<_>>(), [jmap_id.as_str()]);
+}
+
+#[tokio::test]
+async fn a_second_key_two_messages_answer_matches_neither() {
+    let fake = FakeJmap::new();
+    let mail = raw_without_id("Trip");
+    fake.deliver("inbox", &mail, crate::now_millis());
+    fake.deliver("inbox", &mail, crate::now_millis());
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", None, 0, &mail, "Trip")]).await.unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn the_swap_is_in_the_database_file_before_the_passwords_go() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    // The IMAP account is in the file; only what the switch writes is not.
+    assert!(h.db.checkpoint().await.unwrap());
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    assert_eq!(secrets.passwords.load(h.account_id).unwrap(), None);
+    // The file without its write-ahead log, as a power cut can leave it.
+    let copies = tempfile::tempdir().unwrap();
+    let copy = copies.path().join("at-delete.db");
+    std::fs::copy(h.db_path(), &copy).unwrap();
+    let conn = rusqlite::Connection::open(&copy).unwrap();
+    let provider: String = conn.query_row("SELECT provider FROM accounts WHERE id = ?1", [h.account_id], |r| r.get(0)).unwrap();
+    assert_eq!(provider, "jmap");
+}
+
+/// A reader on an older snapshot keeps the swap in the log past the
+/// checkpoint's busy timeout. Takes that five-second timeout.
+#[tokio::test]
+async fn the_passwords_stay_while_the_swap_is_only_in_the_log() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let reader = rusqlite::Connection::open(h.db_path()).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    let _: i64 = reader.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0)).unwrap();
+    let account = account(&h).await;
+    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    reader.execute_batch("COMMIT").unwrap();
+    assert_eq!(switched.account.provider, Provider::Jmap);
+    assert_eq!(secrets.passwords.load(h.account_id).unwrap().as_deref(), Some("imap-app-password"));
+}
+
+#[tokio::test]
+async fn a_password_the_keyring_will_not_delete_leaves_the_switch_done() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    if let crate::passwords::Passwords::Memory(memory) = &*secrets.passwords {
+        memory.refuse_deletes();
+    }
+    let account = account(&h).await;
+    let switched = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    assert_eq!(switched.map(|s| s.account.provider).ok(), Some(Provider::Jmap));
+}
+
+#[tokio::test]
+async fn a_secret_a_crashed_switch_left_goes_at_the_next_try() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let id = h.account_id;
+    secrets.jmap.save(id, "left-by-a-crash").unwrap();
+    fake.with(|s| s.session.capabilities.remove(mailrs_jmap::MAIL));
+    let account = account(&h).await;
+    assert!(to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.is_err());
+    assert_eq!(secrets.jmap.load(id).unwrap(), None);
+}
+
+#[tokio::test]
+async fn two_switches_in_a_row_keep_the_mail_and_the_token() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let after_first = h.ids().await;
+    // The second click still holds the IMAP account it was shown.
+    let again = to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await;
+    assert!(matches!(again, Err(SwitchError::NotImap)), "{again:?}");
+    assert_eq!(h.ids().await, after_first);
+    assert_eq!(secrets.jmap.load(h.account_id).unwrap().as_deref(), Some("fmu1-token"));
+}
+
+#[tokio::test]
+async fn a_draft_without_a_message_id_goes_up_once_across_a_retry() {
+    let mail = raw_without_id("Unsent");
+    let (h, fake, secrets) = imap_with_jmap_twin_and(|h| {
+        h.imap.deliver_flagged("Drafts", &raw_without_id("Unsent"), &["\\Draft", "\\Seen"], crate::now_millis() - 3_600_000);
+    })
+    .await;
+    let id = h.account_id;
+    let old: String = h
+        .db
+        .read(move |c| Ok(c.query_row("SELECT id FROM messages WHERE account_id = ?1 AND subject = 'Unsent'", [id], |r| r.get(0))?))
+        .await
+        .unwrap();
+    let old_id = old.clone();
+    h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old_id, &mail)).await.unwrap();
+    h.db.write(|c| {
+        Ok(c.execute_batch("CREATE TEMP TRIGGER no_switch BEFORE UPDATE OF provider ON accounts BEGIN SELECT RAISE(ABORT, 'no'); END;")?)
+    })
+    .await
+    .unwrap();
+    let account = account(&h).await;
+    assert!(to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.is_err());
+    h.db.write(|c| Ok(c.execute_batch("DROP TRIGGER temp.no_switch;")?)).await.unwrap();
+    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let imports = fake.with(|s| s.calls.iter().filter(|c| *c == "Email/import").count());
+    assert_eq!(imports, 1);
+    let new: String = h
+        .db
+        .read(move |c| Ok(c.query_row("SELECT id FROM messages WHERE account_id = ?1 AND subject = 'Unsent'", [id], |r| r.get(0))?))
+        .await
+        .unwrap();
+    let bytes = h.db.read(move |c| mailrs_store::local_messages::get(c, id, &new)).await.unwrap().unwrap();
+    assert!(String::from_utf8_lossy(&bytes).contains("Message-ID: <"), "the local copy carries the id it went up with");
+}
+
+#[tokio::test]
+async fn a_message_gone_from_the_server_never_takes_another_by_date_and_size() {
+    let fake = FakeJmap::new();
+    // B has A's size and day but another Message-ID: another message.
+    fake.deliver("inbox", &raw("b@x"), 1_000_000);
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", Some("a@x"), 1_000_000, &raw("a@x"), "s")]).await.unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn a_match_by_date_and_size_needs_the_same_subject() {
+    let fake = FakeJmap::new();
+    fake.deliver("inbox", &raw_without_id("Trap"), 1_000_000);
+    let mail = raw_without_id("Trip");
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", None, 1_000_000, &mail, "Trip")]).await.unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn two_stored_messages_one_second_key_finds_match_neither() {
+    let fake = FakeJmap::new();
+    let mail = raw_without_id("Trip");
+    fake.deliver("inbox", &mail, 1_000_000);
+    let moved = match_messages(
+        &fake,
+        &[stored_as("INBOX/7/1", None, 1_000_000, &mail, "Trip"), stored_as("Copy/3/1", None, 1_000_000, &mail, "Trip")],
+    )
+    .await
+    .unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn a_draft_whose_bytes_carry_a_message_id_keeps_it_and_gets_no_second() {
+    let (h, fake, secrets) = imap_with_jmap_twin_and(|h| {
+        h.imap.deliver_flagged("Drafts", &raw_without_id("Unsent"), &["\\Draft", "\\Seen"], crate::now_millis() - 3_600_000);
+    })
+    .await;
+    let id = h.account_id;
+    let old: String = h
+        .db
+        .read(move |c| Ok(c.query_row("SELECT id FROM messages WHERE account_id = ?1 AND subject = 'Unsent'", [id], |r| r.get(0))?))
+        .await
+        .unwrap();
+    // The row knows no Message-ID, but the bytes kept here carry one.
+    h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old, &raw("kept@x"))).await.unwrap();
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let new = stored_id(&h, "kept@x").await.expect("the row now names the bytes' Message-ID");
+    let uploaded = fake.with(|s| s.emails[&new].raw.clone());
+    let headers = String::from_utf8_lossy(&uploaded).matches("Message-ID:").count();
+    assert_eq!(headers, 1);
+}
+
+#[tokio::test]
+async fn two_switches_at_once_leave_the_secret_of_the_one_that_went_through() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let account = account(&h).await;
+    let (first, second) = tokio::join!(
+        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-a".into()),
+        to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "token-b".into()),
+    );
+    let went = match (&first, &second) {
+        (Ok(_), Err(SwitchError::NotImap)) => "token-a",
+        (Err(SwitchError::NotImap), Ok(_)) => "token-b",
+        other => panic!("one switch goes through, the other finds a JMAP account: {other:?}"),
+    };
+    assert_eq!(secrets.jmap.load(h.account_id).unwrap().as_deref(), Some(went));
 }

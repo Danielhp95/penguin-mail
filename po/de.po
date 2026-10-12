@@ -10952,7 +10952,7 @@ msgstr ""
 "größer als 3 MB ist. Verkleinern Sie die Dateien oder senden Sie sie "
 "getrennt."
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr "Outlook-Regeln können das nicht."
 

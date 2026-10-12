@@ -772,7 +772,8 @@ impl FakeJmap {
                 .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
                 .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
                 .collect();
-            Ok(Queried { hits, position: start as u64, total: query.total.then_some(total) })
+            // Any change moves the state, as on Cyrus.
+            Ok(Queried { hits, position: start as u64, total: query.total.then_some(total), query_state: s.state.to_string() })
         })
     }
 

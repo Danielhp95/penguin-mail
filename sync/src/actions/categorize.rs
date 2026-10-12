@@ -127,6 +127,7 @@ impl<A: Accounts> MailActions<A> {
                 forward: None,
             },
             read_only: false,
+            off: false,
         };
         Ok(match settings.add_rule(account_id, rule).await? {
             Permitted::Done(_) => Permitted::Done(()),

@@ -396,6 +396,11 @@ pub(crate) async fn imap_harness_on(imap: FakeImap, settings: ImapSettings) -> I
 }
 
 impl ImapHarness {
+    /// The store's database file.
+    pub fn db_path(&self) -> std::path::PathBuf {
+        self._dir.path().join("mail.db")
+    }
+
     pub fn drain(&self) -> Vec<ChangeEvent> {
         let mut events = Vec::new();
         while let Ok(event) = self.events.try_recv() {

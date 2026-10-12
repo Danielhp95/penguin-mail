@@ -9,7 +9,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use mailrs_domain::{AccountId, MailSet};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::jmap::{self, JmapSaved};
 use crate::{Result, StoreError, local_rules};
@@ -18,7 +18,11 @@ use crate::{Result, StoreError, local_rules};
 pub struct StoredMessage {
     pub id: String,
     pub message_id: Option<String>,
+    /// When it arrived, or 0 when the server did not say.
     pub date: i64,
+    pub size: i64,
+    pub subject: String,
+    pub from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +55,12 @@ pub struct Adoption {
 pub struct Adopted {
     pub kept: usize,
     pub dropped: usize,
+    /// Local rules turned off because they name a mailbox the server lacks.
+    pub rules_off: usize,
 }
 
 /// Every table that names a message by `(account_id, message_id)`.
-const MESSAGE_TABLES: [&str; 11] = [
+const MESSAGE_TABLES: [&str; 12] = [
     "attachments",
     "bodies",
     "drafts",
@@ -66,15 +72,27 @@ const MESSAGE_TABLES: [&str; 11] = [
     "message_keywords",
     "message_links",
     "message_mailboxes",
+    "receipts",
 ];
+
+/// The tables in `MESSAGE_TABLES` whose rows no foreign key removes with
+/// their message, so the swap removes a dropped message's rows itself.
+const LOOSE_MESSAGE_TABLES: [&str; 4] = ["drafts", "invitations", "local_rules_ran", "receipts"];
 
 /// Every table that names a thread and holds something the person did.
 const THREAD_TABLES: [&str; 2] = ["reminders", "follow_up_dismissals"];
 
 pub fn stored_messages(conn: &Connection, account_id: AccountId) -> Result<Vec<StoredMessage>> {
-    let mut stmt = conn.prepare("SELECT id, rfc822_msgid, date FROM messages WHERE account_id = ?1")?;
+    let mut stmt = conn.prepare("SELECT id, rfc822_msgid, date, size, subject, from_addr FROM messages WHERE account_id = ?1")?;
     let rows = stmt.query_map(params![account_id], |row| {
-        Ok(StoredMessage { id: row.get(0)?, message_id: row.get(1)?, date: row.get(2)? })
+        Ok(StoredMessage {
+            id: row.get(0)?,
+            message_id: row.get(1)?,
+            date: row.get(2)?,
+            size: row.get(3)?,
+            subject: row.get(4)?,
+            from: row.get(5)?,
+        })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
@@ -86,8 +104,16 @@ pub fn stored_mailboxes(conn: &Connection, account_id: AccountId) -> Result<Vec<
 }
 
 /// Rewrites the account as a JMAP account. Runs inside the caller's
-/// transaction; an error leaves the transaction to roll back.
-pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption) -> Result<Adopted> {
+/// transaction; an error leaves the transaction to roll back. None, with
+/// nothing changed, when the stored account is no longer IMAP.
+pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption) -> Result<Option<Adopted>> {
+    // A second click, or a retry after the first switch went through,
+    // would find none of its IMAP ids and drop every message.
+    let provider: Option<String> =
+        conn.query_row("SELECT provider FROM accounts WHERE id = ?1", params![account_id], |row| row.get(0)).optional()?;
+    if provider.as_deref() != Some("imap") {
+        return Ok(None);
+    }
     let targets: BTreeSet<&str> = adoption.messages.iter().map(|m| m.to.as_str()).collect();
     if targets.len() != adoption.messages.len() {
         return Err(StoreError::Corrupt { column: "switch.messages", value: "two messages take one JMAP id".into() });
@@ -97,7 +123,10 @@ pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption)
          CREATE TEMP TABLE IF NOT EXISTS switch_messages (old TEXT PRIMARY KEY, new TEXT NOT NULL, thread TEXT NOT NULL);
          CREATE TEMP TABLE IF NOT EXISTS switch_threads (old TEXT PRIMARY KEY, new TEXT NOT NULL);
          CREATE TEMP TABLE IF NOT EXISTS switch_mailboxes (old TEXT PRIMARY KEY, new TEXT NOT NULL);
-         DELETE FROM switch_messages; DELETE FROM switch_threads; DELETE FROM switch_mailboxes;",
+         CREATE TEMP TABLE IF NOT EXISTS switch_dropped (id TEXT PRIMARY KEY);
+         CREATE TEMP TABLE IF NOT EXISTS switch_reminders (thread_id TEXT PRIMARY KEY, subject TEXT NOT NULL, remind_at INTEGER NOT NULL);
+         DELETE FROM switch_messages; DELETE FROM switch_threads; DELETE FROM switch_mailboxes;
+         DELETE FROM switch_dropped; DELETE FROM switch_reminders;",
     )?;
     {
         let mut insert = conn.prepare("INSERT INTO switch_messages (old, new, thread) VALUES (?1, ?2, ?3)")?;
@@ -118,8 +147,24 @@ pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption)
          ON CONFLICT (old) DO UPDATE SET new = excluded.new",
         params![account_id],
     )?;
+    conn.execute(
+        "INSERT INTO switch_dropped (id) SELECT id FROM messages WHERE account_id = ?1 AND id NOT IN (SELECT old FROM switch_messages)",
+        params![account_id],
+    )?;
     let dropped = conn.execute(
-        "DELETE FROM messages WHERE account_id = ?1 AND id NOT IN (SELECT old FROM switch_messages)",
+        "DELETE FROM messages WHERE account_id = ?1 AND id IN (SELECT id FROM switch_dropped)",
+        params![account_id],
+    )?;
+    for table in LOOSE_MESSAGE_TABLES {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE account_id = ?1 AND message_id IN (SELECT id FROM switch_dropped)"),
+            params![account_id],
+        )?;
+    }
+    // A queued send keeps its bytes and still goes; it lets go of a draft
+    // the server no longer holds.
+    conn.execute(
+        "UPDATE outbox SET draft_id = NULL WHERE account_id = ?1 AND draft_id IN (SELECT id FROM switch_dropped)",
         params![account_id],
     )?;
     for table in MESSAGE_TABLES {
@@ -156,6 +201,25 @@ pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption)
     // A JMAP draft goes by its Email id.
     conn.execute("UPDATE drafts SET draft_id = message_id WHERE account_id = ?1", params![account_id])?;
     conn.execute("DELETE FROM remote_refs WHERE account_id = ?1", params![account_id])?;
+    // Two old threads may become one JMAP thread. When both had a
+    // reminder, the earlier one stays, so the person is not reminded late.
+    // SQLite takes the bare column `subject` from the row MIN picked.
+    conn.execute(
+        "INSERT INTO switch_reminders (thread_id, subject, remind_at) \
+         SELECT s.new, r.subject, MIN(r.remind_at) FROM reminders r JOIN switch_threads s ON s.old = r.thread_id \
+         WHERE r.account_id = ?1 GROUP BY s.new",
+        params![account_id],
+    )?;
+    conn.execute(
+        "DELETE FROM reminders WHERE account_id = ?1 AND thread_id IN (SELECT old FROM switch_threads)",
+        params![account_id],
+    )?;
+    conn.execute(
+        "INSERT INTO reminders (account_id, thread_id, subject, remind_at) \
+         SELECT ?1, thread_id, subject, remind_at FROM switch_reminders WHERE true \
+         ON CONFLICT (account_id, thread_id) DO UPDATE SET remind_at = MIN(remind_at, excluded.remind_at)",
+        params![account_id],
+    )?;
     for table in THREAD_TABLES {
         conn.execute(
             &format!(
@@ -187,7 +251,22 @@ pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption)
         params![account_id],
     )?;
     let renamed: HashMap<&str, &str> = adoption.mailboxes.iter().map(|(o, n)| (o.as_str(), n.as_str())).collect();
+    let mut rules_off = 0;
     for mut rule in local_rules::list(conn, account_id)? {
+        // A rule naming a mailbox the server lacks would fail on every
+        // message, or take mail out of the Inbox and file it nowhere. It
+        // stays as the person wrote it, turned off.
+        let lacks = |set: &MailSet| matches!(set, MailSet::Mailbox(id) if !renamed.contains_key(id.as_str()));
+        if rule.action.add.iter().chain(&rule.action.remove).any(lacks) {
+            if !rule.off
+                && let Some(id) = rule.id.clone()
+            {
+                rule.off = true;
+                rules_off += 1;
+                local_rules::replace(conn, account_id, &id, &rule)?;
+            }
+            continue;
+        }
         let mut changed = false;
         for set in rule.action.add.iter_mut().chain(rule.action.remove.iter_mut()) {
             if let MailSet::Mailbox(id) = set
@@ -224,6 +303,9 @@ pub fn adopt_jmap(conn: &Connection, account_id: AccountId, adoption: &Adoption)
     )?;
     conn.execute("DELETE FROM account_servers WHERE account_id = ?1", params![account_id])?;
     jmap::save(conn, account_id, &adoption.saved)?;
-    conn.execute_batch("DELETE FROM switch_messages; DELETE FROM switch_threads; DELETE FROM switch_mailboxes;")?;
-    Ok(Adopted { kept, dropped })
+    conn.execute_batch(
+        "DELETE FROM switch_messages; DELETE FROM switch_threads; DELETE FROM switch_mailboxes; \
+         DELETE FROM switch_dropped; DELETE FROM switch_reminders;",
+    )?;
+    Ok(Some(Adopted { kept, dropped, rules_off }))
 }

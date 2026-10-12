@@ -10301,7 +10301,7 @@ msgid ""
 "the files smaller or send them apart."
 msgstr ""
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr ""
 
