@@ -13,6 +13,9 @@ use mailrs_domain::AccountId;
 /// How many bytes of raw mail all accounts together keep in memory.
 pub const RAW_CACHE_BYTES: usize = 16 << 20;
 
+/// One cached message: its account and the server's id, and its bytes.
+type Entry = ((AccountId, String), Arc<Vec<u8>>);
+
 /// Raw messages by account and the server's id, least recently used
 /// first. Every account's loop shares one, so the whole app holds
 /// `RAW_CACHE_BYTES` however many accounts it syncs, and the account being
@@ -21,7 +24,7 @@ pub const RAW_CACHE_BYTES: usize = 16 << 20;
 pub struct RawCache {
     cap: usize,
     used: usize,
-    entries: VecDeque<((AccountId, String), Arc<Vec<u8>>)>,
+    entries: VecDeque<Entry>,
 }
 
 impl RawCache {
