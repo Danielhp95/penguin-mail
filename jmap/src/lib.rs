@@ -8,6 +8,10 @@
 mod auth;
 pub mod blob;
 mod check;
+pub mod contacts;
+pub mod masked;
+pub mod sieve;
+pub mod vacation;
 mod request;
 pub mod error;
 pub mod http;
@@ -32,3 +36,7 @@ pub use mail::{
     BODY, BodyPart, ChangesResponse, Email, EmailQuery, Got, Header, Hit, Imported, Listed, META, MailChanges, Mailbox,
     MailboxWrite, PLACES, Queried, Saved, SetError, SetResponse, Submission, Thread, Threads, pointer,
 };
+pub use contacts::{AddressBook, CardChanges, CardWrite, CardsPage};
+pub use masked::{MaskedEmail, MaskedState};
+pub use sieve::{MOST_SIEVE_BYTES, SieveScript};
+pub use vacation::VacationResponse;
