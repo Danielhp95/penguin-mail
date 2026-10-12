@@ -14,7 +14,7 @@ use calcard::icalendar::{
 use calcard::{Entry, Parser};
 use chrono::{DateTime, NaiveDate, Utc};
 use mailrs_domain::EpochMillis;
-use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, occurrence_id};
+use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, occurrence_id};
 use mailrs_domain::invitation::Answer;
 
 use crate::ids::resource_id;
@@ -70,12 +70,18 @@ fn when_of(entry: &ICalendarEntry, zones: &Zones) -> Option<When> {
         return Some(When { at: day.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(), zone: "UTC".into(), all_day: true });
     }
     let result = value.to_date_time()?;
+    // A floating time, with no TZID and no Z, means the same clock time
+    // wherever the person is: it reads in the computer's zone, and an
+    // empty zone writes it back floating.
+    if result.offset.is_none() && entry.tz_id().is_none() {
+        let at = local::instant(local::zone(), result.date_time)?;
+        return Some(When { at, zone: String::new(), all_day: false });
+    }
     let named = entry.tz_id().and_then(|id| zones.resolve(id));
     let tz = match (result.offset, named) {
         (Some(_), _) => Tz::UTC,
         (None, Some(zone)) => Tz::Tz(zone),
-        // A floating time means the same clock time wherever the reader
-        // is; UTC keeps it where the file put it.
+        // A TZID nothing resolves.
         (None, None) => Tz::UTC,
     };
     let at = result.to_date_time_with_tz(tz)?.timestamp_millis();
@@ -311,13 +317,17 @@ fn replace(ical: &mut ICalendar, at: usize, property: ICalendarProperty, lines: 
 }
 
 /// A DTSTART-shaped line for `at`: a date for an all-day event, the local
-/// time with its TZID for a zoned one, UTC otherwise.
+/// time with its TZID for a zoned one, the computer's clock time with
+/// neither TZID nor Z for a floating one (no zone), UTC otherwise.
 fn time_line(name: &str, at: EpochMillis, zone: &str, all_day: bool) -> String {
     let Some(utc) = DateTime::<Utc>::from_timestamp_millis(at) else {
         return format!("{name}:19700101T000000Z");
     };
     if all_day {
         return format!("{name};VALUE=DATE:{}", utc.format("%Y%m%d"));
+    }
+    if zone.is_empty() {
+        return format!("{name}:{}", utc.with_timezone(&local::zone()).format("%Y%m%dT%H%M%S"));
     }
     match zone.parse::<chrono_tz::Tz>() {
         Ok(tz) if zone != "UTC" => format!("{name};TZID={zone}:{}", utc.with_timezone(&tz).format("%Y%m%dT%H%M%S")),
