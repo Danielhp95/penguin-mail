@@ -15,16 +15,15 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use chrono::{DateTime, Utc};
 use mailrs_dav::ids::{path_of, resource_href, resource_id};
 use mailrs_dav::{DavApi, DavError, Fetched, Kind, MULTIGET_BATCH, Precondition, ical};
 use mailrs_domain::calendar::{self as model, Access, Notify, split_occurrence_id};
-use mailrs_domain::invitation::{self, Answer, Invitation, Method, Occurrence, Scope, When};
+use mailrs_domain::invitation::Answer;
 use mailrs_domain::translate::gettext;
-use mailrs_domain::{Address, EpochMillis};
+use mailrs_domain::EpochMillis;
 
 use super::dav_read::{Reads, TOKEN_CTAG, TOKEN_SYNC, backend};
-use super::{AnyMail, CalendarService, MailBackend};
+use super::{AnyMail, CalendarService};
 use crate::BackendError;
 use crate::invitations::mail;
 
@@ -287,65 +286,10 @@ impl<D: DavApi> CalDav<D> {
         let read = ical::read_resource(&text, calendar, &found.href, &etag, &who).map_err(refused)?;
         let master = read.events.iter().find(|e| e.series.is_none()).cloned();
         if !schedules && let Some(master) = &master {
-            self.tell_organizer(master, me, answer, occurrence, note, now).await?;
+            mail::tell_organizer(&self.mail, master, me, answer, occurrence, note, now).await?;
         }
         let event = read.events.into_iter().find(|e| e.id == id).or(master);
         Ok(event)
-    }
-
-    /// Mails the organizer the REPLY. An event with no organizer, or one
-    /// the account organizes, has nobody to tell.
-    async fn tell_organizer(&self, event: &model::Event, me: &str, answer: Answer, occurrence: Option<EpochMillis>, note: Option<&str>, now: EpochMillis) -> Result<(), BackendError> {
-        let Some(organizer) = event.organizer.as_deref().map(str::trim).filter(|o| !o.is_empty() && !o.eq_ignore_ascii_case(me)) else {
-            return Ok(());
-        };
-        let when = match event.all_day {
-            true => {
-                let day = |at: EpochMillis| DateTime::<Utc>::from_timestamp_millis(at).map(|d| d.date_naive());
-                match (day(event.start), day(event.end - 1)) {
-                    (Some(first), Some(last)) => Some(When::Days { first, last: last.max(first) }),
-                    _ => None,
-                }
-            }
-            false => Some(When::At { starts_at: event.start, ends_at: Some(event.end) }),
-        };
-        let occurrence = occurrence.map(|at| Occurrence {
-            written: format!(":{}", DateTime::<Utc>::from_timestamp_millis(at).unwrap_or_default().format("%Y%m%dT%H%M%SZ")),
-            at: Some(at),
-        });
-        let scope = match occurrence {
-            Some(_) => Scope::Occurrence,
-            None => Scope::Series,
-        };
-        let organizer = Address { name: None, email: organizer.to_string() };
-        let invitation = Invitation {
-            uid: event.uid.clone(),
-            sequence: event.sequence,
-            method: Method::Reply,
-            summary: event.title.clone(),
-            when,
-            location: None,
-            description: None,
-            organizer: Some(organizer.clone()),
-            guests: Vec::new(),
-            repeats: None,
-            occurrence,
-            zone: None,
-            rules: Vec::new(),
-        };
-        let me = Address { name: None, email: me.to_string() };
-        let raw = mail::itip(
-            &me,
-            &organizer,
-            &mail::reply_subject(answer, &invitation.summary),
-            &mail::reply_prose(&me, answer, &invitation.summary),
-            "REPLY",
-            &invitation::reply_with_note(&invitation, &me, answer, scope, note, now),
-            now,
-        )
-        .map_err(BackendError::Refused)?;
-        self.mail.send(&raw, None).await?;
-        Ok(())
     }
 }
 
