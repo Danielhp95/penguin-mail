@@ -283,6 +283,12 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
     /// Makes the bytes from `pos` on available, up to `want` of them.
     fn fill(&mut self, want: usize) -> io::Result<()> {
         let target = (self.pos + want as u64).min(self.end);
+        // A lookahead that stepped back to a saved offset may land before
+        // bytes a refill already dropped; read from there again.
+        if self.pos < self.base {
+            self.buf.clear();
+            self.base = self.pos;
+        }
         while self.base + (self.buf.len() as u64) < target {
             let consumed = (self.pos - self.base) as usize;
             if consumed >= CHUNK {
@@ -596,5 +602,50 @@ mod tests {
         let file = parts.find("2").expect("the pdf");
         assert!(file.data.is_none() && file.size > 29_000_000);
         assert_eq!(spans.get("2").map(|s| s.size), Some(file.size as u64));
+    }
+
+    /// A lookahead that has to refill the buffer must not lose the byte it
+    /// stepped back to.
+    #[test]
+    fn stepping_back_across_a_refill_keeps_the_byte() {
+        let mut data = vec![b'x'; CHUNK + 10];
+        data[CHUNK - 1] = b'y';
+        let len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        let mut scan = Scan::new(&mut cursor, 0, len);
+        scan.fill(1).unwrap();
+        scan.pos = (CHUNK - 1) as u64;
+        assert!(!scan.is_multipart_end().unwrap());
+        assert_eq!(scan.peek().unwrap(), Some(b'y'));
+    }
+
+    #[test]
+    fn a_boundary_line_at_a_chunk_edge_outlines_as_it_does_from_memory() {
+        for pad in CHUNK - 40..CHUNK + 40 {
+            for nl in ["\r\n", "\n"] {
+                let mut raw = format!(
+                    "Content-Type: multipart/mixed; boundary=b{nl}{nl}--b{nl}Content-Type: text/plain{nl}{nl}"
+                )
+                .into_bytes();
+                raw.resize(raw.len() + pad, b'a');
+                raw.extend_from_slice(
+                    format!("{nl}--b{nl}Content-Type: text/plain{nl}{nl}second{nl}--b--{nl}").as_bytes(),
+                );
+                let from_memory = super::super::outline(&raw);
+                let from_stream = outline_from(&mut Cursor::new(raw.clone()), raw.len() as u64).unwrap();
+                assert_eq!(from_stream, from_memory, "pad {pad}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_boundary_that_never_comes_in_a_long_body_leaves_the_scan_usable() {
+        let mut data = vec![b'x'; 3 * CHUNK];
+        data.extend_from_slice(b"--b");
+        let len = data.len() as u64;
+        let mut cursor = Cursor::new(data);
+        let mut scan = Scan::new(&mut cursor, 0, len);
+        assert!(!scan.seek_next_part(b"zz").unwrap());
+        assert_eq!(scan.peek().unwrap(), Some(b'x'));
     }
 }
