@@ -303,7 +303,8 @@ async fn a_call_stalled_while_the_watch_sits_unpolled_in_its_probe_completes() {
     tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
     assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
     let watched = tokio::time::timeout(Duration::from_secs(5), watch).await.expect("the watch kept going");
-    assert!(matches!(&watched, Err(JmapError::Network(said)) if said.contains("stalled")), "{watched:?}");
+    assert_eq!(watched.unwrap(), Pushed::NoPush, "a stall before the probe passed turns push off for good");
+    assert_eq!(client.push_paused(), None);
 }
 
 #[tokio::test]
