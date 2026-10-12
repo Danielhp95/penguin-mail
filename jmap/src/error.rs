@@ -69,6 +69,17 @@ pub enum JmapError {
     /// page.
     #[error("the sign-in was declined")]
     Declined,
+    /// A sign-in server, or an address its metadata names, is not on
+    /// https, or is not an address at all.
+    #[error("the sign-in server must be reached over https")]
+    NotHttps,
+    /// The server's OAuth metadata names an issuer other than the one it
+    /// was fetched for (RFC 8414 section 3.3).
+    #[error("the sign-in server's metadata names another issuer")]
+    IssuerMismatch,
+    /// A redirect address other than the app's own loopback on 127.0.0.1.
+    #[error("the sign-in must hand back to the app on 127.0.0.1")]
+    BadRedirect,
 }
 
 /// A decode failure for `what`, keeping the error's category and position

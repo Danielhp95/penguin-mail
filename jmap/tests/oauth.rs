@@ -1,132 +1,92 @@
-//! OAuth against wiremock: metadata, registration, the code exchange and
-//! refresh, and the redirect's checks.
+//! OAuth's production rules without a server that speaks https: what
+//! the client refuses to send over http, the redirect's checks, the
+//! authorize URL, Debug output and the loopback. The exchanges against
+//! wiremock live in `oauth.rs`'s unit tests, which alone may use http.
 
 use mailrs_jmap::JmapError;
-use mailrs_jmap::oauth::{self, Loopback, OAuthClient, Pkce, Tokens, parse_redirect};
-use serde_json::json;
+use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens, parse_redirect};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use wiremock::matchers::{body_string_contains, method, path};
+use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-async fn serving_metadata(server: &MockServer, registration: bool) {
-    let mut metadata = json!({
-        "issuer": server.uri(),
-        "authorization_endpoint": format!("{}/authorize", server.uri()),
-        "token_endpoint": format!("{}/token", server.uri()),
-        "code_challenge_methods_supported": ["S256"],
-        "scopes_supported": ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "openid", "offline_access"]
-    });
-    if registration {
-        metadata["registration_endpoint"] = json!(format!("{}/register", server.uri()));
+/// A mock server that fails the test if any request reaches it.
+async fn untouchable() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(any()).respond_with(ResponseTemplate::new(500)).expect(0).mount(&server).await;
+    server
+}
+
+fn says_no_address(err: &JmapError, address: &str) {
+    let said = err.to_string();
+    assert!(!said.contains(address) && !said.contains("127.0.0.1"), "{said}");
+}
+
+fn https_metadata() -> Metadata {
+    Metadata {
+        issuer: "https://auth.example.com".into(),
+        authorization_endpoint: "https://auth.example.com/authorize".into(),
+        token_endpoint: "https://auth.example.com/token".into(),
+        registration_endpoint: Some("https://auth.example.com/register".into()),
+        scopes_supported: Vec::new(),
+        code_challenge_methods_supported: vec!["S256".into()],
     }
-    Mock::given(method("GET"))
-        .and(path("/.well-known/oauth-authorization-server"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(metadata))
-        .mount(server)
-        .await;
 }
 
 #[tokio::test]
-async fn metadata_comes_from_beside_the_session() {
-    let server = MockServer::start().await;
-    serving_metadata(&server, true).await;
-    let found = oauth::metadata(&format!("{}/jmap/session", server.uri())).await.unwrap();
-    assert_eq!(found.token_endpoint, format!("{}/token", server.uri()));
-    assert_eq!(
-        oauth::oauth_scopes(&found),
-        ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "offline_access"]
-    );
+async fn metadata_over_http_is_refused_before_any_request() {
+    let server = untouchable().await;
+    let err = oauth::metadata(&format!("{}/jmap/session", server.uri())).await.unwrap_err();
+    assert_eq!(err, JmapError::NotHttps);
+    says_no_address(&err, &server.uri());
 }
 
 #[tokio::test]
-async fn metadata_without_s256_is_refused() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/.well-known/oauth-authorization-server"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "issuer": server.uri(),
-            "authorization_endpoint": format!("{}/authorize", server.uri()),
-            "token_endpoint": format!("{}/token", server.uri()),
-            "code_challenge_methods_supported": ["plain"]
-        })))
-        .mount(&server)
-        .await;
-    assert!(oauth::metadata(&format!("{}/jmap/session", server.uri())).await.is_err());
-}
-
-#[tokio::test]
-async fn a_server_without_registration_offers_no_browser_sign_in() {
-    let server = MockServer::start().await;
-    serving_metadata(&server, false).await;
-    let found = oauth::metadata(&format!("{}/jmap/session", server.uri())).await.unwrap();
-    assert!(found.registration_endpoint.is_none());
-    assert!(oauth::register(&found, "http://127.0.0.1/", &[]).await.is_err());
-}
-
-#[tokio::test]
-async fn registration_asks_for_a_public_client_on_the_loopback() {
-    let server = MockServer::start().await;
-    serving_metadata(&server, true).await;
-    Mock::given(method("POST"))
-        .and(path("/register"))
-        .and(body_string_contains("\"token_endpoint_auth_method\":\"none\""))
-        .and(body_string_contains("http://127.0.0.1/"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(json!({"client_id": "stateless-123"})))
-        .mount(&server)
-        .await;
-    let found = oauth::metadata(&format!("{}/jmap/session", server.uri())).await.unwrap();
-    assert_eq!(
-        oauth::register(&found, "http://127.0.0.1/", &oauth::oauth_scopes(&found)).await.unwrap(),
-        "stateless-123"
-    );
-}
-
-#[tokio::test]
-async fn the_code_and_the_refresh_carry_pkce_and_the_resource() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("grant_type=authorization_code"))
-        .and(body_string_contains("code_verifier="))
-        .and(body_string_contains("resource=https%3A%2F%2Fapi.example.com%2Fjmap%2Fsession"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"access_token": "a1", "expires_in": 3600, "refresh_token": "r1"})),
-        )
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("grant_type=refresh_token"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant", "temporary": true})))
-        .mount(&server)
-        .await;
+async fn a_token_endpoint_over_http_gets_neither_code_nor_refresh_token() {
+    let server = untouchable().await;
     let client = OAuthClient {
         client_id: "c1".into(),
         token_endpoint: format!("{}/token", server.uri()),
         resource: "https://api.example.com/jmap/session".into(),
     };
-    let tokens = client.exchange("code", "http://127.0.0.1:5555/", &Pkce::generate()).await.unwrap();
-    assert_eq!((tokens.access_token.as_str(), tokens.refresh_token.as_deref()), ("a1", Some("r1")));
-    assert_eq!(client.refresh("r1").await.unwrap_err(), JmapError::SignInLocked);
-    assert!(JmapError::SignInLocked.is_transient());
+    let err = client.exchange("code", "http://127.0.0.1:5555/", &Pkce::generate()).await.unwrap_err();
+    assert_eq!(err, JmapError::NotHttps);
+    says_no_address(&err, &server.uri());
+    assert_eq!(client.refresh("r1").await.unwrap_err(), JmapError::NotHttps);
 }
 
 #[tokio::test]
-async fn a_revoked_grant_asks_to_sign_in_again() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})))
-        .mount(&server)
-        .await;
-    let client = OAuthClient {
-        client_id: "c1".into(),
-        token_endpoint: format!("{}/token", server.uri()),
-        resource: "https://api.example.com/jmap/session".into(),
-    };
-    assert_eq!(client.refresh("r1").await.unwrap_err(), JmapError::Unauthorized);
+async fn a_registration_endpoint_over_http_is_refused() {
+    let server = untouchable().await;
+    let metadata = Metadata { registration_endpoint: Some(format!("{}/register", server.uri())), ..https_metadata() };
+    let err = oauth::register(&metadata, "http://127.0.0.1:5555/", &[]).await.unwrap_err();
+    assert_eq!(err, JmapError::NotHttps);
+    says_no_address(&err, &server.uri());
+}
+
+#[tokio::test]
+async fn registration_names_only_the_apps_own_loopback() {
+    for redirect in ["http://evil.example/", "https://127.0.0.1/", "http://localhost:5555/", "http://127.0.0.1@evil.example/"] {
+        let err = oauth::register(&https_metadata(), redirect, &[]).await.unwrap_err();
+        assert_eq!(err, JmapError::BadRedirect, "{redirect}");
+        assert!(!err.to_string().contains("evil.example"), "{err}");
+    }
+}
+
+#[test]
+fn an_authorization_endpoint_over_http_is_refused() {
+    let metadata = Metadata { authorization_endpoint: "http://auth.example.com/authorize".into(), ..https_metadata() };
+    let err = oauth::authorize_url(&metadata, "c1", "http://127.0.0.1:5555/", &[], &Pkce::generate(), "s1", "https://api.example.com/jmap/session", None)
+        .unwrap_err();
+    assert_eq!(err, JmapError::NotHttps);
+    says_no_address(&err, "auth.example.com");
+}
+
+#[test]
+fn the_authorize_url_hands_back_only_to_the_apps_own_loopback() {
+    let err = oauth::authorize_url(&https_metadata(), "c1", "http://evil.example/", &[], &Pkce::generate(), "s1", "https://api.example.com/jmap/session", None)
+        .unwrap_err();
+    assert_eq!(err, JmapError::BadRedirect);
 }
 
 #[test]

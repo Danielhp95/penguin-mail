@@ -4,9 +4,12 @@
 //! registration of a public client (RFC 7591) where the server offers it.
 //!
 //! Tokens, codes and the PKCE verifier stay out of `Debug` and out of
-//! every error's text.
+//! every error's text. Every address the client reaches is https; the one
+//! http address is the app's own loopback on 127.0.0.1, which the browser
+//! reaches.
 
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use base64::Engine;
@@ -17,7 +20,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use url::Url;
+use url::{Host, Url};
 
 use crate::JmapError;
 use crate::error::decode;
@@ -35,6 +38,39 @@ const REQUEST_WAIT: Duration = Duration::from_secs(10);
 
 /// What the loopback reads of one request: the request line and headers.
 const REQUEST_LIMIT: usize = 8192;
+
+/// Which addresses a call may reach. Production code has only
+/// `HttpsOnly`; the unit tests' mock servers speak http, and only the
+/// tests can name the other variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Transport {
+    HttpsOnly,
+    #[cfg(test)]
+    LocalHttp,
+}
+
+/// `address` when the transport may reach it. The refusal names no
+/// address.
+fn secure(address: &str, transport: Transport) -> Result<Url, JmapError> {
+    let url = Url::parse(address).map_err(|_| JmapError::NotHttps)?;
+    match (url.scheme(), transport) {
+        ("https", _) => Ok(url),
+        #[cfg(test)]
+        ("http", Transport::LocalHttp) => Ok(url),
+        _ => Err(JmapError::NotHttps),
+    }
+}
+
+/// Refuses a redirect other than `http://127.0.0.1[:port]/...`, the
+/// address `Loopback` listens on.
+fn own_loopback(redirect_uri: &str) -> Result<(), JmapError> {
+    let url = Url::parse(redirect_uri).map_err(|_| JmapError::BadRedirect)?;
+    let ours = url.scheme() == "http"
+        && url.host() == Some(Host::Ipv4(Ipv4Addr::LOCALHOST))
+        && url.username().is_empty()
+        && url.password().is_none();
+    if ours { Ok(()) } else { Err(JmapError::BadRedirect) }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Metadata {
@@ -135,10 +171,18 @@ async fn read(response: reqwest::Response) -> Result<(u16, Value), JmapError> {
     Ok((status, serde_json::from_slice(&bytes).unwrap_or(Value::Null)))
 }
 
-/// The authorization server's metadata, beside the session URL's host.
-/// Metadata without PKCE S256 is refused.
+/// The authorization server's metadata, beside the session URL's host,
+/// over https. The server's issuer is the session URL's origin.
+/// Metadata naming another issuer, an endpoint off https, or no PKCE S256
+/// is refused.
 pub async fn metadata(session_url: &str) -> Result<Metadata, JmapError> {
-    let session = Url::parse(session_url).map_err(|_| JmapError::BadUrl(session_url.into()))?;
+    metadata_over(session_url, Transport::HttpsOnly).await
+}
+
+async fn metadata_over(session_url: &str, transport: Transport) -> Result<Metadata, JmapError> {
+    Url::parse(session_url).map_err(|_| JmapError::BadUrl(session_url.into()))?;
+    let session = secure(session_url, transport)?;
+    let issuer = session.origin().ascii_serialization();
     let at = session
         .join("/.well-known/oauth-authorization-server")
         .map_err(|_| JmapError::BadUrl(session_url.into()))?;
@@ -147,6 +191,21 @@ pub async fn metadata(session_url: &str) -> Result<Metadata, JmapError> {
         return Err(JmapError::NotFound);
     }
     let found: Metadata = serde_json::from_value(body).map_err(|e| decode("the OAuth metadata", &e))?;
+    checked(found, &issuer, transport)
+}
+
+/// `found` when it names `issuer`, compared as RFC 8414 section 3.3 asks
+/// (the identical string), its endpoints are on the transport, and it
+/// takes PKCE S256.
+fn checked(found: Metadata, issuer: &str, transport: Transport) -> Result<Metadata, JmapError> {
+    if found.issuer != issuer {
+        return Err(JmapError::IssuerMismatch);
+    }
+    secure(&found.authorization_endpoint, transport)?;
+    secure(&found.token_endpoint, transport)?;
+    if let Some(registration) = &found.registration_endpoint {
+        secure(registration, transport)?;
+    }
     if !found.code_challenge_methods_supported.iter().any(|m| m == "S256") {
         return Err(JmapError::Forbidden("the server does not take PKCE S256".into()));
     }
@@ -165,7 +224,8 @@ pub fn oauth_scopes(metadata: &Metadata) -> Vec<String> {
         .collect()
 }
 
-/// The address the browser opens for consent.
+/// The address the browser opens for consent. The authorization endpoint
+/// must be https and the redirect the app's own loopback.
 #[allow(clippy::too_many_arguments)]
 pub fn authorize_url(
     metadata: &Metadata,
@@ -177,8 +237,8 @@ pub fn authorize_url(
     resource: &str,
     login_hint: Option<&str>,
 ) -> Result<String, JmapError> {
-    let mut url = Url::parse(&metadata.authorization_endpoint)
-        .map_err(|_| JmapError::BadUrl(metadata.authorization_endpoint.clone()))?;
+    own_loopback(redirect_uri)?;
+    let mut url = secure(&metadata.authorization_endpoint, Transport::HttpsOnly)?;
     {
         let mut pairs = url.query_pairs_mut();
         pairs
@@ -198,12 +258,24 @@ pub fn authorize_url(
 }
 
 /// Registers a public client with the loopback redirect and answers its
-/// id. A server without a registration endpoint refuses.
+/// id. A server without a registration endpoint, or with one off https,
+/// refuses.
 pub async fn register(metadata: &Metadata, redirect_uri: &str, scopes: &[String]) -> Result<String, JmapError> {
+    register_over(metadata, redirect_uri, scopes, Transport::HttpsOnly).await
+}
+
+async fn register_over(
+    metadata: &Metadata,
+    redirect_uri: &str,
+    scopes: &[String],
+    transport: Transport,
+) -> Result<String, JmapError> {
+    own_loopback(redirect_uri)?;
     let endpoint = metadata
         .registration_endpoint
         .as_ref()
         .ok_or_else(|| JmapError::Forbidden("the server registers no clients".into()))?;
+    let endpoint = secure(endpoint, transport)?;
     let body = json!({
         "client_name": "Penguin Mail",
         "client_uri": "https://penguin-mail.com",
@@ -227,7 +299,18 @@ pub async fn register(metadata: &Metadata, redirect_uri: &str, scopes: &[String]
 impl OAuthClient {
     /// Trades the code from the redirect for tokens.
     pub async fn exchange(&self, code: &str, redirect_uri: &str, pkce: &Pkce) -> Result<Tokens, JmapError> {
-        self.token(&[
+        self.exchange_over(code, redirect_uri, pkce, Transport::HttpsOnly).await
+    }
+
+    async fn exchange_over(
+        &self,
+        code: &str,
+        redirect_uri: &str,
+        pkce: &Pkce,
+        transport: Transport,
+    ) -> Result<Tokens, JmapError> {
+        own_loopback(redirect_uri)?;
+        self.token(transport, &[
             ("grant_type", "authorization_code"),
             ("client_id", &self.client_id),
             ("code", code),
@@ -241,7 +324,11 @@ impl OAuthClient {
     /// New tokens for a refresh token. The answer may carry a new refresh
     /// token; the caller saves it before it uses the access token.
     pub async fn refresh(&self, refresh_token: &str) -> Result<Tokens, JmapError> {
-        self.token(&[
+        self.refresh_over(refresh_token, Transport::HttpsOnly).await
+    }
+
+    async fn refresh_over(&self, refresh_token: &str, transport: Transport) -> Result<Tokens, JmapError> {
+        self.token(transport, &[
             ("grant_type", "refresh_token"),
             ("client_id", &self.client_id),
             ("refresh_token", refresh_token),
@@ -250,8 +337,9 @@ impl OAuthClient {
         .await
     }
 
-    async fn token(&self, form: &[(&str, &str)]) -> Result<Tokens, JmapError> {
-        let response = http()?.post(&self.token_endpoint).form(form).send().await.map_err(network)?;
+    async fn token(&self, transport: Transport, form: &[(&str, &str)]) -> Result<Tokens, JmapError> {
+        let endpoint = secure(&self.token_endpoint, transport)?;
+        let response = http()?.post(endpoint).form(form).send().await.map_err(network)?;
         let (status, body) = read(response).await?;
         if (200..300).contains(&status) {
             return serde_json::from_value(body).map_err(|e| decode("the token answer", &e));
@@ -342,4 +430,187 @@ pub fn parse_redirect(request: &str, state: &str) -> Option<Result<String, JmapE
         }));
     }
     code.map(|code| Ok(code.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+
+    // The mock servers speak http, which only this module's transport
+    // takes.
+    const LOCAL: Transport = Transport::LocalHttp;
+
+    async fn serving(server: &MockServer, metadata: Value) {
+        Mock::given(method("GET"))
+            .and(path("/.well-known/oauth-authorization-server"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(metadata))
+            .mount(server)
+            .await;
+    }
+
+    fn metadata_for(server: &MockServer, registration: bool) -> Value {
+        let mut metadata = json!({
+            "issuer": server.uri(),
+            "authorization_endpoint": format!("{}/authorize", server.uri()),
+            "token_endpoint": format!("{}/token", server.uri()),
+            "code_challenge_methods_supported": ["S256"],
+            "scopes_supported": ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "openid", "offline_access"]
+        });
+        if registration {
+            metadata["registration_endpoint"] = json!(format!("{}/register", server.uri()));
+        }
+        metadata
+    }
+
+    async fn serving_metadata(server: &MockServer, registration: bool) {
+        serving(server, metadata_for(server, registration)).await;
+    }
+
+    fn session_of(server: &MockServer) -> String {
+        format!("{}/jmap/session", server.uri())
+    }
+
+    fn client_of(server: &MockServer) -> OAuthClient {
+        OAuthClient {
+            client_id: "c1".into(),
+            token_endpoint: format!("{}/token", server.uri()),
+            resource: "https://api.example.com/jmap/session".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn metadata_comes_from_beside_the_session() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, true).await;
+        let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
+        assert_eq!(found.token_endpoint, format!("{}/token", server.uri()));
+        assert_eq!(
+            oauth_scopes(&found),
+            ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "offline_access"]
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_without_s256_is_refused() {
+        let server = MockServer::start().await;
+        let mut metadata = metadata_for(&server, true);
+        metadata["code_challenge_methods_supported"] = json!(["plain"]);
+        serving(&server, metadata).await;
+        assert!(metadata_over(&session_of(&server), LOCAL).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_mismatched_issuer_is_refused() {
+        let server = MockServer::start().await;
+        let mut metadata = metadata_for(&server, true);
+        // RFC 8414 section 3.3 asks for the identical string, so a
+        // trailing slash is already another issuer.
+        metadata["issuer"] = json!(format!("{}/", server.uri()));
+        serving(&server, metadata).await;
+        let err = metadata_over(&session_of(&server), LOCAL).await.unwrap_err();
+        assert_eq!(err, JmapError::IssuerMismatch);
+        assert!(!err.to_string().contains("127.0.0.1"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn an_issuer_on_another_host_is_refused() {
+        let server = MockServer::start().await;
+        let mut metadata = metadata_for(&server, true);
+        metadata["issuer"] = json!("https://evil.example");
+        serving(&server, metadata).await;
+        assert_eq!(metadata_over(&session_of(&server), LOCAL).await.unwrap_err(), JmapError::IssuerMismatch);
+    }
+
+    #[test]
+    fn metadata_naming_an_http_endpoint_is_refused() {
+        let https = Metadata {
+            issuer: "https://auth.example.com".into(),
+            authorization_endpoint: "https://auth.example.com/authorize".into(),
+            token_endpoint: "https://auth.example.com/token".into(),
+            registration_endpoint: Some("https://auth.example.com/register".into()),
+            scopes_supported: Vec::new(),
+            code_challenge_methods_supported: vec!["S256".into()],
+        };
+        assert_eq!(checked(https.clone(), "https://auth.example.com", Transport::HttpsOnly), Ok(https.clone()));
+        let http = "http://auth.example.com/x".to_string();
+        for bad in [
+            Metadata { authorization_endpoint: http.clone(), ..https.clone() },
+            Metadata { token_endpoint: http.clone(), ..https.clone() },
+            Metadata { registration_endpoint: Some(http.clone()), ..https.clone() },
+            Metadata { token_endpoint: "not a url".into(), ..https.clone() },
+        ] {
+            let err = checked(bad, "https://auth.example.com", Transport::HttpsOnly).unwrap_err();
+            assert_eq!(err, JmapError::NotHttps);
+            assert!(!err.to_string().contains("auth.example.com"), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_server_without_registration_offers_no_browser_sign_in() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, false).await;
+        let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
+        assert!(found.registration_endpoint.is_none());
+        assert!(register_over(&found, "http://127.0.0.1/", &[], LOCAL).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn registration_asks_for_a_public_client_on_the_loopback() {
+        let server = MockServer::start().await;
+        serving_metadata(&server, true).await;
+        Mock::given(method("POST"))
+            .and(path("/register"))
+            .and(body_string_contains("\"token_endpoint_auth_method\":\"none\""))
+            .and(body_string_contains("http://127.0.0.1/"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({"client_id": "stateless-123"})))
+            .mount(&server)
+            .await;
+        let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
+        assert_eq!(
+            register_over(&found, "http://127.0.0.1/", &oauth_scopes(&found), LOCAL).await.unwrap(),
+            "stateless-123"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_code_and_the_refresh_carry_pkce_and_the_resource() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .and(body_string_contains("code_verifier="))
+            .and(body_string_contains("resource=https%3A%2F%2Fapi.example.com%2Fjmap%2Fsession"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"access_token": "a1", "expires_in": 3600, "refresh_token": "r1"})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant", "temporary": true})))
+            .mount(&server)
+            .await;
+        let client = client_of(&server);
+        let tokens = client.exchange_over("code", "http://127.0.0.1:5555/", &Pkce::generate(), LOCAL).await.unwrap();
+        assert_eq!((tokens.access_token.as_str(), tokens.refresh_token.as_deref()), ("a1", Some("r1")));
+        assert_eq!(client.refresh_over("r1", LOCAL).await.unwrap_err(), JmapError::SignInLocked);
+        assert!(JmapError::SignInLocked.is_transient());
+    }
+
+    #[tokio::test]
+    async fn a_revoked_grant_asks_to_sign_in_again() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})))
+            .mount(&server)
+            .await;
+        assert_eq!(client_of(&server).refresh_over("r1", LOCAL).await.unwrap_err(), JmapError::Unauthorized);
+    }
 }
