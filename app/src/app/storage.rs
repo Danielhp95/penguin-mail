@@ -13,12 +13,17 @@ use super::App;
 use crate::ui::window::Notice;
 
 const FIRST_LOOK_SECONDS: u32 = 10;
+/// The demo's accounts connect at once, so its banner can go up before
+/// the list lays out its rows rather than pushing them down under the
+/// pointer.
+const DEMO_FIRST_LOOK_SECONDS: u32 = 1;
 const EVERY_SECONDS: u32 = 60 * 60;
 
 impl App {
     pub(super) fn start_storage_checks(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        glib::timeout_add_seconds_local_once(FIRST_LOOK_SECONDS, move || {
+        let first = if self.core.demo { DEMO_FIRST_LOOK_SECONDS } else { FIRST_LOOK_SECONDS };
+        glib::timeout_add_seconds_local_once(first, move || {
             let Some(app) = weak.upgrade() else {
                 return;
             };
