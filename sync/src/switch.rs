@@ -267,6 +267,8 @@ pub struct Switched {
     pub account: Account,
     pub kept: usize,
     pub dropped: usize,
+    /// Local rules turned off because they name a mailbox the server lacks.
+    pub rules_off: usize,
 }
 
 impl From<mailrs_store::StoreError> for SwitchError {
@@ -352,7 +354,9 @@ pub async fn to_jmap_over<J: JmapApi>(
     let adoption = Adoption { messages, mailboxes, saved, contacts_from_jmap };
     let adopted = db
         .write(move |c| {
-            let adopted = adopt_jmap(c, id, &adoption)?;
+            let Some(adopted) = adopt_jmap(c, id, &adoption)? else {
+                return Ok(None);
+            };
             // An outbox row keeps its bytes and still sends; it lets go of
             // a message or thread the switch dropped.
             c.execute(
@@ -365,11 +369,14 @@ pub async fn to_jmap_over<J: JmapApi>(
                  AND thread_id NOT IN (SELECT thread_id FROM messages WHERE account_id = ?1)",
                 params![id],
             )?;
-            Ok(adopted)
+            Ok(Some(adopted))
         })
         .await;
     let adopted = match adopted {
-        Ok(adopted) => adopted,
+        Ok(Some(adopted)) => adopted,
+        // Another switch committed first. The secret saved above signs in
+        // the account that switch made, so it stays.
+        Ok(None) => return Err(SwitchError::NotImap),
         Err(err) => {
             let jmap = Arc::clone(&secrets.jmap);
             if keyring(move || jmap.delete(id)).await.is_err() {
@@ -387,5 +394,5 @@ pub async fn to_jmap_over<J: JmapApi>(
         .await?;
     }
     let account = db.read(move |c| mailrs_store::accounts::account(c, id)).await?.ok_or(SwitchError::NotImap)?;
-    Ok(Switched { account, kept: adopted.kept, dropped: adopted.dropped })
+    Ok(Switched { account, kept: adopted.kept, dropped: adopted.dropped, rules_off: adopted.rules_off })
 }

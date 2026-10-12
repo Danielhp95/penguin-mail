@@ -66,7 +66,7 @@ fn ids(conn: &Connection, account: i64) -> Vec<String> {
 
 fn adopt(conn: &mut Connection, account: i64, adoption: &Adoption) -> mailrs_store::switch::Adopted {
     let tx = conn.transaction().unwrap();
-    let adopted = adopt_jmap(&tx, account, adoption).unwrap();
+    let adopted = adopt_jmap(&tx, account, adoption).unwrap().expect("an IMAP account");
     tx.commit().unwrap();
     adopted
 }
@@ -159,6 +159,7 @@ fn a_local_rule_files_into_the_same_folder_after_the_switch() {
         criteria: FilterCriteria { from: Some("travel@example.com".into()), ..FilterCriteria::default() },
         action: FilterAction { add: vec![MailSet::Mailbox(TRIPS.into())], ..FilterAction::default() },
         read_only: false,
+        off: false,
     };
     local_rules::add(&conn, account, &rule).unwrap();
     adopt(&mut conn, account, &adoption());
@@ -206,4 +207,94 @@ fn a_scheduled_send_keeps_pointing_at_its_draft() {
         .query_row("SELECT draft_id, message_id, thread_id FROM outbox WHERE account_id = ?1", [account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap();
     assert_eq!((draft.as_str(), message.as_str(), thread.as_str()), ("M3", "M3", "T3"));
+}
+
+fn count(conn: &Connection, sql: &str, account: i64) -> i64 {
+    conn.query_row(sql, [account], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_second_swap_finds_a_jmap_account_and_changes_nothing() {
+    let mut conn = open_in_memory().unwrap();
+    let account = imap_account(&conn);
+    adopt(&mut conn, account, &adoption());
+    let tx = conn.transaction().unwrap();
+    // The retry still carries the IMAP ids, which name nothing now.
+    let again = adopt_jmap(&tx, account, &adoption()).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(again, None);
+    assert_eq!(ids(&conn, account), ["M1", "M2"]);
+}
+
+#[test]
+fn a_receipt_follows_its_message_and_goes_with_a_dropped_one() {
+    let mut conn = open_in_memory().unwrap();
+    let account = imap_account(&conn);
+    conn.execute(
+        "INSERT INTO receipts (account_id, message_id, answered, at) VALUES (?1, 'INBOX/7/1', 'sent', 1), (?1, 'Trips/9/1', 'declined', 2)",
+        [account],
+    )
+    .unwrap();
+    adopt(&mut conn, account, &adoption());
+    let kept: Vec<String> = conn
+        .prepare("SELECT message_id FROM receipts WHERE account_id = ?1")
+        .unwrap()
+        .query_map([account], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(kept, ["M1"]);
+}
+
+#[test]
+fn two_reminders_on_threads_that_become_one_keep_the_earlier_time() {
+    let mut conn = open_in_memory().unwrap();
+    let account = imap_account(&conn);
+    conn.execute("INSERT INTO reminders (account_id, thread_id, subject, remind_at) VALUES (?1, 't3', 'Rome', 42)", [account]).unwrap();
+    let mut joined = adoption();
+    // The server threads Rome with Plans.
+    joined.messages.push(Moved { from: "Trips/9/1".into(), to: "M3".into(), thread: "T1".into() });
+    adopt(&mut conn, account, &joined);
+    let (thread, at): (String, i64) =
+        conn.query_row("SELECT thread_id, remind_at FROM reminders WHERE account_id = ?1", [account], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((thread.as_str(), at), ("T1", 42));
+}
+
+#[test]
+fn what_the_store_kept_beside_a_dropped_message_goes_with_it() {
+    let mut conn = open_in_memory().unwrap();
+    let account = imap_account(&conn);
+    conn.execute_batch(&format!(
+        "INSERT INTO invitations (account_id, uid, sequence, message_id, seen_at) VALUES ({account}, 'u1', 0, 'Trips/9/1', 1);
+         INSERT INTO local_rules_ran (account_id, message_id, date) VALUES ({account}, 'Trips/9/1', 3000), ({account}, 'INBOX/7/1', 1000);
+         INSERT INTO outbox (account_id, draft_id, subject, recipients, send_at, raw) VALUES ({account}, 'Trips/9/1', 'Rome', '[]', 5, x'00');"
+    ))
+    .unwrap();
+    adopt(&mut conn, account, &adoption());
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM drafts WHERE account_id = ?1", account), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM invitations WHERE account_id = ?1", account), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM local_rules_ran WHERE account_id = ?1 AND message_id <> 'M1'", account), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM outbox WHERE account_id = ?1 AND draft_id IS NOT NULL", account), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM outbox WHERE account_id = ?1", account), 1, "the queued send stays");
+}
+
+#[test]
+fn a_local_rule_into_a_mailbox_the_server_lacks_is_turned_off() {
+    let mut conn = open_in_memory().unwrap();
+    let account = imap_account(&conn);
+    let into_trips = FilterAction { add: vec![MailSet::Mailbox(TRIPS.into())], ..FilterAction::default() };
+    let rule = Filter {
+        id: Some("r1".into()),
+        criteria: FilterCriteria { from: Some("travel@example.com".into()), ..FilterCriteria::default() },
+        action: into_trips.clone(),
+        ..Filter::default()
+    };
+    local_rules::add(&conn, account, &rule).unwrap();
+    let mut no_trips = adoption();
+    no_trips.mailboxes.retain(|(old, _)| old != TRIPS);
+    let adopted = adopt(&mut conn, account, &no_trips);
+    assert_eq!(adopted.rules_off, 1);
+    let rules = local_rules::list(&conn, account).unwrap();
+    assert!(rules[0].off, "{rules:?}");
+    assert_eq!(rules[0].action, into_trips, "the rule still says what the person wrote");
 }
