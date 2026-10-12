@@ -21,6 +21,7 @@
 //! then nothing until half an hour passes or the person signs it in again.
 
 use std::collections::{HashMap, HashSet};
+use std::mem::{Discriminant, discriminant};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -114,6 +115,11 @@ pub struct CalendarCopy<A: Accounts> {
     db: Db,
     last_list: Mutex<HashMap<AccountId, EpochMillis>>,
     last_read: Mutex<HashMap<AccountId, EpochMillis>>,
+    /// Which kind of calendar server each account's list was last read
+    /// from in this run. A different one (CalDAV, then JMAP Calendars)
+    /// means the account's calendars moved, so the list is read again
+    /// before any queued change goes out.
+    listed_from: Mutex<HashMap<AccountId, Discriminant<AnyCalendar>>>,
     /// When each account was last found to lack `calendar.events` itself.
     refused: Mutex<HashMap<AccountId, EpochMillis>>,
     /// When `ready` last tried a first read that left the account's copy
@@ -232,6 +238,7 @@ impl<A: Accounts> CalendarCopy<A> {
             db,
             last_list: Mutex::new(HashMap::new()),
             last_read: Mutex::new(HashMap::new()),
+            listed_from: Mutex::new(HashMap::new()),
             refused: Mutex::new(HashMap::new()),
             tried: Mutex::new(HashMap::new()),
             running: tokio::sync::Mutex::new(()),
@@ -410,7 +417,8 @@ impl<A: Accounts> CalendarCopy<A> {
             .lock()
             .expect("copy poisoned")
             .get(&account_id)
-            .is_none_or(|last| now - last >= LIST_EVERY);
+            .is_none_or(|last| now - last >= LIST_EVERY)
+            || !self.listed_from_here(account_id, calendar);
         let before = match list_due {
             true => Some(self.db.read(move |c| store::calendars(c, account_id)).await?),
             false => None,
@@ -429,8 +437,10 @@ impl<A: Accounts> CalendarCopy<A> {
                 match calendar.calendars().await {
                     Ok(list) => {
                         let everywhere = self.hides_everywhere(account_id)?;
+                        let ids: HashSet<String> = list.iter().map(|c| c.id.clone()).collect();
                         self.db
                             .write(move |c| {
+                                store::note_list(c, account_id, &ids)?;
                                 mailrs_store::calendar_list::save_calendar_list(c, account_id, &list)?;
                                 // Hides made before the account could change
                                 // its list go to Google now, once.
@@ -440,6 +450,7 @@ impl<A: Accounts> CalendarCopy<A> {
                                 Ok(())
                             })
                             .await?;
+                        self.listed_from.lock().expect("copy poisoned").insert(account_id, discriminant(calendar));
                     }
                     Err(BackendError::NeedsPermission) => {
                         let address = self.address(account_id).await?;
@@ -777,10 +788,28 @@ impl<A: Accounts> CalendarCopy<A> {
         // here, which has Google's id only once its creation went out.
         let mut turned_down = self.send_list(&calendar, account_id).await?;
         self.retry_waiting_for_access(account_id).await?;
+        self.note_switch(&calendar, account_id).await?;
         let mut after = 0;
         while let Some(change) = self.db.read(move |c| store::next_change(c, account_id, after)).await? {
             let seq = change.seq;
             after = seq;
+            if let Some(old) = store::left_behind(&change.calendar) {
+                match self.db.write(move |c| store::settle_left(c, account_id, seq)).await? {
+                    store::Left::Waiting => {}
+                    // The same row, now naming the new server's event.
+                    store::Left::Moved => after = seq - 1,
+                    store::Left::Kept => turned_down.push(TurnedDown {
+                        account_id,
+                        calendar: old.to_string(),
+                        event: change.event.clone(),
+                        title: title_of(&change),
+                        reason: Some(gettext("this account's calendars moved to another server, which does not have this event")),
+                        left_out: None,
+                        kept_theirs: Vec::new(),
+                    }),
+                }
+                continue;
+            }
             if change.kind == store::ChangeKind::Move {
                 let turned_before = turned_down.len();
                 if let Some(first) = self.send_move(&calendar, &change, &mut turned_down).await? {
@@ -951,6 +980,39 @@ impl<A: Accounts> CalendarCopy<A> {
             }
         }
         Ok(turned_down)
+    }
+
+    /// Whether the account's list was last read from the kind of server
+    /// that serves its calendar now.
+    fn listed_from_here(&self, account_id: AccountId, calendar: &AnyCalendar) -> bool {
+        self.listed_from.lock().expect("copy poisoned").get(&account_id) == Some(&discriminant(calendar))
+    }
+
+    /// Reads the account's calendar list before its queue goes out, once
+    /// per run and again whenever another kind of server serves its
+    /// calendar, as when a server starts offering JMAP Calendars. The
+    /// queue's changes on calendars the list lacks then wait for the new
+    /// server's events ([`store::note_list`]), rather than going to it
+    /// under the old server's ids, where a delete would read "not found"
+    /// as done and an edit or an answer would be lost.
+    async fn note_switch(&self, calendar: &AnyCalendar, account_id: AccountId) -> Result<(), SyncError> {
+        if self.listed_from_here(account_id, calendar) || !self.db.read(move |c| store::has_queued(c, account_id)).await? {
+            return Ok(());
+        }
+        let withheld = self.accounts.services(account_id).ok_or(SyncError::UnknownAccount(account_id))?.withheld();
+        if withheld.calendar_list {
+            return Ok(());
+        }
+        let ids: HashSet<String> = match calendar.calendars().await {
+            Ok(list) => list.into_iter().map(|c| c.id).collect(),
+            Err(BackendError::NeedsPermission) => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+        self.db.write(move |c| store::note_list(c, account_id, &ids)).await?;
+        self.listed_from.lock().expect("copy poisoned").insert(account_id, discriminant(calendar));
+        // The copy's list is the old server's; read the new one next.
+        self.last_list.lock().expect("copy poisoned").remove(&account_id);
+        Ok(())
     }
 
     /// Sends one queued move. The changes of the event waiting on it go

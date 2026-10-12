@@ -1147,8 +1147,8 @@ pub fn enqueue_after(
             }
             (ChangeKind::Remove, "save") => {
                 conn.execute(
-                    "UPDATE calendar_changes SET kind = 'remove', body = NULL WHERE seq = ?1",
-                    params![seq],
+                    "UPDATE calendar_changes SET kind = 'remove', body = ?2 WHERE seq = ?1",
+                    params![seq, json(event)],
                 )?;
                 return waited(seq);
             }
@@ -1172,9 +1172,11 @@ pub fn enqueue_after(
     }
 
     let etag = (!event.etag.is_empty()).then_some(event.etag.as_str());
+    // A removal keeps the event it takes off, so its UID can still find
+    // the event if the account's calendar server changes before it goes.
     let body = match kind {
-        ChangeKind::Create | ChangeKind::Save | ChangeKind::Move => Some(json(event)),
-        ChangeKind::Remove | ChangeKind::Answer => None,
+        ChangeKind::Create | ChangeKind::Save | ChangeKind::Move | ChangeKind::Remove => Some(json(event)),
+        ChangeKind::Answer => None,
     };
     conn.execute(
         "INSERT INTO calendar_changes (account_id, calendar, event, kind, etag, body, waits_on, restores, notify) \
@@ -1345,7 +1347,9 @@ pub fn drop_waiting_on(conn: &Connection, seq: i64) -> Result<Vec<Dropped>> {
                          prior_kind = NULL, prior_body = NULL WHERE seq = ?1",
                         params![seq, kind, prior_body],
                     )?;
-                    let body = prior_body.and_then(|b| serde_json::from_str(&b).ok());
+                    // A removal's body is the event it takes off, not one
+                    // to put back.
+                    let body = prior_body.filter(|_| kind != "remove").and_then(|b| serde_json::from_str(&b).ok());
                     dropped.push(Dropped::Kept { calendar, event, body });
                 }
                 None => {
@@ -1416,6 +1420,213 @@ fn read_change(row: &Row, account_id: AccountId) -> rusqlite::Result<QueuedChang
         restores: row.get::<_, Option<String>>(7)?.and_then(|b| serde_json::from_str(&b).ok()),
         notify: Notify::from_stored(row.get::<_, Option<String>>(8)?.as_deref()),
     })
+}
+
+/// What a queued change's calendar starts with once the account's calendar
+/// server changed under it (CalDAV to JMAP Calendars, say) and its calendar
+/// is not on the new server's list: the rest is the old calendar's id. Ids
+/// change shape between servers, so the change must not go out under them.
+/// It waits for the new server's events, then goes onto the event with the
+/// same UID ([`settle_left`]).
+const LEFT: &str = "\u{1}left:";
+
+/// The calendar a change left behind by a switch was queued on, or `None`
+/// for a change on a calendar of the current list.
+pub fn left_behind(calendar: &str) -> Option<&str> {
+    calendar.strip_prefix(LEFT)
+}
+
+/// Whether the account has any change queued, held back or not.
+pub fn has_queued(conn: &Connection, account_id: AccountId) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM calendar_changes WHERE account_id = ?1)",
+        params![account_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Takes the calendar list the account's server gives now, `listed`, before
+/// the copy saves it. A change left behind on a calendar listed again goes
+/// back to it, so a switch back sends it. When `listed` shares no calendar
+/// with the copy's list, the server changed: every change on a calendar it
+/// does not list is left behind, with the UID of its event written into
+/// its JSON body while the copy still holds that event's row.
+pub fn note_list(conn: &Connection, account_id: AccountId, listed: &HashSet<String>) -> Result<()> {
+    let rows: Vec<(i64, String, String, String, Option<String>)> = {
+        let mut stmt =
+            conn.prepare("SELECT seq, calendar, event, kind, body FROM calendar_changes WHERE account_id = ?1")?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        })?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    for (seq, calendar, _, _, _) in &rows {
+        if let Some(old) = left_behind(calendar).filter(|old| listed.contains(*old)) {
+            conn.execute(
+                "UPDATE calendar_changes SET calendar = ?2, \
+                 waits_on = CASE WHEN waits_on = seq THEN NULL ELSE waits_on END WHERE seq = ?1",
+                params![seq, old],
+            )?;
+        }
+    }
+    let held: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT id FROM calendars WHERE account_id = ?1")?;
+        stmt.query_map(params![account_id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    let switched = !listed.is_empty() && !held.is_empty() && !held.iter().any(|id| listed.contains(id));
+    if !switched {
+        return Ok(());
+    }
+    for (seq, calendar, id, kind, body) in rows {
+        if left_behind(&calendar).is_some() || listed.contains(&calendar) || model::list::is_local(&calendar) {
+            continue;
+        }
+        let mut uid = uid_of_queued(conn, account_id, &calendar, &id, body.as_deref())?;
+        if uid.is_empty() && ChangeKind::parse(&kind) == ChangeKind::Create {
+            uid = model::made_uid(&id);
+        }
+        // An event body stays an event, written as the queue writes one,
+        // so a send can still tell its own body from a later edit. A
+        // removal has none and takes the event's ids; an answer's body is
+        // the answer, which keeps fields it does not know.
+        // A removal keeps the event as the copy last held it, which also
+        // names it when it cannot be applied.
+        let body = match body {
+            None => event(conn, account_id, &calendar, &id)?.map(|row| json(&row)),
+            body => body,
+        };
+        let body = match body.as_deref().map(serde_json::from_str::<Event>) {
+            Some(Ok(held)) if ChangeKind::parse(&kind) != ChangeKind::Answer => json(&Event { uid, ..held }),
+            _ => {
+                let mut held: serde_json::Value = body
+                    .as_deref()
+                    .and_then(|b| serde_json::from_str(b).ok())
+                    .unwrap_or_else(|| serde_json::json!({ "calendar": calendar, "id": id }));
+                held["uid"] = serde_json::json!(uid);
+                held.to_string()
+            }
+        };
+        conn.execute(
+            "UPDATE calendar_changes SET calendar = ?2, body = ?3 WHERE seq = ?1",
+            params![seq, format!("{LEFT}{calendar}"), body],
+        )?;
+    }
+    Ok(())
+}
+
+/// The UID of the event a queued change names: its body's, or the copy's
+/// row for the event or, for one occurrence, for its series.
+fn uid_of_queued(conn: &Connection, account_id: AccountId, calendar: &str, id: &str, body: Option<&str>) -> Result<String> {
+    let in_body = body
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok())
+        .and_then(|b| b.get("uid").and_then(serde_json::Value::as_str).map(str::to_string))
+        .filter(|uid| !uid.is_empty());
+    if let Some(uid) = in_body {
+        return Ok(uid);
+    }
+    if let Some(row) = event(conn, account_id, calendar, id)? {
+        return Ok(row.uid);
+    }
+    match model::split_occurrence_id(id) {
+        Some((series, _)) => Ok(event(conn, account_id, calendar, series)?.map(|row| row.uid).unwrap_or_default()),
+        None => Ok(String::new()),
+    }
+}
+
+/// What became of a change left behind by a switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Left {
+    /// The new server's calendars are not all read yet.
+    Waiting,
+    /// It names the new server's event with its UID now, and can go.
+    Moved,
+    /// The new server has no event with its UID. It stays queued, held
+    /// back for good, until its own calendar is listed again.
+    Kept,
+}
+
+/// Settles the change `seq`, left behind by a switch, once the copy holds
+/// the new server's calendars, each read at least once. The event with the
+/// change's UID on those calendars takes it: its calendar, its id (an
+/// occurrence's id from that series' id), and its version. A create the
+/// new server already holds becomes a change of it.
+pub fn settle_left(conn: &Connection, account_id: AccountId, seq: i64) -> Result<Left> {
+    let row: Option<(String, String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT calendar, event, kind, body FROM calendar_changes WHERE seq = ?1",
+            params![seq],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((calendar, id, kind, body)) = row else {
+        return Ok(Left::Waiting);
+    };
+    let Some(old) = left_behind(&calendar) else {
+        return Ok(Left::Moved);
+    };
+    let listed: Vec<(String, bool)> = {
+        let mut stmt = conn.prepare("SELECT id, sync_token IS NOT NULL FROM calendars WHERE account_id = ?1")?;
+        stmt.query_map(params![account_id], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+    };
+    let unread = listed.iter().any(|(id, read)| !read && !model::list::is_local(id));
+    if listed.is_empty() || listed.iter().any(|(id, _)| id == old) || unread {
+        return Ok(Left::Waiting);
+    }
+    let body: serde_json::Value = body.as_deref().and_then(|b| serde_json::from_str(b).ok()).unwrap_or_default();
+    let uid = body.get("uid").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let kind = ChangeKind::parse(&kind);
+    let destination = body.get("calendar").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let lands = kind != ChangeKind::Move || listed.iter().any(|(id, _)| *id == destination);
+    let master = match uid.is_empty() || !lands {
+        true => None,
+        false => conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM events e JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar \
+                     WHERE e.account_id = ?1 AND lower(e.uid) = lower(?2) AND e.series IS NULL \
+                     ORDER BY c.is_primary DESC, c.access = 'owner' DESC LIMIT 1"
+                ),
+                params![account_id, uid],
+                read_event,
+            )
+            .optional()?,
+    };
+    let Some(master) = master else {
+        conn.execute("UPDATE calendar_changes SET waits_on = seq WHERE seq = ?1", params![seq])?;
+        return Ok(Left::Kept);
+    };
+    let original = body
+        .get("original_start")
+        .and_then(serde_json::Value::as_i64)
+        .or_else(|| model::split_occurrence_id(&id).map(|(_, at)| at));
+    let new_id = original.map_or_else(|| master.id.clone(), |at| model::occurrence_id(&master, at));
+    let etag = match original {
+        Some(_) => event(conn, account_id, &master.calendar, &new_id)?.map(|row| row.etag).unwrap_or_default(),
+        None => master.etag.clone(),
+    };
+    let kind = if kind == ChangeKind::Create { ChangeKind::Save } else { kind };
+    let body = match kind {
+        ChangeKind::Remove => None,
+        ChangeKind::Answer => Some(body.to_string()),
+        _ => {
+            let mut moved: Event = serde_json::from_value(body).unwrap_or_default();
+            moved.id.clone_from(&new_id);
+            moved.etag.clone_from(&etag);
+            if kind != ChangeKind::Move {
+                moved.calendar.clone_from(&master.calendar);
+            }
+            if original.is_some() {
+                moved.series = Some(master.id.clone());
+                moved.series_etag.clone_from(&master.etag);
+            }
+            Some(json(&moved))
+        }
+    };
+    conn.execute(
+        "UPDATE calendar_changes SET calendar = ?2, event = ?3, kind = ?4, etag = ?5, body = ?6 WHERE seq = ?1",
+        params![seq, master.calendar, new_id, kind.as_str(), (!etag.is_empty()).then_some(etag), body],
+    )?;
+    Ok(Left::Moved)
 }
 
 /// The ids of a calendar's events with an unsent change, without loading
@@ -2267,7 +2478,7 @@ mod tests {
         let held = queued(&conn, id).unwrap();
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].kind, ChangeKind::Remove);
-        assert!(held[0].body.is_none());
+        assert_eq!(held[0].body.as_ref().map(|b| b.uid.as_str()), Some("lunch@example.com"), "the removal keeps its event's UID");
     }
 
     fn going(answer: Answer, note: Option<&str>) -> QueuedAnswer {
