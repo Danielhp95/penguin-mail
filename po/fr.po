@@ -10888,7 +10888,7 @@ msgstr ""
 "Microsoft ne peut pas envoyer de message signé ou chiffré de plus de 3 Mo. "
 "Réduisez la taille des fichiers ou envoyez-les séparément."
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr "Les règles d’Outlook ne peuvent pas faire cela."
 

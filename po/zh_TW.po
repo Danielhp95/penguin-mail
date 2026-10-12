@@ -10355,7 +10355,7 @@ msgid ""
 "the files smaller or send them apart."
 msgstr "Microsoft 無法傳送超過 3 MB 的簽署或加密郵件。請縮小檔案或分開傳送。"
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr "Outlook 的規則無法執行此操作。"
 

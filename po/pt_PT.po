@@ -10811,7 +10811,7 @@ msgstr ""
 "A Microsoft não consegue enviar uma mensagem assinada ou cifrada com mais de "
 "3 MB. Reduza os ficheiros ou envie-os à parte."
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr "As regras do Outlook não conseguem fazer isso."
 

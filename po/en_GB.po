@@ -9988,7 +9988,7 @@ msgstr "The message cannot be read."
 msgid "Microsoft cannot send a signed or encrypted message larger than 3 MB. Make the files smaller or send them apart."
 msgstr "Microsoft cannot send a signed or encrypted message larger than 3 MB. Make the files smaller or send them apart."
 
-#: sync/src/services/microsoft/rules.rs:96
+#: sync/src/services/microsoft/rules.rs:97
 msgid "Outlook's rules cannot do that."
 msgstr "Outlook's rules cannot do that."
 
