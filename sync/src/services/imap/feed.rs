@@ -284,10 +284,14 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
     ) -> Result<(Vec<u32>, Vec<u32>), BackendError> {
         let held = self.held(mailbox, top).await?;
         let mut deleted = Vec::new();
-        self.search_windows(mailbox, (1, top), "DELETED", |found| {
-            deleted.extend(found.into_iter().filter(|uid| *uid < kept.uidnext))
-        })
-        .await?;
+        // Every message the SELECT counted is still undeleted: none is
+        // marked `\Deleted`, and the second search would find nothing.
+        if held.len() < u64::from(selected.exists) {
+            self.search_windows(mailbox, (1, top), "DELETED", |found| {
+                deleted.extend(found.into_iter().filter(|uid| *uid < kept.uidnext))
+            })
+            .await?;
+        }
         let undeleted = kept
             .deleted
             .iter()
