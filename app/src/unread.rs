@@ -41,6 +41,9 @@ pub struct Ask {
     /// False reads only the server answers already kept, so a count woken
     /// by a server answer while no window is open starts no polling.
     pub refresh: bool,
+    /// A window shows the counts, so every mailbox it lists is read, not
+    /// only the inboxes the tray and the Dock show.
+    pub full: bool,
 }
 
 /// What reads the counts: `Lists::counts` in the app.
@@ -58,11 +61,14 @@ pub async fn read<A: mailrs_sync::Accounts>(
         shown,
         view,
         refresh,
+        full,
     } = ask;
-    match refresh {
-        true => lists.counts(&mailboxes, &shown, &view).await,
+    match (refresh, full) {
+        (true, _) => lists.counts(&mailboxes, &shown, &view).await,
+        // A window's count waiting for its turn to ask the servers.
+        (false, true) => lists.cached_counts(&mailboxes, &shown, &view).await,
         // Only the tray and the Dock ask this way, for the inboxes.
-        false => lists.inbox_counts(&mailboxes).await,
+        (false, false) => lists.inbox_counts(&mailboxes).await,
     }
 }
 
@@ -213,6 +219,7 @@ impl<C: Counter + 'static> Unread<C> {
             .collect();
         mailboxes.push(ALL_INBOXES);
         let wanted = self.window.borrow().as_ref().map(|w| w.wanted());
+        let full = matches!(wanted, Some(Some(_)));
         let (shown, view) = match wanted {
             Some(Some(wanted)) => {
                 for mailbox in wanted.mailboxes {
@@ -233,6 +240,7 @@ impl<C: Counter + 'static> Unread<C> {
             shown,
             view,
             refresh,
+            full,
         })
     }
 

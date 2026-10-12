@@ -334,6 +334,9 @@ async fn with_a_window_a_long_burst_asks_the_servers_once_per_gap() {
             let refreshes = asks.iter().filter(|a| a.refresh).count();
             assert_eq!(refreshes, 2, "the first count, then one after the gap");
             assert!(asks.last().is_some_and(|a| a.refresh), "the owed refresh still came");
+            // A count that waits on the servers still reads every mailbox
+            // the window shows, not only the inboxes.
+            assert!(asks.iter().all(|a| a.full), "{asks:?}");
         })
         .await;
 }
