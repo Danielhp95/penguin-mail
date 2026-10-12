@@ -634,6 +634,15 @@ struct Reading<'a> {
     stop: &'a Stop,
 }
 
+/// What a count reads.
+#[derive(Clone, Copy)]
+enum CountMode {
+    /// Everything the sidebar shows; `refresh` lets it ask the servers.
+    Full { refresh: bool },
+    /// The inboxes only, from what is kept, for the tray and the Dock.
+    InboxesOnly,
+}
+
 /// A server count expires after a mail change or a minute.
 struct UnreadCounts {
     at: tokio::time::Instant,
@@ -894,7 +903,7 @@ impl<A: Accounts> Mailboxes<A> {
         shown: &Mailbox,
         view: &View,
     ) -> Result<Counts, SyncError> {
-        self.counts_with(sidebar, shown, view, true).await
+        self.counts_with(sidebar, shown, view, CountMode::Full { refresh: true }).await
     }
 
     /// Reads local mail and cached server counts without starting network work.
@@ -905,7 +914,17 @@ impl<A: Accounts> Mailboxes<A> {
         shown: &Mailbox,
         view: &View,
     ) -> Result<Counts, SyncError> {
-        self.counts_with(sidebar, shown, view, false).await
+        self.counts_with(sidebar, shown, view, CountMode::Full { refresh: false }).await
+    }
+
+    /// What the tray and the Dock show when no window is open: the counts
+    /// of `inboxes` alone, from the store and the server answers already
+    /// kept. It reads no folder, flag, reminder or outbox counts, and
+    /// starts no network work. The numbers equal those of
+    /// [`Mailboxes::counts`] for the same mailboxes.
+    pub async fn inbox_counts(&self, inboxes: &[Mailbox]) -> Result<Counts, SyncError> {
+        let shown = Mailbox::Unified(Standard::Inbox);
+        self.counts_with(inboxes, &shown, &View::default(), CountMode::InboxesOnly).await
     }
 
     async fn counts_with(
@@ -913,8 +932,12 @@ impl<A: Accounts> Mailboxes<A> {
         sidebar: &[Mailbox],
         shown: &Mailbox,
         view: &View,
-        refresh: bool,
+        reading: CountMode,
     ) -> Result<Counts, SyncError> {
+        let (refresh, light) = match reading {
+            CountMode::Full { refresh } => (refresh, false),
+            CountMode::InboxesOnly => (false, true),
+        };
         let sidebar = sidebar.to_vec();
         let remote_counts = self.server_counts(&sidebar, refresh);
         let category_base = view
@@ -929,7 +952,7 @@ impl<A: Accounts> Mailboxes<A> {
             .read(move |c| {
                 let labels = threads::mail_counts(c)?;
                 let mut folders = HashMap::new();
-                for folder in Folder::ALL {
+                for folder in Folder::ALL.into_iter().filter(|_| !light) {
                     folders.insert(folder, mailrs_store::query::folder_unread(c, folder)?);
                 }
                 let unread = |account, set: &MailSet| {
@@ -939,14 +962,23 @@ impl<A: Accounts> Mailboxes<A> {
                         .copied()
                         .unwrap_or_else(|| labels.account(account, set).unread)
                 };
-                let flagged = flags::mailbox_counts(c)?;
-                let waiting = if follow_ups {
+                let flagged = match light {
+                    true => HashMap::new(),
+                    false => flags::mailbox_counts(c)?,
+                };
+                let waiting = if follow_ups && !light {
                     follow_ups::waiting_count(c, now)?
                 } else {
                     0
                 };
-                let (scheduled, stuck) = outbox::counts(c)?;
-                let reminders = reminders::count(c)?;
+                let (scheduled, stuck) = match light {
+                    true => (0, 0),
+                    false => outbox::counts(c)?,
+                };
+                let reminders = match light {
+                    true => 0,
+                    false => reminders::count(c)?,
+                };
                 let vips: Vec<String> = sidebar
                     .iter()
                     .filter_map(|m| match m {
@@ -957,10 +989,12 @@ impl<A: Accounts> Mailboxes<A> {
                     .collect();
                 let from_vips = threads::sender_counts(c, &vips)?;
                 let mut mailboxes = HashMap::new();
-                mailboxes.insert(Mailbox::FollowUp, waiting);
-                mailboxes.insert(Mailbox::Scheduled, scheduled);
-                mailboxes.insert(Mailbox::Outbox, stuck);
-                mailboxes.insert(Mailbox::Reminders, reminders);
+                if !light {
+                    mailboxes.insert(Mailbox::FollowUp, waiting);
+                    mailboxes.insert(Mailbox::Scheduled, scheduled);
+                    mailboxes.insert(Mailbox::Outbox, stuck);
+                    mailboxes.insert(Mailbox::Reminders, reminders);
+                }
                 for mailbox in sidebar {
                     let count = match &mailbox {
                         Mailbox::Unified(which) => {
@@ -1000,6 +1034,7 @@ impl<A: Accounts> Mailboxes<A> {
                                 count.threads
                             }
                         }
+                        Mailbox::Folder { .. } | Mailbox::Flag(_) | Mailbox::Vips { .. } if light => continue,
                         Mailbox::Folder { account_id, folder } => {
                             let role = match folder {
                                 Folder::Archive => Role::Archive,

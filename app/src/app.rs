@@ -1260,7 +1260,7 @@ impl App {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             while let Ok(event) = this.core.events.recv().await {
-                this.unread.changed();
+                this.unread.heard(&event);
                 this.tell_window(Notice::Engine(&event));
                 if let ChangeEvent::NewMail {
                     account_id,

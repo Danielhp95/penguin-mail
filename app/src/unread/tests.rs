@@ -94,7 +94,7 @@ async fn a_burst_of_changes_is_one_count() {
             unread.answered();
             settle().await;
             assert_eq!(fake.asks.borrow().len(), 1, "the burst shared one count");
-            assert!(fake.asks.borrow()[0].refresh);
+            assert!(!fake.asks.borrow()[0].refresh, "no window, so no server count");
 
             // Sync reports batch after batch. With no window open, those
             // that come while the last count is still recent share one.
@@ -226,6 +226,11 @@ async fn the_tray_says_what_the_sidebar_says_for_a_folder_account() {
             unread.listen(Box::new(move |counted| {
                 *into_tray.borrow_mut() = Some(counted.inbox(account_id));
             }));
+            // The sidebar's own count is the one that asks the server.
+            unread.show_in(Box::new(Window {
+                mailboxes: vec![ALL_INBOXES],
+                shown: Rc::default(),
+            }));
             started(&unread);
             unread.set_accounts(vec![account_id]);
             for _ in 0..5 {
@@ -233,6 +238,71 @@ async fn the_tray_says_what_the_sidebar_says_for_a_folder_account() {
             }
             assert_eq!(*sidebar.borrow(), Some(2), "the server's count");
             assert_eq!(*tray.borrow(), *sidebar.borrow());
+        })
+        .await;
+}
+
+fn threads_changed() -> mailrs_domain::ChangeEvent {
+    mailrs_domain::ChangeEvent::ThreadsChanged {
+        account_id: 1,
+        thread_ids: vec!["t".into()],
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn with_no_window_a_burst_of_events_makes_one_count_that_asks_no_server() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let fake = Rc::new(Fake::default());
+            let unread = Unread::new(Rc::clone(&fake));
+            started(&unread);
+            for _ in 0..30 {
+                unread.heard(&threads_changed());
+            }
+            settle().await;
+            let asks = fake.asks.borrow();
+            assert_eq!(asks.len(), 1);
+            assert!(!asks[0].refresh, "the tray starts no server count");
+        })
+        .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn with_no_window_only_thread_and_account_events_ask_for_a_count() {
+    use mailrs_domain::{AccountState, ChangeEvent};
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let fake = Rc::new(Fake::default());
+            let unread = Unread::new(Rc::clone(&fake));
+            started(&unread);
+            unread.heard(&ChangeEvent::NewMail { account_id: 1, message_ids: vec!["m".into()] });
+            unread.heard(&ChangeEvent::LabelsChanged { account_id: 1 });
+            settle().await;
+            assert!(fake.asks.borrow().is_empty());
+            unread.heard(&ChangeEvent::AccountStateChanged { account_id: 1, state: AccountState::Ok });
+            settle().await;
+            assert_eq!(fake.asks.borrow().len(), 1);
+        })
+        .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn with_a_window_every_event_asks_the_servers_as_before() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let fake = Rc::new(Fake::default());
+            let unread = Unread::new(Rc::clone(&fake));
+            unread.show_in(Box::new(Window {
+                mailboxes: vec![ALL_INBOXES],
+                shown: Rc::default(),
+            }));
+            started(&unread);
+            settle().await;
+            unread.heard(&mailrs_domain::ChangeEvent::LabelsChanged { account_id: 1 });
+            settle().await;
+            let asks = fake.asks.borrow();
+            assert_eq!(asks.len(), 2);
+            assert!(asks[1].refresh);
         })
         .await;
 }
