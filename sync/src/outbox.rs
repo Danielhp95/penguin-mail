@@ -357,6 +357,7 @@ impl<A: Accounts> Outbox<A> {
     /// A server that holds mail itself takes the message, and sends it at
     /// its hour with the laptop shut. The bytes stay here too, since the
     /// server's copy leaves out the Bcc that Send Now and a new hour need.
+    /// A server that will not hold it leaves it to the rest of this.
     ///
     /// Otherwise saves `message` as a Gmail draft and records the hour to
     /// send it. With no way through to Gmail the bytes wait here instead
@@ -400,10 +401,9 @@ impl<A: Accounts> Outbox<A> {
                 return self.put_waiting(message).await;
             }
             Ok(Handed::Kept) => {}
-            Err(err) => {
-                self.drop_written(&message).await?;
-                return Ok(Posted::Refused(err.to_string()));
-            }
+            // As when a hold is taken again: the message stays in Send
+            // Later and goes from this computer at its hour.
+            Err(err) => tracing::info!(error = %quiet_text(err), "the server would not hold the message; the app sends it"),
         }
         match self.save_draft(&message).await {
             Ok(saved) => {

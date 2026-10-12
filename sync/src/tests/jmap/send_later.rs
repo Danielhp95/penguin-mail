@@ -870,6 +870,21 @@ async fn a_held_message_opened_and_closed_unchanged_goes_back_to_the_server() {
     assert_eq!(sent(&h), 1);
 }
 
+/// As for a hold taken again: a server that will not hold the message
+/// leaves it in Send Later here, and it goes from this computer.
+#[tokio::test]
+async fn a_message_the_server_will_not_hold_is_scheduled_here() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    h.fake.with(|s| s.hold_failure = Some(JmapError::Forbidden(String::new())));
+    let id = scheduled(&h, at).await;
+    let kept = row(&h, id).await.unwrap();
+    assert!(kept.held.is_none() && kept.problem.is_none() && kept.send_at == at, "in Send Later, sent from here");
+    assert_eq!(pending(&h), 0);
+    queue(&h).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(sent(&h), 1, "once, at its hour");
+}
+
 #[tokio::test]
 async fn a_message_the_server_will_not_hold_again_stays_in_send_later_here() {
     let h = holding().await;
