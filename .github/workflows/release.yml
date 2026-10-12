@@ -441,6 +441,18 @@ jobs:
               gh release edit "$TAG" --title "Penguin Mail $VERSION" \
                   --notes-file dist/notes.md --latest
               gh release upload "$TAG" --clobber "${files[@]}"
+              # A file the first run uploaded and this one did not build,
+              # say under an old name, would stay downloadable beside the
+              # new sums, so it goes.
+              declare -A keep
+              for file in "${files[@]}"; do keep[$(basename "$file")]=1; done
+              gh release view "$TAG" --json assets --jq '.assets[].name' |
+                  while IFS= read -r name; do
+                      if [ -z "${keep[$name]:-}" ]; then
+                          echo "Removing $name, which this run did not build"
+                          gh release delete-asset "$TAG" "$name" --yes
+                      fi
+                  done
           else
               gh release create "$TAG" --verify-tag --title "Penguin Mail $VERSION" \
                   --notes-file dist/notes.md --latest "${files[@]}"
