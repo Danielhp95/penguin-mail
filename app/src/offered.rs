@@ -527,7 +527,7 @@ pub fn missing_lines(
 pub fn sign_in_reason(account: &Account) -> String {
     let provider = mailrs_discover::resolved_provider_name(account.provider_name());
     fill(
-        &gettext("{provider} does not let an API token change the automatic reply. Change it on {provider}'s website."),
+        &gettext("{provider} does not let an API token change the automatic reply. Sign in again through the browser to change it here."),
         &[("provider", &provider)],
     )
 }
@@ -1546,6 +1546,6 @@ mod tests {
         let jmap = Account { provider: Provider::Jmap, provider_name: Some("Fastmail".into()), ..fastmail() };
         let lacking = Offers { auto_reply: false, auto_reply_needs_sign_in: true, ..Offers::EVERYTHING };
         let lines = missing_lines(&[(jmap, lacking)], |_, _| None);
-        assert_eq!(lines[0].1, ["Fastmail does not let an API token change the automatic reply. Change it on Fastmail's website."]);
+        assert_eq!(lines[0].1, ["Fastmail does not let an API token change the automatic reply. Sign in again through the browser to change it here."]);
     }
 }
