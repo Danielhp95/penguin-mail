@@ -13,7 +13,7 @@ use crate::{Result, StoreError};
 ///
 /// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
 /// `local_messages_follow`, which takes a POP3 message's bytes with its
-/// row, and the contact triggers of migration 62. Such a migration must
+/// row, and the contact triggers of migration 61. Such a migration must
 /// create them again. It also renumbers the implicit rowids the
 /// correspondents tally counts by, as a VACUUM may, so either must mark
 /// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
@@ -950,76 +950,26 @@ CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
     r#"
 CREATE INDEX events_by_uid ON events(account_id, lower(uid));
 "#,
-    // The recipient suggestions count correspondents from every message,
-    // and the app keeps that tally between reads, reading only the rows
-    // that came after. `epoch` moves on every other change that can alter
-    // the tally: a message deleted or given other addresses or date, mail
-    // filed in or out of a Sent mailbox, a mailbox taking or losing the
-    // Sent role. `born` tells this store from another at the same path.
-    r#"
-CREATE TABLE contact_marks (
-    id    INTEGER PRIMARY KEY CHECK (id = 1),
-    born  INTEGER NOT NULL,
-    epoch INTEGER NOT NULL
-);
-INSERT INTO contact_marks (id, born, epoch) VALUES (1, random(), 0);
-CREATE TRIGGER contacts_message_gone AFTER DELETE ON messages BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_message_changed AFTER UPDATE OF from_name, from_addr, to_addrs, cc_addrs, date ON messages
-WHEN OLD.from_name IS NOT NEW.from_name OR OLD.from_addr IS NOT NEW.from_addr
-    OR OLD.to_addrs IS NOT NEW.to_addrs OR OLD.cc_addrs IS NOT NEW.cc_addrs OR OLD.date IS NOT NEW.date
-BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_sent_filed AFTER INSERT ON message_mailboxes
-WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent')
-BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_sent_unfiled AFTER DELETE ON message_mailboxes
-WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
-BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_sent_role AFTER UPDATE OF role ON mailboxes
-WHEN (OLD.role IS 'sent') <> (NEW.role IS 'sent')
-BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-CREATE TRIGGER contacts_sent_gone AFTER DELETE ON mailboxes WHEN OLD.role IS 'sent' BEGIN
-    UPDATE contact_marks SET epoch = epoch + 1;
-END;
-"#,
-    // The correspondents tally moves into the store, so nothing stays in
-    // memory between reads: `correspondents` holds it as counted up to
-    // message row `counted_row`, and the writer brings it up to date when
-    // idle (`contacts::catch_up`). A change to a row it already counted
-    // marks it `stale`, and the next catch-up counts every row again; a
-    // row past `counted_row` needs no mark, since no tally holds it yet.
-    // The table is derived, so it starts empty and stale. `born` and
-    // `epoch` served the tally kept in memory and go; the tally now
-    // travels with the file, so a store copied over another stays right.
+    // The recipient suggestions count correspondents from every message.
+    // `correspondents` holds that tally as counted up to message row
+    // `counted_row`, and the writer brings it up to date when idle
+    // (`contacts::catch_up`), so nothing stays in memory between reads. A
+    // change to a row it already counted marks it `stale`, and the next
+    // catch-up counts every row again; a row past `counted_row` needs no
+    // mark, since no tally holds it yet. The table is derived, so it starts
+    // empty and stale, and it travels with the file.
     //
     // The tally keys on the messages table's implicit rowid. A VACUUM may
     // renumber it, and a migration that rebuilds `messages` renumbers it
     // and drops its triggers (these and `local_messages_follow`): either
     // must recreate the triggers and set `stale = 1, counted_row = 0`.
     r#"
-DROP TRIGGER contacts_message_gone;
-DROP TRIGGER contacts_message_changed;
-DROP TRIGGER contacts_sent_filed;
-DROP TRIGGER contacts_sent_unfiled;
-DROP TRIGGER contacts_filing_moved;
-DROP TRIGGER contacts_sent_role;
-DROP TRIGGER contacts_sent_gone;
-ALTER TABLE contact_marks DROP COLUMN born;
-ALTER TABLE contact_marks DROP COLUMN epoch;
-ALTER TABLE contact_marks ADD COLUMN stale INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE contact_marks ADD COLUMN counted_row INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE contact_marks (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    stale       INTEGER NOT NULL DEFAULT 1,
+    counted_row INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO contact_marks (id) VALUES (1);
 CREATE TABLE correspondents (
     key       TEXT PRIMARY KEY,
     email     TEXT NOT NULL,

@@ -1184,35 +1184,14 @@ fn migration_60_finds_an_event_by_its_uid_through_an_index() {
     }
 }
 
-/// Migration 61 starts the contact mark of a store that already holds
-/// mail, and deleting a message moves it.
-#[test]
-fn migration_61_marks_changes_to_the_mail_contacts_count() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mail.db");
-    let conn = open_with(&path, &MIGRATIONS[..60]).unwrap();
-    conn.execute_batch(
-        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
-         INSERT INTO messages (account_id, id, thread_id, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
-             VALUES (1, 'm1', 't1', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
-    )
-    .unwrap();
-    drop(conn);
-    let conn = open_with(&path, &MIGRATIONS[..61]).unwrap();
-    let epoch = |conn: &Connection| -> i64 { conn.query_row("SELECT epoch FROM contact_marks", [], |r| r.get(0)).unwrap() };
-    assert_eq!(epoch(&conn), 0);
-    conn.execute("DELETE FROM messages WHERE id = 'm1'", []).unwrap();
-    assert_eq!(epoch(&conn), 1);
-}
-
-/// Migration 62 keeps the correspondents tally in the store. It starts
+/// Migration 61 keeps the correspondents tally in the store. It starts
 /// empty and stale, so the first catch-up counts every message, and a
 /// change to a row it counted makes it stale again.
 #[test]
-fn migration_62_keeps_the_correspondents_tally_in_the_store() {
+fn migration_61_keeps_the_correspondents_tally_in_the_store() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
-    let conn = open_with(&path, &MIGRATIONS[..61]).unwrap();
+    let conn = open_with(&path, &MIGRATIONS[..60]).unwrap();
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
          INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
