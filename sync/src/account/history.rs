@@ -10,9 +10,41 @@ use mailrs_store::{accounts, labels, messages, remote_refs};
 
 use super::AccountSync;
 use super::fetch::{Placing, store_fetched};
-use crate::{BackendError, MailBackend, RemoteChange, SyncError, SyncState, Want};
+use crate::{BackendError, Look, Looked, MailBackend, RemoteChange, SyncError, SyncState, Want};
 
 impl AccountSync {
+    /// One look for new mail, at the engine's poll. The mail service looks
+    /// itself when its mail lives only in the store, and this announces
+    /// what it stored, even when the look failed after storing some.
+    /// Otherwise this replays the server's changes ([`Self::incremental`]).
+    pub async fn look_for_mail(&self) -> Result<(), SyncError> {
+        let Look::Done(looked) = self.services.mail.look_for_mail().await else {
+            return self.incremental().await;
+        };
+        let Looked {
+            threads,
+            new_mail,
+            menu_changed,
+            failed,
+        } = looked;
+        let account_id = self.account_id;
+        let new_mail = self.file_muted_replies(new_mail).await;
+        self.emit_threads(threads);
+        if !new_mail.is_empty() {
+            self.emit(ChangeEvent::NewMail {
+                account_id,
+                message_ids: new_mail,
+            });
+        }
+        if menu_changed {
+            self.emit(ChangeEvent::LabelsChanged { account_id });
+        }
+        match failed {
+            Some(err) => Err(err.into()),
+            None => Ok(()),
+        }
+    }
+
     /// Applies every change since the stored sync state in one transaction,
     /// then stores the new state. Bootstraps instead when there is no state
     /// yet, and lists the mail again when the server has lost its place. A

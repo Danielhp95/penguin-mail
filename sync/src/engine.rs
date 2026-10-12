@@ -400,8 +400,8 @@ async fn run_account(
 /// Gmail's and list the labels when due, then load one backfill page. The
 /// account's mail service may set its own gap between polls, as an IMAP
 /// server with IDLE does. Returns true when more backfill pages remain.
-/// An account whose mailboxes are local runs a POP3 check in place of
-/// history replay, and lists its mailboxes once an hour.
+/// An account whose mailboxes are local lists them once an hour and has
+/// no window to prune or page.
 pub(crate) async fn tick(
     sync: &AccountSync,
     next_poll: &mut Instant,
@@ -420,10 +420,7 @@ pub(crate) async fn tick(
         sync.set_checked_at(now_millis()).await?;
     }
     if Instant::now() >= *next_poll {
-        match local {
-            true => sync.pop3_check().await?,
-            false => sync.incremental().await?,
-        }
+        sync.look_for_mail().await?;
         let every = sync
             .services()
             .mail

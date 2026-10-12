@@ -55,7 +55,7 @@ fn a_pop3_account_downloads_from_dovecot() {
         let sync = AccountSync::new(account.id, services, db.clone(), async_channel::unbounded().0);
         sync.refresh_labels().await.expect("the role mailboxes");
 
-        sync.pop3_check().await.expect("a check over TLS");
+        sync.look_for_mail().await.expect("a check over TLS");
         let id = account.id;
         let inbox: Vec<String> = db
             .read(move |c| messages::held_by(c, id, &MailSet::Role(Role::Inbox)))
@@ -70,7 +70,7 @@ fn a_pop3_account_downloads_from_dovecot() {
         assert!(String::from_utf8_lossy(&raw).contains("Subject: Hello"));
         assert!(dovecot.messages(USER, "INBOX").await.is_empty(), "Remove After Downloading emptied the server at QUIT");
 
-        sync.pop3_check().await.expect("a second check");
+        sync.look_for_mail().await.expect("a second check");
         let after = db.read(move |c| messages::held_by(c, id, &MailSet::Role(Role::Inbox))).await.expect("the Inbox");
         assert_eq!(after.len(), 1, "nothing new, nothing lost");
     });

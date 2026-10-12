@@ -2,9 +2,11 @@
 //! and nothing else, so this adapter answers every mailbox and message
 //! question from the store, which for this account is the mail and not a
 //! cache of it: six role mailboxes and the folders a person makes, all
-//! kept here. It holds the POP3 client for the downloader and opens no
-//! session itself. Sending goes over SMTP, as an IMAP account's does, and
-//! the copy, drafts and every write land in the store.
+//! kept here. Its one look for new mail is the check (`check.rs`), the
+//! only time it opens a POP3 session. Sending goes over SMTP, as an IMAP
+//! account's does, and the copy, drafts and every write land in the store.
+
+mod check;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::io::Cursor;
@@ -30,7 +32,7 @@ use rusqlite::Connection;
 
 use super::imap::submit_over;
 use super::{
-    Backfill, Changes, Found, IdentityService, KeywordsPage, MailBackend, MailCapabilities,
+    Backfill, Changes, Found, IdentityService, KeywordsPage, Look, MailBackend, MailCapabilities,
     RawMessage, Relocated, RemoteRef, SearchQuery, SendAsAddress, Submit, SyncState, Unapplied,
     Want,
 };
@@ -192,6 +194,12 @@ pub struct Pop3<S, P> {
     client: Arc<P>,
     settings: Arc<Pop3Settings>,
     tray_only: Arc<AtomicBool>,
+    /// Held for a whole check. Most POP3 servers lock the maildrop for one
+    /// session, so a second check started meanwhile, by the timer or by
+    /// Check for Mail, waits here rather than meeting the lock and
+    /// failing. It keeps what the last clean check found, so a check that
+    /// finds the server as it was can stop at `STAT`.
+    checking: Arc<tokio::sync::Mutex<Option<check::Quiet>>>,
     /// The spans of the messages opened last, newest at the back, so a
     /// file asked for after its message opened is read alone.
     outlines: Arc<Mutex<VecDeque<Outlined>>>,
@@ -206,6 +214,7 @@ impl<S, P> Clone for Pop3<S, P> {
             client: Arc::clone(&self.client),
             settings: Arc::clone(&self.settings),
             tray_only: Arc::clone(&self.tray_only),
+            checking: Arc::clone(&self.checking),
             outlines: Arc::clone(&self.outlines),
         }
     }
@@ -226,13 +235,9 @@ impl<S, P> Pop3<S, P> {
             client,
             settings: Arc::new(settings),
             tray_only: Arc::default(),
+            checking: Arc::default(),
             outlines: Arc::default(),
         }
-    }
-
-    /// The POP3 client, for the downloader.
-    pub fn client(&self) -> &Arc<P> {
-        &self.client
     }
 
     async fn read<T: Send + 'static>(
@@ -528,6 +533,11 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     /// POP3 cannot say when mail arrives.
     async fn watch(&self) {
         std::future::pending::<()>().await
+    }
+
+    /// The check: what is new on the server comes down into the store.
+    async fn look_for_mail(&self) -> Look {
+        Look::Done(self.check().await)
     }
 
     async fn keywords_in(

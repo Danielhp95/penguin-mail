@@ -50,7 +50,7 @@ pub enum RulesPlace {
     ThisComputer,
 }
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
@@ -171,6 +171,32 @@ impl SyncState {
 pub struct Changes {
     pub changes: Vec<RemoteChange>,
     pub state: SyncState,
+}
+
+/// How one look for new mail went, as the mail service answers it.
+#[derive(Debug)]
+pub enum Look {
+    /// The service has no look of its own: the caller replays the server's
+    /// changes since the stored sync state, through [`MailBackend::changes`].
+    Replay,
+    /// The service looked and stored what it found.
+    Done(Looked),
+}
+
+/// What a look the service made itself stored, for the caller to announce.
+/// A look that fails partway still hands back what it stored before the
+/// failure, since that mail stays stored.
+#[derive(Debug, Default)]
+pub struct Looked {
+    /// The threads the stored messages went into.
+    pub threads: BTreeSet<String>,
+    /// The stored messages to announce as new mail.
+    pub new_mail: Vec<String>,
+    /// The account's menu changed: a download that keeps failing joined
+    /// it, or one left it.
+    pub menu_changed: bool,
+    /// Why the look stopped early, if it did.
+    pub failed: Option<BackendError>,
 }
 
 /// One change the server reports. A new message comes without its
@@ -1053,6 +1079,14 @@ pub trait MailBackend: Send + Sync + 'static {
     /// something changed there, or its watch failed and a minute passed.
     /// A server that never says so never resolves this.
     fn watch(&self) -> impl Future<Output = ()> + Send;
+
+    /// One look at the server for new mail, at the engine's poll. A
+    /// service whose mail lives only in the store, as a POP3 account's
+    /// does, downloads and stores it here and answers [`Look::Done`].
+    /// Every other service answers [`Look::Replay`].
+    fn look_for_mail(&self) -> impl Future<Output = Look> + Send {
+        async { Look::Replay }
+    }
 
     /// The keywords of the window's messages in `mailbox` with a UID in
     /// `uids`, as they stand on the server now, for a
