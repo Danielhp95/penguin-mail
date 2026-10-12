@@ -394,7 +394,8 @@ impl ThreadRow {
         get(&imp.from_name).set_text(&name);
         imp.floor.replace(address_floor_markup(&name, &thread.from_email));
         let date = get(&imp.date);
-        date.set_visible(!thread.held);
+        // A Send Later row's preview says when it goes.
+        date.set_visible(!thread.scheduled);
         imp.held.get().expect("held chip exists").set_visible(thread.held);
         date.set_label(&relative_date(thread.last_message_at, Local::now()));
         if thread.unread {
@@ -410,17 +411,19 @@ impl ThreadRow {
         let count = get(&imp.count);
         count.set_visible(thread.message_count > 1);
         count.set_label(&thread.message_count.to_string());
+        match thread.scheduled {
+            true => self.add_css_class("scheduled"),
+            false => self.remove_css_class("scheduled"),
+        }
         let note = get(&imp.note);
         match thread.held {
             true => {
-                self.add_css_class("held");
                 let (when, server) = held_lines(&thread.snippet);
                 get(&imp.snippet).set_label(when);
                 note.set_label(server.unwrap_or_default());
                 note.set_visible(server.is_some());
             }
             false => {
-                self.remove_css_class("held");
                 get(&imp.snippet).set_label(&one_line(&thread.snippet));
                 note.set_visible(false);
             }

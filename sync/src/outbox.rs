@@ -73,6 +73,13 @@ pub fn server_holds(message: &Queued) -> bool {
     message.held.is_some() && unconfirmed(message).is_none()
 }
 
+/// Whether the row is one whose hold another app canceled, copy and all.
+/// Its stored problem is the only mark it has, so a row written in
+/// another language reads as an ordinary stuck one.
+pub fn canceled_elsewhere_row(message: &Queued) -> bool {
+    message.held.is_none() && message.problem.as_deref() == Some(canceled_elsewhere().as_str())
+}
+
 /// Whether the row is one `unconfirmable` wrote: a hold no answer could
 /// place. Only that writes a problem beside a hold. A settle that fails
 /// keeps asking, and every other problem goes on a row without a hold, so

@@ -327,10 +327,41 @@ fn a_row_that_asks_to_check_sent_says_only_that() {
         send_at: now.timestamp_millis(),
         ..Queued::default()
     };
+    // The preview holds two lines, so the action comes first.
     assert_eq!(
         crate::mailbox::waiting_line(&unknown, now),
-        "Penguin Mail could not confirm whether this message went out. Check Sent."
+        "Check Sent. Penguin Mail could not confirm it went out."
     );
+}
+
+#[test]
+fn a_row_canceled_in_another_app_says_only_that() {
+    let now = chrono::Local::now();
+    let canceled = Queued {
+        problem: Some("This message was canceled in another app and is no longer in Drafts.".into()),
+        attempts: crate::MOST_TRIES,
+        send_at: now.timestamp_millis(),
+        ..Queued::default()
+    };
+    assert_eq!(crate::mailbox::waiting_line(&canceled, now), "Canceled in another app.");
+}
+
+#[test]
+fn send_later_names_the_day_and_date_past_tomorrow() {
+    use chrono::TimeZone;
+    let now = chrono::Local.with_ymd_and_hms(2026, 10, 12, 10, 0, 0).unwrap();
+    let at = chrono::Local.with_ymd_and_hms(2026, 10, 16, 9, 0, 0).unwrap();
+    let local = Queued { send_at: at.timestamp_millis(), ..Queued::default() };
+    assert_eq!(crate::mailbox::waiting_line(&local, now), "Sends Fri 16 Oct at 09:00");
+    let held = Queued { held: Some("S1".into()), ..local.clone() };
+    assert!(
+        crate::mailbox::waiting_line(&held, now).starts_with("Sends Fri 16 Oct at 09:00.\n"),
+        "{}",
+        crate::mailbox::waiting_line(&held, now)
+    );
+    let tomorrow = chrono::Local.with_ymd_and_hms(2026, 10, 13, 8, 0, 0).unwrap();
+    let soon = Queued { send_at: tomorrow.timestamp_millis(), ..Queued::default() };
+    assert_eq!(crate::mailbox::waiting_line(&soon, now), "Sends tomorrow at 08:00");
 }
 
 #[tokio::test]
@@ -363,9 +394,15 @@ async fn send_later_marks_the_rows_the_server_holds() {
     }
 
     let listing = list(&h, &Mailbox::Scheduled, &view()).await;
-    let held: Vec<(&str, bool)> =
-        listing.rows.iter().map(|r| (r.subject.as_str(), r.held)).collect();
-    assert_eq!(held, [("Held", true), ("Here", false), ("Lost", false)]);
+    let held: Vec<(&str, bool, bool)> = listing
+        .rows
+        .iter()
+        .map(|r| (r.subject.as_str(), r.scheduled, r.held))
+        .collect();
+    assert_eq!(
+        held,
+        [("Held", true, true), ("Here", true, false), ("Lost", true, false)]
+    );
 }
 
 #[tokio::test]
