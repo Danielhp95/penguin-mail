@@ -17,6 +17,7 @@ mod held;
 mod identities;
 mod mailboxes;
 mod outgoing;
+mod receipts;
 mod search;
 mod storage;
 mod sieve;
@@ -28,7 +29,7 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use mailrs_domain::mailbox::keyword::{ANSWERED, DRAFT, FLAGGED, MUTED, SEEN};
+use mailrs_domain::mailbox::keyword::{ANSWERED, DRAFT, FLAGGED, MDN_SENT, MUTED, SEEN};
 use mailrs_domain::{EpochMillis, MailSet, RemoteMailbox, Role};
 use mailrs_gmail::LabelColor;
 use mailrs_jmap::{Identity, Mailbox};
@@ -43,7 +44,7 @@ pub(crate) use outgoing::{bare_message_id, has_message_id};
 pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
-    Backfill, Changes, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
+    Backfill, Changes, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, ReceiptOut, Relocated,
     RemoteRef, SearchQuery, Settled, Storage, SyncState, Unapplied, Unheld, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
@@ -51,7 +52,7 @@ use crate::{BackendError, MailOp};
 
 /// The keywords the adapter reads and restates. A JMAP server stores any
 /// keyword; these are the ones the app acts on.
-pub(super) const KEYWORDS: &[&str] = &[SEEN, FLAGGED, ANSWERED, DRAFT, MUTED];
+pub(super) const KEYWORDS: &[&str] = &[SEEN, FLAGGED, ANSWERED, DRAFT, MUTED, MDN_SENT];
 
 /// What a JMAP account's mail service can do. `labels` follows the
 /// session's `maxMailboxesPerEmail`, read at sign-in.
@@ -395,6 +396,10 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
 
     async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
         self.settle_hold(handle, message_id, send_at).await
+    }
+
+    async fn send_receipt(&self, receipt: &ReceiptOut) -> Result<(), BackendError> {
+        self.mdn(receipt).await
     }
 }
 

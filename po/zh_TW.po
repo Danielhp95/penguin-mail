@@ -1920,11 +1920,11 @@ msgstr "已取消。"
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "已等候瀏覽器五分鐘，停止等候。"
 
-#: app/src/core.rs:1093 app/src/core.rs:1116
+#: app/src/core.rs:1094 app/src/core.rs:1117
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "此帳號沒有保存行事曆或聯絡人伺服器接受的密碼。"
 
-#: app/src/core.rs:1237
+#: app/src/core.rs:1238
 msgid "The demo cannot switch accounts."
 msgstr "示範模式無法切換帳號。"
 
@@ -10164,6 +10164,20 @@ msgstr "未讀"
 msgid "Is flagged"
 msgstr "有旗標"
 
+#: sync/src/account/receipts.rs:29
+msgid "Read: {subject}"
+msgstr "已讀：{subject}"
+
+#: sync/src/account/receipts.rs:36
+msgid ""
+"Your message to {address} was shown on screen. This receipt does not say "
+"whether it was read or understood."
+msgstr "寄給 {address} 的郵件已顯示在螢幕上。此回條不表示已閱讀或理解內容。"
+
+#: sync/src/account/receipts.rs:101
+msgid "This message asks for no read receipt."
+msgstr "此郵件未要求已讀回條。"
+
 #: sync/src/account/writes.rs:760
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} 忙碌中。仍在處理 {conversations}。"
@@ -10497,71 +10511,71 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/calendar.rs:198
+#: sync/src/services/jmap/calendar.rs:201
 msgid "the title"
 msgstr "標題"
 
-#: sync/src/services/jmap/calendar.rs:199
+#: sync/src/services/jmap/calendar.rs:202
 msgid "the time"
 msgstr "時間"
 
-#: sync/src/services/jmap/calendar.rs:200
+#: sync/src/services/jmap/calendar.rs:203
 msgid "the repeat"
 msgstr "重複設定"
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:204
 msgid "the place"
 msgstr "地點"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:205
 msgid "the meeting link"
 msgstr "會議連結"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:206
 msgid "the notes"
 msgstr "備註"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:207
 msgid "the reminders"
 msgstr "提醒"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:208
 msgid "the guests"
 msgstr "參與者"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:209
 msgid "your answer"
 msgstr "您的回覆"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:210
 msgid "the color"
 msgstr "顏色"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:211
 msgid "the privacy"
 msgstr "隱私設定"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:212
 msgid "whether it shows as busy"
 msgstr "是否顯示為忙碌"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:213
 msgid "the status"
 msgstr "狀態"
 
-#: sync/src/services/jmap/calendar.rs:421
+#: sync/src/services/jmap/calendar.rs:424
 msgid "The server kept the event but did not say its id."
 msgstr "伺服器已儲存活動，但未提供其識別碼。"
 
-#: sync/src/services/jmap/calendar.rs:724
+#: sync/src/services/jmap/calendar.rs:727
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr "Penguin Mail 無法在此 JMAP 行事曆中為活動附加檔案。"
 
-#: sync/src/services/jmap/calendar.rs:728
+#: sync/src/services/jmap/calendar.rs:731
 msgid "This JMAP calendar has no files to share."
 msgstr "此 JMAP 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/jmap/calendar.rs:788
+#: sync/src/services/jmap/calendar.rs:791
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail 無法變更 JMAP 伺服器的行事曆清單。"
 
@@ -10589,15 +10603,15 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail 無法將此重複設定儲存到 JMAP 行事曆。"
 
-#: sync/src/services/jmap/mod.rs:262
+#: sync/src/services/jmap/mod.rs:263
 msgid "This server keeps no colors for its mailboxes."
 msgstr "此伺服器不會儲存信箱的顏色。"
 
-#: sync/src/services/jmap/mod.rs:335
+#: sync/src/services/jmap/mod.rs:336
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 
-#: sync/src/services/jmap/mod.rs:432
+#: sync/src/services/jmap/mod.rs:437
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "伺服器建立的地址無法由 Penguin Mail 讀取。"
 
@@ -10631,20 +10645,20 @@ msgid ""
 "sending."
 msgstr "此帳號可以讀取郵件，但無法寄件：其登入未取得寄件權限。"
 
-#: sync/src/services/jmap/outgoing.rs:102
+#: sync/src/services/jmap/outgoing.rs:100
 msgid "This account has no address the server lets it send from."
 msgstr "此帳號沒有伺服器允許用來寄件的地址。"
 
-#: sync/src/services/jmap/outgoing.rs:122
+#: sync/src/services/jmap/outgoing.rs:120
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr "伺服器沒有 [草稿] 或 [寄件備份] 信箱可存放此郵件。"
 
-#: sync/src/services/jmap/outgoing.rs:141
+#: sync/src/services/jmap/outgoing.rs:139
 msgid "The server has no Drafts mailbox."
 msgstr "伺服器沒有 [草稿] 信箱。"
 
-#: sync/src/services/jmap/outgoing.rs:149
+#: sync/src/services/jmap/outgoing.rs:147
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."

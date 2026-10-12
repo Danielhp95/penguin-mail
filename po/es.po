@@ -2041,13 +2041,13 @@ msgstr "Cancelado."
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Se ha dejado de esperar al navegador tras cinco minutos."
 
-#: app/src/core.rs:1093 app/src/core.rs:1116
+#: app/src/core.rs:1094 app/src/core.rs:1117
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Esta cuenta no guarda ninguna contraseña que acepte un servidor de "
 "calendario o de contactos."
 
-#: app/src/core.rs:1237
+#: app/src/core.rs:1238
 msgid "The demo cannot switch accounts."
 msgstr "El modo de demostración no puede cambiar cuentas."
 
@@ -10649,6 +10649,20 @@ msgstr "No está leído"
 msgid "Is flagged"
 msgstr "Tiene bandera"
 
+#: sync/src/account/receipts.rs:29
+msgid "Read: {subject}"
+msgstr "Leído: {subject}"
+
+#: sync/src/account/receipts.rs:36
+msgid ""
+"Your message to {address} was shown on screen. This receipt does not say "
+"whether it was read or understood."
+msgstr "Su mensaje para {address} se mostró en pantalla. Este acuse no indica si se leyó o se entendió."
+
+#: sync/src/account/receipts.rs:101
+msgid "This message asks for no read receipt."
+msgstr "Este mensaje no pide acuse de lectura."
+
 #: sync/src/account/writes.rs:760
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} está ocupado. Sigue trabajando en {conversations}."
@@ -11000,73 +11014,73 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "El mensaje no indica a nadie a quien enviarlo."
 
-#: sync/src/services/jmap/calendar.rs:198
+#: sync/src/services/jmap/calendar.rs:201
 msgid "the title"
 msgstr "el título"
 
-#: sync/src/services/jmap/calendar.rs:199
+#: sync/src/services/jmap/calendar.rs:202
 msgid "the time"
 msgstr "la hora"
 
-#: sync/src/services/jmap/calendar.rs:200
+#: sync/src/services/jmap/calendar.rs:203
 msgid "the repeat"
 msgstr "la repetición"
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:204
 msgid "the place"
 msgstr "el lugar"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:205
 msgid "the meeting link"
 msgstr "el enlace de la reunión"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:206
 msgid "the notes"
 msgstr "las notas"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:207
 msgid "the reminders"
 msgstr "los recordatorios"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:208
 msgid "the guests"
 msgstr "los invitados"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:209
 msgid "your answer"
 msgstr "tu respuesta"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:210
 msgid "the color"
 msgstr "el color"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:211
 msgid "the privacy"
 msgstr "la privacidad"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:212
 msgid "whether it shows as busy"
 msgstr "si aparece como ocupado"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:213
 msgid "the status"
 msgstr "el estado"
 
-#: sync/src/services/jmap/calendar.rs:421
+#: sync/src/services/jmap/calendar.rs:424
 msgid "The server kept the event but did not say its id."
 msgstr "El servidor guardó el evento, pero no dijo su identificador."
 
-#: sync/src/services/jmap/calendar.rs:724
+#: sync/src/services/jmap/calendar.rs:727
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr ""
 "Penguin Mail no puede adjuntar archivos a los eventos de este calendario "
 "JMAP."
 
-#: sync/src/services/jmap/calendar.rs:728
+#: sync/src/services/jmap/calendar.rs:731
 msgid "This JMAP calendar has no files to share."
 msgstr "Este calendario JMAP no tiene archivos que compartir."
 
-#: sync/src/services/jmap/calendar.rs:788
+#: sync/src/services/jmap/calendar.rs:791
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr ""
 "Penguin Mail no puede cambiar la lista de calendarios de un servidor JMAP."
@@ -11095,15 +11109,15 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail no puede guardar esta repetición en un calendario JMAP."
 
-#: sync/src/services/jmap/mod.rs:262
+#: sync/src/services/jmap/mod.rs:263
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
 
-#: sync/src/services/jmap/mod.rs:335
+#: sync/src/services/jmap/mod.rs:336
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 
-#: sync/src/services/jmap/mod.rs:432
+#: sync/src/services/jmap/mod.rs:437
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "El servidor ha creado una dirección que Penguin Mail no puede leer."
 
@@ -11140,24 +11154,24 @@ msgstr ""
 "Esta cuenta puede leer correo pero no enviarlo: su inicio de sesión no tiene "
 "acceso para enviar."
 
-#: sync/src/services/jmap/outgoing.rs:102
+#: sync/src/services/jmap/outgoing.rs:100
 msgid "This account has no address the server lets it send from."
 msgstr ""
 "Esta cuenta no tiene ninguna dirección desde la que el servidor le permita "
 "enviar."
 
-#: sync/src/services/jmap/outgoing.rs:122
+#: sync/src/services/jmap/outgoing.rs:120
 msgid ""
 "The server has neither a Drafts nor a Sent mailbox to keep the message in."
 msgstr ""
 "El servidor no tiene ni un buzón de borradores ni uno de enviados donde "
 "guardar el mensaje."
 
-#: sync/src/services/jmap/outgoing.rs:141
+#: sync/src/services/jmap/outgoing.rs:139
 msgid "The server has no Drafts mailbox."
 msgstr "El servidor no tiene buzón de borradores."
 
-#: sync/src/services/jmap/outgoing.rs:149
+#: sync/src/services/jmap/outgoing.rs:147
 msgid ""
 "The server already keeps this exact message outside Drafts, so it cannot "
 "also keep it as a draft."

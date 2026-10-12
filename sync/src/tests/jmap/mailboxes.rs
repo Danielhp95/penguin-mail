@@ -41,7 +41,7 @@ async fn the_capabilities_are_jmap_s() {
             categories: false,
             delete_forever: true,
             batch_limit: 500,
-            keywords: &["$seen", "$flagged", "$answered", "$draft", "$muted"],
+            keywords: &["$seen", "$flagged", "$answered", "$draft", "$muted", "$mdnsent"],
             native_search: false,
             renames: false,
             restates: true,
