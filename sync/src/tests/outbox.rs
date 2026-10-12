@@ -826,6 +826,28 @@ async fn cancelling_a_message_gmail_never_had_while_gmail_is_away_keeps_it() {
     );
 }
 
+/// A pass sending the message at its hour has claimed it: the cancel
+/// leaves it to that pass, rather than save a draft of mail that is going
+/// out.
+#[tokio::test]
+async fn cancelling_a_message_another_caller_is_sending_leaves_it_be() {
+    let h = harness().await;
+    let outbox = queue(&h);
+    let mut later = message(h.account_id, "Wednesday");
+    later.send_at = now_millis() + 60_000;
+    h.fake.fail_next(GmailError::Network("offline".into()));
+    let Posted::Waiting(offline) = outbox.schedule(later).await.unwrap() else {
+        panic!("Send Later keeps a message it could not hand to Gmail");
+    };
+    let now = now_millis();
+    h.db.write(move |c| outbox::claim(c, offline, now, now - 1)).await.unwrap().expect("the sender claims it");
+    let drafts_before = h.fake.with(|s| s.drafts.len());
+    let cancelled = outbox.cancel_scheduled(&[Target::thread(h.account_id, outbox_row(offline))]).await.unwrap();
+    assert_eq!((cancelled.in_drafts, cancelled.already_sent), (0, 1));
+    assert_eq!(h.fake.with(|s| s.drafts.len()), drafts_before, "no draft of mail on its way out");
+    assert!(h.db.read(move |c| outbox::find(c, offline)).await.unwrap().is_some(), "the sender keeps its row");
+}
+
 #[tokio::test]
 async fn a_reopened_draft_finds_the_hour_send_later_gave_it() {
     let h = harness().await;

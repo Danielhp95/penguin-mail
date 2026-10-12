@@ -221,7 +221,8 @@ pub struct Drained {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Cancelled {
     /// Messages the server held and had already sent before the cancel
-    /// reached it. They are in Sent.
+    /// reached it, and ones this computer was sending as the cancel came.
+    /// They are in Sent, or on their way there.
     pub already_sent: usize,
     /// Messages the server holds that it could not be asked about now.
     /// They stay in Send Later, held.
@@ -706,7 +707,16 @@ impl<A: Accounts> Outbox<A> {
                     Some(here) => here,
                     None => continue,
                 },
-                None => item,
+                // Claimed like a send, so a pass sending it at its hour
+                // cannot send it while it turns into a draft. One already
+                // claimed is going out, and is left to that pass.
+                None => match self.claim(item.id).await? {
+                    Some(claimed) => claimed,
+                    None => {
+                        cancelled.already_sent += 1;
+                        continue;
+                    }
+                },
             };
             // A message Gmail never had goes to Drafts now, so cancelling
             // does not throw away the only copy.
