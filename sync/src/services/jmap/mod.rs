@@ -11,7 +11,6 @@ mod calendar;
 mod contacts;
 mod errors;
 mod feed;
-#[cfg_attr(not(test), expect(dead_code, reason = "Q6 writes with the rest of it"))]
 pub(crate) mod jscal;
 mod fetch;
 mod held;
@@ -123,10 +122,6 @@ pub(super) struct Known {
     /// The last read of the account's event changes, shared by every
     /// calendar that asks from the same state. Replaced by the next.
     pub calendar_changes: Option<Arc<calendar::EventChanges>>,
-    /// Event `updated` stamps this adapter wrote, newest last, so its own
-    /// later write does not read as a change made elsewhere.
-    #[expect(dead_code, reason = "Q6 records its writes")]
-    pub calendar_written: VecDeque<(String, String)>,
 }
 
 /// The blob ids of the parts of the last structures fetched, by part path.

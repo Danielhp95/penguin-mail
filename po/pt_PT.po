@@ -10069,15 +10069,22 @@ msgstr ""
 "“{title}” foi guardado sem “{file}”, que mudou de sítio ou foi eliminado "
 "antes de ser enviado"
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid ""
+"Someone else changed {field} on “{title}” at the same time; their version "
+"was kept"
+msgstr ""
+"Outra pessoa alterou {field} em “{title}” ao mesmo tempo; ficou a versão dela"
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr "A sua alteração a “{title}” não foi guardada porque mudou noutro lado"
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "A sua alteração a “{title}” não foi guardada: {reason}"
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr "Mostrar evento"
 
@@ -10488,18 +10495,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "Etiqueta nova em: {accounts}."
 msgstr[1] "Etiquetas novas em: {accounts}."
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr "eliminado noutro lado"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr "o calendário já não existe"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10762,6 +10769,77 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
+#: sync/src/services/jmap/calendar.rs:198
+msgid "the title"
+msgstr "o título"
+
+#: sync/src/services/jmap/calendar.rs:199
+msgid "the time"
+msgstr "a hora"
+
+#: sync/src/services/jmap/calendar.rs:200
+msgid "the repeat"
+msgstr "a repetição"
+
+#: sync/src/services/jmap/calendar.rs:201
+msgid "the place"
+msgstr "o local"
+
+#: sync/src/services/jmap/calendar.rs:202
+msgid "the meeting link"
+msgstr "a ligação da reunião"
+
+#: sync/src/services/jmap/calendar.rs:203
+msgid "the notes"
+msgstr "as notas"
+
+#: sync/src/services/jmap/calendar.rs:204
+msgid "the reminders"
+msgstr "os lembretes"
+
+#: sync/src/services/jmap/calendar.rs:205
+msgid "the guests"
+msgstr "os convidados"
+
+#: sync/src/services/jmap/calendar.rs:206
+msgid "your answer"
+msgstr "a sua resposta"
+
+#: sync/src/services/jmap/calendar.rs:207
+msgid "the color"
+msgstr "a cor"
+
+#: sync/src/services/jmap/calendar.rs:208
+msgid "the privacy"
+msgstr "a privacidade"
+
+#: sync/src/services/jmap/calendar.rs:209
+msgid "whether it shows as busy"
+msgstr "se aparece como ocupado"
+
+#: sync/src/services/jmap/calendar.rs:210
+msgid "the status"
+msgstr "o estado"
+
+#: sync/src/services/jmap/calendar.rs:421
+msgid "The server kept the event but did not say its id."
+msgstr "O servidor guardou o evento, mas não disse qual é o seu identificador."
+
+#: sync/src/services/jmap/calendar.rs:724
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr ""
+"O Penguin Mail não consegue anexar ficheiros a eventos neste calendário JMAP."
+
+#: sync/src/services/jmap/calendar.rs:728
+msgid "This JMAP calendar has no files to share."
+msgstr "Este calendário JMAP não tem ficheiros para partilhar."
+
+#: sync/src/services/jmap/calendar.rs:788
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr ""
+"O Penguin Mail não consegue alterar a lista de calendários de um servidor "
+"JMAP."
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr "O servidor não permite isto."
@@ -10787,11 +10865,11 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "O Penguin Mail não consegue guardar esta repetição num calendário JMAP."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor não guarda cores para as caixas de correio."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr "Este servidor arquiva o correio enviado por si próprio."
 

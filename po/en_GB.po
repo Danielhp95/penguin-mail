@@ -9286,15 +9286,19 @@ msgstr "Checking for mail"
 msgid "“{title}” was saved without “{file}”, which moved or was deleted before it could upload"
 msgstr "“{title}” was saved without “{file}”, which moved or was deleted before it could upload"
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid "Someone else changed {field} on “{title}” at the same time; their version was kept"
+msgstr "Someone else changed {field} on “{title}” at the same time; their version was kept"
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr "Your change to “{title}” was not saved because it changed elsewhere"
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "Your change to “{title}” was not saved: {reason}"
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr "Show Event"
 
@@ -9681,18 +9685,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} will get a new label."
 msgstr[1] "{accounts} will get new labels."
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr "deleted elsewhere"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr "the calendar is gone"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid "Google Calendar offers out of office and focus time only on some work and school accounts ({reason})"
 msgstr "Google Calendar offers out of office and focus time only on some work and school accounts ({reason})"
 
@@ -9934,6 +9938,74 @@ msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgid "The message names nobody to send it to."
 msgstr "The message names nobody to send it to."
 
+#: sync/src/services/jmap/calendar.rs:198
+msgid "the title"
+msgstr "the title"
+
+#: sync/src/services/jmap/calendar.rs:199
+msgid "the time"
+msgstr "the time"
+
+#: sync/src/services/jmap/calendar.rs:200
+msgid "the repeat"
+msgstr "the repeat"
+
+#: sync/src/services/jmap/calendar.rs:201
+msgid "the place"
+msgstr "the place"
+
+#: sync/src/services/jmap/calendar.rs:202
+msgid "the meeting link"
+msgstr "the meeting link"
+
+#: sync/src/services/jmap/calendar.rs:203
+msgid "the notes"
+msgstr "the notes"
+
+#: sync/src/services/jmap/calendar.rs:204
+msgid "the reminders"
+msgstr "the reminders"
+
+#: sync/src/services/jmap/calendar.rs:205
+msgid "the guests"
+msgstr "the guests"
+
+#: sync/src/services/jmap/calendar.rs:206
+msgid "your answer"
+msgstr "your answer"
+
+#: sync/src/services/jmap/calendar.rs:207
+msgid "the color"
+msgstr "the colour"
+
+#: sync/src/services/jmap/calendar.rs:208
+msgid "the privacy"
+msgstr "the privacy"
+
+#: sync/src/services/jmap/calendar.rs:209
+msgid "whether it shows as busy"
+msgstr "whether it shows as busy"
+
+#: sync/src/services/jmap/calendar.rs:210
+msgid "the status"
+msgstr "the status"
+
+#: sync/src/services/jmap/calendar.rs:421
+msgid "The server kept the event but did not say its id."
+msgstr "The server kept the event but did not say its id."
+
+#: sync/src/services/jmap/calendar.rs:724
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr "Penguin Mail cannot attach files to events on this JMAP calendar."
+
+#: sync/src/services/jmap/calendar.rs:728
+msgid "This JMAP calendar has no files to share."
+msgstr "This JMAP calendar has no files to share."
+
+#: sync/src/services/jmap/calendar.rs:788
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr "Penguin Mail cannot change the calendar list of a JMAP server."
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr "The server does not allow this."
@@ -9954,11 +10026,11 @@ msgstr "Penguin Mail cannot read how this event repeats, so it cannot change the
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail cannot save this repeat to a JMAP calendar."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 

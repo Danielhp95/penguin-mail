@@ -487,6 +487,8 @@ pub fn google_event(calendar: &str, item: &Value, me: Option<&str>, calendar_zon
             .map(str::to_string)
             .collect(),
         unread_rule: false,
+        kept_theirs: Vec::new(),
+        series_etag: String::new(),
         series: item.get("recurringEventId").and_then(Value::as_str).map(str::to_string),
         original_start: item.get("originalStartTime").map(|t| when(Some(t), calendar_zone).0),
         pending: false,

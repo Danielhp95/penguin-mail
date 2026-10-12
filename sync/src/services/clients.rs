@@ -333,7 +333,7 @@ either_client! {
         fn calendar_event_changes(since: &str, max: usize) -> Jmapped<ChangesResponse>;
         fn calendar_events(ids: &[String]) -> Jmapped<CalendarEvents>;
         fn calendar_events_page(filter: &Value, position: u64, limit: usize) -> Jmapped<EventsPage>;
-        fn set_calendar_event(write: &EventWrite, send: bool) -> Jmapped<Option<Value>>;
+        fn set_calendar_event(write: &EventWrite, send: bool, state: Option<&str>) -> Jmapped<Option<Value>>;
         fn mailboxes() -> Jmapped<JmapListed<Mailbox>>;
         fn mail_changes(email: &str, mailbox: &str, max: usize) -> Jmapped<MailChanges>;
         fn email_state() -> Jmapped<String>;

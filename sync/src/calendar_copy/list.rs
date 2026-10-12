@@ -297,6 +297,7 @@ impl<A: Accounts> CalendarCopy<A> {
                         title: title.unwrap_or_else(|| edit_title(&queued.edit)),
                         reason: Some(reason),
                         left_out: None,
+                        kept_theirs: Vec::new(),
                     });
                 }
             }

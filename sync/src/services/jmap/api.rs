@@ -24,7 +24,7 @@ pub trait JmapApi: Send + Sync + 'static {
     fn calendar_event_changes(&self, since: &str, max: usize) -> impl Future<Output = Answer<ChangesResponse>> + Send;
     fn calendar_events(&self, ids: &[String]) -> impl Future<Output = Answer<CalendarEvents>> + Send;
     fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> impl Future<Output = Answer<EventsPage>> + Send;
-    fn set_calendar_event(&self, write: &EventWrite, send: bool) -> impl Future<Output = Answer<Option<Value>>> + Send;
+    fn set_calendar_event(&self, write: &EventWrite, send: bool, state: Option<&str>) -> impl Future<Output = Answer<Option<Value>>> + Send;
     fn mailboxes(&self) -> impl Future<Output = Answer<Listed<Mailbox>>> + Send;
     fn mail_changes(&self, email: &str, mailbox: &str, max: usize) -> impl Future<Output = Answer<MailChanges>> + Send;
     fn email_state(&self) -> impl Future<Output = Answer<String>> + Send;
@@ -80,8 +80,8 @@ impl JmapApi for JmapClient {
     async fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> Answer<EventsPage> {
         JmapClient::calendar_events_page(self, filter, position, limit).await
     }
-    async fn set_calendar_event(&self, write: &EventWrite, send: bool) -> Answer<Option<Value>> {
-        JmapClient::set_calendar_event(self, write, send).await
+    async fn set_calendar_event(&self, write: &EventWrite, send: bool, state: Option<&str>) -> Answer<Option<Value>> {
+        JmapClient::set_calendar_event(self, write, send, state).await
     }
     async fn session(&self) -> Answer<Arc<Session>> {
         JmapClient::session(self).await

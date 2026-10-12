@@ -10142,17 +10142,25 @@ msgstr ""
 "« {title} » a été enregistré sans « {file} », qui a été déplacé ou supprimé "
 "avant son envoi"
 
-#: app/src/ui/window/spaces.rs:29
+#: app/src/ui/window/spaces.rs:30
+msgid ""
+"Someone else changed {field} on “{title}” at the same time; their version "
+"was kept"
+msgstr ""
+"Quelqu’un d’autre a modifié {field} de « {title} » au même moment ; sa "
+"version a été conservée"
+
+#: app/src/ui/window/spaces.rs:36
 msgid "Your change to “{title}” was not saved because it changed elsewhere"
 msgstr ""
 "Votre modification de « {title} » n’a pas été enregistrée car il a été "
 "modifié ailleurs"
 
-#: app/src/ui/window/spaces.rs:33
+#: app/src/ui/window/spaces.rs:40
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "Votre modification de « {title} » n’a pas été enregistrée : {reason}"
 
-#: app/src/ui/window/spaces.rs:256
+#: app/src/ui/window/spaces.rs:263
 msgid "Show Event"
 msgstr "Afficher l’événement"
 
@@ -10563,18 +10571,18 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} recevra une nouvelle étiquette."
 msgstr[1] "{accounts} recevront de nouvelles étiquettes."
 
-#: sync/src/calendar_copy.rs:905 sync/src/calendar_copy.rs:974
-#: sync/src/calendar_copy.rs:1019
+#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
+#: sync/src/calendar_copy.rs:1036
 msgid "deleted elsewhere"
 msgstr "supprimé ailleurs"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:910
+#: sync/src/calendar_copy.rs:927
 msgid "the calendar is gone"
 msgstr "l’agenda n’existe plus"
 
-#: sync/src/calendar_copy.rs:1671
+#: sync/src/calendar_copy.rs:1690
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10840,6 +10848,77 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "Le message n’indique aucun destinataire."
 
+#: sync/src/services/jmap/calendar.rs:198
+msgid "the title"
+msgstr "le titre"
+
+#: sync/src/services/jmap/calendar.rs:199
+msgid "the time"
+msgstr "l’heure"
+
+#: sync/src/services/jmap/calendar.rs:200
+msgid "the repeat"
+msgstr "la répétition"
+
+#: sync/src/services/jmap/calendar.rs:201
+msgid "the place"
+msgstr "le lieu"
+
+#: sync/src/services/jmap/calendar.rs:202
+msgid "the meeting link"
+msgstr "le lien de la réunion"
+
+#: sync/src/services/jmap/calendar.rs:203
+msgid "the notes"
+msgstr "les notes"
+
+#: sync/src/services/jmap/calendar.rs:204
+msgid "the reminders"
+msgstr "les rappels"
+
+#: sync/src/services/jmap/calendar.rs:205
+msgid "the guests"
+msgstr "les invités"
+
+#: sync/src/services/jmap/calendar.rs:206
+msgid "your answer"
+msgstr "votre réponse"
+
+#: sync/src/services/jmap/calendar.rs:207
+msgid "the color"
+msgstr "la couleur"
+
+#: sync/src/services/jmap/calendar.rs:208
+msgid "the privacy"
+msgstr "la confidentialité"
+
+#: sync/src/services/jmap/calendar.rs:209
+msgid "whether it shows as busy"
+msgstr "l’affichage comme occupé"
+
+#: sync/src/services/jmap/calendar.rs:210
+msgid "the status"
+msgstr "le statut"
+
+#: sync/src/services/jmap/calendar.rs:421
+msgid "The server kept the event but did not say its id."
+msgstr "Le serveur a enregistré l’événement sans indiquer son identifiant."
+
+#: sync/src/services/jmap/calendar.rs:724
+msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
+msgstr ""
+"Penguin Mail ne peut pas joindre de fichiers aux événements de cet agenda "
+"JMAP."
+
+#: sync/src/services/jmap/calendar.rs:728
+msgid "This JMAP calendar has no files to share."
+msgstr "Cet agenda JMAP n’a pas de fichiers à partager."
+
+#: sync/src/services/jmap/calendar.rs:788
+msgid "Penguin Mail cannot change the calendar list of a JMAP server."
+msgstr ""
+"Penguin Mail ne peut pas modifier la liste des agendas d’un serveur JMAP."
+
 #: sync/src/services/jmap/errors.rs:21
 msgid "The server does not allow this."
 msgstr "Le serveur ne le permet pas."
@@ -10866,11 +10945,11 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:262
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:335
 msgid "This server files sent mail itself."
 msgstr "Ce serveur classe lui-même le courrier envoyé."
 

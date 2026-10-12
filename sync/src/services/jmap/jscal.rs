@@ -1263,6 +1263,24 @@ pub(crate) fn override_of(event: &model::Event, current: &Value, me: &[String]) 
     Ok(Value::Object(over))
 }
 
+/// The occurrence of `current` that started at `original` as the server
+/// holds it now, with its override if it has one: the event
+/// [`override_of`] compares a change with. `None` for an excluded one.
+pub(crate) fn occurrence_of(current: &Value, calendar: &str, me: &[String], original: EpochMillis) -> Option<model::Event> {
+    let series = one_event(Fields::of(current), calendar, me, true)?;
+    let over = match current.get("recurrenceOverrides").and_then(|o| o.get(override_key(current, original))) {
+        Some(held) if held.get("excluded").and_then(Value::as_bool) == Some(true) => return None,
+        Some(held) => held.as_object().cloned().unwrap_or_default(),
+        None => Map::new(),
+    };
+    let view = overlay(current, &over, original);
+    let mut occurrence = one_event(Fields { base: current, over: Some(&view) }, calendar, me, false)?;
+    occurrence.id = occurrence_id(&series, original);
+    occurrence.series = Some(series.id);
+    occurrence.original_start = Some(original);
+    Some(occurrence)
+}
+
 /// Puts one change into an override. Inside a property the override
 /// already replaces, the change goes into that copy; otherwise the entry
 /// goes, or leaves when the series holds the same.
