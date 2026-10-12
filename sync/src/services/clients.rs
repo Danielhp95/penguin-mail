@@ -353,6 +353,7 @@ either_client! {
         fn address_books() -> Jmapped<Vec<mailrs_jmap::AddressBook>>;
         fn cards_page(position: u64, limit: usize) -> Jmapped<mailrs_jmap::CardsPage>;
         fn card_changes(since: &str, max: usize) -> Jmapped<mailrs_jmap::CardChanges>;
+        fn card(id: &str) -> Jmapped<Option<Value>>;
         fn set_card(write: &mailrs_jmap::CardWrite) -> Jmapped<Value>;
         fn sieve_scripts() -> Jmapped<Vec<mailrs_jmap::SieveScript>>;
         fn sieve_text(blob_id: &str) -> Jmapped<String>;

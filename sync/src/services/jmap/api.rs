@@ -44,6 +44,7 @@ pub trait JmapApi: Send + Sync + 'static {
     fn address_books(&self) -> impl Future<Output = Answer<Vec<AddressBook>>> + Send;
     fn cards_page(&self, position: u64, limit: usize) -> impl Future<Output = Answer<CardsPage>> + Send;
     fn card_changes(&self, since: &str, max: usize) -> impl Future<Output = Answer<CardChanges>> + Send;
+    fn card(&self, id: &str) -> impl Future<Output = Answer<Option<Value>>> + Send;
     fn set_card(&self, write: &CardWrite) -> impl Future<Output = Answer<Value>> + Send;
     fn sieve_scripts(&self) -> impl Future<Output = Answer<Vec<SieveScript>>> + Send;
     fn sieve_text(&self, blob_id: &str) -> impl Future<Output = Answer<String>> + Send;
@@ -144,6 +145,9 @@ impl JmapApi for JmapClient {
     }
     async fn card_changes(&self, since: &str, max: usize) -> Answer<CardChanges> {
         JmapClient::card_changes(self, since, max).await
+    }
+    async fn card(&self, id: &str) -> Answer<Option<Value>> {
+        JmapClient::card(self, id).await
     }
     async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
         JmapClient::set_card(self, write).await

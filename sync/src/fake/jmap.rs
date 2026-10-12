@@ -1400,6 +1400,10 @@ impl JmapApi for FakeJmap {
         })
     }
 
+    async fn card(&self, id: &str) -> Answer<Option<Value>> {
+        Ok(self.with(|s| s.cards.get(id).cloned()))
+    }
+
     async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
         self.called("ContactCard/set");
         self.with(|s| match write {
@@ -1413,8 +1417,8 @@ impl JmapApi for FakeJmap {
             }
             CardWrite::Update { id, patch } => {
                 let card = s.cards.get_mut(id).ok_or(JmapError::NotFound)?;
-                for (key, value) in patch {
-                    card[key] = value.clone();
+                for (path, value) in patch {
+                    patch_at(card, path, value)?;
                 }
                 let card = card.clone();
                 s.record("ContactCard", id, Op::Updated);
@@ -1641,6 +1645,29 @@ impl JmapApi for FakeJmap {
     fn push_paused(&self) -> Option<tokio::time::Instant> {
         self.with(|s| s.push_paused_until.filter(|until| *until > tokio::time::Instant::now()))
     }
+}
+
+/// Applies one PatchObject entry (RFC 8620 section 5.3): `path` is a JSON
+/// pointer without its leading slash, and `null` removes what it names. A
+/// path through a property the object lacks is an `invalidPatch`.
+fn patch_at(object: &mut Value, path: &str, value: &Value) -> Result<(), JmapError> {
+    let invalid = || JmapError::Method { kind: "invalidPatch".into(), description: String::new() };
+    let mut parts: Vec<&str> = path.split('/').collect();
+    let last = parts.pop().ok_or_else(invalid)?;
+    let mut at = object;
+    for part in parts {
+        at = at.get_mut(part).filter(|v| v.is_object()).ok_or_else(invalid)?;
+    }
+    let map = at.as_object_mut().ok_or_else(invalid)?;
+    match value {
+        Value::Null => {
+            map.remove(last);
+        }
+        _ => {
+            map.insert(last.to_string(), value.clone());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

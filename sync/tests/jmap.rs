@@ -491,6 +491,19 @@ impl<'a> Run<'a> {
         let made = contacts.create_contact(&fields).await.expect("a contact");
         let page = contacts.connections(None, None).await.expect("the contacts");
         assert!(page.people.iter().any(|p| p.resource == made.resource), "{:?}", self.kind());
+        // An edit patches entries by key, which each server must take.
+        let more = mailrs_gmail::ContactFields {
+            emails: Some(vec!["ada@example.test".into(), "ada@engines.example".into()]),
+            organization: Some("Analytical Engines".into()),
+            ..Default::default()
+        };
+        let edited = contacts.update_contact(&made.resource, &more).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
+        assert_eq!(edited.name.as_deref(), Some("Ada Lovelace"), "{:?}", self.kind());
+        let renamed = mailrs_gmail::ContactFields { organization: Some("Difference Engines".into()), ..Default::default() };
+        let edited = contacts.update_contact(&made.resource, &renamed).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.organization.as_deref(), Some("Difference Engines"), "{:?}", self.kind());
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
     }
 
     async fn a_rule_lands_in_sieve_where_offered(&self) {
