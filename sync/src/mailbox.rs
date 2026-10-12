@@ -1344,6 +1344,7 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
+                recipient: first_recipient(item),
                 message_count: 1,
                 scheduled: true,
                 held: crate::outbox::server_holds(item),
@@ -1375,6 +1376,7 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
+                recipient: first_recipient(item),
                 message_count: 1,
                 ..ThreadSummary::default()
             })
@@ -1468,6 +1470,7 @@ impl<A: Accounts> Mailboxes<A> {
                         &[("recipients", &names.join(", "))],
                     )
                 };
+                row.recipient = names.first().map(|name| name.to_string()).unwrap_or_default();
                 row.snippet = waited(now - item.sent_at);
                 row.last_message_at = item.sent_at;
                 row
@@ -1549,6 +1552,11 @@ fn recipients_of(message: &outbox::Queued) -> String {
         &gettext("To {recipients}"),
         &[("recipients", &message.recipients)],
     )
+}
+
+/// The first person a waiting message goes to, for its row's avatar.
+fn first_recipient(message: &outbox::Queued) -> String {
+    message.recipients.split(", ").next().unwrap_or_default().trim().to_string()
 }
 
 /// What a queued message's row says under the subject, and what the
@@ -1716,6 +1724,7 @@ fn row_of(hit: &MessageMeta, alone: bool) -> ThreadSummary {
         invitation: false,
         scheduled: false,
         held: false,
+        recipient: String::new(),
     }
 }
 
@@ -1726,6 +1735,16 @@ mod tests {
     use mailrs_domain::Category;
 
     use super::{summarize_search, unread_subtitle, waited};
+
+    #[test]
+    fn a_waiting_message_is_drawn_for_its_first_recipient() {
+        let message = super::outbox::Queued {
+            recipients: "Theo Brandt, Ines Duarte".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::first_recipient(&message), "Theo Brandt");
+        assert_eq!(super::first_recipient(&super::outbox::Queued::default()), "");
+    }
 
     #[test]
     fn an_empty_search_says_what_to_try_next() {

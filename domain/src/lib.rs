@@ -415,6 +415,11 @@ pub struct ThreadSummary {
     /// hour, whether or not this app is running.
     #[serde(default)]
     pub held: bool,
+    /// For a row named after who its message goes to ("To Theo Brandt"
+    /// in Outbox, Send Later and Follow Up), the first recipient, whose
+    /// initials and colour the avatar shows.
+    #[serde(default)]
+    pub recipient: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

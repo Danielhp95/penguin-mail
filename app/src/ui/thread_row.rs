@@ -298,7 +298,9 @@ pub fn set_avatar_hue(avatar: &adw::Avatar, name: &str, address: &str) {
 
 /// The name an avatar draws its initials from.
 fn display_name(thread: &ThreadSummary) -> String {
-    if thread.from.trim().is_empty() {
+    if !thread.recipient.trim().is_empty() {
+        thread.recipient.clone()
+    } else if thread.from.trim().is_empty() {
         thread.from_email.clone()
     } else {
         thread.from.clone()
@@ -373,7 +375,7 @@ impl ThreadRow {
                 face.set_custom_image(gdk::Paintable::NONE);
             }
         }
-        set_avatar_hue(face, &thread.from, &thread.from_email);
+        set_avatar_hue(face, &display_name(thread), &thread.from_email);
         imp.vip.get().expect("vip star exists").set_visible(vip);
         let get = |cell: &OnceCell<gtk::Label>| {
             cell.get()
@@ -539,6 +541,21 @@ mod tests {
             held_lines("The server has not sent this message yet."),
             ("The server has not sent this message yet.", None)
         );
+    }
+
+    #[test]
+    fn a_row_addressed_to_someone_draws_their_initials() {
+        let sent = mailrs_domain::ThreadSummary {
+            from: "To Theo Brandt".into(),
+            recipient: "Theo Brandt".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::display_name(&sent), "Theo Brandt");
+        let received = mailrs_domain::ThreadSummary {
+            from: "Ines Duarte".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::display_name(&received), "Ines Duarte");
     }
 
     #[test]
