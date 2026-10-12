@@ -916,6 +916,37 @@ struct PasswordPage {
     /// An app password for the provider's calendar, which a JMAP token
     /// does not reach. Optional.
     dav_password: adw::PasswordEntryRow,
+    /// Whether the token switch showed before the browser sign-in folded
+    /// the token rows away, to put it back as it was.
+    switch_folded: Cell<bool>,
+}
+
+/// Folds the token away while Sign In With Browser leads: the token row,
+/// its switch, its card and Sign In go, and "Use an API Token Instead"
+/// comes. App Password for Calendar stays, since the browser sign-in sends
+/// it too; the list holding it goes only when it has nothing left to show.
+fn fold_token(page: &PasswordPage) {
+    page.browser.add_css_class("suggested-action");
+    page.switch_folded.set(page.use_token.get_visible());
+    page.password.set_visible(false);
+    page.use_token.set_visible(false);
+    page.password_list.set_visible(page.dav_password.get_visible());
+    page.hint.area.set_visible(false);
+    page.token_instead.set_visible(true);
+    page.sign_in.set_visible(false);
+}
+
+/// Undoes [`fold_token`]: the token rows and Sign In come back, and Sign
+/// In With Browser steps back to a plain button.
+fn unfold_token(page: &PasswordPage) {
+    page.browser.remove_css_class("suggested-action");
+    if !page.password.get_visible() {
+        page.password.set_visible(true);
+        page.use_token.set_visible(page.switch_folded.replace(false));
+    }
+    page.token_instead.set_visible(false);
+    page.password_list.set_visible(true);
+    page.sign_in.set_visible(true);
 }
 
 fn password_page() -> PasswordPage {
@@ -1111,6 +1142,7 @@ fn password_page() -> PasswordPage {
         imap_instead,
         use_token,
         dav_password,
+        switch_folded: Cell::new(false),
     }
 }
 
@@ -2354,6 +2386,8 @@ impl Dialog {
     // ---- The password ---------------------------------------------------------
 
     fn show_password(self: &Rc<Self>, proposal: Proposal) {
+        // First, so what follows sets the rows' own visibility.
+        self.open_token_quietly();
         let page = &self.password;
         self.jmap.replace(None);
         page.session.set_visible(false);
@@ -2361,7 +2395,6 @@ impl Dialog {
         page.use_token.set_visible(false);
         page.dav_password.set_visible(false);
         page.browser_offer.set_visible(false);
-        self.open_token_quietly();
         page.agree.set_title(&gettext("Use these servers"));
         page.agree.set_subtitle(&gettext(
             "Penguin Mail guessed these servers. Your password goes to them only after you check the box.",
@@ -2446,6 +2479,8 @@ impl Dialog {
     /// provider's token advice. A session outside the address's domain
     /// waits for the person's yes, naming its host.
     fn show_jmap(self: &Rc<Self>, proposal: JmapProposal) {
+        // First, so what follows sets the rows' own visibility.
+        self.open_token_quietly();
         let page = &self.password;
         let kept = self.token.get() && self.jmap.borrow().is_some();
         let token = add_account::token_only(&proposal) || proposal.token || kept;
@@ -2501,7 +2536,6 @@ impl Dialog {
         };
         self.set_band("password", Step::Found, Some(stamp), Some(&provider));
         page.browser_offer.set_visible(false);
-        self.open_token_quietly();
         self.ask_browser_ready(&proposal);
         self.proposal.replace(None);
         self.jmap.replace(Some(proposal));
@@ -2542,12 +2576,8 @@ impl Dialog {
         // The browser is the easier way in, so it leads: the suggested
         // button and the focus, with the token one row deeper. A token
         // already typed keeps its field open.
-        if page.password.text().is_empty() {
-            page.browser.add_css_class("suggested-action");
-            page.password_list.set_visible(false);
-            page.hint.area.set_visible(false);
-            page.token_instead.set_visible(true);
-            page.sign_in.set_visible(false);
+        if page.password.text().is_empty() && page.password.get_visible() {
+            fold_token(page);
             page.browser.grab_focus();
         }
     }
@@ -2555,21 +2585,14 @@ impl Dialog {
     /// Puts the token field back as the page's way in, before the page
     /// learns whether the server takes the browser sign-in.
     fn open_token_quietly(&self) {
-        let page = &self.password;
-        page.browser.remove_css_class("suggested-action");
-        page.token_instead.set_visible(false);
-        page.password_list.set_visible(true);
-        page.sign_in.set_visible(true);
+        unfold_token(&self.password);
     }
 
     /// Opens the token field and its card under Sign In With Browser,
     /// which then steps back to a plain button.
     fn open_token(&self) {
         let page = &self.password;
-        page.browser.remove_css_class("suggested-action");
-        page.token_instead.set_visible(false);
-        page.password_list.set_visible(true);
-        page.sign_in.set_visible(true);
+        unfold_token(page);
         if let Some(proposal) = self.jmap.borrow().clone() {
             self.show_jmap_secret(&proposal);
         }
@@ -4145,4 +4168,43 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
         _ => {}
     }
     this.show_band();
+}
+
+/// Checks that need GTK, run from the one test that starts it
+/// (`composer::richbuffer`'s GTK checks).
+#[cfg(test)]
+pub(crate) mod checks {
+    use super::*;
+
+    pub fn run() {
+        the_calendar_password_stays_while_the_browser_leads();
+        a_page_without_the_calendar_password_folds_its_list_away();
+        unfolding_brings_the_token_switch_back_as_it_was();
+    }
+
+    fn the_calendar_password_stays_while_the_browser_leads() {
+        let page = password_page();
+        page.dav_password.set_visible(true);
+        fold_token(&page);
+        assert!(page.dav_password.is_visible(), "the browser sign-in sends it, so it shows");
+        assert!(!page.password.get_visible());
+        assert!(!page.use_token.get_visible());
+    }
+
+    fn a_page_without_the_calendar_password_folds_its_list_away() {
+        let page = password_page();
+        page.dav_password.set_visible(false);
+        fold_token(&page);
+        assert!(!page.password_list.get_visible());
+        assert!(page.token_instead.get_visible());
+    }
+
+    fn unfolding_brings_the_token_switch_back_as_it_was() {
+        let page = password_page();
+        page.use_token.set_visible(true);
+        fold_token(&page);
+        unfold_token(&page);
+        assert!(page.password.get_visible() && page.use_token.get_visible());
+        assert!(page.password_list.get_visible() && !page.token_instead.get_visible());
+    }
 }
