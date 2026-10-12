@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
+use std::rc::Rc;
 
 use mailrs_domain::{Address, MessageBody, MessageMeta, Provenance, ReadReport};
 
@@ -111,7 +113,7 @@ pub struct Conversation<'a> {
     pub me: &'a [String],
     /// Contact photos by lower-case sender address, as `data:` URIs. The
     /// page loads nothing from disk, so a photo travels inline.
-    pub photos: &'a HashMap<String, String>,
+    pub photos: &'a Photos,
     /// Whether remote images and styles may load.
     pub allow_remote: bool,
 }
@@ -127,8 +129,14 @@ pub fn render(conversation: &Conversation, theme: &Theme) -> String {
         },
         theme,
     );
-    for view in &conversation.messages {
-        html.push_str(&article(view, conversation.me, conversation.photos));
+    let senders: Vec<&str> = conversation
+        .messages
+        .iter()
+        .map(|view| sender_address(view.meta))
+        .collect();
+    for (index, view) in conversation.messages.iter().enumerate() {
+        let face = face(conversation.photos, senders[index], &senders[..index]);
+        html.push_str(&article(view, conversation.me, face));
     }
     html.push_str(TAIL);
     html
@@ -190,20 +198,52 @@ pub fn head(conversation: &Head, theme: &Theme) -> String {
     html
 }
 
+/// Contact photos by lower-case address, as `data:` URIs shared with the
+/// photo cache.
+pub type Photos = HashMap<String, Rc<str>>;
+
+/// A sender's photo as one article draws it.
+#[derive(Debug, Clone, Copy)]
+pub struct Face<'a> {
+    uri: &'a str,
+    /// The class that paints the photo on the avatar.
+    class: u64,
+    /// Whether this article carries the rule that paints it. Only the
+    /// first article from each sender does, so a long thread from one
+    /// person holds their photo once; a rule in one article reaches the
+    /// avatars in all of them.
+    paints: bool,
+}
+
+/// The address a message's face stands for.
+pub fn sender_address(meta: &MessageMeta) -> &str {
+    meta.from.as_ref().map_or("", |from| from.email.as_str())
+}
+
+/// The face of a message from `address`, after messages from `earlier`.
+pub fn face<'a>(photos: &'a Photos, address: &str, earlier: &[&str]) -> Option<Face<'a>> {
+    let key = address.trim().to_lowercase();
+    let uri = photos.get(&key)?;
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    Some(Face {
+        uri,
+        class: hasher.finish(),
+        paints: !earlier
+            .iter()
+            .any(|before| before.trim().eq_ignore_ascii_case(address.trim())),
+    })
+}
+
 /// One message's `<article>`, whole, as a patch puts it in place of the
 /// one before.
-pub fn article(view: &MessageView, me: &[String], photos: &HashMap<String, String>) -> String {
+pub fn article(view: &MessageView, me: &[String], face: Option<Face>) -> String {
     let mut html = String::new();
-    render_message(&mut html, view, me, photos);
+    render_message(&mut html, view, me, face);
     html
 }
 
-fn render_message(
-    html: &mut String,
-    view: &MessageView,
-    me: &[String],
-    photos: &HashMap<String, String>,
-) {
+fn render_message(html: &mut String, view: &MessageView, me: &[String], face: Option<Face>) {
     let meta = view.meta;
     // A closed message is also shut, which keeps its body out of layout: a
     // forty message newsletter thread with one message open finished
@@ -220,7 +260,6 @@ fn render_message(
         Some(from) => (from.display().to_string(), from.email.clone()),
         None => (gettext("Unknown sender"), String::new()),
     };
-    let photo = photos.get(address.trim().to_lowercase().as_str());
     // The whole header toggles the message, so the toggle is a layer
     // under it. The face and the name sit above that layer and open the
     // sender's card instead.
@@ -247,12 +286,22 @@ fn render_message(
         &gettext("Contact card for {person}"),
         &[("person", &name)],
     ));
-    match photo {
-        Some(uri) => {
+    match face {
+        Some(face) => {
+            let class = face.class;
+            // The URI is base64 the app wrote, which holds no quote and
+            // no "<" to end the rule or the element early.
+            if face.paints {
+                let _ = write!(
+                    html,
+                    "<style>.face-{class:016x}{{background:center/cover url(\"{uri}\")}}</style>",
+                    uri = face.uri,
+                );
+            }
             let _ = write!(
                 html,
-                "<a class=\"avatar\" href=\"{card}\" title=\"{contact}\" \
-                 aria-label=\"{opens}\"><img src=\"{uri}\" alt=\"\"></a>"
+                "<a class=\"avatar face-{class:016x}\" href=\"{card}\" title=\"{contact}\" \
+                 aria-label=\"{opens}\"></a>"
             );
         }
         None => {
@@ -857,7 +906,6 @@ a:focus-visible,summary:focus-visible,.event-slot:focus-visible{{outline:2px sol
 .fold{{position:relative}}\
 .avatar{{position:relative;grid-row:span 2;align-self:start;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;\
 justify-content:center;overflow:hidden;color:#fff;font-weight:700;font-size:15px;letter-spacing:0.02em;text-decoration:none}}\
-.avatar img{{width:100%;height:100%;object-fit:cover}}\
 .who{{position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 .name{{font-weight:800;color:inherit;text-decoration:none}}\
 .name:hover{{text-decoration:underline}}\
@@ -993,6 +1041,7 @@ mod tests {
     }
 
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     use mailrs_domain::{Address, Attachment, MessageBody, MessageMeta, ReadReport};
 
@@ -1122,7 +1171,7 @@ mod tests {
     fn page_with(
         subject: &str,
         views: Vec<MessageView>,
-        photos: &HashMap<String, String>,
+        photos: &Photos,
     ) -> String {
         let me = ["me@example.com".to_string()];
         render(
@@ -1298,13 +1347,10 @@ mod tests {
         let initials = page("Hi", vec![view()]);
         assert!(initials.contains(">AL</a>"), "{initials}");
 
-        let photos = HashMap::from([(
-            "ann@example.com".to_string(),
-            "data:image/jpeg;base64,AAAA".to_string(),
-        )]);
+        let photos = ann_s_photo();
         let with_photo = page_with("Hi", vec![view()], &photos);
         assert!(
-            with_photo.contains("<img src=\"data:image/jpeg;base64,AAAA\" alt=\"\">"),
+            with_photo.contains("background:center/cover url(\"data:image/jpeg;base64,AAAA\")"),
             "{with_photo}"
         );
         assert!(!with_photo.contains(">AL</a>"));
@@ -1315,6 +1361,40 @@ mod tests {
                 "{html}"
             );
         }
+    }
+
+    fn ann_s_photo() -> Photos {
+        HashMap::from([(
+            "ann@example.com".to_string(),
+            Rc::from("data:image/jpeg;base64,AAAA"),
+        )])
+    }
+
+    /// A long thread from one sender carries their photo once, however
+    /// many of their messages it holds, and every one shows it.
+    #[test]
+    fn a_sender_s_photo_is_in_the_page_once() {
+        let metas: Vec<MessageMeta> = (1..=3)
+            .map(|n| meta(&format!("m{n}"), "Ann Lee", &[]))
+            .collect();
+        let body = MessageBody::default();
+        let no_thumbs = HashMap::new();
+        let views = metas
+            .iter()
+            .map(|meta| MessageView {
+                meta,
+                body: BodyState::Loaded(&body),
+                expanded: false,
+                thumbnails: &no_thumbs,
+                event_slot: false,
+                receipt: None,
+                read_by: None,
+                sanitized: None,
+            })
+            .collect();
+        let html = page_with("Hi", views, &ann_s_photo());
+        assert_eq!(html.matches("base64,AAAA").count(), 1, "{html}");
+        assert_eq!(html.matches("class=\"avatar face-").count(), 3, "{html}");
     }
 
     #[test]

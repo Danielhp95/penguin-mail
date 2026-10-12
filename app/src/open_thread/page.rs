@@ -283,9 +283,16 @@ impl OpenThread {
 
     /// One message's article as the page draws it now.
     fn article(&self, meta: &MessageMeta) -> Article {
+        let earlier: Vec<&str> = self
+            .messages
+            .iter()
+            .take_while(|m| m.id != meta.id)
+            .map(render::sender_address)
+            .collect();
+        let face = render::face(&self.photos, render::sender_address(meta), &earlier);
         Article {
             message_id: meta.id.clone(),
-            html: render::article(&self.view(meta), &self.me, &self.photos),
+            html: render::article(&self.view(meta), &self.me, face),
         }
     }
 

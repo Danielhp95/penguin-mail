@@ -38,7 +38,7 @@ mod calendar_file;
 mod composing;
 mod dock_badge;
 mod hidden;
-mod photos;
+mod dictionaries;
 mod reminders;
 mod sending;
 mod storage;
@@ -104,16 +104,15 @@ pub struct App {
     /// list reloads only after new mail arrives.
     contacts: Contacts,
     pub(crate) contacts_stale: Cell<bool>,
-    /// Contact photos on disk, by lower-case address. Rows and the open
-    /// conversation read it; it is filled whenever the suggestions load.
-    photos: RefCell<HashMap<String, PathBuf>>,
-    /// The photos open conversations asked for, read into `data:` URIs.
-    photo_data: RefCell<photos::PhotoCache>,
+    /// Contact photos, read from disk as rows and conversations ask. The
+    /// files on disk are known whenever the suggestions load.
+    photos: Rc<crate::photos::ContactPhotos>,
     /// Messages waiting out the Undo Send delay.
     pending_sends: Cell<usize>,
     /// Hunspell dictionaries already read, by the languages they cover.
-    /// Every composer shares them, because reading one is slow.
-    dictionaries: RefCell<HashMap<Vec<String>, Rc<spell::Dictionaries>>>,
+    /// Every open composer shares them, because reading one is slow; they
+    /// go when the last composer using them closes.
+    dictionaries: dictionaries::Shared<spell::Dictionaries>,
     /// Which languages a dictionary is installed for, read once.
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
@@ -185,10 +184,9 @@ impl App {
             settings_broken: RefCell::new(opened.broken),
             contacts: Rc::new(RefCell::new(Rc::new(Vec::new()))),
             contacts_stale: Cell::new(true),
-            photos: RefCell::new(HashMap::new()),
-            photo_data: RefCell::new(photos::PhotoCache::default()),
+            photos: Rc::new(crate::photos::ContactPhotos::new()),
             pending_sends: Cell::new(0),
-            dictionaries: RefCell::new(HashMap::new()),
+            dictionaries: dictionaries::Shared::default(),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
             storage: RefCell::new(HashMap::new()),
@@ -599,7 +597,8 @@ impl App {
     /// Reading a Hunspell dictionary takes long enough to stutter a window,
     /// so this hands back a future: the composer opens straight away and the
     /// squiggles appear a moment later. Every composer that asks for the same
-    /// languages gets the same dictionaries back.
+    /// languages while another still holds them gets the same dictionaries
+    /// back.
     fn dictionaries(
         self: &Rc<Self>,
         account_id: AccountId,
@@ -618,8 +617,7 @@ impl App {
                 settings.spell_words.clone(),
             )
         };
-        if let Some(loaded) = self.dictionaries.borrow().get(&languages) {
-            let loaded = Rc::clone(loaded);
+        if let Some(loaded) = self.dictionaries.get(&languages) {
             for word in &words {
                 loaded.remember(word);
             }
@@ -632,9 +630,7 @@ impl App {
                 .await
                 .map(Rc::new)
                 .unwrap_or_else(|_| Rc::new(spell::Dictionaries::load(&[], &[])));
-            this.dictionaries
-                .borrow_mut()
-                .insert(key, Rc::clone(&loaded));
+            this.dictionaries.keep(key, &loaded);
             loaded
         })
     }
@@ -913,56 +909,40 @@ impl App {
                 .iter()
                 .filter_map(|p| Some((p.email.clone(), p.photo_file.clone()?)))
                 .collect();
-            let on_disk = gio::spawn_blocking(move || photos::on_disk(dir, files))
+            let on_disk = gio::spawn_blocking(move || crate::photos::on_disk(dir, files))
                 .await
                 .unwrap_or_default();
-            *this.photos.borrow_mut() = on_disk;
-            this.photo_data.borrow_mut().clear();
+            this.photos.set_files(on_disk);
             *this.contacts.borrow_mut() = Rc::new(found);
             this.tell_window(Notice::ContactsLoaded);
         });
     }
 
-    /// Every contact photo on disk, by lower-case address.
-    pub fn photos(&self) -> HashMap<String, PathBuf> {
-        self.photos.borrow().clone()
+    /// The contact photos rows and conversations show.
+    pub fn photos(&self) -> Rc<crate::photos::ContactPhotos> {
+        Rc::clone(&self.photos)
     }
 
     /// The photo of `email`, when a contact has one on this computer.
     pub fn photo(&self, email: &str) -> Option<PathBuf> {
-        self.photos
-            .borrow()
-            .get(&email.trim().to_lowercase())
-            .cloned()
+        self.photos.path(email)
     }
 
-    /// The contact photos of `addresses`, as `data:` URIs by lower-case
-    /// address. The conversation page loads nothing from disk or the
-    /// network, so a photo travels inline or not at all. A photo not read
-    /// yet is read off the main thread, and the open conversations are
-    /// drawn again once it arrives.
+    /// The contact photos of `addresses` already in memory, as `data:`
+    /// URIs by lower-case address. The conversation page loads nothing
+    /// from disk or the network, so a photo travels inline or not at all.
+    /// The rest are read off the main thread, and the window hears when
+    /// they arrive.
     pub fn sender_photos(
-        self: &Rc<Self>,
+        &self,
         addresses: impl Iterator<Item = String>,
-    ) -> HashMap<String, String> {
-        let lookup = self
-            .photo_data
-            .borrow_mut()
-            .lookup(addresses, |key| self.photo(key));
-        if !lookup.to_read.is_empty() {
-            let (this, files) = (Rc::clone(self), lookup.to_read);
-            glib::spawn_future_local(async move {
-                let Ok(read) = gio::spawn_blocking(move || photos::read(files)).await else {
-                    return;
-                };
-                let any = read.iter().any(|(_, data)| data.is_some());
-                this.photo_data.borrow_mut().store(read);
-                if any {
-                    this.tell_window(Notice::ContactsLoaded);
-                }
-            });
-        }
-        lookup.found
+    ) -> HashMap<String, Rc<str>> {
+        addresses
+            .filter_map(|address| {
+                let uri = self.photos.uri(&address)?;
+                Some((address.trim().to_lowercase(), uri))
+            })
+            .collect()
     }
 
     /// Deletes one account's contacts and photos from this computer and
@@ -987,8 +967,7 @@ impl App {
             {
                 tracing::warn!(error = %err, "could not delete the stored contacts");
             }
-            this.photos.borrow_mut().clear();
-            this.photo_data.borrow_mut().clear();
+            this.photos.set_files(HashMap::new());
             this.contacts_stale.set(true);
             this.reload_contacts();
         });

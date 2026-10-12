@@ -15,7 +15,7 @@
 //! The thread run's ports call it; nothing here draws.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -26,6 +26,7 @@ use mailrs_domain::{AccountId, MessageBody};
 use crate::core::{Core, Sync};
 use crate::open_thread::InlineImage;
 use crate::open_thread::run::InlinePictures as Found;
+use crate::recent::Weighed;
 
 /// Largest inline image a page shows.
 const INLINE_LIMIT: i64 = 5 * 1024 * 1024;
@@ -52,85 +53,14 @@ const THUMBNAIL_BYTES: usize = 4 * 1024 * 1024;
 /// A picture by account, message and Gmail's attachment id.
 pub(super) type Key = (AccountId, String, String);
 
-/// Something [`Recent`] keeps, and how many bytes it holds.
-pub(super) trait Weighed: Clone {
-    fn weight(&self) -> usize;
-}
-
-impl Weighed for String {
-    fn weight(&self) -> usize {
-        self.len()
-    }
-}
-
 impl Weighed for InlineImage {
     fn weight(&self) -> usize {
         self.bytes.len()
     }
 }
 
-/// Pictures kept by how recently they were used, up to `limit` bytes.
-#[derive(Debug)]
-pub(super) struct Recent<V = String> {
-    limit: usize,
-    used: usize,
-    clock: u64,
-    held: HashMap<Key, (V, u64)>,
-    /// The keys by when they were last used, oldest first.
-    order: BTreeMap<u64, Key>,
-}
-
-impl<V: Weighed> Recent<V> {
-    pub(super) fn new(limit: usize) -> Recent<V> {
-        Recent {
-            limit,
-            used: 0,
-            clock: 0,
-            held: HashMap::new(),
-            order: BTreeMap::new(),
-        }
-    }
-
-    /// The picture under `key`, which now counts as the most recent.
-    pub(super) fn get(&mut self, key: &Key) -> Option<V> {
-        self.clock += 1;
-        let (value, used_at) = self.held.get_mut(key)?;
-        self.order.remove(used_at);
-        *used_at = self.clock;
-        self.order.insert(self.clock, key.clone());
-        Some(value.clone())
-    }
-
-    /// Keeps `value` under `key`, letting the least recent pictures go
-    /// until it fits. A picture larger than the whole limit is not kept.
-    pub(super) fn put(&mut self, key: Key, value: V) {
-        if let Some((old, used_at)) = self.held.remove(&key) {
-            self.used -= old.weight();
-            self.order.remove(&used_at);
-        }
-        if value.weight() > self.limit {
-            return;
-        }
-        while self.used + value.weight() > self.limit {
-            let Some((_, oldest)) = self.order.pop_first() else {
-                break;
-            };
-            if let Some((gone, _)) = self.held.remove(&oldest) {
-                self.used -= gone.weight();
-            }
-        }
-        self.clock += 1;
-        self.used += value.weight();
-        self.order.insert(self.clock, key.clone());
-        self.held.insert(key, (value, self.clock));
-    }
-
-    /// Bytes kept now.
-    #[cfg(test)]
-    pub(super) fn used(&self) -> usize {
-        self.used
-    }
-}
+/// Pictures by [`Key`], kept up to a number of bytes.
+pub(super) type Recent<V = String> = crate::recent::Recent<Key, V>;
 
 /// One attachment to show as a picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -375,41 +305,6 @@ mod tests {
 
     fn key(n: u8) -> Key {
         (1, format!("m{n}"), format!("a{n}"))
-    }
-
-    #[test]
-    fn the_least_recent_picture_goes_first_once_the_bytes_run_out() {
-        let mut recent: Recent = Recent::new(10);
-        recent.put(key(1), "aaaa".into());
-        recent.put(key(2), "bbbb".into());
-        // Using the first makes the second the oldest.
-        assert_eq!(recent.get(&key(1)).as_deref(), Some("aaaa"));
-        recent.put(key(3), "cccc".into());
-        assert_eq!(recent.get(&key(2)), None);
-        assert!(recent.get(&key(1)).is_some() && recent.get(&key(3)).is_some());
-        assert_eq!(recent.used(), 8);
-    }
-
-    #[test]
-    fn a_picture_larger_than_the_whole_cache_is_not_kept() {
-        let mut recent: Recent = Recent::new(4);
-        recent.put(key(1), "ab".into());
-        recent.put(key(2), "abcdefgh".into());
-        assert_eq!(recent.get(&key(2)), None);
-        assert_eq!(
-            recent.get(&key(1)).as_deref(),
-            Some("ab"),
-            "nothing made room"
-        );
-    }
-
-    #[test]
-    fn keeping_a_picture_again_replaces_its_bytes() {
-        let mut recent: Recent = Recent::new(100);
-        recent.put(key(1), "abc".into());
-        recent.put(key(1), "abcdef".into());
-        assert_eq!(recent.used(), 6);
-        assert_eq!(recent.get(&key(1)).as_deref(), Some("abcdef"));
     }
 
     #[test]

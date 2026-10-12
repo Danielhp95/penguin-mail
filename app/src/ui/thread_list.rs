@@ -5,7 +5,7 @@
 mod entry;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -15,6 +15,7 @@ use mailrs_domain::{AccountId, ThreadSummary};
 use super::sidebar::DRAG_MAIL;
 use super::thread_row::{Avatar, OpenMenu, ThreadRow};
 use crate::diff::splice;
+use crate::photos::ContactPhotos;
 use mailrs_domain::translate::gettext;
 
 /// The keys that open the menu of the row with the focus, in GTK's
@@ -74,12 +75,13 @@ pub struct ThreadList {
     show_accounts: Rc<Cell<bool>>,
     /// Lower-case VIP addresses; their rows get a star.
     vips: Rc<RefCell<HashSet<String>>>,
-    /// Contact photos by lower-case sender address, already decoded. Empty
-    /// while contacts are off, and then rows show no face at all.
-    photos: Rc<RefCell<HashMap<String, gdk::Texture>>>,
-    /// How many times the window has handed over photos, so a photo that
-    /// decodes after a newer hand-over is dropped.
-    photos_asked: Cell<u64>,
+    /// Contact photos, read as rows ask for them. None, or none on disk
+    /// while contacts are off, and rows show no face at all.
+    photos: Rc<RefCell<Option<Rc<ContactPhotos>>>>,
+    /// The row widgets the list made, which it recycles as it scrolls.
+    made: Rc<RefCell<Vec<glib::WeakRef<ThreadRow>>>>,
+    /// Draws one row for the item it holds.
+    bind: Rc<dyn Fn(&gtk::ListItem)>,
     muted: Cell<bool>,
     /// The menu a right click on a row opens. It has no model until the
     /// window hands over the conversation's own through `set_row_menu`.
@@ -100,7 +102,9 @@ impl ThreadList {
         row_popover.set_has_arrow(false);
         row_popover.set_halign(gtk::Align::Start);
         let dragged: Rc<RefCell<Vec<ThreadSummary>>> = Rc::new(RefCell::new(Vec::new()));
+        let made: Rc<RefCell<Vec<glib::WeakRef<ThreadRow>>>> = Rc::default();
         let factory = gtk::SignalListItemFactory::new();
+        let making = Rc::clone(&made);
         let (all, drag_rows, picked) = (Rc::clone(&rows), Rc::clone(&dragged), selection.clone());
         let menu = row_popover.clone();
         factory.connect_setup(move |_, item| {
@@ -109,6 +113,7 @@ impl ThreadList {
                 .expect("list items are ListItems");
             let row = ThreadRow::default();
             row.set_item(item);
+            making.borrow_mut().push(row.downgrade());
             context_menu(&row, item, &picked, &menu);
             // Dragging a selected row takes the whole selection along.
             let source = gtk::DragSource::new();
@@ -154,13 +159,9 @@ impl ThreadList {
         let shown = Rc::clone(&show_accounts);
         let vips: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(HashSet::new()));
         let starred_people = Rc::clone(&vips);
-        let photos: Rc<RefCell<HashMap<String, gdk::Texture>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        let photos: Rc<RefCell<Option<Rc<ContactPhotos>>>> = Rc::default();
         let faces = Rc::clone(&photos);
-        factory.connect_bind(move |_, item| {
-            let item = item
-                .downcast_ref::<gtk::ListItem>()
-                .expect("list items are ListItems");
+        let bind: Rc<dyn Fn(&gtk::ListItem)> = Rc::new(move |item| {
             let (Some(row), Some(object)) = (
                 item.child().and_downcast::<ThreadRow>(),
                 item.item().and_downcast::<glib::BoxedAnyObject>(),
@@ -172,16 +173,21 @@ impl ThreadList {
             // recipient's, not the sender's own.
             let sender = super::thread_row::person(&thread).1.to_lowercase();
             let vip = starred_people.borrow().contains(&sender);
-            let faces = faces.borrow();
-            let avatar = if faces.is_empty() {
-                Avatar::Hidden
-            } else {
-                match faces.get(&sender) {
-                    Some(photo) => Avatar::Photo(photo),
-                    None => Avatar::Initials,
-                }
+            let faces = faces.borrow().clone().filter(|faces| faces.any());
+            let photo = faces.as_ref().and_then(|faces| faces.texture(&sender));
+            let avatar = match (&faces, &photo) {
+                (None, _) => Avatar::Hidden,
+                (Some(_), Some(photo)) => Avatar::Photo(photo),
+                (Some(_), None) => Avatar::Initials,
             };
             row.bind(&thread, shown.get(), vip, avatar);
+        });
+        let binds = Rc::clone(&bind);
+        factory.connect_bind(move |_, item| {
+            let item = item
+                .downcast_ref::<gtk::ListItem>()
+                .expect("list items are ListItems");
+            binds(item);
         });
         let view = gtk::ListView::builder()
             .model(&selection)
@@ -346,7 +352,8 @@ impl ThreadList {
             show_accounts,
             vips,
             photos,
-            photos_asked: Cell::new(0),
+            made,
+            bind,
             muted: Cell::new(false),
             row_popover,
         });
@@ -455,67 +462,49 @@ impl ThreadList {
         self.replace_all(&rows);
     }
 
-    /// The contact photos rows may show, by lower-case address. An empty
-    /// map takes the whole avatar column away, which is how the list looks
-    /// while contacts are off.
-    ///
-    /// A PNG or JPEG decodes on the spot. Any other format decodes on a
-    /// worker thread, and its face appears once it has.
-    pub fn set_photos(self: &Rc<Self>, files: &HashMap<String, std::path::PathBuf>) {
-        let asked = self.photos_asked.get() + 1;
-        self.photos_asked.set(asked);
-        let mut photos = self.photos.borrow_mut();
-        let before = photos.len();
-        photos.retain(|email, _| files.contains_key(email));
-        let mut later = Vec::new();
-        for (email, file) in files {
-            if photos.contains_key(email) {
-                continue;
+    /// Hands the list the contact photos its rows show. A photo not read
+    /// yet arrives later, and only the rows showing that person are drawn
+    /// again.
+    pub fn set_photos(self: &Rc<Self>, photos: Rc<ContactPhotos>) {
+        let list = Rc::downgrade(self);
+        photos.on_texture(move |addresses| match list.upgrade() {
+            Some(list) => {
+                list.photos_arrived(addresses);
+                true
             }
-            let bytes = match std::fs::read(file) {
-                Ok(bytes) => glib::Bytes::from_owned(bytes),
-                Err(err) => {
-                    tracing::debug!(error = %err, "could not read a contact photo");
-                    continue;
-                }
-            };
-            if !super::texture::decoded_in_process(&bytes) {
-                later.push((email.clone(), bytes));
-                continue;
-            }
-            match gdk::Texture::from_bytes(&bytes) {
-                Ok(texture) => {
-                    photos.insert(email.clone(), texture);
-                }
-                Err(err) => tracing::debug!(error = %err, "could not read a contact photo"),
-            }
-        }
-        let changed = before != photos.len();
-        drop(photos);
-        if changed {
-            self.rebind();
-        }
-        if later.is_empty() {
-            return;
-        }
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let mut decoded = Vec::new();
-            for (email, bytes) in later {
-                if let Some(texture) = super::texture::decode(bytes).await {
-                    decoded.push((email, texture));
-                }
-            }
-            // A newer set of photos replaced this one while it decoded.
-            let Some(list) = weak.upgrade() else {
-                return;
-            };
-            if decoded.is_empty() || list.photos_asked.get() != asked {
-                return;
-            }
-            list.photos.borrow_mut().extend(decoded);
-            list.rebind();
+            None => false,
         });
+        *self.photos.borrow_mut() = Some(photos);
+        self.rebind();
+    }
+
+    /// Draws every row again after the photos on disk changed: contacts
+    /// loaded, or were turned off.
+    pub fn photos_changed(&self) {
+        self.rebind();
+    }
+
+    /// Draws again the rows on screen whose person's photo just arrived.
+    fn photos_arrived(&self, addresses: &[String]) {
+        let rows: Vec<ThreadRow> = {
+            let mut made = self.made.borrow_mut();
+            made.retain(|row| row.upgrade().is_some());
+            made.iter().filter_map(|row| row.upgrade()).collect()
+        };
+        for row in rows {
+            let Some(item) = row.item() else { continue };
+            let showing = item
+                .item()
+                .and_downcast::<glib::BoxedAnyObject>()
+                .is_some_and(|object| {
+                    let thread = object.borrow::<Row>();
+                    let person = super::thread_row::person(&thread).1;
+                    addresses.iter().any(|a| a.eq_ignore_ascii_case(person))
+                });
+            if showing {
+                (self.bind)(&item);
+            }
+        }
     }
 
     /// Marks rows from these addresses as VIP mail.
