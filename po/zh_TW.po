@@ -1103,19 +1103,21 @@ msgstr ""
 "\n"
 "{text}"
 
-#: app/src/assistant/run.rs:1720 app/src/assistant/run.rs:1758
-msgid "Hide My Email works with Gmail accounts."
-msgstr "[隱藏電子郵件地址] 可用於 Gmail 帳號。"
+#: app/src/assistant/run.rs:1717
+msgid ""
+"Hide My Email needs masked addresses or labels, and {provider} offers "
+"neither on this account."
+msgstr "隱藏電子郵件地址需要遮罩地址或標籤，而 {provider} 在這個帳號上兩者皆未提供。"
 
-#: app/src/assistant/run.rs:1763
+#: app/src/assistant/run.rs:1781
 msgid "Turn off {address}? Mail sent to it will go to the Trash."
 msgstr "是否停用 {address}？寄至該地址的郵件會移至 [垃圾桶]。"
 
-#: app/src/assistant/run.rs:1767
+#: app/src/assistant/run.rs:1785
 msgid "Turn {address} back on? Mail sent to it will arrive again."
 msgstr "是否重新啟用 {address}？寄至該地址的郵件會再次送達。"
 
-#: app/src/assistant/run.rs:1876
+#: app/src/assistant/run.rs:1894
 msgid ""
 "Move mail from {sender} to {category} in {account}, and send their future "
 "mail there too?"
@@ -1123,7 +1125,7 @@ msgstr ""
 "是否將 {sender} 的郵件移至 {category}（帳號：{account}），並將該寄件者日後寄"
 "來的郵件也移至此處？"
 
-#: app/src/assistant/run.rs:1888
+#: app/src/assistant/run.rs:1906
 msgid ""
 "Move mail from {sender} to {category} in {account}, and add a {provider} "
 "rule for their future mail?"
@@ -1373,115 +1375,115 @@ msgstr "正在讀取隱藏的地址"
 msgid "Making a hidden address"
 msgstr "正在建立隱藏的地址"
 
-#: app/src/assistant/run/catalog.rs:792
+#: app/src/assistant/run/catalog.rs:793
 msgid "Changing a hidden address"
 msgstr "正在變更隱藏的地址"
 
-#: app/src/assistant/run/catalog.rs:800
+#: app/src/assistant/run/catalog.rs:801
 msgid "Opening a conversation"
 msgstr "正在開啟對話"
 
-#: app/src/assistant/run/catalog.rs:808
+#: app/src/assistant/run/catalog.rs:809
 msgid "Muting conversations"
 msgstr "正在靜音對話"
 
-#: app/src/assistant/run/catalog.rs:822
+#: app/src/assistant/run/catalog.rs:823
 msgid "Deleting mail forever"
 msgstr "正在永久刪除郵件"
 
-#: app/src/assistant/run/catalog.rs:830
+#: app/src/assistant/run/catalog.rs:831
 msgid "Scheduling a message"
 msgstr "正在排程郵件"
 
-#: app/src/assistant/run/catalog.rs:852
+#: app/src/assistant/run/catalog.rs:853
 msgid "Sending a waiting message"
 msgstr "正在傳送等候中的郵件"
 
-#: app/src/assistant/run/catalog.rs:860
+#: app/src/assistant/run/catalog.rs:861
 msgid "Canceling a scheduled message"
 msgstr "正在取消排程郵件"
 
-#: app/src/assistant/run/catalog.rs:868
+#: app/src/assistant/run/catalog.rs:869
 msgid "Deleting from the Outbox"
 msgstr "正在從寄件匣刪除郵件"
 
-#: app/src/assistant/run/catalog.rs:876
+#: app/src/assistant/run/catalog.rs:877
 msgid "Changing when a message goes"
 msgstr "正在變更郵件傳送時間"
 
-#: app/src/assistant/run/catalog.rs:889
+#: app/src/assistant/run/catalog.rs:890
 msgid "Reading reminders"
 msgstr "正在讀取提醒"
 
-#: app/src/assistant/run/catalog.rs:897
+#: app/src/assistant/run/catalog.rs:898
 msgid "Canceling a reminder"
 msgstr "正在取消提醒"
 
-#: app/src/assistant/run/catalog.rs:905
+#: app/src/assistant/run/catalog.rs:906
 msgid "Changing a reminder"
 msgstr "正在變更提醒"
 
-#: app/src/assistant/run/catalog.rs:918
+#: app/src/assistant/run/catalog.rs:919
 msgid "Unmuting conversations"
 msgstr "正在取消對話靜音"
 
-#: app/src/assistant/run/catalog.rs:926
+#: app/src/assistant/run/catalog.rs:927
 msgid "Undoing the last change"
 msgstr "正在復原上次變更"
 
-#: app/src/assistant/run/catalog.rs:934
+#: app/src/assistant/run/catalog.rs:935
 msgid "Reading templates"
 msgstr "正在讀取範本"
 
-#: app/src/assistant/run/catalog.rs:942
+#: app/src/assistant/run/catalog.rs:943
 msgid "Writing from a template"
 msgstr "正在使用範本撰寫"
 
-#: app/src/assistant/run/catalog.rs:957
+#: app/src/assistant/run/catalog.rs:958
 msgid "Finding your newsletters"
 msgstr "正在尋找電子報"
 
-#: app/src/assistant/run/catalog.rs:970
+#: app/src/assistant/run/catalog.rs:971
 msgid "Unsubscribing"
 msgstr "正在取消訂閱"
 
-#: app/src/assistant/run/catalog.rs:1001
+#: app/src/assistant/run/catalog.rs:1002
 msgid "Reading an attachment"
 msgstr "正在讀取附件"
 
-#: app/src/assistant/run/catalog.rs:1015
+#: app/src/assistant/run/catalog.rs:1016
 msgid "Looking up a contact"
 msgstr "正在查詢聯絡人"
 
-#: app/src/assistant/run/catalog.rs:1023
+#: app/src/assistant/run/catalog.rs:1024
 msgid "Reading the calendar"
 msgstr "正在讀取行事曆"
 
-#: app/src/assistant/run/catalog.rs:1037
+#: app/src/assistant/run/catalog.rs:1038
 msgid "Finding free time"
 msgstr "正在尋找空閒時間"
 
-#: app/src/assistant/run/catalog.rs:1055
+#: app/src/assistant/run/catalog.rs:1056
 msgid "Listing the calendars"
 msgstr "正在列出行事曆"
 
-#: app/src/assistant/run/catalog.rs:1063
+#: app/src/assistant/run/catalog.rs:1064
 msgid "Adding an event"
 msgstr "正在新增活動"
 
-#: app/src/assistant/run/catalog.rs:1082
+#: app/src/assistant/run/catalog.rs:1083
 msgid "Changing an event"
 msgstr "正在變更活動"
 
-#: app/src/assistant/run/catalog.rs:1102
+#: app/src/assistant/run/catalog.rs:1103
 msgid "Deleting an event"
 msgstr "正在刪除活動"
 
-#: app/src/assistant/run/catalog.rs:1116
+#: app/src/assistant/run/catalog.rs:1117
 msgid "Answering an invitation"
 msgstr "正在回覆邀請"
 
-#: app/src/assistant/run/catalog.rs:1162 app/src/assistant/turn.rs:287
+#: app/src/assistant/run/catalog.rs:1163 app/src/assistant/turn.rs:287
 msgid "Working"
 msgstr "處理中"
 
@@ -10848,7 +10850,7 @@ msgid ""
 "also keep it as a draft."
 msgstr "伺服器已在草稿以外保存了這封完全相同的郵件，因此無法再將它保存為草稿。"
 
-#: sync/src/services/jmap/sieve.rs:32
+#: sync/src/services/jmap/sieve.rs:37
 msgid "The server did not take the rules."
 msgstr "伺服器未接受這些規則。"
 
@@ -10945,44 +10947,44 @@ msgstr ""
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr "Penguin Mail 保留收件匣、寄件備份、草稿、垃圾桶、垃圾郵件及封存。"
 
-#: sync/src/services/sieve.rs:95
+#: sync/src/services/sieve.rs:186
 msgid ""
 "{provider} offers no encrypted connection for rules, so Penguin Mail does "
 "not send your password there."
 msgstr ""
 "{provider} 未提供規則的加密連線，因此 Penguin Mail 不會將密碼傳送至該處。"
 
-#: sync/src/services/sieve.rs:108
+#: sync/src/services/sieve.rs:199
 msgid ""
 "{provider} cannot run this rule: its server lacks the Sieve extension "
 "“{extension}”."
 msgstr "{provider} 無法執行此規則：伺服器缺少 Sieve 擴充功能「{extension}」。"
 
-#: sync/src/services/sieve.rs:113
+#: sync/src/services/sieve.rs:204
 msgid "The folder this rule files into is not on the server yet."
 msgstr "此規則使用的郵件資料夾尚未在伺服器上建立。"
 
-#: sync/src/services/sieve.rs:116
+#: sync/src/services/sieve.rs:207
 msgid "A rule on {provider} cannot keep mail out of Spam."
 msgstr "{provider} 上的規則無法讓郵件避開垃圾郵件。"
 
-#: sync/src/services/sieve.rs:120
+#: sync/src/services/sieve.rs:211
 msgid "{provider} does not mark mail as important."
 msgstr "{provider} 不會將郵件標示為重要。"
 
-#: sync/src/services/sieve.rs:124
+#: sync/src/services/sieve.rs:215
 msgid "A rule can file mail into one folder."
 msgstr "規則可將郵件歸入一個資料夾。"
 
-#: sync/src/services/sieve.rs:127
+#: sync/src/services/sieve.rs:218
 msgid "Say which mail the rule is for"
 msgstr "請指定此規則適用的郵件"
 
-#: sync/src/services/sieve.rs:129
+#: sync/src/services/sieve.rs:220
 msgid "Choose what the rule does"
 msgstr "請選擇規則執行的操作"
 
-#: sync/src/services/sieve.rs:201
+#: sync/src/services/sieve.rs:306
 msgid "The rule is read-only."
 msgstr "此為唯讀規則。"
 
@@ -11076,6 +11078,9 @@ msgstr "標示為非垃圾郵件"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "移至 {folder}"
+
+#~ msgid "Hide My Email works with Gmail accounts."
+#~ msgstr "[隱藏電子郵件地址] 可用於 Gmail 帳號。"
 
 #~ msgid ""
 #~ "{provider} does not let an API token change the automatic reply. Change "

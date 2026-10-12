@@ -1182,19 +1182,21 @@ msgstr ""
 "\n"
 "{text}"
 
-#: app/src/assistant/run.rs:1720 app/src/assistant/run.rs:1758
-msgid "Hide My Email works with Gmail accounts."
-msgstr "O Ocultar o meu e-mail funciona com contas Gmail."
+#: app/src/assistant/run.rs:1717
+msgid ""
+"Hide My Email needs masked addresses or labels, and {provider} offers "
+"neither on this account."
+msgstr "O Ocultar o meu e-mail precisa de endereços mascarados ou de etiquetas, e {provider} não oferece nenhum dos dois nesta conta."
 
-#: app/src/assistant/run.rs:1763
+#: app/src/assistant/run.rs:1781
 msgid "Turn off {address}? Mail sent to it will go to the Trash."
 msgstr "Desativar {address}? O correio enviado para lá passa a ir para o lixo."
 
-#: app/src/assistant/run.rs:1767
+#: app/src/assistant/run.rs:1785
 msgid "Turn {address} back on? Mail sent to it will arrive again."
 msgstr "Reativar {address}? O correio enviado para lá volta a chegar."
 
-#: app/src/assistant/run.rs:1876
+#: app/src/assistant/run.rs:1894
 msgid ""
 "Move mail from {sender} to {category} in {account}, and send their future "
 "mail there too?"
@@ -1202,7 +1204,7 @@ msgstr ""
 "Mover o correio de {sender} para {category} em {account} e enviar também "
 "para lá o correio futuro?"
 
-#: app/src/assistant/run.rs:1888
+#: app/src/assistant/run.rs:1906
 msgid ""
 "Move mail from {sender} to {category} in {account}, and add a {provider} "
 "rule for their future mail?"
@@ -1451,115 +1453,115 @@ msgstr "A ler endereços ocultos"
 msgid "Making a hidden address"
 msgstr "A criar um endereço oculto"
 
-#: app/src/assistant/run/catalog.rs:792
+#: app/src/assistant/run/catalog.rs:793
 msgid "Changing a hidden address"
 msgstr "A alterar um endereço oculto"
 
-#: app/src/assistant/run/catalog.rs:800
+#: app/src/assistant/run/catalog.rs:801
 msgid "Opening a conversation"
 msgstr "A abrir uma conversa"
 
-#: app/src/assistant/run/catalog.rs:808
+#: app/src/assistant/run/catalog.rs:809
 msgid "Muting conversations"
 msgstr "A silenciar conversas"
 
-#: app/src/assistant/run/catalog.rs:822
+#: app/src/assistant/run/catalog.rs:823
 msgid "Deleting mail forever"
 msgstr "A eliminar correio definitivamente"
 
-#: app/src/assistant/run/catalog.rs:830
+#: app/src/assistant/run/catalog.rs:831
 msgid "Scheduling a message"
 msgstr "A agendar uma mensagem"
 
-#: app/src/assistant/run/catalog.rs:852
+#: app/src/assistant/run/catalog.rs:853
 msgid "Sending a waiting message"
 msgstr "A enviar uma mensagem em espera"
 
-#: app/src/assistant/run/catalog.rs:860
+#: app/src/assistant/run/catalog.rs:861
 msgid "Canceling a scheduled message"
 msgstr "A cancelar uma mensagem agendada"
 
-#: app/src/assistant/run/catalog.rs:868
+#: app/src/assistant/run/catalog.rs:869
 msgid "Deleting from the Outbox"
 msgstr "A eliminar da caixa de saída"
 
-#: app/src/assistant/run/catalog.rs:876
+#: app/src/assistant/run/catalog.rs:877
 msgid "Changing when a message goes"
 msgstr "A mudar a hora de envio"
 
-#: app/src/assistant/run/catalog.rs:889
+#: app/src/assistant/run/catalog.rs:890
 msgid "Reading reminders"
 msgstr "A ler os lembretes"
 
-#: app/src/assistant/run/catalog.rs:897
+#: app/src/assistant/run/catalog.rs:898
 msgid "Canceling a reminder"
 msgstr "A cancelar um lembrete"
 
-#: app/src/assistant/run/catalog.rs:905
+#: app/src/assistant/run/catalog.rs:906
 msgid "Changing a reminder"
 msgstr "A alterar um lembrete"
 
-#: app/src/assistant/run/catalog.rs:918
+#: app/src/assistant/run/catalog.rs:919
 msgid "Unmuting conversations"
 msgstr "A reativar o som de conversas"
 
-#: app/src/assistant/run/catalog.rs:926
+#: app/src/assistant/run/catalog.rs:927
 msgid "Undoing the last change"
 msgstr "A anular a última alteração"
 
-#: app/src/assistant/run/catalog.rs:934
+#: app/src/assistant/run/catalog.rs:935
 msgid "Reading templates"
 msgstr "A ler modelos"
 
-#: app/src/assistant/run/catalog.rs:942
+#: app/src/assistant/run/catalog.rs:943
 msgid "Writing from a template"
 msgstr "A escrever a partir de um modelo"
 
-#: app/src/assistant/run/catalog.rs:957
+#: app/src/assistant/run/catalog.rs:958
 msgid "Finding your newsletters"
 msgstr "A procurar as suas newsletters"
 
-#: app/src/assistant/run/catalog.rs:970
+#: app/src/assistant/run/catalog.rs:971
 msgid "Unsubscribing"
 msgstr "A cancelar a subscrição"
 
-#: app/src/assistant/run/catalog.rs:1001
+#: app/src/assistant/run/catalog.rs:1002
 msgid "Reading an attachment"
 msgstr "A ler um anexo"
 
-#: app/src/assistant/run/catalog.rs:1015
+#: app/src/assistant/run/catalog.rs:1016
 msgid "Looking up a contact"
 msgstr "A procurar um contacto"
 
-#: app/src/assistant/run/catalog.rs:1023
+#: app/src/assistant/run/catalog.rs:1024
 msgid "Reading the calendar"
 msgstr "A ler o calendário"
 
-#: app/src/assistant/run/catalog.rs:1037
+#: app/src/assistant/run/catalog.rs:1038
 msgid "Finding free time"
 msgstr "A procurar tempo livre"
 
-#: app/src/assistant/run/catalog.rs:1055
+#: app/src/assistant/run/catalog.rs:1056
 msgid "Listing the calendars"
 msgstr "A listar os calendários"
 
-#: app/src/assistant/run/catalog.rs:1063
+#: app/src/assistant/run/catalog.rs:1064
 msgid "Adding an event"
 msgstr "A adicionar um evento"
 
-#: app/src/assistant/run/catalog.rs:1082
+#: app/src/assistant/run/catalog.rs:1083
 msgid "Changing an event"
 msgstr "A alterar um evento"
 
-#: app/src/assistant/run/catalog.rs:1102
+#: app/src/assistant/run/catalog.rs:1103
 msgid "Deleting an event"
 msgstr "A eliminar um evento"
 
-#: app/src/assistant/run/catalog.rs:1116
+#: app/src/assistant/run/catalog.rs:1117
 msgid "Answering an invitation"
 msgstr "A responder a um convite"
 
-#: app/src/assistant/run/catalog.rs:1162 app/src/assistant/turn.rs:287
+#: app/src/assistant/run/catalog.rs:1163 app/src/assistant/turn.rs:287
 msgid "Working"
 msgstr "A trabalhar"
 
@@ -11339,7 +11341,7 @@ msgstr ""
 "O servidor já guarda esta mesma mensagem fora dos Rascunhos, por isso não a "
 "pode guardar também como rascunho."
 
-#: sync/src/services/jmap/sieve.rs:32
+#: sync/src/services/jmap/sieve.rs:37
 msgid "The server did not take the rules."
 msgstr "O servidor não aceitou as regras."
 
@@ -11446,7 +11448,7 @@ msgstr ""
 "O Penguin Mail mantém Caixa de entrada, Enviadas, Rascunhos, Lixo, Spam e "
 "Arquivo."
 
-#: sync/src/services/sieve.rs:95
+#: sync/src/services/sieve.rs:186
 msgid ""
 "{provider} offers no encrypted connection for rules, so Penguin Mail does "
 "not send your password there."
@@ -11454,7 +11456,7 @@ msgstr ""
 "{provider} não oferece uma ligação cifrada para regras, por isso o Penguin "
 "Mail não envia lá a sua palavra-passe."
 
-#: sync/src/services/sieve.rs:108
+#: sync/src/services/sieve.rs:199
 msgid ""
 "{provider} cannot run this rule: its server lacks the Sieve extension "
 "“{extension}”."
@@ -11462,31 +11464,31 @@ msgstr ""
 "{provider} não consegue executar esta regra: o servidor não tem a extensão "
 "Sieve “{extension}”."
 
-#: sync/src/services/sieve.rs:113
+#: sync/src/services/sieve.rs:204
 msgid "The folder this rule files into is not on the server yet."
 msgstr "A pasta para onde esta regra arquiva ainda não está no servidor."
 
-#: sync/src/services/sieve.rs:116
+#: sync/src/services/sieve.rs:207
 msgid "A rule on {provider} cannot keep mail out of Spam."
 msgstr "Uma regra em {provider} não consegue manter mensagens fora do Spam."
 
-#: sync/src/services/sieve.rs:120
+#: sync/src/services/sieve.rs:211
 msgid "{provider} does not mark mail as important."
 msgstr "{provider} não marca mensagens como importantes."
 
-#: sync/src/services/sieve.rs:124
+#: sync/src/services/sieve.rs:215
 msgid "A rule can file mail into one folder."
 msgstr "Uma regra pode arquivar mensagens numa só pasta."
 
-#: sync/src/services/sieve.rs:127
+#: sync/src/services/sieve.rs:218
 msgid "Say which mail the rule is for"
 msgstr "Indique a que mensagens se aplica a regra"
 
-#: sync/src/services/sieve.rs:129
+#: sync/src/services/sieve.rs:220
 msgid "Choose what the rule does"
 msgstr "Escolha o que a regra faz"
 
-#: sync/src/services/sieve.rs:201
+#: sync/src/services/sieve.rs:306
 msgid "The rule is read-only."
 msgstr "A regra é só de leitura."
 
@@ -11588,6 +11590,9 @@ msgstr "Marcar como não sendo spam"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "Mover para {folder}"
+
+#~ msgid "Hide My Email works with Gmail accounts."
+#~ msgstr "O Ocultar o meu e-mail funciona com contas Gmail."
 
 #~ msgid ""
 #~ "{provider} does not let an API token change the automatic reply. Change "
