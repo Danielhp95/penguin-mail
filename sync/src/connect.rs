@@ -8,6 +8,7 @@ use mailrs_domain::{Account, AccountId, AccountState, Provider};
 use mailrs_gmail::{Granted, GmailClient, GmailError, OAuthClient, TokenStore};
 use mailrs_graph::MicrosoftClient;
 use mailrs_imap::{ImapClient, Login, SmtpClient};
+use mailrs_jmap::oauth::OAuthSession;
 use mailrs_pop3::Pop3Client;
 use mailrs_sieve::client::{Login as SieveLogin, ManageSieveClient};
 use mailrs_store::servers::{self, Pop3Servers, Saved, Servers};
@@ -401,7 +402,7 @@ pub(crate) async fn connect_imap_within<P: PasswordStore + 'static>(
     let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
     // The password goes only to a server the person confirmed.
     for service in found.into_iter().filter(|f| f.confirmed) {
-        services = attach(services, &service, &secret, account, &provider_name);
+        services = attach(services, &service, &secret, None, account, &provider_name);
     }
     if services.rules.is_none() {
         services = services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), id)));
@@ -462,15 +463,15 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
     let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
     // The password goes only to a server the person confirmed.
     for service in found.into_iter().filter(|f| f.confirmed) {
-        services = attach(services, &service, &secret, account, &provider_name);
+        services = attach(services, &service, &secret, None, account, &provider_name);
     }
     Ok(services)
 }
 
-/// The credentials a saved JMAP account signs in with.
+/// The credentials a saved JMAP account signs in with, for a password or
+/// a token. An OAuth account signs in through its [`OAuthSession`] instead.
 pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: String) -> mailrs_jmap::Auth {
     match saved.auth {
-        // An OAuth sign-in sends its access token as a Bearer token.
         mailrs_store::jmap::JmapAuth::Bearer | mailrs_store::jmap::JmapAuth::OAuth => mailrs_jmap::Auth::Bearer(secret),
         mailrs_store::jmap::JmapAuth::Basic => mailrs_jmap::Auth::Basic {
             user: saved.user_name.clone().unwrap_or_else(|| address.to_string()),
@@ -479,13 +480,57 @@ pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: Str
     }
 }
 
+/// What a JMAP account signs in with once its secret is read.
+pub(crate) enum JmapSignIn {
+    /// A password or a token, as the row's `auth` says.
+    Secret(String),
+    /// The browser sign-in's tokens, which JMAP and the account's CalDAV
+    /// and CardDAV servers share, so a rotation is kept once.
+    OAuth(Arc<OAuthSession>),
+}
+
+/// Runs `keep` for each rotated refresh token: it writes the token to
+/// `tokens` under `id`, off the runtime. Only the token goes in; the
+/// session neither logs nor shows the error text it answers.
+pub(crate) fn keep_rotations<P: PasswordStore + 'static>(
+    tokens: Arc<P>,
+    id: AccountId,
+) -> impl Fn(String) -> futures::future::BoxFuture<'static, Result<(), String>> + Send + Sync + 'static {
+    move |token| {
+        let tokens = Arc::clone(&tokens);
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || tokens.save(id, &token))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())
+        })
+    }
+}
+
+/// A JMAP OAuth session as a calendar or contacts server's token source.
+struct SessionTokens(Arc<OAuthSession>);
+
+/// `session` as the token source of the account's CalDAV and CardDAV
+/// clients, so they send the token JMAP sends and refresh through it.
+pub(crate) fn session_tokens(session: Arc<OAuthSession>) -> Arc<dyn mailrs_dav::TokenSource> {
+    Arc::new(SessionTokens(session))
+}
+
+impl mailrs_dav::TokenSource for SessionTokens {
+    fn token(&self, force: bool) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
+        Box::pin(async move { self.0.bearer(force).await.map_err(|e| e.to_string()) })
+    }
+}
+
 /// The services for a JMAP account, from its session row and the secret in
 /// `jmap`. Without either, the store records that the account needs to
 /// sign in again before this answers `NeedsReauth`. Each service follows
 /// the session's capabilities; a confirmed CalDAV, CardDAV or ManageSieve
 /// server serves what the session lacks, signed in with the app password
-/// in `dav`, or the account's own password over Basic. Nothing here
-/// connects; the client reads the session when sync first asks.
+/// in `dav`, or the account's own password over Basic. An account signed
+/// in through the browser keeps its refresh token in `jmap`, and its
+/// CalDAV and CardDAV servers take the same OAuth session's token. Nothing
+/// here connects; the client reads the session when sync first asks.
 pub async fn connect_jmap<P: PasswordStore + 'static>(
     db: &Db,
     jmap: Arc<P>,
@@ -506,15 +551,54 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
 ) -> Result<AccountServices, SyncError> {
     let id = account.id;
     let saved = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::jmap::load(c, id))).await?;
-    let secret = read_secret(jmap, id, wait).await?;
-    let (Some(saved), Some(secret)) = (saved, secret) else {
+    let secret = read_secret(Arc::clone(&jmap), id, wait).await?;
+    let sign_in = match (saved, secret) {
+        (Some(saved), Some(secret)) => match (&saved.auth, &saved.oauth) {
+            (mailrs_store::jmap::JmapAuth::OAuth, Some(client)) => {
+                let client = mailrs_jmap::oauth::OAuthClient {
+                    client_id: client.client_id.clone(),
+                    token_endpoint: client.token_endpoint.clone(),
+                    resource: saved.session_url.clone(),
+                };
+                let session = OAuthSession::new(client, secret).on_rotated(keep_rotations(jmap, id));
+                Some((saved, JmapSignIn::OAuth(Arc::new(session))))
+            }
+            // An OAuth row that lost its client cannot refresh.
+            (mailrs_store::jmap::JmapAuth::OAuth, None) => None,
+            _ => Some((saved, JmapSignIn::Secret(secret))),
+        },
+        _ => None,
+    };
+    let Some((saved, sign_in)) = sign_in else {
         let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
         bounded(id, "the mail store", wait, marked).await?;
         return Err(BackendError::NeedsReauth.into());
     };
-    let secret_for_dav = secret.clone();
-    let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth_of(&saved, &account.email, secret))
-        .map_err(crate::services::jmap::backend)?;
+    jmap_services(db, dav, account, saved, sign_in, window_days, wait).await
+}
+
+/// [`connect_jmap`] once the row and what signs it in are read.
+pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
+    db: &Db,
+    dav: Arc<P>,
+    account: &Account,
+    saved: mailrs_store::jmap::JmapSaved,
+    sign_in: JmapSignIn,
+    window_days: i64,
+    wait: Duration,
+) -> Result<AccountServices, SyncError> {
+    let id = account.id;
+    let (auth, basic_password, bearer) = match sign_in {
+        JmapSignIn::OAuth(session) => {
+            let bearer = session_tokens(Arc::clone(&session));
+            (mailrs_jmap::Auth::OAuth(session), None, Some(bearer))
+        }
+        JmapSignIn::Secret(secret) => {
+            let basic = (saved.auth == mailrs_store::jmap::JmapAuth::Basic).then(|| secret.clone());
+            (auth_of(&saved, &account.email, secret), basic, None)
+        }
+    };
+    let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth).map_err(crate::services::jmap::backend)?;
     // The adapter and the Sieve rules share one client: clones share the
     // session, the pool and the permits.
     let jmap_api = Arc::new(crate::AnyJmap::from(client.clone()));
@@ -531,11 +615,15 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
     };
     let mut services = AccountServices::jmap(client, settings);
     // DAV and ManageSieve servers take the account password over Basic, or
-    // the app password kept beside a token.
-    let dav_secret = match read_secret(dav, id, wait).await? {
-        Some(password) => Some(password),
-        None if saved.auth == mailrs_store::jmap::JmapAuth::Basic => Some(secret_for_dav),
-        None => None,
+    // the app password kept beside a token. An OAuth account's CalDAV and
+    // CardDAV servers take its bearer token, and its login carries no
+    // password.
+    let dav_secret = match &bearer {
+        Some(_) => Some(String::new()),
+        None => match read_secret(dav, id, wait).await? {
+            Some(password) => Some(password),
+            None => basic_password,
+        },
     };
     if saved.offers(mailrs_jmap::CONTACTS)
         && let AnyMail::Jmap(adapter) = services.mail.clone()
@@ -555,15 +643,17 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
     if let Some(secret) = &dav_secret {
         let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
         // The password goes only to a server the person confirmed, and
-        // never for a service the session already gives.
+        // never for a service the session already gives. ManageSieve takes
+        // no bearer token here, so an OAuth account keeps its rules apart
+        // from such a server.
         for service in found.into_iter().filter(|f| f.confirmed) {
             let skip = match service.kind {
                 ServiceKind::CardDav => saved.offers(mailrs_jmap::CONTACTS),
-                ServiceKind::Sieve => saved.offers(mailrs_jmap::SIEVE),
+                ServiceKind::Sieve => saved.offers(mailrs_jmap::SIEVE) || bearer.is_some(),
                 ServiceKind::CalDav => saved.offers(mailrs_jmap::CALENDARS),
             };
             if !skip {
-                services = attach(services, &service, secret, account, account.provider_name());
+                services = attach(services, &service, secret, bearer.clone(), account, account.provider_name());
             }
         }
     }
@@ -584,18 +674,24 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
 /// offers. A server that cannot be set up is logged and left out, so the
 /// account keeps its mail. A Sieve row is passed over for an account whose
 /// folders live on this computer, as a POP3 account's do: its mail never
-/// reaches server rules.
+/// reaches server rules. A CalDAV or CardDAV server given `bearer` sends
+/// its token in place of the password.
 fn attach(
     services: AccountServices,
     service: &FoundService,
     secret: &str,
+    bearer: Option<Arc<dyn mailrs_dav::TokenSource>>,
     account: &Account,
     provider_name: &str,
 ) -> AccountServices {
     let id = account.id;
+    let with_bearer = |client: DavClient| match &bearer {
+        Some(source) => client.with_bearer(Arc::clone(source)),
+        None => client,
+    };
     match service.kind {
         ServiceKind::CalDav => {
-            match DavClient::new(&service.url, DavKind::Calendar, DavLogin::new(&service.user_name, secret)) {
+            match DavClient::new(&service.url, DavKind::Calendar, DavLogin::new(&service.user_name, secret)).map(with_bearer) {
                 Ok(client) => {
                     let calendar = CalDav::new(Arc::new(AnyDav::from(client)), services.mail.clone(), vec![account.email.clone()]);
                     services.with_calendar(AnyCalendar::Dav(calendar))
@@ -607,7 +703,7 @@ fn attach(
             }
         }
         ServiceKind::CardDav => {
-            match DavClient::new(&service.url, DavKind::AddressBook, DavLogin::new(&service.user_name, secret)) {
+            match DavClient::new(&service.url, DavKind::AddressBook, DavLogin::new(&service.user_name, secret)).map(with_bearer) {
                 Ok(client) => services.with_contacts(AnyContacts::Dav(CardDav::new(Arc::new(AnyDav::from(client))))),
                 Err(err) => {
                     tracing::warn!(account = id, %err, "could not set up the contacts server");

@@ -8,9 +8,10 @@ use mailrs_domain::translate::{fill, gettext};
 use mailrs_domain::{Account, Provider, SignInClient};
 use mailrs_gmail::{GMAIL_API_BASE, GmailError, Granted, OAuthClient, SIGN_IN_SCOPES};
 use mailrs_graph::GraphError;
+use mailrs_jmap::JmapError;
 
 use super::own_client::OwnClientError;
-use super::{MicrosoftSignInError, NewMicrosoft, SignInError, google_signed_in, microsoft_signed_in};
+use super::{JmapSignInError, MicrosoftSignInError, NewMicrosoft, SignInError, google_signed_in, microsoft_signed_in};
 use crate::{AccountServices, Clients, Connector, SyncError, connect_account, connect_microsoft, now_millis};
 
 /// A sign-in that runs on the provider's page in the browser.
@@ -87,6 +88,24 @@ pub enum BrowserSignInError {
     Kept(#[from] SignInError),
     #[error(transparent)]
     KeptMicrosoft(#[from] MicrosoftSignInError),
+    /// A JMAP server's sign-in failed.
+    #[error("{0}")]
+    Jmap(JmapError),
+    #[error(transparent)]
+    KeptJmap(#[from] JmapSignInError),
+    /// The JMAP server publishes no sign-in a browser can run.
+    #[error("{}", gettext("This server does not offer a sign-in in the browser."))]
+    NotOffered,
+    /// The JMAP server signed in without a refresh token, so the account
+    /// could not stay signed in.
+    #[error("{}", gettext("The server did not let Penguin Mail stay signed in. Sign in with a password or a token instead."))]
+    NoRefreshToken,
+    /// Nobody came back from the browser within the wait.
+    #[error("{}", gettext("Gave up waiting for the browser after ten minutes."))]
+    GaveUp,
+    /// The person canceled the wait for the browser.
+    #[error("{}", gettext("Canceled."))]
+    Canceled,
     #[error(transparent)]
     Connect(#[from] SyncError),
     /// The environment names half an own Google client.

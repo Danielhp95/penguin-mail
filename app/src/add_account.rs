@@ -1897,9 +1897,16 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             BrowserSignInError::OtherAddress { .. } => "other address",
             BrowserSignInError::Google(_) => "google",
             BrowserSignInError::Microsoft(_) => "microsoft",
-            BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) => "keeping the account",
+            BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) | BrowserSignInError::KeptJmap(_) => {
+                "keeping the account"
+            }
             BrowserSignInError::Connect(_) => "connect",
             BrowserSignInError::OwnClient(_) => "own client",
+            BrowserSignInError::Jmap(_) => "jmap",
+            BrowserSignInError::NotOffered => "not offered",
+            BrowserSignInError::NoRefreshToken => "no refresh token",
+            BrowserSignInError::GaveUp => "gave up",
+            BrowserSignInError::Canceled => "canceled",
         };
     }
     if let Some(check) = err.downcast_ref::<CheckError>() {
