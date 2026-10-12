@@ -26,6 +26,8 @@ fn body(text: &str) -> MessageBody {
             signed_by: Some("example.net".into()),
             encrypted: Some(true),
         },
+        receipt_to: Some("ines@allotment.example".into()),
+        read_report: Some(mailrs_domain::ReadReport { by: "tomas@allotment.example".into(), displayed: true }),
     }
 }
 

@@ -7,9 +7,12 @@
 
 mod auth;
 pub mod blob;
+pub mod calendars;
 mod check;
 pub mod contacts;
 pub mod masked;
+pub mod mdn;
+pub mod quota;
 pub mod sieve;
 pub mod vacation;
 mod request;
@@ -19,6 +22,7 @@ pub mod identity;
 pub mod mail;
 pub mod push;
 pub mod session;
+pub mod submission;
 
 pub use auth::{Auth, AuthKind};
 pub use blob::{MOST_BLOB_BYTES, Uploaded};
@@ -40,3 +44,7 @@ pub use contacts::{AddressBook, CardChanges, CardWrite, CardsPage};
 pub use masked::{MaskedEmail, MaskedState};
 pub use sieve::{MOST_SIEVE_BYTES, SieveScript};
 pub use vacation::VacationResponse;
+pub use submission::{Canceled, HELD, HeldSubmission, Hold, SubmissionState, max_delayed_send};
+pub use mdn::{MDN, MdnOut};
+pub use quota::{QUOTA, Quota, mail_storage};
+pub use calendars::{CYRUS_JSCALENDAR_BIS, CalendarEvents, CalendarRights, EventWrite, EventsPage, JmapCalendar, fits};

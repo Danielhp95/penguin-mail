@@ -8,6 +8,7 @@ pub mod html;
 pub mod notes;
 mod parts;
 mod read;
+mod receipt;
 pub mod provenance;
 pub mod snippet;
 mod summary;

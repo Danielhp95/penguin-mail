@@ -447,6 +447,14 @@ impl Provenance {
     }
 }
 
+/// A read receipt that arrived (RFC 8098): who it came from, and whether
+/// their mail program showed the message or got rid of it unread.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadReport {
+    pub by: String,
+    pub displayed: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageBody {
     pub html: Option<String>,
@@ -473,6 +481,13 @@ pub struct MessageBody {
     /// the raw message instead.
     #[serde(default)]
     pub protection: Option<Protection>,
+    /// The address `Disposition-Notification-To` names: the sender asked
+    /// for a read receipt there.
+    #[serde(default)]
+    pub receipt_to: Option<String>,
+    /// The receipt this message is, when it is one.
+    #[serde(default)]
+    pub read_report: Option<ReadReport>,
 }
 
 /// What a message arrived wrapped in: a signature beside the message, or

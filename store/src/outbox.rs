@@ -39,10 +39,13 @@ pub struct Queued {
     /// Why the last attempt failed. `None` while the message is waiting for
     /// its hour and nothing has gone wrong.
     pub problem: Option<String>,
+    /// The server's hold, for a message the server sends itself at its
+    /// hour. The app sends nothing for it while this is set.
+    pub held: Option<String>,
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, thread_id, subject, recipients, \
-                       send_at, raw, composer, attempts, problem";
+                       send_at, raw, composer, attempts, problem, held";
 
 fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
     Ok(Queued {
@@ -58,24 +61,30 @@ fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
         composer: row.get(9)?,
         attempts: row.get(10)?,
         problem: row.get(11)?,
+        held: row.get(12)?,
     })
 }
 
 /// Stores a message: as a new row, or over the row it already has, which
-/// is the one its id names or the one holding the same Gmail draft. Gives
-/// back the row's id. Writing over a row lets go of any claim on it, since
-/// the caller that claimed it is done with it.
+/// is the one its id names, the one holding the same Gmail draft, or the
+/// one holding the same server hold. Gives back the row's id. Writing over
+/// a row lets go of any claim on it, since the caller that claimed it is
+/// done with it.
 pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
-    let already = match (message.id, &message.draft_id) {
-        (id, _) if id > 0 => Some(id),
-        (_, Some(draft_id)) => find_draft(conn, message.account_id, draft_id)?.map(|m| m.id),
+    let by_draft = match &message.draft_id {
+        Some(draft_id) => find_draft(conn, message.account_id, draft_id)?.map(|m| m.id),
+        None => None,
+    };
+    let by_hold = match &message.held {
+        Some(handle) if by_draft.is_none() => find_held(conn, message.account_id, handle)?.map(|m| m.id),
         _ => None,
     };
+    let already = Some(message.id).filter(|id| *id > 0).or(by_draft).or(by_hold);
     if let Some(id) = already {
         let changed = conn.execute(
             "UPDATE outbox SET draft_id = ?2, message_id = ?3, thread_id = ?4, subject = ?5, \
              recipients = ?6, send_at = ?7, raw = ?8, composer = ?9, attempts = ?10, \
-             problem = ?11 WHERE id = ?1",
+             problem = ?11, held = ?12 WHERE id = ?1",
             params![
                 id,
                 message.draft_id,
@@ -87,7 +96,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
                 message.raw,
                 message.composer,
                 message.attempts,
-                message.problem
+                message.problem,
+                message.held
             ],
         )?;
         if changed > 0 {
@@ -97,8 +107,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
     }
     conn.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, thread_id, subject, recipients, \
-         send_at, raw, composer, attempts, problem) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         send_at, raw, composer, attempts, problem, held) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             message.account_id,
             message.draft_id,
@@ -110,7 +120,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
             message.raw,
             message.composer,
             message.attempts,
-            message.problem
+            message.problem,
+            message.held
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -179,6 +190,17 @@ pub fn find_draft(
         .query_row(
             &format!("SELECT {COLUMNS} FROM outbox WHERE account_id = ?1 AND draft_id = ?2"),
             params![account_id, draft_id],
+            to_queued,
+        )
+        .optional()?)
+}
+
+/// The waiting message the server holds under `handle`.
+pub fn find_held(conn: &Connection, account_id: AccountId, handle: &str) -> Result<Option<Queued>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS} FROM outbox WHERE account_id = ?1 AND held = ?2"),
+            params![account_id, handle],
             to_queued,
         )
         .optional()?)

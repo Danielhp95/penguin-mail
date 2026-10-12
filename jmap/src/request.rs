@@ -53,6 +53,13 @@ impl Request {
         CallId(id)
     }
 
+    /// Names `capability` in `using` without a call of its own, for a call
+    /// whose answer reaches into another capability's data, as
+    /// `MDN/send`'s `onSuccessUpdateEmail` reaches mail.
+    pub fn also_using(&mut self, capability: &'static str) {
+        self.using.insert(capability);
+    }
+
     pub fn len(&self) -> usize {
         self.calls.len()
     }
@@ -170,5 +177,13 @@ mod tests {
         assert!(set["updated"].get("M1").is_some());
         let submission: serde_json::Value = response.take(&CallId("c1".into()), "EmailSubmission/set").unwrap();
         assert_eq!(submission["created"]["s"]["id"], "S1");
+    }
+
+    #[test]
+    fn a_capability_can_join_using_without_a_call() {
+        let mut request = Request::new();
+        request.also_using(MAIL);
+        assert_eq!(request.using().collect::<Vec<_>>(), [CORE, MAIL]);
+        assert!(request.is_empty());
     }
 }

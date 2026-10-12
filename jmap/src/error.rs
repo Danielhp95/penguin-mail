@@ -53,6 +53,10 @@ pub enum JmapError {
     Problem { status: u16, kind: String, detail: String },
     #[error("could not read the server's answer: {0}")]
     Decode(String),
+    /// A hold went out and no answer came back, so the server may have
+    /// taken it. Not a refusal: look in Drafts before sending again.
+    #[error("the server may have taken the hold; no answer came back")]
+    HoldUnknown,
     /// A local file could not be written. Only the io error kind is kept,
     /// never the path. A retry would hit the same full disk.
     #[error("local file: {0}")]
