@@ -13,7 +13,7 @@ use crate::{Result, StoreError};
 ///
 /// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
 /// `local_messages_follow`, which takes a POP3 message's bytes with its
-/// row, and the contact triggers of migrations 61 and 62. Such a migration must
+/// row, and the contact triggers of migrations 61 to 63. Such a migration must
 /// create them again. It also renumbers the implicit rowids the
 /// correspondents tally counts by, as a VACUUM may, so either must mark
 /// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
@@ -1056,6 +1056,35 @@ CREATE TRIGGER contacts_message_gone_many BEFORE DELETE ON messages
 WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
     AND ((SELECT stale FROM contact_marks) = 1
         OR (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) >= 5000)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
+    // `contact_gone.sent` held whether a deleted message was filed in Sent,
+    // but a recount counts a message once for each Sent folder it is filed
+    // in, so the delete must take that many weights off. It now holds the
+    // number of Sent filings; the 0 and 1 already kept mean the same as
+    // before. A delete also now leaves its count while a recount runs, when
+    // the row was one the recount already passed, rather than sending the
+    // recount back to the start; only more than 5000 waiting does that.
+    r#"
+DROP TRIGGER contacts_message_gone;
+DROP TRIGGER contacts_message_gone_many;
+CREATE TRIGGER contacts_message_gone BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) < 5000
+BEGIN
+    INSERT INTO contact_gone (from_name, from_addr, to_addrs, cc_addrs, date, sent)
+    VALUES (OLD.from_name, OLD.from_addr, OLD.to_addrs, OLD.cc_addrs, OLD.date,
+        (SELECT count(*) FROM message_mailboxes f JOIN mailboxes b ON b.key = f.mailbox
+            WHERE f.account_id = OLD.account_id AND f.message_id = OLD.id AND b.role = 'sent'));
+    UPDATE contact_marks SET counted_row =
+        (SELECT coalesce(max(rowid), 0) FROM messages WHERE rowid < OLD.rowid)
+    WHERE counted_row = OLD.rowid;
+END;
+CREATE TRIGGER contacts_message_gone_many BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) >= 5000
 BEGIN
     UPDATE contact_marks SET stale = 1, counted_row = 0;
 END;
