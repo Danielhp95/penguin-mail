@@ -62,6 +62,9 @@ struct Inner {
     events: tokio::sync::Mutex<Option<crate::push::EventStream>>,
     /// Set while a push stream is open.
     streaming: AtomicBool,
+    /// Set from a stream's opening until its probe passes. A stall in
+    /// that time means the server holds calls behind any stream.
+    probing: AtomicBool,
     /// Set once the probe beside a new stream went unanswered; the
     /// account then polls for the client's life.
     push_off: AtomicBool,
@@ -147,6 +150,7 @@ impl JmapClient {
                 sized: AtomicBool::new(false),
                 events: tokio::sync::Mutex::new(None),
                 streaming: AtomicBool::new(false),
+                probing: AtomicBool::new(false),
                 push_off: AtomicBool::new(false),
                 paused_until: Mutex::new(None),
                 reader: Mutex::new(None),
@@ -291,12 +295,16 @@ impl JmapClient {
         self.inner.streaming.store(open, Ordering::SeqCst);
     }
 
+    pub(crate) fn set_probing(&self, probing: bool) {
+        self.inner.probing.store(probing, Ordering::SeqCst);
+    }
+
     pub(crate) fn push_off(&self) -> bool {
         self.inner.push_off.load(Ordering::SeqCst)
     }
 
     /// When push comes back, while it is paused after a stall.
-    pub(crate) fn push_paused(&self) -> Option<tokio::time::Instant> {
+    pub fn push_paused(&self) -> Option<tokio::time::Instant> {
         let mut until = self.inner.paused_until.lock().unwrap_or_else(PoisonError::into_inner);
         if until.is_some_and(|at| at <= tokio::time::Instant::now()) {
             *until = None;
@@ -335,10 +343,11 @@ impl JmapClient {
     }
 
     /// Sends an API call and waits for the head of its answer. While a
-    /// push stream is open, a head that takes past the stall limit pauses
-    /// push and drops the stream, and the wait goes on: the call may be a
-    /// write, and giving up on it could let it run later unseen. Only the
-    /// head is timed, so a slow body is never taken for a stall.
+    /// push stream is open, a head that takes past the stall limit drops
+    /// the stream and pauses push, or turns it off for good when the
+    /// stream's probe has not passed yet. The wait goes on: the call may
+    /// be a write, and giving up on it could let it run later unseen. Only
+    /// the head is timed, so a slow body is never taken for a stall.
     async fn sent(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, JmapError> {
         let answer = request.send();
         tokio::pin!(answer);
@@ -346,8 +355,16 @@ impl JmapClient {
             tokio::select! {
                 got = &mut answer => return got.map_err(network),
                 _ = tokio::time::sleep(STALL_LIMIT) => {
-                    tracing::warn!("a call stalled while the push stream was open; pausing push");
-                    self.pause_pushing();
+                    match self.inner.probing.load(Ordering::SeqCst) {
+                        true => {
+                            tracing::info!("a call stalled before the push stream's probe passed; polling instead");
+                            self.stop_pushing();
+                        }
+                        false => {
+                            tracing::warn!("a call stalled while the push stream was open; pausing push");
+                            self.pause_pushing();
+                        }
+                    }
                 }
             }
         }

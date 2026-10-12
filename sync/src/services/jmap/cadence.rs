@@ -63,6 +63,11 @@ impl<J: JmapApi> Jmap<J> {
         if let Some(pause) = pause {
             tokio::time::sleep(pause).await;
         }
+        // No stream opens while a stalled call has paused push, so the
+        // wait must not count as a stream that held.
+        if let Some(until) = self.api().push_paused() {
+            tokio::time::sleep_until(until).await;
+        }
         self.known().push_opened = Some(Instant::now());
         let pushed = self.api().push().await;
         let held = self.known().push_opened.take().is_some_and(|opened| opened.elapsed() >= STREAM_HELD);

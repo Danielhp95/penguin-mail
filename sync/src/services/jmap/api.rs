@@ -34,6 +34,8 @@ pub trait JmapApi: Send + Sync + 'static {
     fn submit(&self, submission: &Submission) -> impl Future<Output = Answer<Imported>> + Send;
     fn identities(&self) -> impl Future<Output = Answer<Vec<Identity>>> + Send;
     fn push(&self) -> impl Future<Output = Answer<Pushed>> + Send;
+    /// When push comes back, while a stalled call has paused it.
+    fn push_paused(&self) -> Option<tokio::time::Instant>;
 }
 
 impl JmapApi for JmapClient {
@@ -86,5 +88,8 @@ impl JmapApi for JmapClient {
     }
     async fn push(&self) -> Answer<Pushed> {
         JmapClient::push(self, PUSH_IDLE).await
+    }
+    fn push_paused(&self) -> Option<tokio::time::Instant> {
+        JmapClient::push_paused(self)
     }
 }

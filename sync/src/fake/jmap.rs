@@ -130,6 +130,8 @@ pub struct JmapState {
     next: u64,
     push: bool,
     push_ends: Option<std::time::Duration>,
+    /// Until when push is paused after a stall, as the client keeps it.
+    push_paused_until: Option<tokio::time::Instant>,
 }
 
 impl JmapState {
@@ -408,6 +410,7 @@ impl FakeJmap {
             next: 0,
             push: true,
             push_ends: None,
+            push_paused_until: None,
         };
         for (name, role) in [("Inbox", "inbox"), ("Drafts", "drafts"), ("Sent", "sent"), ("Trash", "trash"), ("Junk Mail", "junk"), ("Archive", "archive")] {
             let id = format!("mb-{role}");
@@ -485,6 +488,11 @@ impl FakeJmap {
     /// Changes how long the stream stays open before it closes.
     pub fn set_push_ends_after(&self, held: std::time::Duration) {
         self.with(|s| s.push_ends = Some(held));
+    }
+
+    /// Pauses push for `long`, as a call stalled behind the stream does.
+    pub fn pause_push_for(&self, long: std::time::Duration) {
+        self.with(|s| s.push_paused_until = Some(tokio::time::Instant::now() + long));
     }
 
     /// How many times the event stream was opened.
@@ -1082,6 +1090,10 @@ impl JmapApi for FakeJmap {
     }
 
     async fn push(&self) -> Answer<Pushed> {
+        // The client waits out a pause before it opens a stream.
+        if let Some(until) = self.with(|s| s.push_paused_until) {
+            tokio::time::sleep_until(until).await;
+        }
         self.called("push");
         if let Some(held) = self.with(|s| s.push_ends) {
             tokio::select! {
@@ -1095,6 +1107,10 @@ impl JmapApi for FakeJmap {
         }
         self.pushed.notified().await;
         Ok(Pushed::Changed)
+    }
+
+    fn push_paused(&self) -> Option<tokio::time::Instant> {
+        self.with(|s| s.push_paused_until.filter(|until| *until > tokio::time::Instant::now()))
     }
 }
 

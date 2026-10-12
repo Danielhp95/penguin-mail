@@ -7,9 +7,10 @@
 //! Cyrus answers no other request of the account while a stream is open.
 //! So a new stream is followed by one `Core/echo`, which every server
 //! answers; when no answer comes within the probe limit the stream is
-//! dropped and push stays off for the client's life. An API call that
-//! stalls later while a stream is open drops the stream and pauses push
-//! for a while (see `JmapClient::sent`).
+//! dropped and push stays off for the client's life. Any API call that
+//! stalls before the probe passes counts the same. One that stalls later
+//! while a stream is open drops the stream and pauses push for a while
+//! (see `JmapClient::sent`).
 //!
 //! The open stream holds no request permit. A permit lasts one call, and
 //! a stream lives for hours: holding one of the four would starve the
@@ -231,6 +232,7 @@ impl JmapClient {
         // A few chunks ahead at most: the reader waits for the watch.
         let (to, reads) = tokio::sync::mpsc::channel(4);
         let reader = tokio::spawn(read_stream(request, to)).abort_handle();
+        self.set_probing(true);
         self.set_streaming(true);
         self.keep_reader(reader.clone());
         Ok(EventStream { reads, reader, pending: Vec::new(), parser: Parser::new() })
@@ -278,7 +280,7 @@ impl JmapClient {
                     return close(&mut held, err);
                 }
                 match self.answers_beside_a_stream().await {
-                    Ok(true) => {}
+                    Ok(true) => self.set_probing(false),
                     Ok(false) => {
                         tracing::info!("the server holds calls while a push stream is open; polling instead");
                         self.stop_pushing();
