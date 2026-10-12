@@ -112,6 +112,25 @@ fn string(value: &Value, key: &str) -> String {
     value.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
+/// The `id` a created object came back with.
+fn id_of(value: &Value, what: &str) -> Result<String, JmapError> {
+    match value.get("id").and_then(Value::as_str) {
+        Some(id) if !id.is_empty() => Ok(id.to_string()),
+        _ => Err(JmapError::Decode(format!("{what} came back without an id"))),
+    }
+}
+
+/// A failed `send` of the hold: when the request may have reached the
+/// server (a lost connection, a timeout, a 5xx, an unreadable answer), the
+/// server may hold the message, so the caller must not treat it as refused.
+fn unknown_if_sent(err: JmapError) -> JmapError {
+    match err {
+        JmapError::Network(_) | JmapError::Decode(_) => JmapError::HoldUnknown,
+        JmapError::Problem { status, .. } if status >= 500 => JmapError::HoldUnknown,
+        other => other,
+    }
+}
+
 fn submission_account(session: &Session) -> Result<String, JmapError> {
     session
         .account_for(SUBMISSION)
@@ -122,7 +141,9 @@ fn submission_account(session: &Session) -> Result<String, JmapError> {
 impl JmapClient {
     /// Imports the message into Drafts and asks the server to send it
     /// `hold.hold_for` seconds from now, in one request. A refused hold
-    /// destroys the copy, so nothing waits in Drafts that will not go.
+    /// destroys the copy, so nothing waits in Drafts that will not go. When
+    /// no answer comes back the outcome is [`JmapError::HoldUnknown`]: the
+    /// server may hold the message, and there is no id to clean up.
     pub async fn hold(&self, hold: &Hold) -> Result<HeldSubmission, JmapError> {
         let session = self.session().await?;
         let sender = submission_account(&session)?;
@@ -148,14 +169,21 @@ impl JmapClient {
                 }
             } }
         }));
-        let mut answer = self.send(&request).await?;
+        let mut answer = self.send(&request).await.map_err(unknown_if_sent)?;
         let email = one(answer.take(&import, "Email/import")?, "m")?;
-        let email_id = string(&email, "id");
-        match one(answer.take(&submitted, "EmailSubmission/set")?, "s") {
-            Ok(created) => Ok(HeldSubmission { id: string(&created, "id"), email_id, thread_id: string(&email, "threadId") }),
+        let email_id = id_of(&email, "the imported message")?;
+        let thread_id = string(&email, "threadId");
+        let held = answer
+            .take(&submitted, "EmailSubmission/set")
+            .and_then(|set| one(set, "s"))
+            .and_then(|created| id_of(&created, "the submission"));
+        match held {
+            Ok(id) => Ok(HeldSubmission { id, email_id, thread_id }),
             Err(refused) => {
                 // Nothing will go out, so the copy must not wait in Drafts.
-                let _ = self.set_emails(&Map::new(), std::slice::from_ref(&email_id)).await;
+                if self.set_emails(&Map::new(), std::slice::from_ref(&email_id)).await.is_err() {
+                    tracing::warn!("could not remove the Drafts copy of a hold the server refused");
+                }
                 Err(refused)
             }
         }
@@ -196,6 +224,8 @@ impl JmapClient {
         if let Some(refused) = said.not_updated.as_ref().and_then(|n| n.get(id)) {
             return match refused.kind.as_str() {
                 "cannotUnsend" => Ok(Canceled::TooLate),
+                // Gone already, as after a cancel whose answer was lost.
+                "notFound" => Ok(Canceled::Canceled),
                 _ => Err(refused.error()),
             };
         }

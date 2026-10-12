@@ -139,3 +139,149 @@ fn max_delayed_send_reads_the_submission_account_and_is_zero_without_it() {
     session["accounts"]["A1"]["accountCapabilities"]["urn:ietf:params:jmap:submission"] = json!({"maxDelayedSend": 44_236_800});
     assert_eq!(max_delayed_send(&Session::parse(&serde_json::to_vec(&session).unwrap()).unwrap()), 44_236_800);
 }
+
+#[tokio::test]
+async fn a_method_error_on_the_submission_destroys_the_copy() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "threadId": "T9"}}}, "c0"],
+        ["error", {"type": "forbiddenToSend", "description": "no"}, "c1"]
+    ]})).await;
+    let refused = client(&server).hold(&hold()).await.unwrap_err();
+    assert!(matches!(refused, JmapError::Method { ref kind, .. } if kind == "forbiddenToSend"), "{refused:?}");
+    let sent = posts(&server).await;
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1]["methodCalls"][0][1]["destroy"], json!(["M9"]));
+}
+
+#[tokio::test]
+async fn a_failed_cleanup_leaves_the_refusal_as_the_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxCallsInRequest": 8}))))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sessionState": "s1", "methodResponses": [
+            ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "threadId": "T9"}}}, "c0"],
+            ["EmailSubmission/set", {"accountId": "A1", "notCreated": {"s": {"type": "tooLarge"}}}, "c1"]
+        ]})))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(500)).mount(&server).await;
+    let refused = client(&server).hold(&hold()).await.unwrap_err();
+    assert_eq!(refused, JmapError::RequestTooLarge);
+}
+
+#[tokio::test]
+async fn a_server_error_after_the_request_is_an_unknown_outcome() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxCallsInRequest": 8}))))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(502)).mount(&server).await;
+    assert_eq!(client(&server).hold(&hold()).await.unwrap_err(), JmapError::HoldUnknown);
+    assert_eq!(posts(&server).await.len(), 1, "no cleanup: there is no id to destroy");
+}
+
+/// An API endpoint that reads one request and drops the connection.
+async fn dropping_server() -> String {
+    use tokio::io::AsyncReadExt;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf).await;
+            });
+        }
+    });
+    format!("http://{address}")
+}
+
+#[tokio::test]
+async fn a_dropped_connection_after_the_request_is_an_unknown_outcome() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/jmap/session"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&dropping_server().await, json!({"maxCallsInRequest": 8}))))
+        .mount(&server)
+        .await;
+    assert_eq!(client(&server).hold(&hold()).await.unwrap_err(), JmapError::HoldUnknown);
+}
+
+#[tokio::test]
+async fn an_import_without_an_id_is_a_decode_error() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"threadId": "T9"}}}, "c0"],
+        ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"]
+    ]})).await;
+    assert!(matches!(client(&server).hold(&hold()).await, Err(JmapError::Decode(_))));
+}
+
+#[tokio::test]
+async fn a_submission_without_an_id_destroys_the_copy_and_is_a_decode_error() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "threadId": "T9"}}}, "c0"],
+        ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"undoStatus": "pending"}}}, "c1"]
+    ]})).await;
+    assert!(matches!(client(&server).hold(&hold()).await, Err(JmapError::Decode(_))));
+    assert_eq!(posts(&server).await[1]["methodCalls"][0][1]["destroy"], json!(["M9"]));
+}
+
+#[tokio::test]
+async fn unholding_takes_only_the_held_keyword_off() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/set", {"accountId": "A1", "updated": {"M9": null}}, "c0"]
+    ]})).await;
+    client(&server).unhold("M9").await.unwrap();
+    let update = &posts(&server).await[0]["methodCalls"][0][1]["update"];
+    assert_eq!(update, &json!({"M9": {format!("keywords/{HELD}"): null}}));
+}
+
+#[tokio::test]
+async fn unholding_a_refused_patch_is_an_error() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/set", {"accountId": "A1", "notUpdated": {"M9": {"type": "notFound"}}}, "c0"]
+    ]})).await;
+    assert_eq!(client(&server).unhold("M9").await, Err(JmapError::NotFound));
+}
+
+#[tokio::test]
+async fn a_submission_the_server_does_not_have_is_left_out() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["EmailSubmission/get", {"accountId": "A1", "state": "x", "notFound": ["S2"], "list": [
+            {"id": "S1", "emailId": "M9", "undoStatus": "final"}]}, "c0"]
+    ]})).await;
+    let found = client(&server).submissions(&["S1".to_string(), "S2".to_string()]).await.unwrap();
+    assert_eq!(found.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["S1"]);
+}
+
+#[tokio::test]
+async fn cancelling_a_hold_the_server_no_longer_has_counts_as_canceled() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["EmailSubmission/set", {"accountId": "A1", "notUpdated": {"S1": {"type": "notFound"}}}, "c0"]
+    ]})).await;
+    assert_eq!(client(&server).cancel_submission("S1").await.unwrap(), Canceled::Canceled);
+}
+
+#[tokio::test]
+async fn another_cancel_refusal_stays_an_error() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["EmailSubmission/set", {"accountId": "A1", "notUpdated": {"S1": {"type": "forbidden"}}}, "c0"]
+    ]})).await;
+    assert!(matches!(client(&server).cancel_submission("S1").await, Err(JmapError::Forbidden(_))));
+}

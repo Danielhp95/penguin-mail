@@ -1860,6 +1860,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::Method { .. } => "method",
             JmapError::Problem { .. } => "problem",
             JmapError::Decode(_) => "decode",
+            JmapError::HoldUnknown => "hold unknown",
             JmapError::LocalFile(_) => "local file",
         };
     }
