@@ -390,6 +390,61 @@ fn new_message_id(address: &str) -> String {
     format!("{}.{}@{domain}", mailrs_gmail::random_token(12), std::process::id())
 }
 
+/// The reminders already shown, renamed for the JMAP calendar: each
+/// event's CalDAV calendar and id paired with the JMAP calendar and id of
+/// the event with the same UID (and the same occurrence, for a changed
+/// one). Without it a reminder shown before the switch goes up again once
+/// the JMAP calendar is read. A server that does not answer leaves the
+/// log as it is: the switch goes on, and at worst a reminder shows twice.
+async fn shown_reminders<J: JmapApi>(db: &Db, id: AccountId, api: &J) -> Vec<((String, String), (String, String))> {
+    let shown = db
+        .read(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT DISTINCT r.calendar, r.event, e.uid, e.original_start FROM event_reminders_shown r \
+                 JOIN events e ON e.account_id = r.account_id AND e.calendar = r.calendar AND e.id = r.event \
+                 WHERE r.account_id = ?1",
+            )?;
+            let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<(String, String, String, Option<i64>)>>>()?)
+        })
+        .await;
+    let shown = match shown {
+        Ok(shown) => shown,
+        Err(err) => {
+            tracing::warn!(account = id, %err, "could not read the reminders already shown");
+            return Vec::new();
+        }
+    };
+    let mut renamed = Vec::new();
+    let mut by_uid: HashMap<String, Vec<mailrs_domain::calendar::Event>> = HashMap::new();
+    for (calendar, event, uid, original) in shown {
+        if !by_uid.contains_key(&uid) {
+            let page = match api.calendar_events_page(&json!({ "uid": uid }), 0, 8).await {
+                Ok(page) => page,
+                Err(err) => {
+                    tracing::info!(account = id, %err, "could not look up an event the reminders named");
+                    continue;
+                }
+            };
+            let events = page
+                .events
+                .iter()
+                .filter_map(|object| {
+                    let calendar = object["calendarIds"].as_object()?.iter().find(|(_, on)| on.as_bool() == Some(true))?.0.clone();
+                    Some(crate::services::jmap::jscal::events_of(object, &calendar, &[]))
+                })
+                .flatten()
+                .collect();
+            by_uid.insert(uid.clone(), events);
+        }
+        let mut same = by_uid[&uid].iter().filter(|e| e.original_start == original);
+        if let (Some(found), None) = (same.next(), same.next()) {
+            renamed.push(((calendar, event), (found.calendar.clone(), found.id.clone())));
+        }
+    }
+    renamed
+}
+
 /// A Send Later message whose draft only the IMAP server holds: its row,
 /// the draft's IMAP id and the bytes read from the server.
 struct Waiting {
@@ -771,6 +826,10 @@ pub async fn to_jmap_over<J: JmapApi>(
         ServiceKind::CardDav => !contacts_from_jmap,
         ServiceKind::Sieve => !saved.offers(mailrs_jmap::SIEVE),
     });
+    let reminders = match saved.offers(mailrs_jmap::CALENDARS) {
+        true => shown_reminders(db, id, api).await,
+        false => Vec::new(),
+    };
     let jmap = Arc::clone(&secrets.jmap);
     keyring(move || jmap.save(id, &secret)).await?;
     let adoption = Adoption { messages, mailboxes, saved, contacts_from_jmap };
@@ -791,6 +850,13 @@ pub async fn to_jmap_over<J: JmapApi>(
                  AND thread_id NOT IN (SELECT thread_id FROM messages WHERE account_id = ?1)",
                 params![id],
             )?;
+            for ((calendar, event), (to_calendar, to_event)) in &reminders {
+                c.execute(
+                    "UPDATE OR IGNORE event_reminders_shown SET calendar = ?4, event = ?5 \
+                     WHERE account_id = ?1 AND calendar = ?2 AND event = ?3",
+                    params![id, calendar, event, to_calendar, to_event],
+                )?;
+            }
             for (row, raw, draft) in &fill {
                 c.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1 AND raw IS NULL", params![row, raw])?;
                 if let Some(draft) = draft {

@@ -813,6 +813,50 @@ fn a_browser_grant_keeps_the_account_signed_in_through_its_refresh_token() {
     assert_eq!((signed.user_name, signed.secret.as_str()), (None, "r1"));
 }
 
+/// A reminder already shown for a CalDAV event names the event by its
+/// CalDAV ids. Once JMAP serves the calendar, the event comes back under
+/// its JMAP ids, and the reminder would go up a second time.
+#[tokio::test]
+async fn a_reminder_shown_before_the_switch_is_not_shown_again() {
+    use mailrs_store::event_reminders::{self, Key};
+
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let fake = fake.with_calendars();
+    let on_jmap = fake.add_event(serde_json::json!({
+        "@type": "Event", "uid": "rota@allotment.example", "title": "Allotment rota", "calendarIds": {"cal-1": true},
+        "start": "2026-10-06T09:00:00", "timeZone": "Europe/Lisbon", "duration": "PT1H"
+    }));
+    let collection = "https://caldav.fastmail.com/dav/calendars/user/me@example.com/Default/";
+    let event = mailrs_domain::calendar::Event {
+        calendar: collection.into(),
+        id: format!("{collection}rota.ics"),
+        uid: "rota@allotment.example".into(),
+        etag: "\"caldav-1\"".into(),
+        title: "Allotment rota".into(),
+        start: 1_791_277_200_000,
+        end: 1_791_280_800_000,
+        zone: "Europe/Lisbon".into(),
+        ..mailrs_domain::calendar::Event::default()
+    };
+    let id = h.account_id;
+    let shown = Key { account_id: id, calendar: event.calendar.clone(), event: event.id.clone(), start: event.start, minutes: 10 };
+    let calendar = mailrs_domain::calendar::Calendar { id: collection.into(), name: "Personal".into(), ..Default::default() };
+    h.db.write(move |c| {
+        mailrs_store::calendar::save_calendars(c, id, &[calendar])?;
+        mailrs_store::calendar::save_events(c, id, &[event], 0)?;
+        event_reminders::mark_shown(c, &[(shown, 1_791_280_800_000)], 1_791_276_600_000)
+    })
+    .await
+    .unwrap();
+    let account = account(&h).await;
+    let mut calendars = saved();
+    calendars.capabilities.push(mailrs_jmap::CALENDARS.into());
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, calendars, "fmu1-token".into()).await.unwrap();
+    let log = h.db.read(event_reminders::log).await.unwrap();
+    let keys: Vec<(String, String)> = log.keys().map(|k| (k.calendar.clone(), k.event.clone())).collect();
+    assert_eq!(keys, vec![("cal-1".to_string(), on_jmap)], "the log names the event as JMAP does");
+}
+
 #[tokio::test]
 async fn the_imap_password_goes_when_jmap_serves_the_calendar() {
     use mailrs_store::services::{FoundService, ServiceKind};
