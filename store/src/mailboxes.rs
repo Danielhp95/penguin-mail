@@ -6,6 +6,7 @@
 use mailrs_domain::{AccountId, MailboxKind, RemoteMailbox, Role};
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::deletion::{self, Cause};
 use crate::{Result, StoreError};
 
 /// Adds a listed mailbox or updates it, and marks it listed.
@@ -111,8 +112,8 @@ pub fn replace_listed(
     Ok(())
 }
 
-/// Removes a mailbox and takes it off every message and thread, as when it
-/// was deleted on the server. Returns the threads that were in it.
+/// Removes a mailbox and takes it off every message and thread, as a
+/// person deleting it does. Returns the threads that were in it.
 pub fn delete(conn: &Connection, account_id: AccountId, id: &str) -> Result<Vec<String>> {
     let threads: Vec<String> = conn
         .prepare(
@@ -127,6 +128,16 @@ pub fn delete(conn: &Connection, account_id: AccountId, id: &str) -> Result<Vec<
         params![account_id, id],
     )?;
     Ok(threads)
+}
+
+/// Removes a mailbox the server's listing no longer names, as [`delete`]
+/// does. A POP3 account's folders live only in the store, so a sync takes
+/// none of them away: it keeps the mailbox and answers no threads.
+pub fn gone(conn: &Connection, account_id: AccountId, id: &str) -> Result<Vec<String>> {
+    if !deletion::allowed(conn, account_id, Cause::Sync)? {
+        return Ok(Vec::new());
+    }
+    delete(conn, account_id, id)
 }
 
 /// The mailboxes the server listed, by id.

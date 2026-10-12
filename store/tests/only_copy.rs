@@ -3,10 +3,10 @@
 
 mod common;
 
-use common::{db, meta, store};
+use common::{db, labels_of, meta, store};
 use mailrs_domain::{AccountId, RemoveSetting};
 use mailrs_store::messages::{self, Change};
-use mailrs_store::{accounts, local_messages, open_in_memory, threads, window};
+use mailrs_store::{accounts, local_messages, mailboxes, open_in_memory, threads, window};
 use rusqlite::Connection;
 
 const RAW: &[u8] = b"Subject: hi\r\n\r\nbody";
@@ -111,4 +111,23 @@ fn a_server_accounts_old_mail_leaves_with_the_window() {
     store(&conn, &[meta(id, "b", "t2", 100, &[])]);
     assert_eq!(window::sweep_stale(&conn, id, 2).unwrap(), ["t2"]);
     assert_eq!(messages::thread_id_of(&conn, id, "b").unwrap(), None);
+}
+
+#[test]
+fn a_folder_the_listing_no_longer_names_stays_in_a_pop3_account() {
+    let conn = open_in_memory().unwrap();
+    let id = accounts::insert_pop3_account(&conn, "dana@example.org", "example.org", RemoveSetting::Never, 0)
+        .unwrap()
+        .expect("a new account");
+    store(&conn, &[meta(id, "pop3/u1", "t1", 100, &["Projects"])]);
+    assert!(mailboxes::gone(&conn, id, "Projects").unwrap().is_empty());
+    assert_eq!(labels_of(&conn, id, "pop3/u1"), ["Projects"]);
+}
+
+#[test]
+fn a_folder_a_server_no_longer_lists_leaves_with_its_filings() {
+    let (conn, id) = db();
+    store(&conn, &[meta(id, "a", "t1", 100, &["Projects"])]);
+    assert_eq!(mailboxes::gone(&conn, id, "Projects").unwrap(), ["t1"]);
+    assert!(labels_of(&conn, id, "a").is_empty());
 }

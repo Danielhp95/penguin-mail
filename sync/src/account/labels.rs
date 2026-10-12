@@ -54,7 +54,7 @@ impl AccountSync {
                     .iter()
                     .filter(|s| remote.iter().all(|r| r.id != s.id))
                 {
-                    threads.extend(mailboxes::delete(c, account_id, &gone.id)?);
+                    threads.extend(mailboxes::gone(c, account_id, &gone.id)?);
                     changed = true;
                     moved = true;
                 }

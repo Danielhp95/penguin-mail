@@ -1,9 +1,16 @@
-//! Every way a message row leaves the store, and the rule over them: the
-//! store is the only copy of a POP3 account's mail, so only a person can
-//! delete it. Sync deletes for other reasons too (a server that no longer
-//! holds a message, a window that moved on, a sweep after a relisting),
-//! and each of those is refused for such an account, so a new sync path
-//! cannot lose mail by forgetting to ask. The trigger
+//! The rule over deleting mail: the store is the only copy of a POP3
+//! account's mail, so only a person can delete it. A sync deletes for
+//! other reasons (a server that no longer holds a message or a folder, a
+//! window that moved on, a sweep after a relisting), and [`allowed`]
+//! refuses each of those for such an account, so a new sync path cannot
+//! lose mail by forgetting to ask.
+//!
+//! The message and thread deletes of `messages::apply` run here. The
+//! other places mail leaves the store ask [`allowed`] themselves or cannot
+//! reach POP3 mail: `window::prune_window` and `window::sweep_stale` ask at
+//! the top, `mailboxes::gone` asks before dropping a folder, `switch`
+//! rewrites IMAP accounts alone, and removing an account takes its mail
+//! through the foreign keys, as the person asked. The trigger
 //! `local_messages_follow` takes a message's bytes with its row.
 
 use mailrs_domain::{AccountId, Provider};
