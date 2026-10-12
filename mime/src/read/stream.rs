@@ -369,13 +369,35 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
         Ok(())
     }
 
+    /// Moves past the buffered bytes that are neither `a` nor `b`, and
+    /// answers the last two of them, if there were that many. Scanning a
+    /// byte at a time through `next` costs a refill check for each.
+    fn skip_to(&mut self, a: u8, b: u8) -> io::Result<(Option<u8>, Option<u8>)> {
+        if self.pos >= self.end {
+            return Ok((None, None));
+        }
+        self.fill(1)?;
+        let rest = &self.buf[(self.pos - self.base) as usize..];
+        let skipped = rest.iter().position(|c| *c == a || *c == b).unwrap_or(rest.len());
+        let passed = (
+            skipped.checked_sub(2).map(|i| rest[i]),
+            skipped.checked_sub(1).map(|i| rest[i]),
+        );
+        self.pos += skipped as u64;
+        Ok(passed)
+    }
+
     fn seek_next_part(&mut self, boundary: &[u8]) -> io::Result<bool> {
         if boundary.is_empty() {
             return Ok(false);
         }
         let saved = self.pos;
         let mut last = 0;
-        while let Some(ch) = self.next()? {
+        loop {
+            if let (_, Some(passed)) = self.skip_to(b'-', b'-')? {
+                last = passed;
+            }
+            let Some(ch) = self.next()? else { break };
             if ch == b'-' && last == b'-' && self.try_skip(boundary)? {
                 return Ok(true);
             }
@@ -388,7 +410,13 @@ impl<'r, R: Read + Seek> Scan<'r, R> {
     fn seek_part_end(&mut self, boundary: &[u8]) -> io::Result<(u64, bool)> {
         let (mut last, mut before) = (b'\n', 0u8);
         let mut end_pos = self.offset();
-        while let Some(ch) = self.next()? {
+        loop {
+            match self.skip_to(b'\n', b'-')? {
+                (Some(second_last), Some(passed)) => (before, last) = (second_last, passed),
+                (None, Some(passed)) => (before, last) = (last, passed),
+                _ => {}
+            }
+            let Some(ch) = self.next()? else { break };
             if ch == b'\n' {
                 end_pos = match last == b'\r' {
                     true => self.offset() - 2,
