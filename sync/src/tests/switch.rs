@@ -813,3 +813,27 @@ fn a_browser_grant_keeps_the_account_signed_in_through_its_refresh_token() {
     assert_eq!((signed.user_name, signed.secret.as_str()), (None, "r1"));
 }
 
+#[tokio::test]
+async fn the_imap_password_goes_when_jmap_serves_the_calendar() {
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    let fake = fake.with_calendars();
+    let id = h.account_id;
+    h.db.write(move |c| {
+        mailrs_store::services::save(c, id, &FoundService {
+            kind: ServiceKind::CalDav,
+            url: "https://caldav.fastmail.com/".into(),
+            user_name: "me@example.com".into(),
+            confirmed: true,
+            source: "table".into(),
+        })
+    })
+    .await
+    .unwrap();
+    let account = account(&h).await;
+    let mut calendars = saved();
+    calendars.capabilities.push(mailrs_jmap::CALENDARS.into());
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, calendars, "fmu1-token".into()).await.unwrap();
+    assert_eq!(secrets.passwords.load(id).unwrap(), None, "no server signs in with it any more");
+}

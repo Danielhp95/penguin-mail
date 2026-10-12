@@ -2546,109 +2546,118 @@ msgid ""
 "Penguin Mail, then back up this file."
 msgstr ""
 
-#: app/src/offered.rs:673
+#: app/src/offered.rs:676
 msgid "New mail arrives as it is sent"
 msgstr ""
 
-#: app/src/offered.rs:674
+#: app/src/offered.rs:677
 msgid "{provider} pushes it over JMAP, and you can send from your aliases."
 msgstr ""
 
-#: app/src/offered.rs:678
+#: app/src/offered.rs:681
 msgid "Mail is matched over JMAP"
 msgstr ""
 
-#: app/src/offered.rs:679
+#: app/src/offered.rs:682
 msgid ""
 "Penguin Mail keeps the mail on this computer and downloads again only the "
 "messages it cannot match."
 msgstr ""
 
-#: app/src/offered.rs:685
+#: app/src/offered.rs:688
 msgid "Name, color and place"
 msgstr ""
 
-#: app/src/offered.rs:686
+#: app/src/offered.rs:689
 msgid "{address} keeps its spot in the sidebar."
 msgstr ""
 
-#: app/src/offered.rs:690
+#: app/src/offered.rs:693
 msgid "Your own data"
 msgstr ""
 
-#: app/src/offered.rs:691
+#: app/src/offered.rs:694
 msgid "Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."
 msgstr ""
 
-#: app/src/offered.rs:697
+#: app/src/offered.rs:700
+msgid "Calendars are read again where JMAP serves them"
+msgstr ""
+
+#: app/src/offered.rs:701
+msgid ""
+"If {provider} offers calendars over JMAP, Penguin Mail reads them from there."
+msgstr ""
+
+#: app/src/offered.rs:707
 msgid "Calendar sign-in"
 msgstr ""
 
-#: app/src/offered.rs:698
+#: app/src/offered.rs:708
 msgid "The app password you use for calendars stays as it is."
 msgstr ""
 
-#: app/src/offered.rs:729
+#: app/src/offered.rs:739
 msgid "Could not switch to JMAP: {reason}"
 msgstr ""
 
-#: app/src/offered.rs:730
+#: app/src/offered.rs:740
 msgid "Your IMAP account is unchanged."
 msgstr ""
 
-#: app/src/offered.rs:743
+#: app/src/offered.rs:753
 msgid "This account uses JMAP already."
 msgstr ""
 
-#: app/src/offered.rs:747
+#: app/src/offered.rs:757
 msgid "{provider} did not accept the token."
 msgstr ""
 
-#: app/src/offered.rs:748
+#: app/src/offered.rs:758
 msgid "{provider} did not accept the password."
 msgstr ""
 
-#: app/src/offered.rs:751
+#: app/src/offered.rs:761
 msgid "You can choose Sign In With Browser instead."
 msgstr ""
 
-#: app/src/offered.rs:756
+#: app/src/offered.rs:766
 msgid "{provider} signed in to another account, not {address}."
 msgstr ""
 
-#: app/src/offered.rs:760
+#: app/src/offered.rs:770
 msgid "The token holds a character that cannot be sent."
 msgstr ""
 
-#: app/src/offered.rs:761
+#: app/src/offered.rs:771
 msgid "The password holds a character that cannot be sent."
 msgstr ""
 
-#: app/src/offered.rs:763 app/src/offered.rs:799
+#: app/src/offered.rs:773 app/src/offered.rs:809
 msgid "{provider} does not answer."
 msgstr ""
 
-#: app/src/offered.rs:768
+#: app/src/offered.rs:778
 msgid "{provider} did not give the draft of a message waiting in Send Later."
 msgstr ""
 
-#: app/src/offered.rs:772
+#: app/src/offered.rs:782
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 
-#: app/src/offered.rs:795
+#: app/src/offered.rs:805
 msgid "{provider} refused the sign-in in the browser."
 msgstr ""
 
-#: app/src/offered.rs:797
+#: app/src/offered.rs:807
 msgid "You did not allow Penguin Mail on {provider}'s page."
 msgstr ""
 
-#: app/src/offered.rs:819
+#: app/src/offered.rs:829
 msgid "{address} now uses JMAP"
 msgstr ""
 
-#: app/src/offered.rs:823
+#: app/src/offered.rs:833
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."

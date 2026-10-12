@@ -2808,20 +2808,20 @@ msgstr ""
 "Le courrier de {address} n’est conservé que sur cet ordinateur. Pour en "
 "garder une copie, quittez Penguin Mail, puis sauvegardez ce fichier."
 
-#: app/src/offered.rs:673
+#: app/src/offered.rs:676
 msgid "New mail arrives as it is sent"
 msgstr "Le nouveau courrier arrive dès son envoi"
 
-#: app/src/offered.rs:674
+#: app/src/offered.rs:677
 msgid "{provider} pushes it over JMAP, and you can send from your aliases."
 msgstr ""
 "{provider} le distribue via JMAP, et vous pouvez envoyer depuis vos alias."
 
-#: app/src/offered.rs:678
+#: app/src/offered.rs:681
 msgid "Mail is matched over JMAP"
 msgstr "Le courrier est rapproché via JMAP"
 
-#: app/src/offered.rs:679
+#: app/src/offered.rs:682
 msgid ""
 "Penguin Mail keeps the mail on this computer and downloads again only the "
 "messages it cannot match."
@@ -2829,95 +2829,104 @@ msgstr ""
 "Penguin Mail garde le courrier sur cet ordinateur et ne télécharge à nouveau "
 "que les messages qu’il ne peut pas rapprocher."
 
-#: app/src/offered.rs:685
+#: app/src/offered.rs:688
 msgid "Name, color and place"
 msgstr "Nom, couleur et place"
 
-#: app/src/offered.rs:686
+#: app/src/offered.rs:689
 msgid "{address} keeps its spot in the sidebar."
 msgstr "{address} garde sa place dans la barre latérale."
 
-#: app/src/offered.rs:690
+#: app/src/offered.rs:693
 msgid "Your own data"
 msgstr "Vos propres données"
 
-#: app/src/offered.rs:691
+#: app/src/offered.rs:694
 msgid "Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."
 msgstr "Rappels, suivis, drapeaux, règles, VIP, signatures et brouillons."
 
-#: app/src/offered.rs:697
+#: app/src/offered.rs:700
+msgid "Calendars are read again where JMAP serves them"
+msgstr "Les calendriers sont relus là où JMAP les fournit"
+
+#: app/src/offered.rs:701
+msgid ""
+"If {provider} offers calendars over JMAP, Penguin Mail reads them from there."
+msgstr "Si {provider} propose des calendriers via JMAP, Penguin Mail les lit depuis là."
+
+#: app/src/offered.rs:707
 msgid "Calendar sign-in"
 msgstr "Connexion aux calendriers"
 
-#: app/src/offered.rs:698
+#: app/src/offered.rs:708
 msgid "The app password you use for calendars stays as it is."
 msgstr "Le mot de passe d’application de vos calendriers reste tel quel."
 
-#: app/src/offered.rs:729
+#: app/src/offered.rs:739
 msgid "Could not switch to JMAP: {reason}"
 msgstr "Impossible de passer à JMAP : {reason}"
 
-#: app/src/offered.rs:730
+#: app/src/offered.rs:740
 msgid "Your IMAP account is unchanged."
 msgstr "Votre compte IMAP reste inchangé."
 
-#: app/src/offered.rs:743
+#: app/src/offered.rs:753
 msgid "This account uses JMAP already."
 msgstr "Ce compte utilise déjà JMAP."
 
-#: app/src/offered.rs:747
+#: app/src/offered.rs:757
 msgid "{provider} did not accept the token."
 msgstr "{provider} n’a pas accepté le jeton."
 
-#: app/src/offered.rs:748
+#: app/src/offered.rs:758
 msgid "{provider} did not accept the password."
 msgstr "{provider} n’a pas accepté le mot de passe."
 
-#: app/src/offered.rs:751
+#: app/src/offered.rs:761
 msgid "You can choose Sign In With Browser instead."
 msgstr "Vous pouvez choisir Se connecter avec le navigateur à la place."
 
-#: app/src/offered.rs:756
+#: app/src/offered.rs:766
 msgid "{provider} signed in to another account, not {address}."
 msgstr "{provider} a connecté un autre compte, pas {address}."
 
-#: app/src/offered.rs:760
+#: app/src/offered.rs:770
 msgid "The token holds a character that cannot be sent."
 msgstr "Le jeton contient un caractère qui ne peut pas être envoyé."
 
-#: app/src/offered.rs:761
+#: app/src/offered.rs:771
 msgid "The password holds a character that cannot be sent."
 msgstr "Le mot de passe contient un caractère qui ne peut pas être envoyé."
 
-#: app/src/offered.rs:763 app/src/offered.rs:799
+#: app/src/offered.rs:773 app/src/offered.rs:809
 msgid "{provider} does not answer."
 msgstr "{provider} ne répond pas."
 
-#: app/src/offered.rs:768
+#: app/src/offered.rs:778
 msgid "{provider} did not give the draft of a message waiting in Send Later."
 msgstr ""
 "{provider} n’a pas fourni le brouillon d’un message en attente dans Envoyer "
 "plus tard."
 
-#: app/src/offered.rs:772
+#: app/src/offered.rs:782
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 "Le courrier de {provider} n’a cessé de changer pendant que Penguin Mail le "
 "rapprochait."
 
-#: app/src/offered.rs:795
+#: app/src/offered.rs:805
 msgid "{provider} refused the sign-in in the browser."
 msgstr "{provider} a refusé la connexion dans le navigateur."
 
-#: app/src/offered.rs:797
+#: app/src/offered.rs:807
 msgid "You did not allow Penguin Mail on {provider}'s page."
 msgstr "Vous n’avez pas autorisé Penguin Mail sur la page de {provider}."
 
-#: app/src/offered.rs:819
+#: app/src/offered.rs:829
 msgid "{address} now uses JMAP"
 msgstr "{address} utilise désormais JMAP"
 
-#: app/src/offered.rs:823
+#: app/src/offered.rs:833
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."

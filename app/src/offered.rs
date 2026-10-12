@@ -662,12 +662,15 @@ fn switch_row(icon: &'static str, title: String, subtitle: String) -> SwitchRow 
     SwitchRow { icon, title, subtitle }
 }
 
-/// The dialog's rows for `account`. `calendar_stays` adds the line about
-/// the app password its calendars keep signing in with, for a provider
-/// whose JMAP takes a token while CalDAV takes that password.
-pub fn switch_rows(account: &Account, calendar_stays: bool) -> SwitchRows {
+/// The dialog's rows for `account`. `calendars` says the account reads
+/// calendars from a CalDAV server. Where the JMAP sign-in takes a `token`,
+/// a line says the app password those calendars sign in with stays, as at
+/// Fastmail, whose JMAP serves no calendar. Where it takes the password,
+/// the server may serve calendars over JMAP, and a line says the switch
+/// then reads them again from there.
+pub fn switch_rows(account: &Account, calendars: bool, token: bool) -> SwitchRows {
     let provider = mailrs_discover::resolved_provider_name(account.provider_name());
-    let changes = vec![
+    let mut changes = vec![
         switch_row(
             "penguin-mail-inbox-symbolic",
             gettext("New mail arrives as it is sent"),
@@ -691,7 +694,14 @@ pub fn switch_rows(account: &Account, calendar_stays: bool) -> SwitchRows {
             gettext("Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."),
         ),
     ];
-    if calendar_stays {
+    if calendars && !token {
+        changes.push(switch_row(
+            "penguin-mail-calendar-symbolic",
+            gettext("Calendars are read again where JMAP serves them"),
+            fill(&gettext("If {provider} offers calendars over JMAP, Penguin Mail reads them from there."), &[("provider", &provider)]),
+        ));
+    }
+    if calendars && token {
         stays.push(switch_row(
             "penguin-mail-calendar-symbolic",
             gettext("Calendar sign-in"),
@@ -986,7 +996,7 @@ mod tests {
 
     #[test]
     fn the_switch_says_what_moves_and_what_stays() {
-        let rows = super::switch_rows(&fastmail(), true);
+        let rows = super::switch_rows(&fastmail(), true, true);
         let said: Vec<String> = rows.changes.iter().chain(&rows.stays).map(|r| format!("{} {}", r.title, r.subtitle)).collect();
         let said = said.join("\n");
         assert!(said.contains("Fastmail"), "{said}");
@@ -1009,8 +1019,17 @@ mod tests {
 
     #[test]
     fn only_a_token_sign_in_names_the_calendar_password_that_stays() {
-        assert_eq!(super::switch_rows(&fastmail(), true).stays.len(), 3);
-        assert_eq!(super::switch_rows(&fastmail(), false).stays.len(), 2);
+        assert_eq!(super::switch_rows(&fastmail(), true, true).stays.len(), 3);
+        assert_eq!(super::switch_rows(&fastmail(), false, true).stays.len(), 2);
+    }
+
+    #[test]
+    fn a_password_server_says_its_calendars_may_come_over_jmap() {
+        let rows = super::switch_rows(&fastmail(), true, false);
+        assert_eq!(rows.stays.len(), 2, "no app password stays for the calendar");
+        let last = rows.changes.last().expect("rows");
+        assert_eq!(last.title, "Calendars are read again where JMAP serves them");
+        assert_eq!(last.subtitle, "If Fastmail offers calendars over JMAP, Penguin Mail reads them from there.");
     }
 
     const TOKEN: super::SwitchAsked<'static> =

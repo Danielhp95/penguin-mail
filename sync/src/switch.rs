@@ -767,7 +767,7 @@ pub async fn to_jmap_over<J: JmapApi>(
     let found = db.read(move |c| mailrs_store::services::load(c, id)).await?;
     let contacts_from_jmap = saved.offers(mailrs_jmap::CONTACTS);
     let needs_dav_password = found.iter().filter(|f| f.confirmed).any(|f| match f.kind {
-        ServiceKind::CalDav => true,
+        ServiceKind::CalDav => !saved.offers(mailrs_jmap::CALENDARS),
         ServiceKind::CardDav => !contacts_from_jmap,
         ServiceKind::Sieve => !saved.offers(mailrs_jmap::SIEVE),
     });

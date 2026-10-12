@@ -80,7 +80,7 @@ pub fn present(
     };
     let proposal = add_account::jmap_proposal(found, None, &address);
     let token = add_account::token_only(&proposal);
-    let rows = offered::switch_rows(&account, token && calendars);
+    let rows = offered::switch_rows(&account, calendars, token);
 
     let page = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
