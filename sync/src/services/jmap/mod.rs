@@ -28,6 +28,8 @@ use mailrs_mime::Parts;
 
 pub use api::JmapApi;
 pub(crate) use errors::backend;
+pub(crate) use fetch::received_millis;
+pub(crate) use outgoing::{bare_message_id, has_message_id};
 #[cfg(test)]
 pub(crate) use bodies::numbered as numbered_for_tests;
 

@@ -27,7 +27,7 @@ const OVERLAP: u64 = 50;
 /// The most messages of one thread a whole-thread fetch keeps.
 const MOST_IN_THREAD: usize = 500;
 
-pub(super) fn received_millis(email: &Email) -> i64 {
+pub(crate) fn received_millis(email: &Email) -> i64 {
     email
         .received_at
         .as_deref()
