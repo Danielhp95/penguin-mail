@@ -887,7 +887,14 @@ async fn an_oauth_account_the_server_still_refuses_stops_and_asks_for_a_sign_in(
     .await
     .expect("the account kept syncing");
     let asked = server.received_requests().await.unwrap().len();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Every backoff and restart the engine could still have set fires
+    // here, well past them all, without a real wait.
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::resume();
     assert_eq!(server.received_requests().await.unwrap().len(), asked, "nothing calls the server after the stop");
 }
 

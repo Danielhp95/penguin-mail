@@ -1,6 +1,5 @@
 //! The account's mail service in store ids, over the IMAP and Gmail fakes.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_domain::Location;
@@ -52,12 +51,16 @@ async fn the_server_answers_in_store_ids() {
 async fn a_look_waits_for_a_move_in_flight() {
     let h = moved().await;
     let moves = h.sync.mail().hold_moves().await;
-    let sync = Arc::clone(&h.sync);
-    let look = tokio::spawn(async move { sync.incremental().await });
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(!look.is_finished(), "the look waits while mail is moving");
+    let mut look = std::pin::pin!(h.sync.incremental());
+    // The look's first step is the lock, so the first poll stops there.
+    assert!(futures::poll!(look.as_mut()).is_pending(), "the look waits while mail is moving");
+    // Held, it stays there: any other wait would be one for the store,
+    // which answers whatever the clock says.
+    tokio::time::pause();
+    assert!(tokio::time::timeout(Duration::from_secs(3600), look.as_mut()).await.is_err());
+    tokio::time::resume();
     drop(moves);
-    look.await.unwrap().unwrap();
+    look.await.unwrap();
 }
 
 /// Gmail's names are the store's ids, so nothing reads a ref: one planted
@@ -79,6 +82,6 @@ async fn a_label_server_reads_no_refs_and_never_waits() {
     assert_eq!(raws[0].id, "m1");
 
     let _moves = h.sync.mail().hold_moves().await;
-    let again = tokio::time::timeout(Duration::from_millis(10), h.sync.mail().hold_moves()).await;
-    assert!(again.is_ok(), "nothing waits on a label server");
+    let again = futures::FutureExt::now_or_never(h.sync.mail().hold_moves());
+    assert!(again.is_some(), "nothing waits on a label server");
 }
