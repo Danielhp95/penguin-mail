@@ -16,7 +16,7 @@ use mailrs_store::accounts;
 use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
 
 use super::{BrowserSignInError, NewJmap, SignedAs, SignedIn, jmap_signed_in};
-use crate::{Connector, connect_jmap, now_millis};
+use crate::{Connector, JmapGrant, connect_jmap, now_millis};
 
 /// How long the sign-in waits for the browser to come back: RFC 8252's
 /// usual bound for a person at a consent page. The loopback listener
@@ -49,6 +49,8 @@ pub(crate) trait SignInServer: Send + Sync {
     fn metadata(&self, session_url: &str) -> impl Future<Output = Result<Metadata, JmapError>> + Send;
     fn register(&self, metadata: &Metadata, redirect: &str, scopes: &[String]) -> impl Future<Output = Result<String, JmapError>> + Send;
     fn exchange(&self, client: &OAuthClient, code: &str, redirect: &str, pkce: &Pkce) -> impl Future<Output = Result<Tokens, JmapError>> + Send;
+    /// Revokes a grant the app will not keep, on a task of its own.
+    fn revoke(&self, grant: JmapGrant);
 }
 
 struct Live;
@@ -64,6 +66,10 @@ impl SignInServer for Live {
 
     async fn exchange(&self, client: &OAuthClient, code: &str, redirect: &str, pkce: &Pkce) -> Result<Tokens, JmapError> {
         client.exchange(code, redirect, pkce).await
+    }
+
+    fn revoke(&self, grant: JmapGrant) {
+        tokio::spawn(grant.revoke());
     }
 }
 
@@ -257,6 +263,9 @@ pub(crate) async fn signing_in<S: SignInServer>(
         "" => checked.address.clone().unwrap_or_default(),
         typed => typed.to_string(),
     };
+    // What revoking this grant takes, should the session turn out to be
+    // someone else's.
+    let refused = JmapGrant { session_url: offer.session_url.clone(), client_id: client_id.clone(), refresh_token: refresh.clone() };
     let new = NewJmap {
         address,
         provider_name,
@@ -275,10 +284,18 @@ pub(crate) async fn signing_in<S: SignInServer>(
     };
     let Connector { db, config, secrets, .. } = connector;
     // The keyring takes the refresh token as the account is kept; when it
-    // refuses, a new account goes again and the sign-in fails.
-    // The new refresh token, and maybe a new client, need a new session:
-    // `jmap_signed_in` retires the old one before it keeps the token.
-    let account = jmap_signed_in(db, secrets, new, now_millis()).await?;
+    // refuses, a new account goes again and the sign-in fails. The new
+    // refresh token, and maybe a new client, need a new session:
+    // `jmap_signed_in` retires the old one once it keeps the token.
+    let account = match jmap_signed_in(db, secrets, new, now_millis()).await {
+        Ok(account) => account,
+        // The grant belongs to another account, and nothing keeps it.
+        Err(err @ super::JmapSignInError::DifferentAccount { .. }) => {
+            server.revoke(refused);
+            return Err(err.into());
+        }
+        Err(err) => return Err(err.into()),
+    };
     // A new grant may carry what a calendar server refused before.
     crate::connect::try_the_token_again(db, account.id).await?;
     let window_days = config.engine_config().window_days;
@@ -310,15 +327,21 @@ mod tests {
         names: &'static str,
         registered: AtomicUsize,
         exchanges: Mutex<VecDeque<Result<Tokens, JmapError>>>,
+        /// The client and refresh token of each grant it was asked to revoke.
+        revoked: Mutex<Vec<(String, String)>>,
     }
 
     impl FakeServer {
         fn answering(names: &'static str, exchanges: Vec<Result<Tokens, JmapError>>) -> FakeServer {
-            FakeServer { names, registered: AtomicUsize::new(0), exchanges: Mutex::new(exchanges.into()) }
+            FakeServer { names, registered: AtomicUsize::new(0), exchanges: Mutex::new(exchanges.into()), revoked: Mutex::new(Vec::new()) }
         }
 
         fn registrations(&self) -> usize {
             self.registered.load(Ordering::SeqCst)
+        }
+
+        fn revoked(&self) -> Vec<(String, String)> {
+            self.revoked.lock().unwrap().clone()
         }
     }
 
@@ -336,6 +359,10 @@ mod tests {
         async fn exchange(&self, client: &OAuthClient, code: &str, _redirect: &str, _pkce: &Pkce) -> Result<Tokens, JmapError> {
             assert_eq!((code, client.token_endpoint.as_str()), ("c1", "https://api.fastmail.com/oauth/refresh"));
             self.exchanges.lock().unwrap().pop_front().expect("an exchange the test did not expect")
+        }
+
+        fn revoke(&self, grant: JmapGrant) {
+            self.revoked.lock().unwrap().push((grant.client_id, grant.refresh_token));
         }
     }
 
@@ -721,6 +748,8 @@ mod tests {
         let Err(err) = refused else { panic!("another account's grant was kept") };
         assert_eq!(err.to_string(), "You signed in to a different account than me@fastmail.com, so nothing changed.");
         assert_eq!(kept(&db, &reach, id).await, before, "the account keeps its server, client and token");
+        assert_eq!(theirs.revoked(), [("client-1".to_string(), "r2".to_string())], "the other account's grant is revoked");
+        assert!(first.revoked().is_empty());
     }
 
     #[tokio::test]
@@ -733,6 +762,7 @@ mod tests {
         let session_url = format!("{}/jmap/session", jmap.uri());
         let refused = sign_in_as(&server, &reach, &session_url, &Arc::new(Mutex::new(Vec::new())), "boss@fastmail.com").await;
         assert!(matches!(refused, Err(BrowserSignInError::KeptJmap(crate::sign_in::JmapSignInError::DifferentAccount { .. }))));
+        assert_eq!(server.revoked(), [("client-1".to_string(), "r1".to_string())], "the refused grant is revoked");
         assert!(db.read(accounts::list_accounts).await.unwrap().is_empty(), "no account is added");
     }
 }

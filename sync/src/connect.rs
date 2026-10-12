@@ -564,7 +564,8 @@ impl JmapSessions {
     }
 }
 
-/// What revoking a removed JMAP account's browser sign-in needs. No
+/// What revoking a browser sign-in the app no longer keeps needs: a
+/// removed account's, or one that reached someone else's account. No
 /// `Debug`: it holds the refresh token.
 pub struct JmapGrant {
     pub(crate) session_url: String,
@@ -614,9 +615,9 @@ impl JmapGrant {
     /// went, never the server's words or the token.
     pub async fn revoke(self) {
         match mailrs_jmap::oauth::revoke(&self.session_url, &self.client_id, &self.refresh_token).await {
-            Ok(true) => tracing::info!("revoked the removed account's browser sign-in"),
-            Ok(false) => tracing::info!("the server offers no revocation; the removed account's grant stays until it runs out"),
-            Err(_) => tracing::warn!("could not revoke the removed account's browser sign-in"),
+            Ok(true) => tracing::info!("revoked a browser sign-in the app no longer keeps"),
+            Ok(false) => tracing::info!("the server offers no revocation; the grant stays until it runs out"),
+            Err(_) => tracing::warn!("could not revoke a browser sign-in the app no longer keeps"),
         }
     }
 }
