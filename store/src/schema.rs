@@ -9,6 +9,14 @@ use rusqlite::functions::FunctionFlags;
 
 use crate::{Result, StoreError};
 
+/// Every schema change, in order; append only.
+///
+/// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
+/// `local_messages_follow`, which takes a POP3 message's bytes with its
+/// row, and the contact triggers of migration 61. Such a migration must
+/// create them again. It also renumbers the implicit rowids the
+/// correspondents tally counts by, as a VACUUM may, so either must mark
+/// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
 const MIGRATIONS: &[&str] = &[
     r#"
 CREATE TABLE accounts (
@@ -757,8 +765,10 @@ CREATE TABLE rule_changes (
     // that is not downloaded yet, with its last words.
     //
     // `local_messages` holds the raw bytes of mail that lives only here,
-    // and goes with the message row. `accounts.pop3_remove` is `never`,
-    // `downloaded` or `days`, with the day count beside it. SQLite cannot
+    // and goes with the message row (`local_messages_follow`, which a
+    // migration rebuilding `messages` must create again).
+    // `accounts.pop3_remove` is `never`, `downloaded` or `days`, with the
+    // day count beside it. SQLite cannot
     // widen a CHECK in place, so `account_servers` is rebuilt to take a
     // 'pop3' role.
     r#"
@@ -933,6 +943,81 @@ ALTER TABLE jmap_accounts_new RENAME TO jmap_accounts;
     // otherwise walks the whole mailbox. Adds an index; changes no row.
     r#"
 CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
+"#,
+    // An invitation names its event by iCalendar UID, which the calendar
+    // reads with any case, so finding the event walked every event of the
+    // account. Adds an index on the lower-case UID; changes no row.
+    r#"
+CREATE INDEX events_by_uid ON events(account_id, lower(uid));
+"#,
+    // The recipient suggestions count correspondents from every message.
+    // `correspondents` holds that tally as counted up to message row
+    // `counted_row`, and the writer brings it up to date when idle
+    // (`contacts::catch_up`), so nothing stays in memory between reads. A
+    // change to a row it already counted marks it `stale`, and the next
+    // catch-up counts every row again; a row past `counted_row` needs no
+    // mark, since no tally holds it yet. The table is derived, so it starts
+    // empty and stale, and it travels with the file.
+    //
+    // The tally keys on the messages table's implicit rowid. A VACUUM may
+    // renumber it, and a migration that rebuilds `messages` renumbers it
+    // and drops its triggers (these and `local_messages_follow`): either
+    // must recreate the triggers and set `stale = 1, counted_row = 0`.
+    r#"
+CREATE TABLE contact_marks (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    stale       INTEGER NOT NULL DEFAULT 1,
+    counted_row INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO contact_marks (id) VALUES (1);
+CREATE TABLE correspondents (
+    key       TEXT PRIMARY KEY,
+    email     TEXT NOT NULL,
+    name      TEXT,
+    score     INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TRIGGER contacts_message_gone AFTER DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_message_changed AFTER UPDATE OF from_name, from_addr, to_addrs, cc_addrs, date ON messages
+WHEN (OLD.from_name IS NOT NEW.from_name OR OLD.from_addr IS NOT NEW.from_addr
+    OR OLD.to_addrs IS NOT NEW.to_addrs OR OLD.cc_addrs IS NOT NEW.cc_addrs OR OLD.date IS NOT NEW.date)
+    AND NEW.rowid <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_filed AFTER INSERT ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent')
+    AND (SELECT rowid FROM messages WHERE account_id = NEW.account_id AND id = NEW.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_unfiled AFTER DELETE ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+    AND (SELECT rowid FROM messages WHERE account_id = OLD.account_id AND id = OLD.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes
+WHEN (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_role AFTER UPDATE OF role ON mailboxes
+WHEN (OLD.role IS 'sent') <> (NEW.role IS 'sent') AND (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_gone AFTER DELETE ON mailboxes
+WHEN OLD.role IS 'sent' AND (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
 "#,
 ];
 

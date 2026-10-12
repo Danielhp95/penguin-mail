@@ -12,6 +12,7 @@ use mailrs_domain::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::deletion::{self, Cause};
 use crate::threading::{self, Links};
 use crate::{Result, StoreError};
 
@@ -56,10 +57,20 @@ pub enum Change {
         category: String,
         on: bool,
     },
-    Delete {
+    /// A person deleted the message for good: Delete Forever, Empty
+    /// Trash, a draft discarded or saved over, a folder deleted with its
+    /// mail. Applies to every account.
+    Erase {
         message_id: String,
     },
-    DeleteThread {
+    /// The server no longer holds the message, as a sync reads it. An
+    /// account whose mail lives only in the store keeps it: see
+    /// [`crate::deletion`].
+    Gone {
+        message_id: String,
+    },
+    /// The server no longer holds the thread. Kept like [`Change::Gone`].
+    ThreadGone {
         thread_id: String,
     },
     /// Notes that the store now holds every message of the thread.
@@ -180,14 +191,26 @@ pub fn apply(conn: &Connection, account_id: AccountId, changes: &[Change]) -> Re
                 )?
                 .execute(params![account_id, message_id, generation])?;
             }
-            Change::Delete { message_id } => {
-                touched
-                    .threads
-                    .extend(delete_message(conn, account_id, message_id)?);
+            Change::Erase { message_id } => {
+                touched.threads.extend(deletion::delete_message(
+                    conn,
+                    account_id,
+                    message_id,
+                    Cause::Person,
+                )?);
             }
-            Change::DeleteThread { thread_id } => {
-                delete_thread(conn, account_id, thread_id)?;
-                touched.threads.insert(thread_id.clone());
+            Change::Gone { message_id } => {
+                touched.threads.extend(deletion::delete_message(
+                    conn,
+                    account_id,
+                    message_id,
+                    Cause::Sync,
+                )?);
+            }
+            Change::ThreadGone { thread_id } => {
+                if deletion::delete_thread(conn, account_id, thread_id, Cause::Sync)? {
+                    touched.threads.insert(thread_id.clone());
+                }
             }
             Change::MarkWhole { thread_id } => whole.push(thread_id),
             Change::KeywordGone {
@@ -396,26 +419,35 @@ fn replace_memberships(
     message_id: &str,
     held: &Memberships,
 ) -> Result<()> {
-    for table in ["message_mailboxes", "message_categories"] {
-        conn.prepare_cached(&format!(
-            "DELETE FROM {table} WHERE account_id = ?1 AND message_id = ?2"
-        ))?
-        .execute(params![account_id, message_id])?;
+    // Filings that stay are left alone, so mail read again as it was
+    // fires none of the filing triggers (`contacts_sent_filed`).
+    let wanted: BTreeSet<i64> = held
+        .mailboxes
+        .iter()
+        .map(|id| mailbox_key(conn, account_id, id))
+        .collect::<Result<_>>()?;
+    let filed: BTreeSet<i64> = conn
+        .prepare_cached("SELECT mailbox FROM message_mailboxes WHERE account_id = ?1 AND message_id = ?2")?
+        .query_map(params![account_id, message_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut unfile = conn.prepare_cached(
+        "DELETE FROM message_mailboxes WHERE account_id = ?1 AND message_id = ?2 AND mailbox = ?3",
+    )?;
+    for key in filed.difference(&wanted) {
+        unfile.execute(params![account_id, message_id, key])?;
     }
+    let mut file = conn.prepare_cached(
+        "INSERT OR IGNORE INTO message_mailboxes (account_id, message_id, mailbox) VALUES (?1, ?2, ?3)",
+    )?;
+    for key in wanted.difference(&filed) {
+        file.execute(params![account_id, message_id, key])?;
+    }
+    conn.prepare_cached("DELETE FROM message_categories WHERE account_id = ?1 AND message_id = ?2")?
+        .execute(params![account_id, message_id])?;
     conn.prepare_cached(
         "DELETE FROM message_keywords WHERE account_id = ?1 AND message_id = ?2 AND local = 0",
     )?
     .execute(params![account_id, message_id])?;
-    let mut mailbox = conn.prepare_cached(
-        "INSERT OR IGNORE INTO message_mailboxes (account_id, message_id, mailbox) VALUES (?1, ?2, ?3)",
-    )?;
-    for id in &held.mailboxes {
-        mailbox.execute(params![
-            account_id,
-            message_id,
-            mailbox_key(conn, account_id, id)?
-        ])?;
-    }
     let mut keyword = conn.prepare_cached(
         "INSERT OR IGNORE INTO message_keywords (account_id, message_id, keyword) VALUES (?1, ?2, ?3)",
     )?;
@@ -472,39 +504,6 @@ pub fn size_of(conn: &Connection, account_id: AccountId, message_id: &str) -> Re
         .prepare_cached("SELECT size FROM messages WHERE account_id = ?1 AND id = ?2")?
         .query_row(params![account_id, message_id], |row| row.get(0))
         .optional()?)
-}
-
-/// Deletes a message with its labels and body. Returns its thread, or `None`
-/// when the message was not stored.
-fn delete_message(
-    conn: &Connection,
-    account_id: AccountId,
-    message_id: &str,
-) -> Result<Option<String>> {
-    let thread_id = thread_id_of(conn, account_id, message_id)?;
-    if thread_id.is_some() {
-        conn.execute(
-            "DELETE FROM messages WHERE account_id = ?1 AND id = ?2",
-            params![account_id, message_id],
-        )?;
-    }
-    Ok(thread_id)
-}
-
-pub(crate) fn delete_thread(
-    conn: &Connection,
-    account_id: AccountId,
-    thread_id: &str,
-) -> Result<()> {
-    conn.execute(
-        "DELETE FROM messages WHERE account_id = ?1 AND thread_id = ?2",
-        params![account_id, thread_id],
-    )?;
-    conn.execute(
-        "DELETE FROM threads WHERE account_id = ?1 AND id = ?2",
-        params![account_id, thread_id],
-    )?;
-    Ok(())
 }
 
 /// The ids of the stored messages in `set`.

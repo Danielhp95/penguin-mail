@@ -101,7 +101,7 @@ impl AccountSync {
                 .write(move |c| {
                     let deletions: Vec<Change> = erased
                         .iter()
-                        .map(|id| Change::Delete {
+                        .map(|id| Change::Erase {
                             message_id: id.clone(),
                         })
                         .collect();

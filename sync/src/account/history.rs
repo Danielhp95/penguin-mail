@@ -147,7 +147,7 @@ impl AccountSync {
                             }
                         }
                         RemoteChange::Deleted { id } => {
-                            batch.push(Change::Delete {
+                            batch.push(Change::Gone {
                                 message_id: id.clone(),
                             });
                         }
@@ -194,7 +194,7 @@ impl AccountSync {
                                 })?;
                             batch.extend(
                                 gone.into_iter()
-                                    .map(|message_id| Change::Delete { message_id }),
+                                    .map(|message_id| Change::Gone { message_id }),
                             );
                         }
                         RemoteChange::Holds {
@@ -208,7 +208,7 @@ impl AccountSync {
                                 })?;
                             batch.extend(
                                 gone.into_iter()
-                                    .map(|message_id| Change::Delete { message_id }),
+                                    .map(|message_id| Change::Gone { message_id }),
                             );
                         }
                         // Relisted and compared above.
@@ -378,7 +378,7 @@ impl AccountSync {
                 })?;
                 let deletes: Vec<Change> = gone
                     .iter()
-                    .map(|id| Change::Delete {
+                    .map(|id| Change::Gone {
                         message_id: id.clone(),
                     })
                     .collect();

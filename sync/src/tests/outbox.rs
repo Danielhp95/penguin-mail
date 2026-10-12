@@ -220,7 +220,7 @@ async fn a_draft_edited_elsewhere_answers_for_its_new_message_alone() {
     store_draft_message(&h, &moved).await;
     let (account_id, gone) = (h.account_id, saved.message_id.clone());
     h.db.write(move |c| {
-        let delete = Change::Delete { message_id: gone };
+        let delete = Change::Gone { message_id: gone };
         messages::apply(c, account_id, &[delete]).map(drop)
     })
     .await

@@ -438,7 +438,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
             ask_removal(c, a, &ids)?;
             let deletions: Vec<Change> = ids
                 .into_iter()
-                .map(|message_id| Change::Delete { message_id })
+                .map(|message_id| Change::Erase { message_id })
                 .collect();
             messages::apply(c, a, &deletions)?;
             Ok(())
@@ -698,7 +698,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
             .write(move |c, a| {
                 keep_local(c, a, meta, links, &raw)?;
                 if let Some(old) = old {
-                    messages::apply(c, a, &[Change::Delete { message_id: old }])?;
+                    messages::apply(c, a, &[Change::Erase { message_id: old }])?;
                 }
                 Ok(messages::thread_id_of(c, a, &new)?.unwrap_or_else(|| new.clone()))
             })
@@ -722,7 +722,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
         let held = self
             .write(move |c, a| {
                 let held = messages::thread_id_of(c, a, &id)?.is_some();
-                messages::apply(c, a, &[Change::Delete { message_id: id }])?;
+                messages::apply(c, a, &[Change::Erase { message_id: id }])?;
                 Ok(held)
             })
             .await?;

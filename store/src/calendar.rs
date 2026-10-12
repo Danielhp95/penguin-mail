@@ -245,64 +245,62 @@ pub fn synced(conn: &Connection, account_id: AccountId) -> Result<bool> {
 pub fn save_events(conn: &Connection, account_id: AccountId, events: &[Event], seen_at: EpochMillis) -> Result<()> {
     for event in events {
         let attachments = kept_attachments(conn, account_id, event)?;
-        conn.execute(
+        conn.prepare_cached(
             "INSERT OR REPLACE INTO events (account_id, calendar, id, uid, etag, starts_at, ends_at, zone, \
              all_day, title, place, description, color, busy, status, private, organizer, my_answer, \
              reminders, conference, rules, series_end, series, original_start, pending, seen_at, sequence, kind, \
              attachments) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, \
              ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
-            params![
+        )?
+        .execute(params![
+            account_id,
+            event.calendar,
+            event.id,
+            event.uid,
+            event.etag,
+            event.start,
+            event.end,
+            event.zone,
+            event.all_day,
+            event.title,
+            event.place,
+            event.description,
+            event.color,
+            event.busy,
+            event.status.as_str(),
+            event.private,
+            event.organizer,
+            event.my_answer.map(|a| a.as_str()),
+            event.reminders.as_ref().map(json),
+            event.conference,
+            event.rules.join("\n"),
+            model::series_end(event),
+            event.series,
+            event.original_start,
+            event.pending,
+            seen_at,
+            event.sequence,
+            (event.kind != Kind::Event).then(|| json(&event.kind)),
+            attachments.as_ref().map(json),
+        ])?;
+        conn.prepare_cached("DELETE FROM event_guests WHERE account_id = ?1 AND calendar = ?2 AND event = ?3")?
+            .execute(params![account_id, event.calendar, event.id])?;
+        let mut insert = conn.prepare_cached(
+            "INSERT OR REPLACE INTO event_guests (account_id, calendar, event, email, name, answer, organizer, me) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )?;
+        for guest in &event.guests {
+            insert.execute(params![
                 account_id,
                 event.calendar,
                 event.id,
-                event.uid,
-                event.etag,
-                event.start,
-                event.end,
-                event.zone,
-                event.all_day,
-                event.title,
-                event.place,
-                event.description,
-                event.color,
-                event.busy,
-                event.status.as_str(),
-                event.private,
-                event.organizer,
-                event.my_answer.map(|a| a.as_str()),
-                event.reminders.as_ref().map(json),
-                event.conference,
-                event.rules.join("\n"),
-                model::series_end(event),
-                event.series,
-                event.original_start,
-                event.pending,
-                seen_at,
-                event.sequence,
-                (event.kind != Kind::Event).then(|| json(&event.kind)),
-                attachments.as_ref().map(json),
-            ],
-        )?;
-        conn.execute(
-            "DELETE FROM event_guests WHERE account_id = ?1 AND calendar = ?2 AND event = ?3",
-            params![account_id, event.calendar, event.id],
-        )?;
-        for guest in &event.guests {
-            conn.execute(
-                "INSERT OR REPLACE INTO event_guests (account_id, calendar, event, email, name, answer, organizer, me) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    account_id,
-                    event.calendar,
-                    event.id,
-                    guest.email,
-                    guest.name,
-                    guest.answer.map(|a| a.as_str()),
-                    guest.organizer,
-                    guest.me,
-                ],
-            )?;
+                guest.email,
+                guest.name,
+                guest.answer.map(|a| a.as_str()),
+                guest.organizer,
+                guest.me,
+            ])?;
         }
     }
     Ok(())
@@ -422,7 +420,7 @@ pub fn event(conn: &Connection, account_id: AccountId, calendar: &str, id: &str)
         .optional()?;
     match found {
         Some(mut event) => {
-            event.guests = guests(conn, account_id, calendar, id)?;
+            read_guests(conn, account_id, [&mut event])?;
             Ok(Some(event))
         }
         None => Ok(None),
@@ -443,9 +441,7 @@ pub fn changed_occurrences(
     ))?;
     let mut found: Vec<Event> =
         stmt.query_map(params![account_id, calendar, series], read_event)?.collect::<rusqlite::Result<_>>()?;
-    for event in &mut found {
-        event.guests = guests(conn, account_id, calendar, &event.id)?;
-    }
+    read_guests(conn, account_id, &mut found)?;
     Ok(found)
 }
 
@@ -460,11 +456,8 @@ fn kept_attachments(conn: &Connection, account_id: AccountId, event: &Event) -> 
     let mut fresh = fresh.clone();
     if !event.pending {
         let held: Option<Option<String>> = conn
-            .query_row(
-                "SELECT attachments FROM events WHERE account_id = ?1 AND calendar = ?2 AND id = ?3",
-                params![account_id, event.calendar, event.id],
-                |row| row.get(0),
-            )
+            .prepare_cached("SELECT attachments FROM events WHERE account_id = ?1 AND calendar = ?2 AND id = ?3")?
+            .query_row(params![account_id, event.calendar, event.id], |row| row.get(0))
             .optional()?;
         if let Some(Some(text)) = held {
             model::keep_local(&mut fresh, &parse::<Vec<model::Attachment>>(&text));
@@ -684,12 +677,10 @@ fn expand_rows(
         .iter()
         .filter_map(|e| Some((e.calendar.clone(), e.series.clone()?, e.original_start?)))
         .collect();
+    let mut events: Vec<Event> = events.into_iter().filter(|e| e.status != Status::Cancelled).collect();
+    read_guests(conn, account_id, &mut events)?;
     let mut found = Vec::new();
-    for mut event in events {
-        if event.status == Status::Cancelled {
-            continue;
-        }
-        event.guests = guests(conn, account_id, &event.calendar, &event.id)?;
+    for event in events {
         let event = Arc::new(event);
         for (start, end) in model::expand(&event, from, to) {
             if replaced.contains(&(event.calendar.clone(), event.id.clone(), start)) {
@@ -793,9 +784,9 @@ pub fn waiting(
     let mut found: Vec<Occurrence> = nearest.into_values().collect();
     found.sort_by(|a, b| (a.start, &a.event.title).cmp(&(b.start, &b.event.title)));
     found.truncate(limit);
-    for occurrence in &mut found {
-        let event = Arc::make_mut(&mut occurrence.event);
-        event.guests = guests(conn, occurrence.account_id, &event.calendar, &event.id)?;
+    for &account_id in accounts {
+        let of_account = found.iter_mut().filter(|o| o.account_id == account_id);
+        read_guests(conn, account_id, of_account.map(|o| Arc::make_mut(&mut o.event)))?;
     }
     Ok(found)
 }
@@ -902,12 +893,14 @@ pub fn search(
     let mut found: Vec<Ranked> = ranked.into_values().collect();
     found.sort_by_key(|(past, rank, ..)| (*past, *rank));
     found.truncate(limit);
-    let mut occurrences = Vec::with_capacity(found.len());
-    for (_, _, account_id, mut event, start, end) in found {
-        event.guests = guests(conn, account_id, &event.calendar, &event.id)?;
-        occurrences.push(Occurrence { account_id, event: Arc::new(event), start, end });
+    for &account_id in accounts {
+        let of_account = found.iter_mut().filter(|r| r.2 == account_id);
+        read_guests(conn, account_id, of_account.map(|r| &mut r.3))?;
     }
-    Ok(occurrences)
+    Ok(found
+        .into_iter()
+        .map(|(_, _, account_id, event, start, end)| Occurrence { account_id, event: Arc::new(event), start, end })
+        .collect())
 }
 
 /// The event's next occurrence at or after `from`, within a year ahead;
@@ -924,21 +917,48 @@ fn next_showing(event: &Event, from: EpochMillis) -> (EpochMillis, EpochMillis) 
     (event.start, event.end)
 }
 
-fn guests(conn: &Connection, account_id: AccountId, calendar: &str, event: &str) -> Result<Vec<Guest>> {
-    let mut stmt = conn.prepare(
-        "SELECT email, name, answer, organizer, me FROM event_guests \
-         WHERE account_id = ?1 AND calendar = ?2 AND event = ?3 ORDER BY organizer DESC, email",
-    )?;
-    let rows = stmt.query_map(params![account_id, calendar, event], |row| {
-        Ok(Guest {
-            email: row.get(0)?,
-            name: row.get(1)?,
-            answer: row.get::<_, Option<String>>(2)?.and_then(|a| a.parse().ok()),
-            organizer: row.get(3)?,
-            me: row.get(4)?,
-        })
+/// The guests of the events named in `?2`, a JSON list of
+/// `[calendar, id]` pairs, of account `?1`. The cross join walks the
+/// list and looks each event up by the table's key.
+const GUESTS_OF: &str = "SELECT g.calendar, g.event, g.email, g.name, g.answer, g.organizer, g.me \
+     FROM (SELECT DISTINCT value ->> 0 AS calendar, value ->> 1 AS event FROM json_each(?2)) j \
+     CROSS JOIN event_guests g ON g.account_id = ?1 AND g.calendar = j.calendar AND g.event = j.event \
+     ORDER BY g.organizer DESC, g.email";
+
+/// Gives each of `events`, all the account's, its guests, organizer
+/// first, then by address. Two copies of one event each get the list. One query reads the guests of them all, so a
+/// month of events costs one read rather than one per event.
+fn read_guests<'e>(
+    conn: &Connection,
+    account_id: AccountId,
+    events: impl IntoIterator<Item = &'e mut Event>,
+) -> Result<()> {
+    let events: Vec<&mut Event> = events.into_iter().collect();
+    if events.is_empty() {
+        return Ok(());
+    }
+    let keys: Vec<[&str; 2]> = events.iter().map(|e| [e.calendar.as_str(), e.id.as_str()]).collect();
+    let mut stmt = conn.prepare_cached(GUESTS_OF)?;
+    let rows = stmt.query_map(params![account_id, json(&keys)], |row| {
+        let guest = Guest {
+            email: row.get(2)?,
+            name: row.get(3)?,
+            answer: row.get::<_, Option<String>>(4)?.and_then(|a| a.parse().ok()),
+            organizer: row.get(5)?,
+            me: row.get(6)?,
+        };
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, guest))
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut by_event: HashMap<(String, String), Vec<Guest>> = HashMap::new();
+    for row in rows {
+        let (calendar, event, guest) = row?;
+        by_event.entry((calendar, event)).or_default().push(guest);
+    }
+    for event in events {
+        let key = (event.calendar.clone(), event.id.clone());
+        event.guests = by_event.get(&key).cloned().unwrap_or_default();
+    }
+    Ok(())
 }
 
 fn read_event(row: &Row) -> rusqlite::Result<Event> {
@@ -2117,6 +2137,63 @@ mod tests {
         lunch.guests = vec![Guest { email: "ana@example.com".into(), answer: Some(Answer::Yes), ..Guest::default() }];
         save_events(&conn, id, &[lunch.clone()], 0).unwrap();
         assert_eq!(super::event(&conn, id, "primary", "lunch").unwrap(), Some(lunch));
+    }
+
+    /// A range read reads every event's guests at once; each event still
+    /// gets its own, the organizer first, even where two calendars hold
+    /// the same event id.
+    #[test]
+    fn each_event_in_a_range_comes_back_with_its_own_guests() {
+        let (conn, id) = store();
+        let guest = |email: &str, organizer: bool| Guest { email: email.into(), organizer, ..Guest::default() };
+        let mut ours = event("primary", "lunch", MONDAY + 12 * HOUR, 1);
+        ours.guests = vec![guest("zoe@example.com", true), guest("ana@example.com", false)];
+        let mut theirs = event("team", "lunch", MONDAY + 13 * HOUR, 1);
+        theirs.guests = vec![guest("bo@example.com", false)];
+        let alone = event("team", "walk", MONDAY + 14 * HOUR, 1);
+        save_events(&conn, id, &[ours.clone(), theirs.clone(), alone], 0).unwrap();
+        let found = occurrences(&conn, &[id], MONDAY, MONDAY + 24 * HOUR, CalendarScope::Shown).unwrap();
+        let guests: Vec<(&str, Vec<&str>)> = found
+            .iter()
+            .map(|o| (o.event.calendar.as_str(), o.event.guests.iter().map(|g| g.email.as_str()).collect()))
+            .collect();
+        assert_eq!(
+            guests,
+            [
+                ("primary", vec!["zoe@example.com", "ana@example.com"]),
+                ("team", vec!["bo@example.com"]),
+                ("team", vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn two_copies_of_one_event_both_get_its_guests() {
+        let (conn, id) = store();
+        let mut lunch = event("primary", "lunch", MONDAY + 12 * HOUR, 1);
+        lunch.guests = vec![Guest { email: "ana@example.com".into(), ..Guest::default() }];
+        save_events(&conn, id, &[lunch.clone()], 0).unwrap();
+        let (mut first, mut second) = (lunch.clone(), lunch.clone());
+        first.guests.clear();
+        second.guests.clear();
+        read_guests(&conn, id, [&mut first, &mut second]).unwrap();
+        assert_eq!((first.guests, second.guests), (lunch.guests.clone(), lunch.guests));
+    }
+
+    #[test]
+    fn the_guests_of_a_range_are_read_by_the_tables_key() {
+        let (conn, _) = store();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {GUESTS_OF}"))
+            .unwrap()
+            .query_map(params![1, r#"[["primary","a"]]"#], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|step| step.contains("event_guests") && step.contains("account_id=? AND calendar=? AND event=?")),
+            "{plan:?}"
+        );
     }
 
     #[test]

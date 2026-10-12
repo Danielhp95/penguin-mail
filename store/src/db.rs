@@ -51,7 +51,22 @@ impl Db {
             .name("mailrs-db-writer".into())
             .spawn(move || {
                 let mut analyzed_at = writer.total_changes();
-                for job in jobs {
+                loop {
+                    let job = match jobs.try_recv() {
+                        Ok(job) => job,
+                        Err(mpsc::TryRecvError::Disconnected) => break,
+                        Err(mpsc::TryRecvError::Empty) => {
+                            // Idle: bring the kept correspondents tally up
+                            // to date, so a read of it counts few rows. A
+                            // failure leaves it as it was, and reads still
+                            // count what it lacks.
+                            let _ = catch_up_contacts(&mut writer);
+                            match jobs.recv() {
+                                Ok(job) => job,
+                                Err(_) => break,
+                            }
+                        }
+                    };
                     job(&mut writer);
                     // Statistics taken while a table was empty would steer
                     // the planner long after a bootstrap filled it.
@@ -147,6 +162,14 @@ impl Db {
         .await
         .map_err(|_| StoreError::Closed)?
     }
+}
+
+/// Runs [`crate::contacts::catch_up`] in a transaction of its own.
+fn catch_up_contacts(writer: &mut Connection) -> Result<()> {
+    let tx = writer.transaction()?;
+    crate::contacts::catch_up(&tx)?;
+    tx.commit()?;
+    Ok(())
 }
 
 impl Inner {

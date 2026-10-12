@@ -136,7 +136,7 @@ impl AccountSync {
                         if !overtaken {
                             for id in &answer.gone {
                                 changed |= before.iter().any(|m| &m.id == id);
-                                changes.push(Change::Delete {
+                                changes.push(Change::Gone {
                                     message_id: id.clone(),
                                 });
                             }
@@ -152,7 +152,7 @@ impl AccountSync {
                     // so an overtaken "not found" leaves the store alone.
                     None if overtaken => Ok(Written::Stored { changed: false }),
                     None => {
-                        let delete = Change::DeleteThread {
+                        let delete = Change::ThreadGone {
                             thread_id: thread.clone(),
                         };
                         messages::apply(c, account_id, &[delete])?;

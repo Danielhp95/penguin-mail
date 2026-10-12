@@ -1107,7 +1107,7 @@ fn migration_56_adds_jmap_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
          INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
@@ -1134,7 +1134,7 @@ fn migration_58_takes_oauth_jmap_accounts() {
     .unwrap();
     drop(conn);
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     let auth: String = conn.query_row("SELECT auth FROM jmap_accounts WHERE account_id = 4", [], |r| r.get(0)).unwrap();
     assert_eq!(auth, "basic");
     conn.execute(
@@ -1151,7 +1151,7 @@ fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     let plan: Vec<String> = conn
         .prepare("EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = 1 AND rfc822_msgid IN ('a@x', '<a@x>')")
         .unwrap()
@@ -1160,4 +1160,54 @@ fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert!(plan.iter().any(|step| step.contains("messages_by_msgid")), "{plan:?}");
+}
+
+/// Migration 60 indexes events by account and lower-case UID, so an
+/// invitation finds its event without walking the account's calendars.
+#[test]
+fn migration_60_finds_an_event_by_its_uid_through_an_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_with(&dir.path().join("mail.db"), MIGRATIONS).unwrap();
+    for sql in [
+        "SELECT id FROM events WHERE account_id = 1 AND lower(uid) = lower('A@x')",
+        "SELECT e.id FROM events e JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar \
+         WHERE e.account_id = 1 AND c.shown = 1 AND lower(e.uid) = lower('A@x')",
+    ] {
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("events_by_uid")), "{plan:?}");
+    }
+}
+
+/// Migration 61 keeps the correspondents tally in the store. It starts
+/// empty and stale, so the first catch-up counts every message, and a
+/// change to a row it counted makes it stale again.
+#[test]
+fn migration_61_keeps_the_correspondents_tally_in_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, &MIGRATIONS[..60]).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    let marks = |conn: &Connection| -> (bool, i64) {
+        conn.query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    assert_eq!(marks(&conn), (true, 0));
+    crate::contacts::catch_up(&conn).unwrap();
+    assert_eq!(marks(&conn), (false, 1));
+    let kept: i64 = conn.query_row("SELECT COUNT(*) FROM correspondents", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 1);
+    conn.execute("UPDATE messages SET from_addr = 'bo@example.org' WHERE id = 'm1'", []).unwrap();
+    assert_eq!(marks(&conn), (true, 0));
 }
