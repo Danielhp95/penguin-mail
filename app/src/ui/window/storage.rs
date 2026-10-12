@@ -60,15 +60,40 @@ fn breakable(line: &str) -> String {
     line.replacen('@', "\u{200b}@", 1)
 }
 
+/// Whether the account was full when its band last changed, and whether
+/// the person closed the band at that level. Closing lasts until the next
+/// launch or the next level, as Review Storage's dismissal does: a band
+/// closed while nearly full comes back once the account is full, and the
+/// other way round.
+#[derive(Default)]
+pub(super) struct Level {
+    full: Cell<bool>,
+    closed: Cell<bool>,
+}
+
+impl Level {
+    pub(super) fn set_full(&self, full: bool) {
+        if self.full.replace(full) != full {
+            self.closed.set(false);
+        }
+    }
+
+    pub(super) fn close(&self) {
+        self.closed.set(true);
+    }
+
+    pub(super) fn closed(&self) -> bool {
+        self.closed.get()
+    }
+}
+
 /// One account's band: a tint of the accent, its words, Review Storage
 /// and a close button, as the Follow Up banner has.
 pub(super) struct StorageBand {
     revealer: gtk::Revealer,
     title: gtk::Label,
-    /// The account was full when the band went up.
-    full: Cell<bool>,
-    /// Closed for the rest of this run.
-    hidden: Cell<bool>,
+    /// The account's level, and whether the band was closed at it.
+    level: Level,
 }
 
 impl StorageBand {
@@ -121,8 +146,7 @@ impl StorageBand {
         let band = StorageBand {
             revealer,
             title,
-            full: Cell::new(false),
-            hidden: Cell::new(false),
+            level: Level::default(),
         };
         (band, review, close)
     }
@@ -169,11 +193,11 @@ impl MainWindow {
             for (id, email, full, line) in wanted {
                 if let Some(band) = widgets.get(&id) {
                     band.title.set_label(&breakable(&line));
-                    band.full.set(full);
+                    band.level.set_full(full);
                     continue;
                 }
                 let (band, review, close) = StorageBand::new(&line);
-                band.full.set(full);
+                band.level.set_full(full);
                 let weak = Rc::downgrade(self);
                 // Runs after this rebuild returned and dropped its borrows, so
                 // the borrows below meet no other (gtk-rs-refcell-reentrancy).
@@ -181,7 +205,7 @@ impl MainWindow {
                     let Some(window) = weak.upgrade() else {
                         return;
                     };
-                    let full = window.storage_banner_widgets.borrow().get(&id).is_some_and(|band| band.full.get());
+                    let full = window.storage_banner_widgets.borrow().get(&id).is_some_and(|band| band.level.full.get());
                     if let Some(app) = window.app.upgrade() {
                         app.change_settings(Change::StorageDismissed { account: email.clone(), full: Some(full) });
                     }
@@ -194,7 +218,7 @@ impl MainWindow {
                         return;
                     };
                     if let Some(band) = window.storage_banner_widgets.borrow().get(&id) {
-                        band.hidden.set(true);
+                        band.level.close();
                     }
                     window.place_storage_banners();
                 });
@@ -211,7 +235,7 @@ impl MainWindow {
         let mailbox = self.shown();
         for (id, band) in self.storage_banner_widgets.borrow().iter() {
             band.revealer
-                .set_reveal_child(!band.hidden.get() && shows_in(&mailbox, *id));
+                .set_reveal_child(!band.level.closed() && shows_in(&mailbox, *id));
         }
     }
 }
@@ -222,6 +246,17 @@ mod tests {
 
     use super::{banner_line, shows_in, stays_dismissed};
     use crate::ui::{Mailbox, Standard};
+
+    #[test]
+    fn a_closed_band_comes_back_when_the_account_fills_up() {
+        let level = super::Level::default();
+        level.set_full(false);
+        level.close();
+        level.set_full(false);
+        assert!(level.closed(), "the same level keeps it closed");
+        level.set_full(true);
+        assert!(!level.closed(), "full is new news");
+    }
 
     #[test]
     fn the_band_may_break_before_the_at_and_nowhere_inside_the_address() {
