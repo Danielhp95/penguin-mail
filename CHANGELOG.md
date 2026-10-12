@@ -37,6 +37,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
+- On an Outlook account keeping more than 20,000 messages on this computer, mail no longer disappears from the list when Outlook loses track of what changed; Penguin Mail downloads the mail again instead.
 - A mail list left open while a new account downloads its mail for the first time keeps loading older mail as you scroll, instead of stopping at the first few messages.
 - Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
 - A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
