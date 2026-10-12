@@ -2813,7 +2813,9 @@ msgstr "Os calendários são lidos de novo onde o JMAP os fornece"
 #: app/src/offered.rs:701
 msgid ""
 "If {provider} offers calendars over JMAP, Penguin Mail reads them from there."
-msgstr "Se {provider} disponibilizar calendários por JMAP, o Penguin Mail lê-os a partir daí."
+msgstr ""
+"Se {provider} disponibilizar calendários por JMAP, o Penguin Mail lê-os a "
+"partir daí."
 
 #: app/src/offered.rs:707
 msgid "Calendar sign-in"
@@ -11204,11 +11206,7 @@ msgstr ""
 "O servidor ainda tem esta mensagem e não foi possível pedir-lhe que a "
 "libertasse. Tente mais tarde."
 
-#: sync/src/outbox.rs:597
-msgid "Waiting for the account to switch to JMAP"
-msgstr "À espera de que a conta mude para JMAP"
-
-#: sync/src/outbox.rs:1109
+#: sync/src/outbox.rs:1108
 msgid "The server could not be asked to let go of the message."
 msgstr "Não foi possível pedir ao servidor que libertasse a mensagem."
 
@@ -11665,6 +11663,9 @@ msgstr "Marcar como não sendo spam"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "Mover para {folder}"
+
+#~ msgid "Waiting for the account to switch to JMAP"
+#~ msgstr "À espera de que a conta mude para JMAP"
 
 #~ msgid "Hide My Email works with Gmail accounts."
 #~ msgstr "O Ocultar o meu e-mail funciona com contas Gmail."

@@ -10640,11 +10640,7 @@ msgid ""
 "again later."
 msgstr ""
 
-#: sync/src/outbox.rs:597
-msgid "Waiting for the account to switch to JMAP"
-msgstr ""
-
-#: sync/src/outbox.rs:1109
+#: sync/src/outbox.rs:1108
 msgid "The server could not be asked to let go of the message."
 msgstr ""
 

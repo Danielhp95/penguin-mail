@@ -10720,11 +10720,7 @@ msgid ""
 "again later."
 msgstr "伺服器仍保留這封郵件，且無法要求它釋出。請稍後再試。"
 
-#: sync/src/outbox.rs:597
-msgid "Waiting for the account to switch to JMAP"
-msgstr "正在等候帳號切換至 JMAP"
-
-#: sync/src/outbox.rs:1109
+#: sync/src/outbox.rs:1108
 msgid "The server could not be asked to let go of the message."
 msgstr "無法要求伺服器釋出這封郵件。"
 
@@ -11145,6 +11141,9 @@ msgstr "標示為非垃圾郵件"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "移至 {folder}"
+
+#~ msgid "Waiting for the account to switch to JMAP"
+#~ msgstr "正在等候帳號切換至 JMAP"
 
 #~ msgid "Hide My Email works with Gmail accounts."
 #~ msgstr "[隱藏電子郵件地址] 可用於 Gmail 帳號。"

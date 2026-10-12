@@ -246,8 +246,13 @@ impl<A: Accounts> Outbox<A> {
         }
         // Taken before a held message is called back, since that also
         // talks to the account a switch may be moving.
-        let Some(_sending) = self.sending(message.account_id) else {
-            return self.wait_out_hold(message).await;
+        let _sending = match self.sending(message.account_id) {
+            Some(sending) => sending,
+            None if message.id > 0 => return self.wait_out_hold(message).await,
+            // A new message waits for a switch to end rather than write a
+            // row now: the swap may already have committed, and the row
+            // would keep the IMAP ids it replaced.
+            None => self.lock_of(message.account_id).read_owned().await,
         };
         if message.held.is_some() {
             message = match self.recall(message, Purpose::SendNow).await? {
@@ -587,17 +592,11 @@ impl<A: Accounts> Outbox<A> {
         Ok(())
     }
 
-    /// Keeps a message posted while its account is held, due at once and
-    /// with no try counted, so the next pass after the hold sends it.
-    async fn wait_out_hold(&self, mut message: Queued) -> Result<Posted, SyncError> {
-        if message.id > 0 {
-            self.release(message.id).await?;
-            return Ok(Posted::Waiting(message.id));
-        }
-        message.problem = Some(gettext("Waiting for the account to switch to JMAP"));
-        message.send_at = now_millis();
-        let id = self.db.write(move |c| outbox::put(c, &message)).await?;
-        Ok(Posted::Waiting(id))
+    /// Leaves a waiting message posted while its account is held as it
+    /// is, with no try counted, so the next pass after the hold sends it.
+    async fn wait_out_hold(&self, message: Queued) -> Result<Posted, SyncError> {
+        self.release(message.id).await?;
+        Ok(Posted::Waiting(message.id))
     }
 
     /// One try at Gmail: from the bytes this computer holds, or from the
