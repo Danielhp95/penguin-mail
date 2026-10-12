@@ -546,3 +546,23 @@ async fn a_lost_hold_days_away_is_not_looked_for_every_minute() {
     outbox.send_due(at).await.unwrap();
     assert_eq!(sent(&h), 1, "looked for once more at the hour, then sent from here");
 }
+
+#[tokio::test]
+async fn a_row_asking_to_check_sent_can_be_dismissed_in_any_language() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + 2 * MINUTE).await;
+    h.fake.with(|s| s.holds.clear());
+    queue(&h).send_due(now_millis() + HOUR).await.unwrap();
+    // Written while the app ran in Portuguese.
+    h.db.write(move |c| {
+        let mut row = outbox::find(c, id)?.unwrap();
+        row.problem = Some("O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. Verifique as Enviadas.".into());
+        outbox::put(c, &row)?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    h.fake.with(|s| s.submission_get = false);
+    queue(&h).drop_one(id).await.unwrap();
+    assert!(row(&h, id).await.is_none());
+}

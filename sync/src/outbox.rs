@@ -66,6 +66,14 @@ fn unconfirmed(message: &Queued) -> Option<(EpochMillis, &str)> {
     Some(parsed.unwrap_or((0, rest)))
 }
 
+/// Whether the row is one `unconfirmable` wrote: a hold no answer could
+/// place. Only that writes a problem beside a hold. A settle that fails
+/// keeps asking, and every other problem goes on a row without a hold, so
+/// the pair is the marker, whatever language the problem's words are in.
+fn past_knowing(message: &Queued) -> bool {
+    message.held.is_some() && message.problem.is_some()
+}
+
 /// What a row says when another app canceled its hold and deleted the copy.
 fn canceled_elsewhere() -> String {
     gettext("This message was canceled in another app and is no longer in Drafts.")
@@ -381,7 +389,7 @@ impl<A: Accounts> Outbox<A> {
             let Some(message) = self.claim(id).await? else {
                 return Err(still_holds());
             };
-            let unknown = message.problem.as_deref() == Some(check_sent().as_str());
+            let unknown = past_knowing(&message);
             match self.let_go(&message).await {
                 Ok(()) => {}
                 Err(err) if unknown && !worth_retrying(&err) => {}

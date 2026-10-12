@@ -10713,13 +10713,13 @@ msgstr ""
 "Penguin Mail n’a pas pu confirmer si ce message est parti. Vérifiez les "
 "Envoyés."
 
-#: sync/src/outbox.rs:71
+#: sync/src/outbox.rs:79
 msgid "This message was canceled in another app and is no longer in Drafts."
 msgstr ""
 "Ce message a été annulé dans une autre application et n’est plus dans les "
 "Brouillons."
 
-#: sync/src/outbox.rs:77
+#: sync/src/outbox.rs:85
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -10727,7 +10727,7 @@ msgstr ""
 "Le serveur retient encore ce message et n’a pas pu être prié de le libérer. "
 "Réessayez plus tard."
 
-#: sync/src/outbox.rs:1033
+#: sync/src/outbox.rs:1041
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 

@@ -10194,17 +10194,17 @@ msgid ""
 "Penguin Mail could not confirm whether this message went out. Check Sent."
 msgstr "Penguin Mail 無法確認這封郵件是否已寄出。請查看寄件備份。"
 
-#: sync/src/outbox.rs:71
+#: sync/src/outbox.rs:79
 msgid "This message was canceled in another app and is no longer in Drafts."
 msgstr "這封郵件已在其他應用程式中取消，且已不在草稿中。"
 
-#: sync/src/outbox.rs:77
+#: sync/src/outbox.rs:85
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
 msgstr "伺服器仍保留這封郵件，且無法要求它釋出。請稍後再試。"
 
-#: sync/src/outbox.rs:1033
+#: sync/src/outbox.rs:1041
 msgid "The server could not be asked to let go of the message."
 msgstr "無法要求伺服器釋出這封郵件。"
 

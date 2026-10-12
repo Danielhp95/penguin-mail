@@ -10636,12 +10636,12 @@ msgstr ""
 "O Penguin Mail não conseguiu confirmar se esta mensagem foi enviada. "
 "Verifique as Enviadas."
 
-#: sync/src/outbox.rs:71
+#: sync/src/outbox.rs:79
 msgid "This message was canceled in another app and is no longer in Drafts."
 msgstr ""
 "Esta mensagem foi cancelada noutra aplicação e já não está nos Rascunhos."
 
-#: sync/src/outbox.rs:77
+#: sync/src/outbox.rs:85
 msgid ""
 "The server still holds this message and could not be asked to let it go. Try "
 "again later."
@@ -10649,7 +10649,7 @@ msgstr ""
 "O servidor ainda tem esta mensagem e não foi possível pedir-lhe que a "
 "libertasse. Tente mais tarde."
 
-#: sync/src/outbox.rs:1033
+#: sync/src/outbox.rs:1041
 msgid "The server could not be asked to let go of the message."
 msgstr "Não foi possível pedir ao servidor que libertasse a mensagem."
 

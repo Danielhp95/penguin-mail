@@ -9834,15 +9834,15 @@ msgstr "{problem}. Penguin Mail stopped trying"
 msgid "Penguin Mail could not confirm whether this message went out. Check Sent."
 msgstr "Penguin Mail could not confirm whether this message went out. Check Sent."
 
-#: sync/src/outbox.rs:71
+#: sync/src/outbox.rs:79
 msgid "This message was canceled in another app and is no longer in Drafts."
 msgstr "This message was cancelled in another app and is no longer in Drafts."
 
-#: sync/src/outbox.rs:77
+#: sync/src/outbox.rs:85
 msgid "The server still holds this message and could not be asked to let it go. Try again later."
 msgstr "The server still holds this message and could not be asked to let it go. Try again later."
 
-#: sync/src/outbox.rs:1033
+#: sync/src/outbox.rs:1041
 msgid "The server could not be asked to let go of the message."
 msgstr "The server could not be asked to let go of the message."
 
