@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use mailrs_domain::Role;
+use mailrs_domain::{ChangeEvent, Role};
 use mailrs_store::messages::Change;
 use mailrs_domain::translate::gettext;
 use mailrs_store::{drafts, messages, outbox};
@@ -63,8 +63,10 @@ impl AccountSync {
 
     /// Files a copy of `raw` in Sent for a server that does not file what
     /// it sends, and answers the copy's name. The message has gone out
-    /// whatever happens here, so a failure goes to the log and never to
-    /// the caller, which would send the message again.
+    /// whatever happens here, so a failure never reaches the caller, which
+    /// would send the message again. A failed append gets one more try,
+    /// unless a look finds the first one landed after all; when that fails
+    /// too, the person hears that Sent holds no copy.
     async fn file_sent(&self, raw: &[u8]) -> Option<String> {
         let mail = &self.mail;
         if mail.capabilities().files_sent_mail {
@@ -74,10 +76,22 @@ impl AccountSync {
             tracing::warn!(account = self.account_id, "sent, but the server has no Sent mailbox for a copy");
             return None;
         };
+        let first = match mail.append(raw, &sent).await {
+            Ok(name) => return Some(name),
+            Err(err) => err,
+        };
+        tracing::warn!(account = self.account_id, error = %first, "sent, but could not file a copy in Sent; trying again");
+        if let Ok(Some(found)) = self.sent_copy(raw).await {
+            return Some(found);
+        }
         match mail.append(raw, &sent).await {
             Ok(name) => Some(name),
             Err(err) => {
                 tracing::warn!(account = self.account_id, error = %err, "sent, but could not file a copy in Sent");
+                self.emit(ChangeEvent::WriteFailed {
+                    account_id: self.account_id,
+                    message: gettext("The message was sent, but Penguin Mail could not keep a copy in Sent."),
+                });
                 None
             }
         }

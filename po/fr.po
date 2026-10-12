@@ -11067,7 +11067,11 @@ msgstr "Est non lu"
 msgid "Is flagged"
 msgstr "A un drapeau"
 
-#: sync/src/account/outbox.rs:149
+#: sync/src/account/outbox.rs:93
+msgid "The message was sent, but Penguin Mail could not keep a copy in Sent."
+msgstr "Le message est parti, mais Penguin Mail n’a pas pu en garder une copie dans les Envoyés."
+
+#: sync/src/account/outbox.rs:163
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -11075,11 +11079,11 @@ msgstr ""
 "Le serveur retient ce message pour l’envoyer à l’heure prévue. Annulez "
 "l’envoi avant de le modifier."
 
-#: sync/src/account/receipts.rs:29
+#: sync/src/account/receipts.rs:31
 msgid "Read: {subject}"
 msgstr "Lu : {subject}"
 
-#: sync/src/account/receipts.rs:36
+#: sync/src/account/receipts.rs:38
 msgid ""
 "Your message to {address} was shown on screen. This receipt does not say "
 "whether it was read or understood."
@@ -11087,7 +11091,7 @@ msgstr ""
 "Votre message à {address} a été affiché à l’écran. Cet accusé ne dit pas "
 "s’il a été lu ou compris."
 
-#: sync/src/account/receipts.rs:143
+#: sync/src/account/receipts.rs:163
 msgid "This message asks for no read receipt."
 msgstr "Ce message ne demande aucun accusé de lecture."
 
@@ -11417,7 +11421,7 @@ msgstr ""
 "Le serveur retient encore ce message et n’a pas pu être prié de le libérer. "
 "Réessayez plus tard."
 
-#: sync/src/outbox.rs:1458
+#: sync/src/outbox.rs:1484
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 
@@ -11530,15 +11534,15 @@ msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr ""
 "Penguin Mail ne peut pas modifier la liste des agendas d’un serveur JMAP."
 
-#: sync/src/services/jmap/errors.rs:21
+#: sync/src/services/jmap/errors.rs:23
 msgid "The server does not allow this."
 msgstr "Le serveur ne le permet pas."
 
-#: sync/src/services/jmap/errors.rs:22
+#: sync/src/services/jmap/errors.rs:24
 msgid "The server refused this request."
 msgstr "Le serveur a refusé cette demande."
 
-#: sync/src/services/jmap/errors.rs:23
+#: sync/src/services/jmap/errors.rs:25
 msgid "The server could not take this request."
 msgstr "Le serveur n’a pas pu accepter cette demande."
 
@@ -11556,15 +11560,15 @@ msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 "Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:271
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Ce serveur ne conserve pas de couleur pour ses boîtes aux lettres."
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:344
 msgid "This server files sent mail itself."
 msgstr "Ce serveur classe lui-même le courrier envoyé."
 
-#: sync/src/services/jmap/mod.rs:458
+#: sync/src/services/jmap/mod.rs:462
 msgid "The server made an address Penguin Mail cannot read."
 msgstr "Le serveur a créé une adresse que Penguin Mail ne sait pas lire."
 

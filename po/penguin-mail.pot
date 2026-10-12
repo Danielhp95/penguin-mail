@@ -10425,23 +10425,27 @@ msgstr ""
 msgid "Is flagged"
 msgstr ""
 
-#: sync/src/account/outbox.rs:149
+#: sync/src/account/outbox.rs:93
+msgid "The message was sent, but Penguin Mail could not keep a copy in Sent."
+msgstr ""
+
+#: sync/src/account/outbox.rs:163
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
 msgstr ""
 
-#: sync/src/account/receipts.rs:29
+#: sync/src/account/receipts.rs:31
 msgid "Read: {subject}"
 msgstr ""
 
-#: sync/src/account/receipts.rs:36
+#: sync/src/account/receipts.rs:38
 msgid ""
 "Your message to {address} was shown on screen. This receipt does not say "
 "whether it was read or understood."
 msgstr ""
 
-#: sync/src/account/receipts.rs:143
+#: sync/src/account/receipts.rs:163
 msgid "This message asks for no read receipt."
 msgstr ""
 
@@ -10750,7 +10754,7 @@ msgid ""
 "again later."
 msgstr ""
 
-#: sync/src/outbox.rs:1458
+#: sync/src/outbox.rs:1484
 msgid "The server could not be asked to let go of the message."
 msgstr ""
 
@@ -10858,15 +10862,15 @@ msgstr ""
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr ""
 
-#: sync/src/services/jmap/errors.rs:21
+#: sync/src/services/jmap/errors.rs:23
 msgid "The server does not allow this."
 msgstr ""
 
-#: sync/src/services/jmap/errors.rs:22
+#: sync/src/services/jmap/errors.rs:24
 msgid "The server refused this request."
 msgstr ""
 
-#: sync/src/services/jmap/errors.rs:23
+#: sync/src/services/jmap/errors.rs:25
 msgid "The server could not take this request."
 msgstr ""
 
@@ -10880,15 +10884,15 @@ msgstr ""
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:267
+#: sync/src/services/jmap/mod.rs:271
 msgid "This server keeps no colors for its mailboxes."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:340
+#: sync/src/services/jmap/mod.rs:344
 msgid "This server files sent mail itself."
 msgstr ""
 
-#: sync/src/services/jmap/mod.rs:458
+#: sync/src/services/jmap/mod.rs:462
 msgid "The server made an address Penguin Mail cannot read."
 msgstr ""
 
