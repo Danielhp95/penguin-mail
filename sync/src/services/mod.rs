@@ -835,6 +835,77 @@ pub enum Missing {
     Categories,
 }
 
+/// A message the server holds to send at its hour. `handle` calls the
+/// hold back; `message_id` is the copy waiting in Drafts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    pub handle: String,
+    pub message_id: String,
+    pub thread_id: String,
+}
+
+/// What calling a hold back left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unheld {
+    /// The server will not send it; the copy is an ordinary draft now.
+    InDrafts,
+    /// The server sent it before the call arrived, and it is filed in Sent.
+    AlreadySent,
+}
+
+/// Where a hold stands once its hour came.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settled {
+    /// Still waiting; the server sends it at this time.
+    Waiting(EpochMillis),
+    /// Sent, and filed in Sent.
+    Sent,
+    /// Called back elsewhere; the copy is a draft.
+    Canceled,
+}
+
+/// How much of the account's space on its server its mail takes, in
+/// bytes, and where the server starts warning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Storage {
+    pub used: u64,
+    pub limit: u64,
+    pub warn: Option<u64>,
+}
+
+impl Storage {
+    /// `None` for a limit of 0, which says nothing a person can act on.
+    pub fn new(used: u64, limit: u64, warn: Option<u64>) -> Option<Storage> {
+        (limit > 0).then_some(Storage { used, limit, warn })
+    }
+
+    /// How full, from 0 to 100; past the limit reads as 100.
+    pub fn percent(self) -> u64 {
+        (self.used.saturating_mul(100) / self.limit).min(100)
+    }
+
+    pub fn full(self) -> bool {
+        self.used >= self.limit
+    }
+
+    /// Past the server's own warning mark, or 90 % when it names none.
+    pub fn past_warning(self) -> bool {
+        self.warn.is_some_and(|warn| self.used >= warn)
+            || self.used.saturating_mul(10) >= self.limit.saturating_mul(9)
+    }
+}
+
+/// A read receipt for the message `message_id` (the server's id), from
+/// the account's address `from` to `to`, in the person's language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReceiptOut {
+    pub message_id: String,
+    pub from: String,
+    pub to: String,
+    pub subject: String,
+    pub text: String,
+}
+
 /// Listing, reading, changing and sending mail.
 pub trait MailBackend: Send + Sync + 'static {
     fn capabilities(&self) -> MailCapabilities;
@@ -1075,6 +1146,44 @@ pub trait MailBackend: Send + Sync + 'static {
 
     /// Every draft in the account, each with the message inside it.
     fn list_drafts(&self) -> impl Future<Output = Result<Vec<DraftRef>, BackendError>> + Send;
+
+    /// Hands `raw` to the server to send at `at`, for a server that holds
+    /// mail itself. `Unsupported` leaves the message to the app's queue.
+    ///
+    /// The error says what the caller may assume. `Refused` means the
+    /// server did not take the hold. `Offline` means no answer came back,
+    /// so the server may hold the message anyway (the JMAP adapter maps
+    /// `JmapError::HoldUnknown` here); look in Drafts before queueing a
+    /// second copy locally.
+    fn schedule(&self, raw: &[u8], at: EpochMillis) -> impl Future<Output = Result<Held, BackendError>> + Send {
+        let _ = (raw, at);
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// Calls the hold `handle` back.
+    fn unschedule(&self, handle: &str) -> impl Future<Output = Result<Unheld, BackendError>> + Send {
+        let _ = handle;
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// Where the hold `handle` stands now. A sent one is filed in Sent.
+    fn settle(&self, handle: &str) -> impl Future<Output = Result<Settled, BackendError>> + Send {
+        let _ = handle;
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// How full the account's space on its server is, `None` when the
+    /// server does not say.
+    fn storage(&self) -> impl Future<Output = Result<Option<Storage>, BackendError>> + Send {
+        async { Ok(None) }
+    }
+
+    /// Sends `receipt` the server's own way. `Unsupported` has it go as
+    /// ordinary mail instead.
+    fn send_receipt(&self, receipt: &ReceiptOut) -> impl Future<Output = Result<(), BackendError>> + Send {
+        let _ = receipt;
+        async { Err(BackendError::Unsupported) }
+    }
 }
 
 /// The account's calendar, as the local copy reads and writes it. Every
@@ -1290,6 +1399,38 @@ mod tests {
 
     use super::*;
     use crate::fake::FakeGmail;
+
+    #[test]
+    fn a_zero_limit_reads_as_no_storage() {
+        assert_eq!(Storage::new(10, 0, None), None);
+        let full = Storage::new(12, 10, None).unwrap();
+        assert_eq!(full.percent(), 100, "usage past the limit reads as full, not past it");
+        assert!(full.full() && full.past_warning());
+    }
+
+    #[test]
+    fn the_warning_comes_at_the_servers_mark_or_at_ninety_percent() {
+        assert!(!Storage::new(89, 100, None).unwrap().past_warning());
+        assert!(Storage::new(90, 100, None).unwrap().past_warning());
+        assert!(Storage::new(80, 100, Some(75)).unwrap().past_warning());
+        assert!(!Storage::new(10, 100, Some(75)).unwrap().past_warning());
+    }
+
+    #[tokio::test]
+    async fn an_adapter_that_holds_nothing_says_so() {
+        let services = AccountServices::google(Arc::new(FakeGmail::new()));
+        assert!(matches!(services.mail.schedule(b"raw", 0).await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.unschedule("S1").await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.settle("S1").await, Err(BackendError::Unsupported)));
+        let receipt = ReceiptOut {
+            message_id: "m".into(),
+            from: "a@x".into(),
+            to: "b@x".into(),
+            subject: "s".into(),
+            text: "t".into(),
+        };
+        assert!(matches!(services.mail.send_receipt(&receipt).await, Err(BackendError::Unsupported)));
+    }
 
     #[test]
     fn a_google_account_has_every_service() {
