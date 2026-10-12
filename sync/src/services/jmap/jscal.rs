@@ -11,9 +11,10 @@
 //! alerts after the start, a second location, HTML, a rule in another
 //! calendar scale), and writing a property whole would lose the rest.
 
-use chrono::{DateTime, Days, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, Days, NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::Tz;
 use mailrs_domain::EpochMillis;
+use mailrs_domain::calendar::local::instant;
 use mailrs_domain::calendar::{self as model, Guest, Reminder, ReminderMethod, Status, occurrence_id};
 use mailrs_domain::invitation::Answer;
 use mailrs_domain::translate::gettext;
@@ -165,21 +166,6 @@ impl Clock {
 
     fn text(self, at: EpochMillis) -> String {
         self.naive(at).format(LOCAL).to_string()
-    }
-}
-
-/// `naive` in `zone`. A clock time that happens twice takes the first; one
-/// the clocks skip, as 01:30 the night they go forward, moves forward by
-/// the gap (RFC 5545 section 3.3.5): it is read with the offset in force
-/// before the change.
-fn instant<Z: TimeZone>(zone: &Z, naive: NaiveDateTime) -> Option<EpochMillis> {
-    match zone.from_local_datetime(&naive) {
-        LocalResult::Single(at) | LocalResult::Ambiguous(at, _) => Some(at.timestamp_millis()),
-        LocalResult::None => {
-            let day_before = naive.checked_sub_signed(TimeDelta::days(1))?;
-            let offset = zone.offset_from_local_datetime(&day_before).earliest()?.fix().local_minus_utc();
-            Some(naive.and_utc().timestamp_millis() - i64::from(offset) * 1000)
-        }
     }
 }
 
