@@ -15,8 +15,8 @@ use crate::core::Core;
 use crate::permission::Permission;
 use crate::offered::Filing;
 use crate::rules::{
-    RuleForm, Unshown, describe_action, describe_criteria, offers_never_spam, place_line,
-    waiting_line,
+    RuleForm, Unshown, describe_action, describe_criteria, empty_line, offers_never_spam,
+    place_line, waiting_line,
 };
 use crate::ui::permission;
 use mailrs_domain::translate::{fill, gettext, with_reason};
@@ -33,6 +33,10 @@ struct Rules {
     stack: gtk::Stack,
     page: adw::PreferencesPage,
     list: adw::PreferencesGroup,
+    /// What shows while the account has no rules, with a New Rule button.
+    empty: adw::StatusPage,
+    /// The header's New Rule, for a list that has rules.
+    add: gtk::Button,
     /// The group of rules written elsewhere, removed on each reload.
     elsewhere: RefCell<Option<adw::PreferencesGroup>>,
     /// Rows in `list` now, removed on each reload.
@@ -68,6 +72,18 @@ pub fn present(
     let page = adw::PreferencesPage::new();
     page.add(&list);
     stack.add_named(&page, Some("list"));
+    let start = gtk::Button::builder()
+        .label(gettext("New Rule"))
+        .halign(gtk::Align::Center)
+        .css_classes(["pill", "suggested-action"])
+        .build();
+    let empty = adw::StatusPage::builder()
+        .icon_name("penguin-mail-inbox-symbolic")
+        .title(gettext("No Rules"))
+        .child(&start)
+        .build();
+    empty.add_css_class("compact");
+    stack.add_named(&empty, Some("empty"));
     let add = gtk::Button::builder()
         .icon_name("list-add-symbolic")
         .tooltip_text(gettext("New Rule"))
@@ -110,18 +126,22 @@ pub fn present(
         stack,
         page,
         list,
+        empty,
+        add: add.clone(),
         elsewhere: RefCell::new(None),
         shown: RefCell::new(Vec::new()),
         toasts,
         grant: Box::new(grant),
         dialog: dialog.clone(),
     });
-    let weak = Rc::downgrade(&rules);
-    add.connect_clicked(move |_| {
-        if let Some(rules) = weak.upgrade() {
-            rules.show_form(None);
-        }
-    });
+    for button in [&add, &start] {
+        let weak = Rc::downgrade(&rules);
+        button.connect_clicked(move |_| {
+            if let Some(rules) = weak.upgrade() {
+                rules.show_form(None);
+            }
+        });
+    }
     // The dialog owns the state behind its buttons until it closes.
     let keep = RefCell::new(Some(Rc::clone(&rules)));
     dialog.connect_closed(move |_| {
@@ -177,6 +197,16 @@ impl Rules {
             self.page.remove(&old);
         }
         let provider = mailrs_discover::resolved_provider_name(self.account.provider_name());
+        // No rules, nothing waiting and nothing from elsewhere: a page that
+        // says what a rule is, rather than a near-empty list.
+        let none = list.rules.is_empty() && !list.waiting && list.elsewhere.is_empty();
+        self.add.set_visible(!none);
+        if none {
+            // The description is markup, and a provider name may hold an "&".
+            self.empty.set_description(Some(&glib::markup_escape_text(&empty_line(list.place, &provider))));
+            self.stack.set_visible_child_name("empty");
+            return;
+        }
         self.list.set_description(Some(&place_line(list.place, &provider)));
         if list.waiting {
             let row = adw::ActionRow::builder()
