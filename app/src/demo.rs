@@ -805,6 +805,7 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
         }
         fake.with(|s| s.calendars = demo_calendars(index));
         fake.with(|s| s.filters = demo_rules(index));
+        fake.with(|s| s.drive_storage = demo_storage(index));
         for event in demo_events(index, now) {
             fake.put_calendar_event(event);
         }
@@ -913,6 +914,17 @@ impl mailrs_sync::Accounts for Seeding {
 /// The rules demo account `index` has at Gmail. The Fernwood account
 /// gets two the Rules form shows whole and one made in Gmail's own
 /// settings, whose forward the form has no field for.
+/// The first account nearly full, so the demo shows the banner; the
+/// second with room; the third says nothing, and has no row.
+fn demo_storage(index: usize) -> Option<mailrs_gmail::DriveStorage> {
+    const GIB: u64 = 1 << 30;
+    match index {
+        0 => Some(mailrs_gmail::DriveStorage { usage: 143 * GIB / 10, limit: Some(15 * GIB) }),
+        1 => Some(mailrs_gmail::DriveStorage { usage: 21 * GIB / 10, limit: Some(30 * GIB) }),
+        _ => None,
+    }
+}
+
 fn demo_rules(index: usize) -> Vec<Filter> {
     if index != 1 {
         return Vec::new();

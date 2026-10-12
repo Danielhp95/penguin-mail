@@ -78,6 +78,7 @@ mod searching;
 mod senders;
 mod shortcuts;
 mod spaces;
+mod storage;
 mod thread;
 mod translation;
 mod triage;
@@ -141,6 +142,12 @@ pub struct MainWindow {
     /// mid-walk when the accounts are read again, and a banner that
     /// blinks out and back shifts every row below it for a moment.
     grant_banner_widgets: RefCell<HashMap<AccountId, adw::Banner>>,
+    /// The storage banner of each nearly full account, beside the Grant
+    /// Access banners, and whether the account was full when it went up.
+    storage_banner_widgets: RefCell<HashMap<AccountId, (adw::Banner, bool)>>,
+    /// Accounts whose storage banner the person took down this run, and
+    /// whether each was full then.
+    storage_dismissed: RefCell<HashMap<AccountId, bool>>,
     /// The main menu's update entry: Check for Updates, or what to do with
     /// the one that is waiting.
     update_menu: gio::Menu,
@@ -848,6 +855,8 @@ impl MainWindow {
                 keyring_banner,
                 grant_banners,
                 grant_banner_widgets: RefCell::new(HashMap::new()),
+                storage_banner_widgets: RefCell::new(HashMap::new()),
+                storage_dismissed: RefCell::new(HashMap::new()),
                 update_menu: gio::Menu::new(),
                 about: RefCell::new(None),
                 stack,
@@ -1252,6 +1261,7 @@ impl MainWindow {
         // trip of its own and settles with everything else above.
         let accounts: Vec<Account> = data.iter().map(|(a, _)| a.clone()).collect();
         self.rebuild_grant_banners(&accounts, &app.consent());
+        self.rebuild_storage_banners();
         self.accounts_for_calendar(&accounts);
     }
 

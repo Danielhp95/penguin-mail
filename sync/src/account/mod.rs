@@ -10,6 +10,7 @@ mod muted;
 mod outbox;
 mod pop3;
 mod refs;
+mod space;
 mod threads;
 mod window;
 mod writes;
