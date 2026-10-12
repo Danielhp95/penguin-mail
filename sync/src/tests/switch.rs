@@ -895,3 +895,15 @@ async fn the_imap_password_goes_when_jmap_serves_the_calendar() {
     to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, calendars, "fmu1-token".into()).await.unwrap();
     assert_eq!(secrets.passwords.load(id).unwrap(), None, "no server signs in with it any more");
 }
+
+/// Cyrus and Stalwart name a user by a login name, the address's local part.
+#[tokio::test]
+async fn a_login_name_that_is_the_local_part_is_the_same_account() {
+    let (h, fake, secrets) = imap_with_jmap_twin().await;
+    fake.with(|s| {
+        s.session.username = "me".into();
+        s.identities[0].email = "alias@example.org".into();
+    });
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, Some(&*h.sync), &fake, saved(), "r1".into()).await.unwrap();
+}

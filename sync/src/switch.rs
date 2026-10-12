@@ -732,7 +732,28 @@ pub async fn to_jmap(
     if account.provider != Provider::Imap {
         return Err(SwitchError::NotImap);
     }
-    let signed = signed_with(how, &account.email);
+    // A browser grant the switch does not keep is revoked, so it does not
+    // stay valid on the server with nothing here to use it.
+    let unkept = match &how {
+        SwitchSignIn::Browser { session_url, grant } => Some(crate::JmapGrant {
+            session_url: session_url.clone(),
+            client_id: grant.client.client_id.clone(),
+            refresh_token: grant.refresh_token.clone(),
+        }),
+        SwitchSignIn::Typed(_) => None,
+    };
+    let switched = signed_in(db, secrets, account, imap, signed_with(how, &account.email)).await;
+    // `NotImap` here means another switch went through first and may sign
+    // in with the token saved for this one; it stays.
+    if let (Err(err), Some(grant)) = (&switched, unkept)
+        && !matches!(err, SwitchError::NotImap)
+    {
+        tokio::spawn(grant.revoke());
+    }
+    switched
+}
+
+async fn signed_in(db: &Db, secrets: &Secrets, account: &Account, imap: Option<&AccountSync>, signed: Signed) -> Result<Switched, SwitchError> {
     let client = JmapClient::new(&signed.session_url, signed.auth).map_err(SwitchError::SignIn)?;
     let checked = mailrs_jmap::check(&client).await.map_err(SwitchError::SignIn)?;
     let session = &checked.session;
@@ -749,9 +770,14 @@ pub async fn to_jmap(
 }
 
 /// Whether the session signs in to the account at `address`: its user name
-/// is the address, or one of its identities sends from it.
+/// is the address or its local part, or one of its identities sends from
+/// it.
 async fn same_account<J: JmapApi>(api: &J, session: &mailrs_jmap::Session, address: &str) -> Result<bool, SwitchError> {
-    if session.username.eq_ignore_ascii_case(address) {
+    let username = session.username.trim();
+    let local = address.split_once('@').map(|(local, _)| local);
+    // A login name that is the address's local part, as Cyrus and
+    // Stalwart name their users, is the same account too.
+    if username.eq_ignore_ascii_case(address) || local.is_some_and(|local| username.eq_ignore_ascii_case(local)) {
         return Ok(true);
     }
     let identities = api.identities().await.map_err(backend)?;
