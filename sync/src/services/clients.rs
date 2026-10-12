@@ -322,7 +322,9 @@ type Jmapped<T> = Result<T, JmapError>;
 either_client! {
     /// A JMAP server: the client for one account, or the in-memory server.
     AnyJmap(JmapClient, FakeJmap): JmapApi;
-    now {}
+    now {
+        fn push_paused() -> Option<tokio::time::Instant>;
+    }
     later {
         fn session() -> Jmapped<std::sync::Arc<Session>>;
         fn mailboxes() -> Jmapped<JmapListed<Mailbox>>;

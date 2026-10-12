@@ -132,3 +132,15 @@ async fn a_change_starts_the_backoff_over() {
     assert_eq!(h.fake.push_opens(), 5);
     next.await.unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn the_account_looks_each_minute_while_a_stall_pauses_push() {
+    let h = fastmail().await;
+    h.fake.pause_push_for(Duration::from_secs(30 * 60));
+    let mail = h.mail();
+    let watching = tokio::spawn(async move { mail.watch().await });
+    tokio::time::sleep(Duration::from_secs(10 * 60)).await;
+    assert_eq!(h.mail().poll_interval(), Some(Duration::from_secs(60)), "no stream is open");
+    assert_eq!(h.fake.push_opens(), 0);
+    watching.abort();
+}

@@ -296,7 +296,7 @@ impl JmapClient {
     }
 
     /// When push comes back, while it is paused after a stall.
-    pub(crate) fn push_paused(&self) -> Option<tokio::time::Instant> {
+    pub fn push_paused(&self) -> Option<tokio::time::Instant> {
         let mut until = self.inner.paused_until.lock().unwrap_or_else(PoisonError::into_inner);
         if until.is_some_and(|at| at <= tokio::time::Instant::now()) {
             *until = None;
