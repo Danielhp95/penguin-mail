@@ -156,13 +156,47 @@ mod attachment_bytes {
     use base64::engine::general_purpose::STANDARD;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S: Serializer>(data: &[u8], out: S) -> Result<S::Ok, S::Error> {
-        out.serialize_str(&STANDARD.encode(data))
+    use super::FileBytes;
+
+    pub fn serialize<S: Serializer>(data: &FileBytes, out: S) -> Result<S::Ok, S::Error> {
+        out.serialize_str(&STANDARD.encode(&data[..]))
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<Vec<u8>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<FileBytes, D::Error> {
         let text = String::deserialize(input)?;
-        STANDARD.decode(text).map_err(serde::de::Error::custom)
+        STANDARD.decode(text).map(FileBytes::from).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A file's bytes, shared rather than copied as the draft goes from the
+/// composer to the builder, Undo Send and the outbox. A 25 MB file was
+/// held three times over while it was sent.
+#[derive(Clone, PartialEq, Eq)]
+pub struct FileBytes(gtk::glib::Bytes);
+
+impl std::ops::Deref for FileBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<Vec<u8>> for FileBytes {
+    fn from(data: Vec<u8>) -> Self {
+        FileBytes(gtk::glib::Bytes::from_owned(data))
+    }
+}
+
+impl From<gtk::glib::Bytes> for FileBytes {
+    fn from(data: gtk::glib::Bytes) -> Self {
+        FileBytes(data)
+    }
+}
+
+impl std::fmt::Debug for FileBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes", self.len())
     }
 }
 
@@ -171,7 +205,7 @@ pub struct OutgoingAttachment {
     pub filename: String,
     pub mime_type: String,
     #[serde(with = "attachment_bytes")]
-    pub data: Vec<u8>,
+    pub data: FileBytes,
     /// Set for images shown in the text, which refers to them as `cid:`.
     pub content_id: Option<String>,
 }
@@ -480,7 +514,7 @@ pub fn forwarded_file(
             .filter(|cid| forwarded_html.is_some_and(|html| refers_to_cid(html, cid))),
         filename: found.filename,
         mime_type: found.mime_type,
-        data,
+        data: data.into(),
     }
 }
 
@@ -1291,6 +1325,28 @@ pub fn build(draft: &Draft, date_secs: i64, message_id: &str) -> Result<Built, S
     }
 }
 
+/// What `work` gives, run on a thread of its own. Building a message
+/// base64-encodes every file, which held the window still for seconds
+/// over a large one, so every build the GTK thread waits for goes here.
+/// `gio::spawn_blocking` would answer only through a running GLib main
+/// loop, which the tests and the tokio runtime do not have.
+pub async fn off_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (done, answer) = futures::channel::oneshot::channel();
+    let worker = std::thread::spawn(move || {
+        let _ = done.send(work());
+    });
+    match answer.await {
+        Ok(value) => value,
+        // The sender went without a value: `work` panicked.
+        Err(_) => std::panic::resume_unwind(
+            worker
+                .join()
+                .err()
+                .unwrap_or_else(|| Box::new("the build thread stopped")),
+        ),
+    }
+}
+
 /// The RFC 822 bytes for `draft`.
 pub fn build_mime(draft: &Draft, date_secs: i64, message_id: &str) -> Result<Vec<u8>, String> {
     let (text, html) = written(draft, Purpose::Send);
@@ -1573,7 +1629,7 @@ fn inline_part(attachment: &OutgoingAttachment) -> MimePart<'_> {
     let name = attachment.filename.clone();
     MimePart::new(
         ContentType::new(attachment.mime_type.clone()).attribute("name", name.clone()),
-        attachment.data.clone(),
+        &attachment.data[..],
     )
     .header(
         "Content-Disposition",
@@ -1587,7 +1643,7 @@ fn file_part(attachment: &OutgoingAttachment) -> MimePart<'_> {
     MimePart::new(
         ContentType::new(attachment.mime_type.clone())
             .attribute("name", attachment.filename.clone()),
-        attachment.data.clone(),
+        &attachment.data[..],
     )
     .attachment(attachment.filename.clone())
 }
@@ -2404,7 +2460,7 @@ mod tests {
             content_id: None,
             filename: "menu.pdf".into(),
             mime_type: "application/pdf".into(),
-            data: b"%PDF-1.7".to_vec(),
+            data: b"%PDF-1.7".to_vec().into(),
         }];
         let raw = build_mime(&draft, 1_757_000_000, "<new@example.com>").unwrap();
         let parsed = MessageParser::default().parse(&raw).unwrap();
@@ -2514,7 +2570,7 @@ mod tests {
         let image = |cid: &str| OutgoingAttachment {
             filename: format!("{cid}.png"),
             mime_type: "image/png".into(),
-            data: vec![137, 80, 78, 71],
+            data: vec![137, 80, 78, 71].into(),
             content_id: Some(cid.into()),
         };
         draft.attachments = vec![image("map1@mailrs"), image("gone@mailrs")];
@@ -2623,7 +2679,7 @@ mod tests {
         let image = |cid: &str| OutgoingAttachment {
             filename: format!("{cid}.png"),
             mime_type: "image/png".into(),
-            data: vec![137, 80, 78, 71],
+            data: vec![137, 80, 78, 71].into(),
             content_id: Some(cid.into()),
         };
         draft.attachments = vec![image("map1@mailrs"), image("gone@mailrs")];
@@ -2659,7 +2715,7 @@ mod tests {
         draft.attachments = vec![OutgoingAttachment {
             filename: "map.png".into(),
             mime_type: "image/png".into(),
-            data: vec![137, 80, 78, 71],
+            data: vec![137, 80, 78, 71].into(),
             content_id: Some("map1@mailrs".into()),
         }];
         let raw = build_mime(&draft, 0, "id@example.com").unwrap();
@@ -2689,13 +2745,13 @@ mod tests {
             OutgoingAttachment {
                 filename: "map.png".into(),
                 mime_type: "image/png".into(),
-                data: vec![137, 80, 78, 71],
+                data: vec![137, 80, 78, 71].into(),
                 content_id: Some("map1@mailrs".into()),
             },
             OutgoingAttachment {
                 filename: "notes.pdf".into(),
                 mime_type: "application/pdf".into(),
-                data: b"%PDF-1.4".to_vec(),
+                data: b"%PDF-1.4".to_vec().into(),
                 content_id: None,
             },
         ];
@@ -2940,7 +2996,7 @@ mod tests {
         draft.attachments.push(OutgoingAttachment {
             filename: "menu.pdf".into(),
             mime_type: "application/pdf".into(),
-            data: b"%PDF".to_vec(),
+            data: b"%PDF".to_vec().into(),
             content_id: None,
         });
         assert_eq!(
@@ -2956,7 +3012,7 @@ mod tests {
         draft.attachments.push(OutgoingAttachment {
             filename: "photo.png".into(),
             mime_type: "image/png".into(),
-            data: vec![0x89],
+            data: vec![0x89].into(),
             content_id: Some("photo@mailrs".into()),
         });
         assert_eq!(
@@ -3207,5 +3263,66 @@ mod tests {
         assert_eq!(trailing_quote_at("Hi\n> my own quote\nbye"), None);
         let text = "Hi\n> mine\n\nOn Monday, Ann wrote:\n> hi\n>\n> there";
         assert_eq!(trailing_quote_at(text), text.find("On Monday"));
+    }
+
+    #[test]
+    fn a_copy_of_a_draft_shares_its_files() {
+        let mut draft = Draft::new(1, me());
+        draft.attachments = vec![OutgoingAttachment {
+            filename: "film.mov".into(),
+            mime_type: "video/quicktime".into(),
+            data: vec![7; 1024].into(),
+            content_id: None,
+        }];
+        let copy = draft.clone();
+        assert_eq!(
+            copy.attachments[0].data.as_ptr(),
+            draft.attachments[0].data.as_ptr(),
+            "Send, Send Later and Save Draft each copy the draft"
+        );
+    }
+
+    /// The process's peak resident memory in KiB since the last reset.
+    fn peak_kib() -> u64 {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let line = status.lines().find(|l| l.starts_with("VmHWM:")).unwrap();
+        line.split_whitespace().nth(1).unwrap().parse().unwrap()
+    }
+
+    /// Sends a 25 MB file the way the composer does and prints what it
+    /// costs: the time the GTK thread spends, and the peak memory over
+    /// the file's own size. Linux only; run alone, since other tests
+    /// share the process: `cargo test -p mailrs --bin penguin-mail
+    /// measure_sending_a_large_attachment -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement, run on its own"]
+    fn measure_sending_a_large_attachment() {
+        const SIZE: usize = 25 * 1024 * 1024;
+        let payload: Vec<u8> = (0..SIZE).map(|i| (i * 7919 % 251) as u8).collect();
+        // The composer's list of files.
+        let held = vec![OutgoingAttachment {
+            filename: "film.mov".into(),
+            mime_type: "video/quicktime".into(),
+            data: payload.into(),
+            content_id: None,
+        }];
+        std::fs::write("/proc/self/clear_refs", "5").unwrap();
+        let before = peak_kib();
+        let started = std::time::Instant::now();
+        // What Send does on the GTK thread: collect, then hand the build
+        // to a worker thread and wait without blocking.
+        let mut draft = Draft::new(1, me());
+        draft.to = parse_recipients("ines@allotment.example");
+        draft.attachments = held.clone();
+        let building = off_thread(move || build(&draft, 0, "a@example.com"));
+        let stall = started.elapsed();
+        let built = futures::executor::block_on(building).unwrap();
+        let peak = peak_kib() - before;
+        let Built::Message(raw) = built else { panic!("a plain draft builds whole") };
+        eprintln!(
+            "GTK thread {stall:?}, peak {} MiB over the file held, message {} MiB",
+            peak / 1024,
+            raw.len() / (1024 * 1024)
+        );
     }
 }

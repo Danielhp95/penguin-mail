@@ -560,6 +560,12 @@ impl Harness {
         .await
     }
 
+    /// The mailboxes and their counts over the connected accounts, as the
+    /// window reads them.
+    pub fn lists(&self) -> Mailboxes<Connected> {
+        Mailboxes::new(Arc::clone(&self.effects.connected), self.db.clone())
+    }
+
     /// The sync handle of the fixture account.
     pub fn sync(&self) -> Arc<AccountSync> {
         self.effects

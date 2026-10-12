@@ -94,7 +94,10 @@ pub async fn sealed(
     message_id: &str,
 ) -> Result<Vec<u8>, String> {
     let failed = |reason: &str| fill(&gettext("Draft not saved: {reason}"), &[("reason", reason)]);
-    let part = compose::build_saved_body_part(draft).map_err(|err| failed(&err))?;
+    let kept = draft.clone();
+    let part = compose::off_thread(move || compose::build_saved_body_part(&kept))
+        .await
+        .map_err(|err| failed(&err))?;
     let order = match preferred {
         Standard::Pgp => [Standard::Pgp, Standard::Smime],
         Standard::Smime => [Standard::Smime, Standard::Pgp],
@@ -152,8 +155,13 @@ pub async fn save(
             kept.encrypt = true;
             sealed(core, &kept, standard, date, &message_id).await?
         }
-        false => compose::build_saved_draft(draft, date, &message_id)
-            .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?,
+        false => {
+            // The copy shares the files' bytes.
+            let (kept, id) = (draft.clone(), message_id.clone());
+            compose::off_thread(move || compose::build_saved_draft(&kept, date, &id))
+                .await
+                .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?
+        }
     };
     let (thread, draft_id) = (draft.thread_id.clone(), draft.draft_id.clone());
     let draft_id_was = draft_id.clone();
@@ -303,7 +311,7 @@ fn take_saved(raw: &[u8], body: &MessageBody, files: Vec<Vec<u8>>, draft: &mut D
         .map(|(found, data)| OutgoingAttachment {
             filename: found.filename.clone(),
             mime_type: found.mime_type.clone(),
-            data,
+            data: data.into(),
             content_id: found.content_id.clone(),
         })
         .collect();
@@ -352,7 +360,7 @@ mod tests {
         written.attachments = vec![OutgoingAttachment {
             filename: "plan.txt".into(),
             mime_type: "text/plain".into(),
-            data: b"Under the mat.".to_vec(),
+            data: b"Under the mat.".to_vec().into(),
             content_id: None,
         }];
         let raw =

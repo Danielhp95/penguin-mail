@@ -573,7 +573,7 @@ impl<A: Accounts> Tools<A> {
             files.push(OutgoingAttachment {
                 filename: found.filename,
                 mime_type: found.mime_type,
-                data,
+                data: data.into(),
                 content_id: None,
             });
         }
@@ -603,7 +603,7 @@ impl<A: Accounts> Tools<A> {
             files.push(OutgoingAttachment {
                 filename,
                 mime_type,
-                data,
+                data: data.into(),
                 content_id: None,
             });
         }

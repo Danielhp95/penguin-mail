@@ -25,12 +25,14 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### Improved
 
 - The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
+- Sending or saving a message with a large attachment no longer freezes the window, and holds the file in memory once rather than three times.
 
 ### Fixed
 
 - A calendar event deleted right after a change to it stays deleted, on the calendar and on the server, instead of coming back.
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
+- The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
 
 ### Fixed
 

@@ -1765,7 +1765,7 @@ pub(super) mod checks {
         let attachment = OutgoingAttachment {
             filename: "map.png".into(),
             mime_type: "image/png".into(),
-            data: png(),
+            data: png().into(),
             content_id: Some("map@mailrs".into()),
         };
         let body = RichBody::from_html(

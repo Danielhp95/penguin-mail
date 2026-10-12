@@ -53,6 +53,7 @@ mod templates;
 mod translation;
 mod tray;
 mod ui;
+mod unread;
 mod unsubscribe;
 mod unsubscribe_page;
 mod update;

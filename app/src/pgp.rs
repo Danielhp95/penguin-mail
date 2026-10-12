@@ -896,7 +896,7 @@ mod tests {
         written.attachments = vec![OutgoingAttachment {
             filename: "plan.txt".into(),
             mime_type: "text/plain".into(),
-            data: b"Under the mat.".to_vec(),
+            data: b"Under the mat.".to_vec().into(),
             content_id: None,
         }];
         let part = crate::compose::build_body_part(&written).expect("a body part");

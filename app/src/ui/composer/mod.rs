@@ -29,7 +29,8 @@ use super::{labelled_by, name, name_with_shortcut, roving};
 use crate::attachcheck::Promise;
 use crate::compose::{
     Asking, Built, Draft, Forwarded, Gate, OutgoingAttachment, SendWhen, build, format_recipients,
-    gate, html_to_send, is_address, kept_mask, masked_site, new_message_id, opening_identity,
+    gate, html_to_send, is_address, kept_mask, masked_site, new_message_id, off_thread,
+    opening_identity,
 };
 use crate::core::Core;
 use crate::format::{future_date, human_size, send_later_presets};
@@ -303,6 +304,9 @@ pub struct Composer {
     /// of it was saved: either way it is no longer the one it opened as.
     handed: Cell<bool>,
     saved: Cell<bool>,
+    /// Set while the message is built off the GTK thread for sending or
+    /// saving, so a second press does not build and send it twice.
+    building: Cell<bool>,
     attach: gtk::Button,
     on_send: Box<dyn Fn(Draft, Built, SendWhen)>,
 }
@@ -748,6 +752,7 @@ impl Composer {
             locked: Cell::new(false),
             handed: Cell::new(false),
             saved: Cell::new(false),
+            building: Cell::new(false),
             attach: attach.clone(),
             on_send: Box::new(on_send),
         });
@@ -1775,7 +1780,7 @@ impl Composer {
     /// the gate wants asked, and passes it on for sending once nothing
     /// stands in the way.
     fn hand_over(self: &Rc<Self>, when: SendWhen) {
-        if self.locked.get() {
+        if self.locked.get() || self.building.get() {
             return;
         }
         let this = Rc::clone(self);
@@ -1810,13 +1815,21 @@ impl Composer {
     /// Builds the message and passes it on, then closes. The bytes go
     /// with it, so the app does not build the same message again.
     fn send_off(self: &Rc<Self>, draft: Draft, when: SendWhen) {
-        let built = match build(&draft, now_secs(), &new_message_id(&draft.from.email)) {
-            Ok(built) => built,
-            Err(err) => {
-                self.failed(&gettext("Could not build the message: {reason}"), &err);
-                return;
+        if self.building.replace(true) {
+            return;
+        }
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let built = built_off_thread(&draft).await;
+            this.building.set(false);
+            match built {
+                Ok(built) => this.pass_on(draft, built, when),
+                Err(err) => this.failed(&gettext("Could not build the message: {reason}"), &err),
             }
-        };
+        });
+    }
+
+    fn pass_on(self: &Rc<Self>, draft: Draft, built: Built, when: SendWhen) {
         if let Some(identity) = self.identity() {
             (self.remember)(Remembered::SentFrom {
                 account: identity.account_email.clone(),
@@ -1899,7 +1912,7 @@ impl Composer {
     /// their own key, since Gmail would otherwise hold it readable until it
     /// went out. `protection::draft` says how, and how it comes back.
     fn save_draft(self: &Rc<Self>, then_close: bool) {
-        if self.locked.get() {
+        if self.locked.get() || self.building.get() {
             return;
         }
         let Some(draft) = self.collect() else {
@@ -2538,7 +2551,7 @@ impl Composer {
                     self.attachments.borrow_mut().push(OutgoingAttachment {
                         filename,
                         mime_type,
-                        data: bytes.to_vec(),
+                        data: glib::Bytes::from_owned(bytes).into(),
                         content_id: None,
                     });
                     self.dirty.set(true);
@@ -2564,7 +2577,7 @@ impl Composer {
         self.attachments.borrow_mut().push(OutgoingAttachment {
             filename,
             mime_type,
-            data,
+            data: data.into(),
             content_id: Some(cid),
         });
         self.dirty.set(true);
@@ -2577,7 +2590,7 @@ impl Composer {
             if let Some(cid) = &attachment.content_id {
                 let data = base64::Engine::encode(
                     &base64::engine::general_purpose::STANDARD,
-                    &attachment.data,
+                    &attachment.data[..],
                 );
                 html = html.replace(
                     &format!("cid:{cid}"),
@@ -2886,6 +2899,12 @@ fn field(label: &str, widget: &impl IsA<gtk::Widget>, column: &gtk::SizeGroup) -
 
 fn now_secs() -> i64 {
     mailrs_sync::now_millis() / 1000
+}
+
+/// `draft` built on a worker thread; the copy shares the files' bytes.
+async fn built_off_thread(draft: &Draft) -> Result<Built, String> {
+    let draft = draft.clone();
+    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email))).await
 }
 
 /// The formatting menu's name for a paragraph style, the target of
