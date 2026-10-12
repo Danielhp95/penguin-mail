@@ -1382,8 +1382,14 @@ impl MainWindow {
                 .button_label(gettext("Grant Access"))
                 .revealed(true)
                 .build();
-            let (this, account_id) = (Rc::clone(self), account.id);
-            banner.connect_button_clicked(move |_| this.grant_access(account_id));
+            // A weak reference: the banner lives in the window, and a
+            // strong one would keep a closed window and its WebView alive.
+            let (weak, account_id) = (Rc::downgrade(self), account.id);
+            banner.connect_button_clicked(move |_| {
+                if let Some(win) = weak.upgrade() {
+                    win.grant_access(account_id);
+                }
+            });
             self.grant_banners.append(&banner);
             widgets.insert(account.id, banner);
         }
