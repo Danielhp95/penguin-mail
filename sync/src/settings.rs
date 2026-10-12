@@ -95,7 +95,7 @@ impl AutomaticReply {
             contacts_only: self.contacts_only,
             domain_only: self.domain_only,
             start: self.first_day.map(midnight),
-            end: self.last_day.map(|last| midnight(last) + DAY),
+            end: self.last_day.map(next_midnight),
         }
     }
 }
@@ -653,6 +653,20 @@ fn to(address: &str) -> FilterCriteria {
         to: Some(address.to_string()),
         ..FilterCriteria::default()
     }
+}
+
+/// Local midnight at the start of the day after the one `at` falls in.
+/// A day the clocks change on is 23 or 25 hours long, so this counts in
+/// days, not hours.
+fn next_midnight(at: EpochMillis) -> EpochMillis {
+    Local
+        .timestamp_millis_opt(at)
+        .single()
+        .and_then(|when| when.date_naive().succ_opt())
+        .and_then(|day| day.and_hms_opt(0, 0, 0))
+        .and_then(|start| Local.from_local_datetime(&start).earliest())
+        .map(|start| start.timestamp_millis())
+        .unwrap_or(at + DAY)
 }
 
 /// Local midnight at the start of the day `at` falls in.
