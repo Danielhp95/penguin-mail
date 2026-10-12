@@ -97,6 +97,7 @@ pub async fn sealed(
     let kept = draft.clone();
     let part = compose::off_thread(move || compose::build_saved_body_part(&kept))
         .await
+        .and_then(|built| built)
         .map_err(|err| failed(&err))?;
     let order = match preferred {
         Standard::Pgp => [Standard::Pgp, Standard::Smime],
@@ -160,6 +161,7 @@ pub async fn save(
             let (kept, id) = (draft.clone(), message_id.clone());
             compose::off_thread(move || compose::build_saved_draft(&kept, date, &id))
                 .await
+                .and_then(|built| built)
                 .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?
         }
     };

@@ -2961,7 +2961,9 @@ fn now_secs() -> i64 {
 /// `draft` built on a worker thread; the copy shares the files' bytes.
 async fn built_off_thread(draft: &Draft) -> Result<Built, String> {
     let draft = draft.clone();
-    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email))).await
+    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email)))
+        .await
+        .and_then(|built| built)
 }
 
 /// The formatting menu's name for a paragraph style, the target of

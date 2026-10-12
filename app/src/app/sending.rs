@@ -168,7 +168,9 @@ impl App {
         // Building base64-encodes every file, so it runs on a worker
         // thread; the copy shares the files' bytes.
         let (kept, id) = (draft.clone(), message_id.clone());
-        let prepared = off_thread(move || prepared(&kept, built, date, &id)).await;
+        let prepared = off_thread(move || prepared(&kept, built, date, &id))
+            .await
+            .and_then(|prepared| prepared);
         let part = match prepared.map_err(|err| failed(&err))? {
             Built::Message(raw) => return Ok(raw),
             Built::Body(part) => part,
@@ -239,6 +241,7 @@ impl App {
         let kept = draft.clone();
         off_thread(move || build_protected(&kept, date, &message_id, entity))
             .await
+            .and_then(|built| built)
             .map_err(|err| failed(&err))
     }
 
@@ -257,7 +260,13 @@ impl App {
             let (outbox, kept, at) = (this.core.outbox(), draft.clone(), now_millis());
             // Writing the draft down encodes its files, so it happens on a
             // thread of its own, not the GTK thread or the runtime.
-            let item = off_thread(move || queued(&kept, raw, at)).await;
+            let item = match off_thread(move || queued(&kept, raw, at)).await {
+                Ok(item) => item,
+                Err(problem) => {
+                    let said = fill(&gettext("Not sent: {reason}"), &[("reason", &problem)]);
+                    return this.reopen(draft, &said);
+                }
+            };
             let posted = this.core.call(async move { outbox.post(item).await }).await;
             match posted {
                 Ok(Posted::Sent(_)) => {
@@ -305,7 +314,13 @@ impl App {
                 Err(problem) => return this.reopen(draft, &problem),
             };
             let (outbox, kept) = (this.core.outbox(), draft.clone());
-            let item = off_thread(move || queued(&kept, raw, at)).await;
+            let item = match off_thread(move || queued(&kept, raw, at)).await {
+                Ok(item) => item,
+                Err(problem) => {
+                    let said = fill(&gettext("Not scheduled: {reason}"), &[("reason", &problem)]);
+                    return this.reopen(draft, &said);
+                }
+            };
             let posted = this.core.call(async move { outbox.schedule(item).await }).await;
             match posted {
                 Ok(Posted::Refused(problem)) => this.reopen(
