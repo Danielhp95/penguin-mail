@@ -336,3 +336,16 @@ async fn a_masked_address_is_made_enabled_for_its_site() {
     assert_eq!(created["state"], "enabled");
     assert_eq!(created["forDomain"], "https://shop.example");
 }
+
+#[tokio::test]
+async fn a_masked_listing_drops_deleted_addresses_and_stops_at_the_cap() {
+    let server = MockServer::start().await;
+    let mut list: Vec<Value> = (0..mailrs_jmap::MOST_MASKED + 5)
+        .map(|i| json!({"id": format!("ME{i}"), "email": format!("m{i}@example.com"), "state": "enabled"}))
+        .collect();
+    list.insert(0, json!({"id": "GONE", "email": "gone@example.com", "state": "deleted"}));
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [["MaskedEmail/get", {"accountId": "A1", "state": "m", "notFound": [], "list": list}, "c0"]]})).await;
+    let listed = client(&server).masked_emails().await.unwrap();
+    assert_eq!(listed.len(), mailrs_jmap::MOST_MASKED);
+    assert!(listed.iter().all(|m| m.state != "deleted"));
+}
