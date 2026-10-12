@@ -181,7 +181,7 @@ impl ThreadRun {
                 let Some(mut cleaned) = wanted.wait(|effects| effects.clean(html)).await else {
                     return;
                 };
-                let Some(clean) = cleaned.remove(&message_id) else {
+                let Some(clean) = cleaned.remove(&message_id).filter(|clean| !clean.is_failed()) else {
                     let card = self.translation_offer();
                     wanted.on_screen(|effects| effects.translation_card(card));
                     return;

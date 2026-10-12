@@ -58,6 +58,9 @@ pub enum BodyState<'a> {
     Loading,
     Loaded(&'a MessageBody),
     Failed(&'a str),
+    /// The body arrived but could not be cleaned for drawing, and has no
+    /// text to show instead.
+    Unreadable,
 }
 
 pub struct MessageView<'a> {
@@ -397,6 +400,13 @@ fn render_body(html: &mut String, view: &MessageView) {
                 &[("reason", reason)],
             );
             let _ = write!(html, "<div class=\"body status\">{}</div>", escape(&said));
+        }
+        BodyState::Unreadable => {
+            let _ = write!(
+                html,
+                "<div class=\"body status\">{}</div>",
+                escape(&gettext("This message could not be displayed"))
+            );
         }
         BodyState::Loaded(body) => {
             if let Some(clean) = &view.sanitized {

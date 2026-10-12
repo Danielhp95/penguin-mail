@@ -1023,6 +1023,20 @@ async fn an_opened_html_body_is_cleaned_through_the_port() {
     assert!(page(&window).contains("<p>Under the mat</p>"));
 }
 
+/// A body the cleaner fails on ends in a fallback line, not in "Loading…"
+/// for good, and is not sent out to be cleaned again.
+#[tokio::test]
+async fn a_body_that_fails_to_clean_ends_in_the_fallback_not_in_loading() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.with(|screen| screen.clean_fails = true);
+    window.run().open(row(THREAD)).await;
+    let drawn = page(&window);
+    assert!(drawn.contains("This message could not be displayed"), "{drawn}");
+    assert!(!drawn.contains("Loading…"), "{drawn}");
+    let asked = window.steps().iter().filter(|step| **step == Step::Clean).count();
+    assert_eq!(asked, 1, "cleaned once");
+}
+
 /// A model's HTML is mail like any other: cleaned through the port.
 #[tokio::test]
 async fn a_translated_html_message_is_cleaned_through_the_port() {
