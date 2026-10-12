@@ -168,6 +168,8 @@ pub struct JmapState {
     /// How many event writes still answer `stateMismatch`, as when another
     /// client changed the calendar since the `ifInState` the write named.
     pub state_mismatches: u32,
+    /// The answer the next `EmailSubmission/query` gets, once.
+    pub submission_query_failure: Option<JmapError>,
     /// How long an upload takes.
     pub upload_delay: std::time::Duration,
     log: Vec<(u64, &'static str, String, Op)>,
@@ -460,6 +462,7 @@ impl FakeJmap {
             mdns: Vec::new(),
             submission_get: true,
             hold_failure: None,
+            submission_query_failure: None,
             cancel_races_send: false,
             upload_delay: std::time::Duration::ZERO,
             calendars: Vec::new(),
@@ -1498,6 +1501,14 @@ impl JmapApi for FakeJmap {
     async fn answers_submission_get(&self) -> Answer<bool> {
         self.called("EmailSubmission/get ids=[]");
         Ok(self.with(|s| s.submission_get))
+    }
+
+    async fn submissions_for(&self, email_id: &str) -> Answer<Vec<String>> {
+        self.called("EmailSubmission/query");
+        self.with(|s| match s.submission_query_failure.take() {
+            Some(err) => Err(err),
+            None => Ok(s.holds.iter().filter(|(_, hold)| hold.email_id == email_id).map(|(id, _)| id.clone()).collect()),
+        })
     }
 
     async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {

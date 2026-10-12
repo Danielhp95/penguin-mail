@@ -56,6 +56,7 @@ pub trait JmapApi: Send + Sync + 'static {
     fn hold(&self, hold: &Hold) -> impl Future<Output = Answer<HeldSubmission>> + Send;
     fn submissions(&self, ids: &[String]) -> impl Future<Output = Answer<Vec<SubmissionState>>> + Send;
     fn answers_submission_get(&self) -> impl Future<Output = Answer<bool>> + Send;
+    fn submissions_for(&self, email_id: &str) -> impl Future<Output = Answer<Vec<String>>> + Send;
     fn cancel_submission(&self, id: &str) -> impl Future<Output = Answer<Canceled>> + Send;
     fn file_held(&self, email_id: &str, drafts: &str, sent: &str) -> impl Future<Output = Answer<()>> + Send;
     fn unhold(&self, email_id: &str) -> impl Future<Output = Answer<()>> + Send;
@@ -179,6 +180,9 @@ impl JmapApi for JmapClient {
     }
     async fn answers_submission_get(&self) -> Answer<bool> {
         JmapClient::answers_submission_get(self).await
+    }
+    async fn submissions_for(&self, email_id: &str) -> Answer<Vec<String>> {
+        JmapClient::submissions_for(self, email_id).await
     }
     async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {
         JmapClient::cancel_submission(self, id).await

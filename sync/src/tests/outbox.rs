@@ -765,7 +765,8 @@ async fn cancelling_send_later_stops_the_named_messages_and_keeps_their_drafts()
         outbox.cancel_scheduled(&targets).await.unwrap(),
         Cancelled {
             in_drafts: 2,
-            unsaved: vec![]
+            unsaved: vec![],
+            ..Cancelled::default()
         },
         "the one Gmail never saw goes to Drafts now that Gmail answers"
     );
@@ -788,7 +789,8 @@ async fn cancelling_send_later_stops_the_named_messages_and_keeps_their_drafts()
         outbox.cancel_scheduled(&[by_message]).await.unwrap(),
         Cancelled {
             in_drafts: 1,
-            unsaved: vec![]
+            unsaved: vec![],
+            ..Cancelled::default()
         }
     );
     assert!(h.db.read(outbox::scheduled).await.unwrap().is_empty());

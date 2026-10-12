@@ -1198,6 +1198,16 @@ pub trait MailBackend: Send + Sync + 'static {
         async { Err(BackendError::Unsupported) }
     }
 
+    /// The hold the server keeps for the message whose `Message-ID` header
+    /// is `message_id`, for a `schedule` whose answer never came back.
+    /// `None` when the server holds no copy of it. An error that is not
+    /// transient means the server's answer cannot settle whether it holds
+    /// the message.
+    fn find_hold(&self, message_id: &str) -> impl Future<Output = Result<Option<Held>, BackendError>> + Send {
+        let _ = message_id;
+        async { Ok(None) }
+    }
+
     /// Calls the hold `handle` back. `message_id` is the copy the hold
     /// left in Drafts and `send_at` the hour it was held for, which say
     /// what happened once the server forgets the hold.

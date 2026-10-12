@@ -390,6 +390,10 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
         self.hold_message(raw, at).await
     }
 
+    async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
+        self.held_copy(message_id).await
+    }
+
     async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
         self.release(handle, message_id, send_at).await
     }

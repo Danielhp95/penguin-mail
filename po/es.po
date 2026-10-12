@@ -10656,21 +10656,47 @@ msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Enviado hace {days} día, sin respuesta todavía"
 msgstr[1] "Enviado hace {days} días, sin respuesta todavía"
 
-#: sync/src/mailbox.rs:1559
+#: sync/src/mailbox.rs:1564
+msgid "The server has not sent this message yet."
+msgstr "El servidor aún no ha enviado este mensaje."
+
+#: sync/src/mailbox.rs:1568
 msgid "Sends {when}"
 msgstr "Se envía {when}"
 
-#: sync/src/mailbox.rs:1563
+#: sync/src/mailbox.rs:1572
 msgid "Not sent"
 msgstr "No enviado"
 
-#: sync/src/mailbox.rs:1570
+#: sync/src/mailbox.rs:1579
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Se volverá a intentar {when}"
 
-#: sync/src/mailbox.rs:1577
+#: sync/src/mailbox.rs:1586
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail ha dejado de intentarlo"
+
+#: sync/src/outbox.rs:58
+msgid ""
+"Penguin Mail could not confirm whether this message went out. Check Sent."
+msgstr ""
+"Penguin Mail no pudo confirmar si este mensaje se envió. Revisa Enviados."
+
+#: sync/src/outbox.rs:79
+msgid "This message was canceled in another app and is no longer in Drafts."
+msgstr "Este mensaje se canceló en otra aplicación y ya no está en Borradores."
+
+#: sync/src/outbox.rs:85
+msgid ""
+"The server still holds this message and could not be asked to let it go. Try "
+"again later."
+msgstr ""
+"El servidor aún retiene este mensaje y no se le pudo pedir que lo liberara. "
+"Inténtalo más tarde."
+
+#: sync/src/outbox.rs:1041
+msgid "The server could not be asked to let go of the message."
+msgstr "No se pudo pedir al servidor que liberara el mensaje."
 
 #: sync/src/passwords.rs:22
 msgid "The keyring refused: {reason}"

@@ -10745,21 +10745,50 @@ msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Vor {days} Tag gesendet, noch keine Antwort"
 msgstr[1] "Vor {days} Tagen gesendet, noch keine Antwort"
 
-#: sync/src/mailbox.rs:1559
+#: sync/src/mailbox.rs:1564
+msgid "The server has not sent this message yet."
+msgstr "Der Server hat diese Nachricht noch nicht gesendet."
+
+#: sync/src/mailbox.rs:1568
 msgid "Sends {when}"
 msgstr "Wird {when} gesendet"
 
-#: sync/src/mailbox.rs:1563
+#: sync/src/mailbox.rs:1572
 msgid "Not sent"
 msgstr "Nicht gesendet"
 
-#: sync/src/mailbox.rs:1570
+#: sync/src/mailbox.rs:1579
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Neuer Versuch {when}"
 
-#: sync/src/mailbox.rs:1577
+#: sync/src/mailbox.rs:1586
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail hat es aufgegeben"
+
+#: sync/src/outbox.rs:58
+msgid ""
+"Penguin Mail could not confirm whether this message went out. Check Sent."
+msgstr ""
+"Penguin Mail konnte nicht bestätigen, ob diese Nachricht gesendet wurde. "
+"Sehen Sie in „Gesendet“ nach."
+
+#: sync/src/outbox.rs:79
+msgid "This message was canceled in another app and is no longer in Drafts."
+msgstr ""
+"Diese Nachricht wurde in einer anderen App abgebrochen und ist nicht mehr in "
+"den Entwürfen."
+
+#: sync/src/outbox.rs:85
+msgid ""
+"The server still holds this message and could not be asked to let it go. Try "
+"again later."
+msgstr ""
+"Der Server hält diese Nachricht noch zurück und konnte nicht gebeten werden, "
+"sie freizugeben. Versuchen Sie es später erneut."
+
+#: sync/src/outbox.rs:1041
+msgid "The server could not be asked to let go of the message."
+msgstr "Der Server konnte nicht gebeten werden, die Nachricht freizugeben."
 
 #: sync/src/passwords.rs:22
 msgid "The keyring refused: {reason}"

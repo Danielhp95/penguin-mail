@@ -341,3 +341,33 @@ async fn a_sent_hold_with_no_drafts_mailbox_to_file_from_is_logged() {
     assert!(logged.contains("no Drafts mailbox"), "{logged}");
     assert!(!logged.contains("M9") && !logged.contains("S9"), "{logged}");
 }
+
+#[tokio::test]
+async fn a_hold_whose_answer_was_lost_is_found_by_its_message_id() {
+    let h = holding().await;
+    h.fake.with(|s| s.hold_failure = Some(JmapError::HoldUnknown));
+    let at = now_millis() + HOUR;
+    assert!(matches!(h.mail().schedule(&letter(), at).await, Err(BackendError::Offline(_))));
+    let found = h.mail().find_hold("trip@example.com").await.unwrap().expect("the server kept it");
+    let (handle, email) = h.fake.with(|s| s.holds.iter().map(|(id, hold)| (id.clone(), hold.email_id.clone())).next().unwrap());
+    assert_eq!((found.handle, found.message_id), (handle, email));
+    assert_eq!(h.mail().find_hold("other@example.com").await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_held_copy_without_a_submission_settles_nothing() {
+    let h = holding().await;
+    h.mail().schedule(&letter(), now_millis() + HOUR).await.unwrap();
+    h.fake.with(|s| s.holds.clear());
+    let err = h.mail().find_hold("trip@example.com").await.unwrap_err();
+    assert!(!err.is_transient(), "{err:?}");
+}
+
+#[tokio::test]
+async fn two_held_copies_of_one_message_settle_nothing() {
+    let h = holding().await;
+    h.mail().schedule(&letter(), now_millis() + HOUR).await.unwrap();
+    h.mail().schedule(&letter(), now_millis() + 2 * HOUR).await.unwrap();
+    let err = h.mail().find_hold("trip@example.com").await.unwrap_err();
+    assert!(!err.is_transient(), "{err:?}");
+}
