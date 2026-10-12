@@ -220,6 +220,9 @@ row.account-heading:hover .account-options,
 }
 
 .account-dot { min-width: 8px; min-height: 8px; border-radius: 999px; }
+/* In a list row the account is a short bar, the event card's colour bar
+   in small, so it never reads as the round unread dot beside it. */
+.thread-row .account-dot { min-width: 3px; min-height: 12px; }
 .account-0 { background: #3584e4; } .account-1 { background: #2190a4; } .account-2 { background: #3a944a; }
 .account-3 { background: #c88800; } .account-4 { background: #ed5b00; } .account-5 { background: #e62d42; }
 .account-6 { background: #d56199; } .account-7 { background: #9141ac; } .account-8 { background: #6f8396; }
