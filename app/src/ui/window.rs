@@ -38,6 +38,7 @@ use crate::offered::Filing;
 use crate::open_thread::OpenThread;
 use crate::permission::{Occasion, Permission};
 use crate::settings::{Change, Effect, Settings};
+use crate::unread::Counted;
 use aftermath::Cause;
 use futures::FutureExt;
 use futures::future::{LocalBoxFuture, Shared};
@@ -158,8 +159,6 @@ pub struct MainWindow {
     /// The mailbox on screen and everything that lists it: the feed, the
     /// search field's typing and the server search still out.
     listing: Rc<ListingRun>,
-    /// Requests for the sidebar counts, which share one count.
-    counts: RefCell<on_screen::Counts>,
     /// The accounts read in flight, which a redraw of the row colours
     /// waits for, since the colours come with it.
     accounts_read: RefCell<Option<Shared<LocalBoxFuture<'static, ()>>>>,
@@ -846,7 +845,6 @@ impl MainWindow {
                     Rc::new(searching::ListPane(weak.clone())),
                     Rc::new(searching::CoreLists(Rc::clone(&app.core))),
                 )),
-                counts: RefCell::new(on_screen::Counts::default()),
                 accounts_read: RefCell::new(None),
                 authorizing: Cell::new(false),
                 assistant,
@@ -990,14 +988,8 @@ impl MainWindow {
         window
             .conversation
             .set_zoom(app.settings_with(|s| s.text_size.zoom()));
-        let mut counts_changed = window.core.lists().counts_changed();
-        let weak = Rc::downgrade(&window);
-        glib::spawn_future_local(async move {
-            while counts_changed.changed().await.is_ok() {
-                let Some(window) = weak.upgrade() else { break };
-                window.refresh_counts();
-            }
-        });
+        app.unread()
+            .show_in(Box::new(ShownCounts(Rc::downgrade(&window))));
         window.refresh_accounts(Reload::Yes);
         window.reload_image_senders();
         window.check_keyring_plug();
@@ -1338,50 +1330,20 @@ impl MainWindow {
         }
     }
 
-    /// What the sidebar and the category switcher show. Grouped
-    /// queries replace the one-per-mailbox counting this used to do, and
-    /// every request made before they start shares them.
+    /// Asks the app's unread counts again; they come back through
+    /// `show_counts` with the tray's and the Dock's.
     fn refresh_counts(self: &Rc<Self>) {
-        if self.counts.borrow_mut().ask() == on_screen::Count::Joined {
-            return;
+        if let Some(app) = self.app.upgrade() {
+            app.unread().changed();
         }
-        let this = Rc::clone(self);
-        glib::idle_add_local_once(move || this.count_now());
     }
 
-    fn count_now(self: &Rc<Self>) {
-        self.counts.borrow_mut().start();
-        let mailboxes = self.sidebar.mailboxes();
-        let shown = self.shown();
-        let view = self.view();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let lists = this.core.lists();
-            let counted = this
-                .core
-                .call(async move { lists.counts(&mailboxes, &shown, &view).await })
-                .await;
-            if let Ok(counts) = counted {
-                this.sidebar.set_counts(&counts.mailboxes);
-                let unread = counts
-                    .mailboxes
-                    .get(&Mailbox::Unified(crate::ui::Standard::Inbox))
-                    .copied()
-                    .unwrap_or(0);
-                this.sidebar.set_unread(unread);
-                let waiting = counts
-                    .mailboxes
-                    .get(&Mailbox::FollowUp)
-                    .copied()
-                    .unwrap_or(0);
-                this.set_follow_up_count(waiting as usize);
-                this.set_category_counts(&counts.categories);
-            }
-            let again = this.counts.borrow_mut().done();
-            if again.is_some() {
-                glib::idle_add_local_once(move || this.count_now());
-            }
-        });
+    /// What the sidebar, the space badge and the category switcher show.
+    fn show_counts(&self, counted: &Counted) {
+        self.sidebar.set_counts(&counted.counts.mailboxes);
+        self.sidebar.set_unread(counted.all_inboxes());
+        self.set_follow_up_count(counted.of(&Mailbox::FollowUp) as usize);
+        self.set_category_counts(&counted.counts.categories);
     }
 
     // ---- Mailboxes and the thread list ---------------------------------
@@ -3766,6 +3728,27 @@ impl reveal::Waiting for Replying {
 
     fn toast(&self, text: String) {
         self.0.toast(&text);
+    }
+}
+
+/// The main window as the app's unread counts see it: the mailboxes its
+/// sidebar shows, and where each count goes.
+struct ShownCounts(Weak<MainWindow>);
+
+impl crate::unread::Shows for ShownCounts {
+    fn wanted(&self) -> Option<crate::unread::Wanted> {
+        let window = self.0.upgrade()?;
+        Some(crate::unread::Wanted {
+            mailboxes: window.sidebar.mailboxes(),
+            shown: window.shown(),
+            view: window.view(),
+        })
+    }
+
+    fn show(&self, counted: &Counted) {
+        if let Some(window) = self.0.upgrade() {
+            window.show_counts(counted);
+        }
     }
 }
 

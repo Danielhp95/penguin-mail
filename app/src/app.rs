@@ -12,8 +12,8 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use ksni::TrayMethods;
 use mailrs_domain::translate::{fill, gettext};
-use mailrs_domain::{Account, AccountId, Address, ChangeEvent, Label, MailSet, Provider, Role};
-use mailrs_store::{accounts, labels, messages, threads};
+use mailrs_domain::{Account, AccountId, Address, ChangeEvent, Label, Provider, Role};
+use mailrs_store::{accounts, labels, messages};
 use mailrs_sync::{History, MovedFrom};
 
 use crate::app::announce::still_news;
@@ -26,6 +26,8 @@ use crate::tray::{AccountUnread, MailTray, TrayCommand};
 use crate::ui::autocomplete::Contacts;
 use crate::ui::composer::spell;
 use crate::ui::window::{MainWindow, Notice, Reveal};
+use crate::unread::{Ask, Counted, Counter, Unread};
+use mailrs_sync::mailbox::Counts;
 
 const BLOCK_REMOTE_RULES: &str = r#"[
   {"trigger": {"url-filter": "^https?:"}, "action": {"type": "block"}},
@@ -87,8 +89,8 @@ pub struct App {
     /// activation.
     pending_file: RefCell<Option<std::path::PathBuf>>,
     tray_started: Cell<bool>,
-    /// Holds the tray's recount while a burst of changes goes by.
-    tray_recount: crate::tray::Burst,
+    /// The unread counts the sidebar, the tray and the Dock badge share.
+    unread: Rc<Unread<CoreCounts>>,
     dock_badge: dock_badge::Badge,
     /// Accounts whose waiting rule would replace a script of the person's
     /// own and were asked about it this run, so the minute timer asks once.
@@ -149,6 +151,7 @@ impl App {
             Settings::default_path()
         };
         let opened = Settings::open(&settings_path);
+        let counted_by = Rc::clone(&core);
         let app = Rc::new(App {
             gio: gio_app.clone(),
             core,
@@ -171,7 +174,7 @@ impl App {
             pending_compose: RefCell::new(compose),
             pending_file: RefCell::new(calendar_file),
             tray_started: Cell::new(false),
-            tray_recount: crate::tray::Burst::default(),
+            unread: Unread::new(CoreCounts(counted_by)),
             dock_badge: dock_badge::Badge::default(),
             asked_to_replace: RefCell::default(),
             settings: RefCell::new(Settings {
@@ -198,7 +201,7 @@ impl App {
         crate::locale_time::set_week_start_setting(app.settings.borrow().week_start);
         app.install_actions();
         app.listen();
-        app.dock_badge.watch(&app);
+        app.count_unread();
         app.listen_for_notifications(picked);
         // The tray's Quit and a session logout can end the process
         // through the application without ever calling `App::quit`, so
@@ -777,6 +780,7 @@ impl App {
         *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
+        self.unread.set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -833,8 +837,6 @@ impl App {
         }
         self.refresh_send_as(arrived);
         self.list_masked(arrived);
-        self.dock_badge.recount();
-        self.update_tray();
     }
 
     /// Lists the masked addresses of each account in `arrived` whose server
@@ -1258,19 +1260,15 @@ impl App {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             while let Ok(event) = this.core.events.recv().await {
-                this.dock_badge.recount();
+                this.unread.changed();
                 this.tell_window(Notice::Engine(&event));
-                match &event {
-                    ChangeEvent::NewMail {
-                        account_id,
-                        message_ids,
-                    } => {
-                        this.contacts_stale.set(true);
-                        this.after_rules(*account_id, message_ids.clone());
-                    }
-                    ChangeEvent::ThreadsChanged { .. }
-                    | ChangeEvent::AccountStateChanged { .. } => this.update_tray(),
-                    _ => {}
+                if let ChangeEvent::NewMail {
+                    account_id,
+                    message_ids,
+                } = &event
+                {
+                    this.contacts_stale.set(true);
+                    this.after_rules(*account_id, message_ids.clone());
                 }
             }
         });
@@ -1585,6 +1583,8 @@ impl App {
             badged: Vec::new(),
         };
         let slot = Arc::clone(&self.tray);
+        // The icon comes up on the runtime; the count it shows waits for it.
+        let (ready, readied) = async_channel::bounded(1);
         // The restart that returns memory execs in place and keeps the pid,
         // so the default name, StatusNotifierItem-<pid>-1, comes back while
         // the AppIndicators extension is still timing out the old owner. When
@@ -1593,8 +1593,19 @@ impl App {
         // and the icon stays gone. A unique connection name never repeats.
         self.core.spawn(async move {
             match tray.disable_dbus_name(true).spawn().await {
-                Ok(handle) => *slot.lock().expect("tray slot poisoned") = Some(handle),
+                Ok(handle) => {
+                    *slot.lock().expect("tray slot poisoned") = Some(handle);
+                    let _ = ready.try_send(());
+                }
                 Err(err) => tracing::warn!(error = %err, "could not add the tray icon"),
+            }
+        });
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            if readied.recv().await.is_ok()
+                && let Some(app) = weak.upgrade()
+            {
+                app.unread.changed();
             }
         });
         let this = Rc::clone(self);
@@ -1622,55 +1633,70 @@ impl App {
         });
     }
 
-    /// Counts each account's unread mail for the tray, once per burst of
-    /// changes rather than once per change.
-    fn update_tray(self: &Rc<Self>) {
-        let shown = self.tray.lock().expect("tray slot poisoned").is_some();
-        if !shown || !self.tray_recount.claim() {
-            return;
-        }
-        let this = Rc::clone(self);
-        glib::timeout_add_local_once(crate::tray::RECOUNT_AFTER, move || {
-            this.tray_recount.start();
-            this.count_for_tray();
+    /// Starts the unread counts, wakes them on each server answer, and
+    /// hands every count to the tray and the Dock badge.
+    fn count_unread(self: &Rc<Self>) {
+        glib::spawn_future_local(self.unread.start(glib::timeout_future));
+        let mut answers = self.core.lists().counts_changed();
+        let weak = Rc::downgrade(&self.unread);
+        glib::spawn_future_local(async move {
+            while answers.changed().await.is_ok() {
+                let Some(unread) = weak.upgrade() else { break };
+                unread.answered();
+            }
         });
+        let weak = Rc::downgrade(self);
+        self.unread.listen(Box::new(move |counted| {
+            if let Some(app) = weak.upgrade() {
+                app.show_unread(counted);
+            }
+        }));
     }
 
-    fn count_for_tray(self: &Rc<Self>) {
+    /// Puts a count on the tray and the Dock badge: All Inboxes, and each
+    /// account's inbox on its line of the tray menu.
+    fn show_unread(&self, counted: &Counted) {
+        let total = counted.all_inboxes();
+        self.dock_badge.show(total);
         let Some(handle) = self.tray.lock().expect("tray slot poisoned").clone() else {
             return;
         };
-        let accounts = self.accounts.borrow().clone();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let counts = this
-                .core
-                .read(move |c| {
-                    let mut counts = Vec::new();
-                    for account in accounts {
-                        let unread = threads::unread_threads(
-                            c,
-                            &threads::ThreadFilter::account(account.id, MailSet::Role(Role::Inbox)),
-                        )?;
-                        counts.push(AccountUnread {
-                            id: account.id,
-                            email: account.email,
-                            unread,
-                        });
-                    }
-                    Ok(counts)
+        let accounts: Vec<AccountUnread> = self
+            .accounts
+            .borrow()
+            .iter()
+            .map(|account| AccountUnread {
+                id: account.id,
+                email: account.email.clone(),
+                unread: counted.inbox(account.id),
+            })
+            .collect();
+        self.core.spawn(async move {
+            handle
+                .update(move |tray: &mut MailTray| {
+                    tray.set_unread(total);
+                    tray.accounts = accounts;
                 })
                 .await;
-            let Ok(counts) = counts else { return };
-            this.core.spawn(async move {
-                handle
-                    .update(move |tray: &mut MailTray| {
-                        tray.set_unread(counts.iter().map(|a| a.unread).sum());
-                        tray.accounts = counts;
-                    })
-                    .await;
-            });
         });
+    }
+
+    /// The unread counts, for a window to show them too.
+    pub(crate) fn unread(&self) -> &Rc<Unread<CoreCounts>> {
+        &self.unread
+    }
+}
+
+/// The unread counts, read through the core's runtime.
+pub(crate) struct CoreCounts(Rc<Core>);
+
+impl Counter for CoreCounts {
+    async fn count(&self, ask: Ask) -> Result<Counts, String> {
+        let lists = self.0.lists();
+        self.0
+            .call(async move { crate::unread::read(&lists, ask).await })
+            .await
+            .map_err(|err| err.to_string())
     }
 }
 

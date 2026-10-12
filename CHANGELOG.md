@@ -30,6 +30,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
+- The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
 
 ### Fixed
 
