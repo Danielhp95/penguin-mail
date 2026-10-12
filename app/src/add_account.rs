@@ -1408,6 +1408,25 @@ pub fn again_line(account: &Account) -> String {
     )
 }
 
+/// What step 2 says above the fields for a JMAP account that signed in
+/// through the browser and needs to again. It has no password to give.
+pub fn again_browser_line(account: &Account) -> String {
+    fill(
+        &gettext("Choose Sign In With Browser to sign in to {address} again."),
+        &[("address", &account.email)],
+    )
+}
+
+/// The banner over the mail list for an account that needs to sign in
+/// again. One that signed in through the browser does so there again.
+pub fn sign_in_again_banner(address: &str, through_browser: bool) -> String {
+    let template = match through_browser {
+        true => gettext("Sign in again through the browser to keep {account} syncing"),
+        false => gettext("Sign in again to keep {account} syncing"),
+    };
+    fill(&template, &[("account", address)])
+}
+
 /// Which question the dialog asked last. Continue and Sign In each take
 /// a ticket, and an answer that comes back counts only while its ticket
 /// is the last one handed out and the dialog is open. Editing the
@@ -2577,6 +2596,22 @@ mod tests {
             provider: Provider::Imap,
             provider_name: Some("iCloud Mail".into()),
         }
+    }
+
+    #[test]
+    fn an_account_signed_in_through_the_browser_is_asked_to_sign_in_there_again() {
+        let account = Account {
+            email: "dana@fastmail.com".into(),
+            provider: Provider::Jmap,
+            provider_name: Some("Fastmail".into()),
+            ..icloud_account()
+        };
+        assert_eq!(again_browser_line(&account), "Choose Sign In With Browser to sign in to dana@fastmail.com again.");
+        assert_eq!(
+            sign_in_again_banner("dana@fastmail.com", true),
+            "Sign in again through the browser to keep dana@fastmail.com syncing"
+        );
+        assert_eq!(sign_in_again_banner("dana@fastmail.com", false), "Sign in again to keep dana@fastmail.com syncing");
     }
 
     #[test]

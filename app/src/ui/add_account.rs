@@ -1642,6 +1642,9 @@ struct Dialog {
     /// calendar or contacts server refused that sign-in: the password page
     /// asks for the calendar's app password.
     again_dav_refused: Cell<bool>,
+    /// The account signing in again signed in through the browser, so the
+    /// password page asks it to do so again.
+    again_browser: Cell<bool>,
     /// The tile picked, whose stamp the address page shows until the
     /// address names a provider.
     tile: Cell<Option<Tile>>,
@@ -1748,6 +1751,7 @@ impl Dialog {
             done,
             again,
             again_dav_refused: Cell::new(false),
+            again_browser: Cell::new(false),
             tile: Cell::new(None),
             by_hand: Cell::new(false),
             typed: RefCell::new(None),
@@ -2430,7 +2434,11 @@ impl Dialog {
         match &self.again {
             Some(account) => {
                 page.title.set_text(&account.email);
-                page.lede.set_text(&add_account::again_line(account));
+                let lede = match self.again_browser.get() {
+                    true => add_account::again_browser_line(account),
+                    false => add_account::again_line(account),
+                };
+                page.lede.set_text(&lede);
                 page.name_list.set_visible(false);
             }
             None => {
@@ -3122,6 +3130,7 @@ impl Dialog {
             match saved {
                 Ok(Some(Saved::Jmap(saved, refused))) => {
                     this.again_dav_refused.set(add_account::asks_dav_password_again(&saved, &refused));
+                    this.again_browser.set(saved.auth == mailrs_store::jmap::JmapAuth::OAuth);
                     this.show_jmap(add_account::saved_jmap(&account, &saved));
                 }
                 Ok(Some(Saved::Mail(kept))) => {
@@ -3937,7 +3946,7 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
                 _ => {}
             }
         }
-        "jmap-browser" | "jmap-browser-waiting" | "jmap-browser-canceling" | "jmap-browser-failed" => {
+        "jmap-browser" | "jmap-browser-waiting" | "jmap-browser-canceling" | "jmap-browser-failed" | "jmap-browser-again" => {
             // The demo asks no server whether it takes the browser
             // sign-in, so the page shows the button as Fastmail's would.
             let fastmail = Address::parse("dana@fastmail.com").expect("a sample address");
@@ -3970,6 +3979,22 @@ fn preview(this: &Rc<Dialog>, stage: &str) {
                         mailrs_jmap::JmapError::Declined,
                     ));
                     this.show_browser_failure(&add_account::jmap_browser_failure(&refused, &proposal));
+                }
+                // The page as an account that signed in through the
+                // browser sees it when it signs in again: show_jmap's
+                // lines for such an account, which the preview cannot open
+                // as one.
+                "jmap-browser-again" => {
+                    let account = Account {
+                        id: 0,
+                        email: fastmail.full(),
+                        state: mailrs_domain::AccountState::NeedsReauth,
+                        provider: Provider::Jmap,
+                        provider_name: Some("Fastmail".into()),
+                    };
+                    this.password.title.set_text(&account.email);
+                    this.password.lede.set_text(&add_account::again_browser_line(&account));
+                    this.password.name_list.set_visible(false);
                 }
                 _ => {}
             }

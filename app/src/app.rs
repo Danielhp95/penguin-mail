@@ -2,7 +2,7 @@
 //! content filter, identities, and the engine event loop.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -66,6 +66,9 @@ pub struct App {
     /// Each account's consent, read in the same pass as `accounts` so the
     /// Grant Access banner never waits on a round trip of its own.
     consent: RefCell<HashMap<AccountId, accounts::Consent>>,
+    /// The JMAP accounts that signed in through the browser, as
+    /// `reload_accounts` last read them, so signing in again says where.
+    through_browser: RefCell<HashSet<AccountId>>,
     names: RefCell<HashMap<AccountId, String>>,
     tray: Arc<Mutex<Option<ksni::Handle<MailTray>>>>,
     /// What somebody picked on a new-mail notification.
@@ -157,6 +160,7 @@ impl App {
             labels: RefCell::new(HashMap::new()),
             label_order: RefCell::new(HashMap::new()),
             consent: RefCell::new(HashMap::new()),
+            through_browser: RefCell::default(),
             names: RefCell::new(HashMap::new()),
             tray: Arc::new(Mutex::new(None)),
             chosen,
@@ -750,21 +754,29 @@ impl App {
     /// shown up as a stray unnamed control to a screen reader already
     /// walking the page.
     pub async fn reload_accounts(self: &Rc<Self>) -> anyhow::Result<Vec<(Account, Vec<Label>)>> {
-        let (loaded, order, consent) = self
+        let (loaded, order, consent, through_browser) = self
             .core
             .read(|c| {
                 let mut out: Vec<(Account, Vec<Label>)> = Vec::new();
                 let mut order = HashMap::new();
+                let mut through_browser = HashSet::new();
                 for account in accounts::list_accounts(c)? {
                     let account_labels = labels::list_labels(c, account.id)?;
                     order.insert(account.id, labels::positions(c, account.id)?);
+                    if account.provider == Provider::Jmap
+                        && mailrs_store::jmap::load(c, account.id)?
+                            .is_some_and(|saved| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)
+                    {
+                        through_browser.insert(account.id);
+                    }
                     out.push((account, account_labels));
                 }
                 let consent = accounts::all_consent(c)?;
-                Ok((out, order, consent))
+                Ok((out, order, consent, through_browser))
             })
             .await?;
         *self.label_order.borrow_mut() = order;
+        *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
         self.accounts_read.set(true);
@@ -779,6 +791,12 @@ impl App {
             .collect();
         self.remember_accounts(&arrived);
         Ok(loaded)
+    }
+
+    /// Whether `account_id` is a JMAP account that signed in through the
+    /// browser, as `reload_accounts` last read it.
+    pub fn signs_in_through_browser(&self, account_id: AccountId) -> bool {
+        self.through_browser.borrow().contains(&account_id)
     }
 
     /// Every account's consent, as `reload_accounts` last read it: whether
