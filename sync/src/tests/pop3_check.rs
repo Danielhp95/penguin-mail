@@ -615,8 +615,8 @@ fn large_message() -> (FakePop3, usize) {
 /// `cargo test -p mailrs-sync --lib -- --ignored a_large_message_opens`
 ///
 /// Opening the message reads its structure and text; saving its file
-/// reads that part alone. Neither should decode the file on the way, nor
-/// hold the message more than once.
+/// reads that part alone. Opening reads the stored blob in chunks and
+/// holds only the text; saving decodes just the file.
 #[tokio::test]
 #[ignore = "a measurement of the whole process, run alone"]
 async fn a_large_message_opens_and_saves_its_file_holding_it_at_most_once() {
@@ -644,8 +644,8 @@ async fn a_large_message_opens_and_saves_its_file_holding_it_at_most_once() {
     assert_eq!(bytes.len() as i64, file.size);
     assert!(bytes.iter().all(|b| *b == b'A'));
 
-    assert!(open_heap < size * 6 / 5, "opening held {open_heap} bytes for a {size}-byte message");
-    assert!(open_resident < size * 3 / 2, "opening raised resident memory {open_resident} bytes");
+    assert!(open_heap < size / 8, "opening held {open_heap} bytes for a {size}-byte message");
+    assert!(open_resident < size / 4, "opening raised resident memory {open_resident} bytes");
     // The file decoded is three quarters of the message.
     assert!(save_heap < size * 4 / 5, "saving the file held {save_heap} bytes for a {size}-byte message");
     assert!(save_resident < size, "saving the file raised resident memory {save_resident} bytes");
