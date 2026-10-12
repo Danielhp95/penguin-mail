@@ -1107,7 +1107,7 @@ fn migration_56_adds_jmap_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
          INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
@@ -1134,7 +1134,7 @@ fn migration_58_takes_oauth_jmap_accounts() {
     .unwrap();
     drop(conn);
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     let auth: String = conn.query_row("SELECT auth FROM jmap_accounts WHERE account_id = 4", [], |r| r.get(0)).unwrap();
     assert_eq!(auth, "basic");
     conn.execute(
@@ -1151,7 +1151,7 @@ fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 59);
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     let plan: Vec<String> = conn
         .prepare("EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = 1 AND rfc822_msgid IN ('a@x', '<a@x>')")
         .unwrap()
@@ -1160,4 +1160,26 @@ fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert!(plan.iter().any(|step| step.contains("messages_by_msgid")), "{plan:?}");
+}
+
+/// Migration 60 indexes events by account and lower-case UID, so an
+/// invitation finds its event without walking the account's calendars.
+#[test]
+fn migration_60_finds_an_event_by_its_uid_through_an_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_with(&dir.path().join("mail.db"), MIGRATIONS).unwrap();
+    for sql in [
+        "SELECT id FROM events WHERE account_id = 1 AND lower(uid) = lower('A@x')",
+        "SELECT e.id FROM events e JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar \
+         WHERE e.account_id = 1 AND c.shown = 1 AND lower(e.uid) = lower('A@x')",
+    ] {
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("events_by_uid")), "{plan:?}");
+    }
 }

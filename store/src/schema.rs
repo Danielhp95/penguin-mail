@@ -934,6 +934,12 @@ ALTER TABLE jmap_accounts_new RENAME TO jmap_accounts;
     r#"
 CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
 "#,
+    // An invitation names its event by iCalendar UID, which the calendar
+    // reads with any case, so finding the event walked every event of the
+    // account. Adds an index on the lower-case UID; changes no row.
+    r#"
+CREATE INDEX events_by_uid ON events(account_id, lower(uid));
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
