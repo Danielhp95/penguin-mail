@@ -84,16 +84,6 @@ macro_rules! server_finding {
     };
 }
 
-// Cyrus 3.13 test image: `Identity/get` answers its one identity with
-// `email: ""`, which the identities service drops as no address, so the
-// account lists none and the From row has nothing to offer.
-server_finding!(
-    cyrus_identities_name_the_account,
-    Cyrus,
-    "Cyrus answers its one identity with an empty email, so the identities service lists no address",
-    identities_name_the_account
-);
-
 // Cyrus 3.13 test image: `SieveScript/set` with `onSuccessActivateScript`
 // answers once, with `created.s.isActive: true` and `updated: null`. RFC
 // 9661's second implicit answer never comes, so `put_sieve_active` fails
@@ -273,11 +263,7 @@ impl<'a> Run<'a> {
         self.a_body_opens().await;
         self.a_send_lands_in_sent().await;
         self.a_draft_saves_replaces_and_sends().await;
-        if self.kind() == JmapKind::Cyrus {
-            eprintln!("Cyrus: identities skipped, see cyrus_identities_name_the_account (ignored)");
-        } else {
-            self.identities_name_the_account().await;
-        }
+        self.identities_name_the_account().await;
         self.the_reply_round_trips_where_offered().await;
         self.a_contact_round_trips_where_offered().await;
         if self.kind() != JmapKind::James {
@@ -464,9 +450,11 @@ impl<'a> Run<'a> {
         written.unwrap_or_else(|_| panic!("{:?}: the write waited past {WRITE_WAIT:?}", self.kind())).expect("an unstar");
     }
 
+    /// Cyrus answers `user1`'s identity with an empty email; the adapter
+    /// fills it with the address the user name stands for.
     async fn identities_name_the_account(&self) {
         let listed = self.sync.services().identities.identities().await.expect("identities");
-        assert!(!listed.is_empty(), "{:?}", self.kind());
+        assert!(listed.iter().any(|a| a.email == self.server.address), "{:?}: {listed:?}", self.kind());
     }
 
     async fn the_reply_round_trips_where_offered(&self) {
