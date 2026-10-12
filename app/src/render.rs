@@ -902,7 +902,7 @@ opacity 180ms cubic-bezier(0.23,1,0.32,1)}}\
 border:1px solid var(--line);overflow:hidden;margin-left:0}}\
 .html{{background:#fff}}\
 .body-frame{{contain:paint;margin:14px 0 2px}}.body-frame>.html{{margin:0}}\
-.html.plain{{background:var(--surface)}}\
+.html.plain{{background:none;border:none;padding:0;border-radius:0}}\
 .status{{color:var(--dim);font-style:italic}}\
 blockquote.quote{{margin:6px 0;padding:0 0 0 12px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,transparent);color:var(--dim)}}\
 .signature{{color:var(--dim)}}{trimmed}{receipts}\
@@ -1074,6 +1074,20 @@ mod tests {
     #[test]
     fn a_mail_body_that_names_no_font_takes_the_desktop_font() {
         assert!(HTML_BODY_CSS.contains("font:14px/1.5 var(--ui-font,-apple-system)"));
+    }
+
+    /// HTML that paints nothing of its own reads like plain text, so it
+    /// sits on the page the same way, with no sheet round it.
+    #[test]
+    fn html_that_paints_nothing_has_no_sheet() {
+        let html = page("s", vec![]);
+        let rule = html
+            .split('}')
+            .find(|rule| rule.split('{').next() == Some(".html.plain"))
+            .expect("a rule for plain HTML");
+        for word in ["background:none", "border:none", "padding:0"] {
+            assert!(rule.contains(word), "{rule}");
+        }
     }
 
     /// Ruling R8: a plain-text body sits on the page as the mockup draws

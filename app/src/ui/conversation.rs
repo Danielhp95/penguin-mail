@@ -363,9 +363,10 @@ impl ConversationView {
         let empty = adw::StatusPage::builder()
             .icon_name("penguin-mail-mark-symbolic")
             .title(gettext("No Conversation Selected"))
+            .css_classes(["compact", "nothing-open"])
             .build();
-        // libadwaita dims a status page's icon itself; the title stays at
-        // full strength, like the empty list's title beside it.
+        // An empty pane recedes: the compact size and a dimmed title
+        // (style.css, .nothing-open), below an open conversation's subject.
         let banner = adw::Banner::builder()
             .title(gettext("Remote images are hidden to protect your privacy"))
             .button_label(gettext("Load Images"))

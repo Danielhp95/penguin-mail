@@ -34,8 +34,9 @@ The account appears in the sidebar and starts downloading.
 
 ### Sender addresses and suffixes
 
-Under **Preferences > Writing > Sender Addresses**, add the addresses you
-send from through an IMAP or POP3 account. Each uses that account's existing
+Under **Preferences > Writing**, each IMAP or POP3 account has a group
+headed by its address. Add the addresses you send from through that account
+there. Each uses that account's existing
 SMTP server and credentials. Choose a default address for new messages and
 an optional sender name. Google accounts keep using the addresses verified
 in Gmail.

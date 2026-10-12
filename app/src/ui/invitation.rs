@@ -165,8 +165,12 @@ pub struct EventCard {
     answers: gtk::Box,
     buttons: Vec<(Answer, gtk::ToggleButton)>,
     /// "Add a note", above the answer buttons: words the organizer reads
-    /// with the answer. Emptied when another invitation goes up.
+    /// with the answer. Hidden until Add a Note opens it, and emptied
+    /// when another invitation goes up.
     note: gtk::Entry,
+    /// Add a Note opened the note for the invitation on show, so a redraw
+    /// of the same invitation keeps it open even while it is empty.
+    note_opened: Cell<bool>,
     add: gtk::Button,
     /// The calendars a file's events can go to, and the drop-down that
     /// picks one. Empty until the window has asked the account, and for
@@ -183,10 +187,14 @@ pub struct EventCard {
     /// Show in Calendar. It takes Add to Calendar's place once the event
     /// is known to be on a calendar the app shows.
     show_in_calendar: gtk::Button,
-    /// The button that opens the other times to ask the organizer for,
-    /// and the list inside it, which is rebuilt for each invitation. It
-    /// appears only for an invitation with a time to move.
-    propose: gtk::MenuButton,
+    /// The menu beside No: Add a Note, and the other times to ask the
+    /// organizer for. The approved card shows only Yes, Maybe and No, so
+    /// the rest waits one step deeper.
+    more: gtk::MenuButton,
+    /// The menu's Propose New Time part and the list inside it, which is
+    /// rebuilt for each invitation. It shows only for an invitation with
+    /// a time to move.
+    propose: gtk::Box,
     proposals: gtk::Box,
     /// What the card's buttons ask the window for. The propose list is
     /// built as each invitation goes up, so the card keeps it.
@@ -327,6 +335,7 @@ impl EventCard {
         let note = gtk::Entry::builder()
             .placeholder_text(gettext("Add a note"))
             .max_length(500)
+            .visible(false)
             .css_classes(["invitation-note"])
             .build();
         crate::ui::describe(&note, &gettext("Note with your answer"), &gettext("The organizer reads it with your answer"));
@@ -354,16 +363,36 @@ impl EventCard {
             .orientation(gtk::Orientation::Vertical)
             .spacing(2)
             .build();
-        let propose = gtk::MenuButton::builder()
-            .label(gettext("Propose New Time"))
-            .css_classes(["flat", "invitation-quiet"])
-            .popover(
-                &gtk::Popover::builder()
-                    .child(&proposals)
-                    .has_arrow(true)
-                    .build(),
-            )
+        let write_note = menu_item(&gettext("Add a Note"));
+        let propose = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
             .build();
+        propose.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        propose.append(
+            &gtk::Label::builder()
+                .label(gettext("Propose New Time"))
+                .xalign(0.0)
+                .css_classes(["invitation-menu-heading"])
+                .build(),
+        );
+        propose.append(&proposals);
+        let menu = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
+            .css_classes(["invitation-menu"])
+            .build();
+        menu.append(&write_note);
+        menu.append(&propose);
+        let more = gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .tooltip_text(gettext("More Answers"))
+            .css_classes(["flat", "circular"])
+            .valign(gtk::Align::Center)
+            .popover(&gtk::Popover::builder().child(&menu).has_arrow(true).build())
+            .build();
+        name(&more, &gettext("More Answers"));
+        answers.append(&more);
         let add = gtk::Button::builder()
             .child(
                 &adw::ButtonContent::builder()
@@ -414,7 +443,6 @@ impl EventCard {
             .child_spacing(8)
             .line_spacing(8)
             .build();
-        right.append(&propose);
         right.append(&picker);
         right.append(&show_in_calendar);
         right.append(&add);
@@ -534,6 +562,7 @@ impl EventCard {
             answers,
             buttons,
             note,
+            note_opened: Cell::new(false),
             add,
             targets: RefCell::new(Vec::new()),
             no_add: Cell::new(false),
@@ -541,6 +570,7 @@ impl EventCard {
             events,
             picks: RefCell::new(Vec::new()),
             show_in_calendar,
+            more,
             propose,
             proposals,
             act: Rc::clone(&on_action),
@@ -561,6 +591,17 @@ impl EventCard {
                 }
             });
         }
+
+        let weak = Rc::downgrade(&card);
+        write_note.connect_clicked(move |_| {
+            let Some(card) = weak.upgrade() else { return };
+            if let Some(popover) = card.more.popover() {
+                popover.popdown();
+            }
+            card.note_opened.set(true);
+            card.note.set_visible(true);
+            card.note.grab_focus();
+        });
 
         for (answer, button) in &card.buttons {
             let (answer, act, weak) = (*answer, Rc::clone(&on_action), Rc::downgrade(&card));
@@ -605,6 +646,7 @@ impl EventCard {
             .is_some_and(|shown| shown.invitation.uid == showing.invitation.uid);
         if !same {
             self.note.set_text("");
+            self.note_opened.set(false);
             self.targets.borrow_mut().clear();
         }
         self.draw(&showing);
@@ -714,14 +756,7 @@ impl EventCard {
             } else {
                 card.append(&gtk::Box::builder().css_classes(["bar"]).build());
             }
-            card.append(
-                &gtk::Label::builder()
-                    .label(&block.title)
-                    .xalign(0.0)
-                    .ellipsize(gtk::pango::EllipsizeMode::End)
-                    .single_line_mode(true)
-                    .build(),
-            );
+            card.append(&block_title(&block.title));
             self.strip_grid
                 .attach(&card, column, block.lane as i32, span, 1);
             if block.this {
@@ -975,7 +1010,10 @@ impl EventCard {
         // question, so neither gets answer buttons.
         let answerable = event.card() == Card::Answer;
         self.answers.set_visible(answerable);
-        self.note.set_visible(answerable);
+        // The note opens from Add a Note and stays open for this
+        // invitation, through a redraw, as it does while it holds words.
+        self.note
+            .set_visible(answerable && (self.note_opened.get() || !self.note.text().is_empty()));
         // Only an invitation to one occurrence of a series leaves the
         // question open; an answer to anything else covers the lot.
         self.reach
@@ -1032,11 +1070,8 @@ impl EventCard {
             .collect();
         offered.push((gettext("Pick a Time…"), Proposal::Pick));
         for (label, proposal) in offered {
-            let button = gtk::Button::builder()
-                .label(&label)
-                .css_classes(["flat"])
-                .build();
-            let (act, popover) = (Rc::clone(&self.act), self.propose.popover());
+            let button = menu_item(&label);
+            let (act, popover) = (Rc::clone(&self.act), self.more.popover());
             button.connect_clicked(move |_| {
                 if let Some(popover) = &popover {
                     popover.popdown();
@@ -1353,6 +1388,42 @@ fn news(showing: &Showing, now: chrono::DateTime<Local>) -> Option<String> {
         None if showing.invitation.method == Method::Reply => None,
         None => None,
     }
+}
+
+/// A line of the More Answers menu, read as a menu item: flush left and
+/// at the body's weight, not a centred bold button.
+fn menu_item(words: &str) -> gtk::Button {
+    gtk::Button::builder()
+        .child(&gtk::Label::builder().label(words).xalign(0.0).build())
+        .css_classes(["flat"])
+        .build()
+}
+
+/// The narrowest a strip block shows its title in: a block cut to a few
+/// letters ("Lunc…", "Th…") says less than the coloured block alone.
+const BLOCK_TITLE_ROOM: i32 = 64;
+
+/// A strip block's title, which steps out of the way in a block narrower
+/// than [`BLOCK_TITLE_ROOM`], as on a phone. It sits over an empty box
+/// that takes the block's room, so the block's width never depends on it.
+fn block_title(title: &str) -> gtk::Overlay {
+    let words = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .single_line_mode(true)
+        .build();
+    let room = gtk::Overlay::builder()
+        .child(&gtk::Box::builder().hexpand(true).build())
+        .hexpand(true)
+        .build();
+    room.add_overlay(&words);
+    room.connect_get_child_position(|room, words| {
+        let fits = room.width() >= BLOCK_TITLE_ROOM;
+        words.set_child_visible(fits);
+        Some(gtk::gdk::Rectangle::new(0, 0, room.width(), room.height()))
+    });
+    room
 }
 
 /// The colour the news line takes: a cancellation reads as a warning, an

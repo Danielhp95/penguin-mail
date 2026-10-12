@@ -23,6 +23,10 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - When a sender asks for a read receipt, the message offers to send one, and nothing goes until you choose. Set Read Receipts to Never ask in Preferences to stop the question. A receipt for mail you sent shows as one line that says who read it and when.
 - See how full each account's space on its server is in Preferences › Sync, with a banner once it nears its limit. Gmail, and IMAP and JMAP servers that report a quota, say how full they are.
 
+### Improved
+
+- The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
+
 ### Fixed
 
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.

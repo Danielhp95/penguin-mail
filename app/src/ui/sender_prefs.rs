@@ -17,9 +17,11 @@ pub fn groups(app: &Rc<App>, accounts: &[Account], page: &adw::PreferencesPage) 
         .iter()
         .filter(|a| matches!(a.provider, Provider::Imap | Provider::Pop3))
     {
+        // One group per account, so the address is the heading people
+        // scan; a shared "Sender Addresses" heading repeated for each.
         let group = adw::PreferencesGroup::builder()
-            .title(gettext("Sender Addresses"))
-            .description(glib::markup_escape_text(&account.email))
+            .title(glib::markup_escape_text(&account.email))
+            .description(gettext("Addresses you send from with this account"))
             .build();
         let add = gtk::Button::with_label(&gettext("Add Address"));
         group.set_header_suffix(Some(&add));

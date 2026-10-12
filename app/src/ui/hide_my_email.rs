@@ -677,7 +677,8 @@ impl Dialog {
             .label(gettext("Create"))
             .css_classes(["suggested-action"])
             .build();
-        let header = adw::HeaderBar::new();
+        // The back button is the way out, as the mockup draws it.
+        let header = adw::HeaderBar::builder().show_end_title_buttons(false).build();
         header.pack_end(&create);
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&header);

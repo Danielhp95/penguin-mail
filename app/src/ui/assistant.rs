@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use adw::prelude::*;
-use gtk::{glib, pango};
+use gtk::{gdk, glib, pango};
 use mailrs_ai::{AgentEvent, Conversation, ProviderConfig};
 
 use crate::assistant::sources::{self, ApprovalRequest, Toolbox, Verdict};
@@ -63,7 +63,8 @@ pub struct AssistantPane {
     transcript: gtk::Box,
     scroller: gtk::ScrolledWindow,
     suggestions: gtk::Box,
-    entry: gtk::Entry,
+    /// The question box: several lines that wrap, sent with Enter.
+    input: gtk::TextView,
     send: gtk::Button,
     core: Rc<Core>,
     requests: async_channel::Sender<ToolRequest>,
@@ -147,29 +148,27 @@ impl AssistantPane {
             .vexpand(true)
             .build();
 
-        let entry = gtk::Entry::builder()
-            .placeholder_text(gettext("Ask Penguin Mail…"))
-            .hexpand(true)
-            .build();
+        let (field, input) = question_box();
         let send = gtk::Button::builder()
             .icon_name("go-up-symbolic")
             .tooltip_text(gettext("Send"))
             .css_classes(["circular", "suggested-action"])
+            // Stays by the last line as the question grows.
+            .valign(gtk::Align::End)
             .build();
-        crate::ui::name(&entry, &gettext("Ask Penguin Mail"));
         crate::ui::name(&send, &gettext("Send"));
-        let input = gtk::Box::builder()
+        let input_row = gtk::Box::builder()
             .spacing(6)
             .margin_top(6)
             .margin_bottom(10)
             .margin_start(10)
             .margin_end(10)
             .build();
-        input.append(&entry);
-        input.append(&send);
+        input_row.append(&field);
+        input_row.append(&send);
         let chat = gtk::Box::new(gtk::Orientation::Vertical, 0);
         chat.append(&scroller);
-        chat.append(&input);
+        chat.append(&input_row);
 
         let setup_button = gtk::Button::builder()
             .label(gettext("Choose a Model"))
@@ -216,7 +215,7 @@ impl AssistantPane {
             transcript,
             scroller,
             suggestions: suggestion_list.clone(),
-            entry,
+            input,
             send,
             core,
             requests,
@@ -266,15 +265,40 @@ impl AssistantPane {
             suggestion_list.append(&button);
         }
         setup_button.connect_clicked(move |_| on_setup());
-        let weak = Rc::downgrade(&pane);
-        pane.entry.connect_activate(move |entry| {
-            let Some(pane) = weak.upgrade() else { return };
-            let text = entry.text().trim().to_string();
-            if !text.is_empty() && !pane.running.get() {
-                entry.set_text("");
-                pane.ask(text);
+        // Enter sends only once the input method has passed it on: an
+        // Enter that finishes a word still being composed, in Chinese or
+        // after a dead key, must not send. So the press is noted here,
+        // ahead of the text view, and the new line the view then inserts
+        // for it becomes the send. Shift+Enter keeps its new line.
+        let enter = Rc::new(Cell::new(false));
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let noted = Rc::clone(&enter);
+        keys.connect_key_pressed(move |_, key, _, modifiers| {
+            if enter_sends(key, modifiers) {
+                noted.set(true);
+                let noted = Rc::clone(&noted);
+                glib::idle_add_local_once(move || noted.set(false));
             }
+            glib::Propagation::Proceed
         });
+        pane.input.add_controller(keys);
+        let weak = Rc::downgrade(&pane);
+        pane.input
+            .buffer()
+            .connect_insert_text(move |buffer, _, text| {
+                if text != "\n" || !enter.replace(false) {
+                    return;
+                }
+                buffer.stop_signal_emission_by_name("insert-text");
+                // The buffer is mid-insert, so it empties after.
+                let weak = weak.clone();
+                glib::idle_add_local_once(move || {
+                    if let Some(pane) = weak.upgrade() {
+                        pane.submit();
+                    }
+                });
+            });
         let weak = Rc::downgrade(&pane);
         pane.send.connect_clicked(move |_| {
             let Some(pane) = weak.upgrade() else { return };
@@ -283,7 +307,7 @@ impl AssistantPane {
                     let _ = stop.try_send(());
                 }
             } else {
-                pane.entry.emit_activate();
+                pane.submit();
             }
         });
         let weak = Rc::downgrade(&pane);
@@ -318,7 +342,19 @@ impl AssistantPane {
     }
 
     pub fn focus(&self) {
-        self.entry.grab_focus();
+        self.input.grab_focus();
+    }
+
+    /// Asks the question in the box. While a turn runs the question stays
+    /// in the box, to send once it ends.
+    fn submit(self: &Rc<Self>) {
+        let buffer = self.input.buffer();
+        let (start, end) = buffer.bounds();
+        let text = buffer.text(&start, &end, false);
+        if let Some(question) = question_to_send(&text, self.running.get()) {
+            buffer.set_text("");
+            self.ask(question);
+        }
     }
 
     /// Starts over with an empty chat.
@@ -442,8 +478,9 @@ impl AssistantPane {
     }
 
     fn set_running(&self, running: bool) {
+        // The box stays open during a turn, so the next question can be
+        // written while the model answers; only sending waits.
         self.running.set(running);
-        self.entry.set_sensitive(!running);
         self.send.set_icon_name(if running {
             "media-playback-stop-symbolic"
         } else {
@@ -455,8 +492,11 @@ impl AssistantPane {
         };
         self.send.set_tooltip_text(Some(&said));
         crate::ui::name(&self.send, &said);
-        if !running {
-            self.entry.grab_focus();
+        // The turn's end takes the focus only from nowhere, such as a
+        // suggestion that hid when it was picked, never from where the
+        // reader went meanwhile.
+        if !running && self.input.root().is_some_and(|root| root.focus().is_none()) {
+            self.input.grab_focus();
         }
     }
 
@@ -662,6 +702,107 @@ impl AssistantPane {
         self.glide.set_value_to(end);
         self.glide.play();
     }
+}
+
+/// How many lines the question box grows to before it scrolls.
+const QUESTION_LINES: i32 = 6;
+
+/// Whether a key press in the question box sends it: Enter, alone or with
+/// Control. Shift+Enter starts a new line instead.
+fn enter_sends(key: gdk::Key, modifiers: gdk::ModifierType) -> bool {
+    matches!(
+        key,
+        gdk::Key::Return | gdk::Key::KP_Enter | gdk::Key::ISO_Enter
+    ) && !modifiers.intersects(gdk::ModifierType::SHIFT_MASK | gdk::ModifierType::ALT_MASK)
+}
+
+/// What a send asks: the box's text, trimmed, unless it is blank or a turn
+/// is still running, when the text stays in the box.
+fn question_to_send(text: &str, running: bool) -> Option<String> {
+    let question = text.trim();
+    (!running && !question.is_empty()).then(|| question.to_string())
+}
+
+/// The question box and the text view inside it. The box grows with the
+/// question up to [`QUESTION_LINES`] and then scrolls. A text view has no
+/// placeholder of its own, so a dim label sits over it while it is empty.
+fn question_box() -> (gtk::Overlay, gtk::TextView) {
+    let placeholder = gettext("Ask Penguin Mail…");
+    let input = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .accepts_tab(false)
+        .top_margin(7)
+        .bottom_margin(7)
+        .left_margin(14)
+        .right_margin(14)
+        .build();
+    crate::ui::name(&input, &gettext("Ask Penguin Mail"));
+    input.update_property(&[gtk::accessible::Property::Placeholder(&placeholder)]);
+    let scroller = gtk::ScrolledWindow::builder()
+        .child(&input)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .propagate_natural_height(true)
+        .hexpand(true)
+        .build();
+    // Until the question passes the limit the box takes its whole height,
+    // with no scrollbar. A scrollbar would set the box's least height to
+    // its own, about two lines.
+    let bar = scroller.clone();
+    scroller.vadjustment().connect_changed(move |adjustment| {
+        let limit = f64::from(bar.max_content_height());
+        bar.set_vscrollbar_policy(match limit >= 0.0 && adjustment.upper() > limit {
+            true => gtk::PolicyType::Automatic,
+            false => gtk::PolicyType::Never,
+        });
+    });
+    // The view's font is known once it is on screen, so the limit waits
+    // for that.
+    let limit = scroller.clone();
+    input.connect_realize(move |view| {
+        let line = view.pango_context().metrics(None, None).height() / pango::SCALE;
+        let edges = view.top_margin() + view.bottom_margin();
+        limit.set_max_content_height(line * QUESTION_LINES + edges);
+    });
+    let hint = gtk::Label::builder()
+        .label(&placeholder)
+        .xalign(0.0)
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Start)
+        .margin_top(7)
+        .margin_start(14)
+        .margin_end(14)
+        .ellipsize(pango::EllipsizeMode::End)
+        .can_target(false)
+        .css_classes(["dim-label"])
+        .build();
+    // The text view says the placeholder to a screen reader already.
+    hint.update_state(&[gtk::accessible::State::Hidden(true)]);
+    let field = gtk::Overlay::builder()
+        .child(&scroller)
+        .hexpand(true)
+        .overflow(gtk::Overflow::Hidden)
+        .css_classes(["assistant-input"])
+        .build();
+    field.add_overlay(&hint);
+    input
+        .buffer()
+        .connect_changed(move |buffer| hint.set_visible(buffer.char_count() == 0));
+    // A new line glides the view to the cursor while the box grows to fit
+    // it, and the glide's last frames leave the scroll range at the old,
+    // shorter height, with the first line cut off. Laying the view out
+    // again sets the range from its real height.
+    let view = input.downgrade();
+    scroller
+        .vadjustment()
+        .connect_value_changed(move |adjustment| {
+            if let Some(view) = view.upgrade()
+                && adjustment.page_size() < f64::from(view.height())
+            {
+                view.queue_allocate();
+            }
+        });
+    (field, input)
 }
 
 fn bubble_label(class: &str) -> gtk::Label {
@@ -1022,5 +1163,49 @@ impl Status {
         self.label
             .announce(&text, gtk::AccessibleAnnouncementPriority::Medium);
         self.shown = Some(phase.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gtk::gdk::{Key, ModifierType};
+
+    use super::{enter_sends, question_to_send};
+
+    #[test]
+    fn enter_sends_the_question_and_shift_enter_starts_a_line() {
+        let none = ModifierType::empty();
+        assert!(enter_sends(Key::Return, none));
+        assert!(enter_sends(Key::KP_Enter, none));
+        assert!(enter_sends(Key::ISO_Enter, none));
+        assert!(enter_sends(Key::Return, ModifierType::CONTROL_MASK));
+        assert!(!enter_sends(Key::Return, ModifierType::SHIFT_MASK));
+        assert!(!enter_sends(Key::KP_Enter, ModifierType::SHIFT_MASK));
+    }
+
+    #[test]
+    fn enter_during_a_run_keeps_the_question_in_the_box() {
+        assert_eq!(question_to_send("Archive them, (all) please", true), None);
+        assert_eq!(
+            question_to_send("  Archive them, (all) please\n", false).as_deref(),
+            Some("Archive them, (all) please")
+        );
+        assert_eq!(question_to_send(" \n ", false), None);
+    }
+
+    #[test]
+    fn other_keys_type_into_the_question() {
+        let none = ModifierType::empty();
+        for key in [
+            Key::a,
+            Key::comma,
+            Key::parenleft,
+            Key::parenright,
+            Key::dead_acute,
+            Key::space,
+        ] {
+            assert!(!enter_sends(key, none), "{key:?}");
+        }
+        assert!(!enter_sends(Key::parenleft, ModifierType::SHIFT_MASK));
     }
 }

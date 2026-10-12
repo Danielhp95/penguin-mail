@@ -30,25 +30,37 @@ pub struct Summary {
     pub snippet: String,
 }
 
+/// The addresses of one header, dropping entries with none.
+fn addresses(list: Option<&mail_parser::Address>) -> Vec<Address> {
+    list.map(|list| {
+        list.iter()
+            .filter_map(|a| {
+                let email = a.address()?.trim();
+                (!email.is_empty()).then(|| Address {
+                    name: a.name().map(str::to_string),
+                    email: email.to_string(),
+                })
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// The first person in `raw`'s To, or in its Cc when To names nobody,
+/// read from the headers alone.
+pub fn first_recipient(raw: &[u8]) -> Option<Address> {
+    let message = MessageParser::default().parse_headers(raw)?;
+    addresses(message.to())
+        .into_iter()
+        .chain(addresses(message.cc()))
+        .next()
+}
+
 /// What `raw` says about itself. Bytes mail-parser cannot read give an
 /// empty summary.
 pub fn summary(raw: &[u8]) -> Summary {
     let Some(message) = MessageParser::default().parse_headers(raw) else {
         return Summary::default();
-    };
-    let addresses = |list: Option<&mail_parser::Address>| -> Vec<Address> {
-        list.map(|list| {
-            list.iter()
-                .filter_map(|a| {
-                    let email = a.address()?.trim();
-                    (!email.is_empty()).then(|| Address {
-                        name: a.name().map(str::to_string),
-                        email: email.to_string(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
     };
     let header = |name: &str| {
         message
@@ -100,6 +112,16 @@ fn preview(text: Option<&str>) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_recipient_keeps_a_comma_in_a_quoted_name() {
+        let raw = b"From: me@example.org\r\nTo: \"Doe, Jane\" <jane@example.org>, bo@example.org\r\n\r\nHi";
+        assert_eq!(
+            first_recipient(raw),
+            Some(Address { name: Some("Doe, Jane".into()), email: "jane@example.org".into() })
+        );
+        assert_eq!(first_recipient(b"From: me@example.org\r\n\r\nHi"), None);
+    }
 
     const MAIL: &[u8] = b"From: Ana Lima <ana@example.org>\r\n\
 To: me@example.org, Bo <bo@example.org>\r\n\
