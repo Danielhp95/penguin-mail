@@ -17,8 +17,8 @@ use mailrs_domain::{
 };
 use mailrs_sync::sign_in::{Browser, Wanted};
 use mailrs_sync::{
-    History, Listing, Loaded, MailAction, MovedFrom, Offers, Permitted, Scope, TriageAction, View,
-    Withheld,
+    History, Listing, Loaded, MailAction, MovedFrom, Offers, Permitted, Reopened, Scope, TriageAction,
+    View, Withheld,
 };
 
 use super::add_account::{Done, Opening};
@@ -2621,25 +2621,88 @@ impl MainWindow {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let (s, m) = (sync.clone(), message.id.clone());
-            let draft_id = this
+            let mut draft_id = this
                 .core
                 .call(async move { s.draft_id_for(&m).await })
                 .await
                 .ok()
                 .flatten();
+            let waiting = match draft_id.clone() {
+                Some(id) => {
+                    let outbox = this.core.outbox();
+                    this.core
+                        .call(async move { outbox.find_draft(account_id, &id).await })
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                None => None,
+            };
+            // A copy the server holds for Send Later is called back before
+            // the composer may touch it, or the server would send it beside
+            // whatever the person does here.
+            let mut source = message.id.clone();
+            let mut kept_bytes = None;
+            let mut locked = None;
+            let send_at = waiting.as_ref().map(|row| row.send_at);
+            if let Some(row) = waiting.filter(|row| row.held.is_some()) {
+                let (outbox, id) = (this.core.outbox(), row.id);
+                match this.core.call(async move { outbox.reopen_held(id).await }).await {
+                    Ok(Reopened::Free) => {}
+                    Ok(Reopened::Draft(now)) => {
+                        draft_id = now.draft_id.clone();
+                        source = now.message_id.clone().unwrap_or(source);
+                        kept_bytes = now.raw;
+                        this.scheduled_changed();
+                    }
+                    Ok(Reopened::AlreadySent) => {
+                        this.scheduled_changed();
+                        return this.toast(&gettext("The server had already sent this message."));
+                    }
+                    Ok(Reopened::Gone) => {
+                        this.scheduled_changed();
+                        return this.toast(&gettext(
+                            "This message was canceled in another app and is no longer in Drafts.",
+                        ));
+                    }
+                    Ok(Reopened::Locked { notice, can_cancel }) => {
+                        let target = row.thread_id.clone().map(|thread| Target {
+                            account_id,
+                            thread_id: thread,
+                            message_id: row.message_id.clone(),
+                        });
+                        locked = Some((notice, target.filter(|_| can_cancel)));
+                        // The server's copy has no Bcc; the row's bytes do.
+                        kept_bytes = row.raw.clone();
+                        draft_id = None;
+                    }
+                    Err(err) => {
+                        return this.toast(&with_reason(
+                            &gettext("Could not open the draft: {reason}"),
+                            &err,
+                            &[],
+                        ));
+                    }
+                }
+            }
             let mut draft = app.blank_draft(account_id);
             // Only the message as Gmail holds it carries the Bcc, the reply
             // headers and the bytes of the files, readable or encrypted.
             // Opening without them would save a draft that had lost them.
-            let (s, m) = (sync.clone(), message.id.clone());
-            let raw = match this.core.call(async move { s.raw_message(&m).await }).await {
-                Ok(raw) => raw,
-                Err(err) => {
-                    return this.toast(&with_reason(
-                        &gettext("Could not open the draft: {reason}"),
-                        &err,
-                        &[],
-                    ));
+            let raw = match kept_bytes {
+                Some(raw) => raw,
+                None => {
+                    let s = sync.clone();
+                    match this.core.call(async move { s.raw_message(&source).await }).await {
+                        Ok(raw) => raw,
+                        Err(err) => {
+                            return this.toast(&with_reason(
+                                &gettext("Could not open the draft: {reason}"),
+                                &err,
+                                &[],
+                            ));
+                        }
+                    }
                 }
             };
             if let Err(problem) =
@@ -2648,19 +2711,24 @@ impl MainWindow {
                 return this.toast(&problem);
             }
             draft.thread_id = in_thread.then_some(thread_id);
-            if let Some(id) = draft_id.clone() {
-                let outbox = this.core.outbox();
-                draft.send_at = this
-                    .core
-                    .call(async move { outbox.find_draft(account_id, &id).await })
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|s| s.send_at);
-            }
+            draft.send_at = send_at;
             draft.draft_id = draft_id;
             // The composer that saved it signed it then.
-            app.open_composer(draft, Signature::AsWritten);
+            let Some(composer) = app.open_composer(draft, Signature::AsWritten) else {
+                return;
+            };
+            if let Some((notice, target)) = locked {
+                let cancel = target.map(|target| {
+                    let weak = Rc::downgrade(&this);
+                    Box::new(move || {
+                        if let Some(win) = weak.upgrade() {
+                            let view = Rc::clone(&win.conversation);
+                            win.cancel_scheduled(&view, vec![target.clone()]);
+                        }
+                    }) as Box<dyn Fn()>
+                });
+                composer.lock(&notice, cancel);
+            }
         });
     }
 

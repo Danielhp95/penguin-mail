@@ -93,6 +93,17 @@ fn canceled_elsewhere() -> String {
     gettext("This message was canceled in another app and is no longer in Drafts.")
 }
 
+/// Why a held message opens read-only: the server could not be asked to
+/// let go of it.
+fn still_with_server() -> String {
+    gettext("The server still holds this message and sends it at its hour. Try again later, or use Cancel Send.")
+}
+
+/// Why changes to a message the server sent already went nowhere.
+fn already_went() -> String {
+    gettext("The server had already sent this message.")
+}
+
 /// Why a held message cannot be deleted now.
 fn still_holds() -> SyncError {
     SyncError::Backend(BackendError::Refused(gettext(
@@ -133,15 +144,39 @@ enum Purpose {
     SendNow,
     /// Holding it again at this hour.
     NewHour(EpochMillis),
+    /// Opening it in the composer, which edits a draft the server must
+    /// not send behind the person's back.
+    Edit,
 }
 
-/// What calling a held message back for Send Now or a new hour left.
+/// What calling a held message back for Send Now, a new hour or an edit
+/// left.
 enum Recalled {
     /// The message is an ordinary draft now, or never reached the server,
     /// and the row says so.
     Here(Box<Queued>),
+    /// Another app canceled the hold and deleted the copy. The row is gone.
+    Gone,
     /// The row is settled already, and this is the answer.
     Done(Posted),
+}
+
+/// What opening a held message in the composer found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reopened {
+    /// The row holds no hold, so the draft opens as any draft does.
+    Free,
+    /// The server let go of it. The row now waits here on this draft, which
+    /// holds the whole message again, Bcc and all, and keeps its hour.
+    Draft(Box<Queued>),
+    /// The server had sent it already. It is in Sent.
+    AlreadySent,
+    /// Another app canceled it and deleted the copy.
+    Gone,
+    /// The server still holds it, or nothing could say what became of it.
+    /// The composer shows it read-only with `notice`, and offers Cancel
+    /// Send when that can still stop it.
+    Locked { notice: String, can_cancel: bool },
 }
 
 /// What became of a message handed to the outbox.
@@ -241,6 +276,15 @@ impl<A: Accounts> Outbox<A> {
     /// A message already waiting that another caller is sending right now
     /// answers `Waiting` and is left to that caller.
     pub async fn post(&self, mut message: Queued) -> Result<Posted, SyncError> {
+        // A composer opened on a held copy sends under the copy's draft.
+        // The hold is called back first, or the server sends it as well.
+        let took_over = match self.held_row_of(&message).await? {
+            Some(row) => {
+                message = taken_over(message, row);
+                true
+            }
+            None => false,
+        };
         if message.id > 0 && self.claim(message.id).await?.is_none() {
             return Ok(Posted::Waiting(message.id));
         }
@@ -252,6 +296,9 @@ impl<A: Accounts> Outbox<A> {
         if message.held.is_some() {
             message = match self.recall(message, Purpose::SendNow).await? {
                 Recalled::Here(message) => *message,
+                Recalled::Gone => return Ok(Posted::Refused(canceled_elsewhere())),
+                // What went is the version the server held, not this one.
+                Recalled::Done(Posted::Sent(_)) if took_over => return Ok(Posted::Refused(already_went())),
                 Recalled::Done(posted) => return Ok(posted),
             };
         }
@@ -291,6 +338,20 @@ impl<A: Accounts> Outbox<A> {
     /// and the message goes out from them at its hour, so Send Later works
     /// on a laptop that is offline when the writer picks the time.
     pub async fn schedule(&self, mut message: Queued) -> Result<Posted, SyncError> {
+        // A composer opened on a held copy schedules under the copy's
+        // draft: the hold is called back and held again at the new hour,
+        // with the new words.
+        if let Some(row) = self.held_row_of(&message).await? {
+            let at = message.send_at;
+            let Some(_) = self.claim(row.id).await? else {
+                return Ok(Posted::Refused(still_with_server()));
+            };
+            return Ok(match self.rehold(taken_over(message, row), at).await {
+                Ok(Some(kept)) => Posted::Waiting(kept.id),
+                Ok(None) => Posted::Refused(already_went()),
+                Err(err) => Posted::Refused(err.to_string()),
+            });
+        }
         // Written before the server hears of it, so a crash or a failed
         // write later leaves a row that looks for the server's copy, never
         // a plain one the app would send as well.
@@ -303,6 +364,9 @@ impl<A: Accounts> Outbox<A> {
         message.held = None;
         match handed {
             Ok(Handed::Held(held)) => {
+                // The draft the composer saved would stay in Drafts beside
+                // the server's copy.
+                self.drop_old_copy(message.account_id, message.draft_id.as_deref(), &held.message_id).await;
                 adopt(&mut message, held);
                 return self.put_waiting(message).await;
             }
@@ -475,20 +539,26 @@ impl<A: Accounts> Outbox<A> {
             .await?)
     }
 
-    /// Records that the writer saved a draft again. A Send Later message
-    /// waiting on that draft keeps its hour and now names the draft's new
-    /// message and thread, so the list and a later cancel still find it.
-    /// A draft nothing waits on changes nothing here.
+    /// Records that the writer saved the draft `old` again. A Send Later
+    /// message waiting on that draft keeps its hour and now names the
+    /// draft's new id, message and thread, so the list, a later cancel and
+    /// the send at its hour still find it. A server that saves a draft as a
+    /// new message (JMAP, IMAP) gives it a new id. The draft holds the
+    /// person's latest words from now on, so the row lets go of any bytes
+    /// it kept. A draft nothing waits on changes nothing here.
     pub async fn draft_saved(
         &self,
         account_id: AccountId,
+        old: Option<String>,
         saved: SavedDraft,
     ) -> Result<(), SyncError> {
+        let old = old.unwrap_or_else(|| saved.draft_id.clone());
         self.db
             .write(move |c| {
                 outbox::set_message(
                     c,
                     account_id,
+                    &old,
                     &saved.draft_id,
                     &saved.message_id,
                     &saved.thread_id,
@@ -496,6 +566,41 @@ impl<A: Accounts> Outbox<A> {
             })
             .await?;
         Ok(())
+    }
+
+    /// Opens the Send Later message `id` for the composer. A held one is
+    /// called back first and goes back in Drafts whole, so whatever the
+    /// person does next (send, a new hour, an edit) sends it once. See
+    /// [`Reopened`].
+    pub async fn reopen_held(&self, id: i64) -> Result<Reopened, SyncError> {
+        let Some(found) = self.find(id).await? else {
+            return Ok(Reopened::Free);
+        };
+        if found.held.is_none() {
+            return Ok(Reopened::Free);
+        }
+        let locked = |notice: String, can_cancel| Reopened::Locked { notice, can_cancel };
+        if past_knowing(&found) {
+            return Ok(locked(check_sent(), false));
+        }
+        let Some(message) = self.claim(id).await? else {
+            return Ok(locked(still_with_server(), true));
+        };
+        let Some(_sending) = self.sending(message.account_id) else {
+            self.release(id).await?;
+            return Ok(locked(still_with_server(), true));
+        };
+        Ok(match self.recall(message, Purpose::Edit).await? {
+            Recalled::Here(message) => Reopened::Draft(Box::new(self.back_as_draft(*message).await?)),
+            Recalled::Gone => Reopened::Gone,
+            Recalled::Done(Posted::Sent(_)) => Reopened::AlreadySent,
+            Recalled::Done(Posted::Waiting(_)) => locked(still_with_server(), true),
+            Recalled::Done(Posted::Refused(reason)) => {
+                let row = self.find(id).await?;
+                let can_cancel = row.as_ref().is_some_and(|row| row.held.is_some() && !past_knowing(row));
+                locked(if can_cancel { still_with_server() } else { reason }, can_cancel)
+            }
+        })
     }
 
     /// Stops the Send Later messages the targets name and says what became
@@ -887,11 +992,11 @@ impl<A: Accounts> Outbox<A> {
         if unconfirmed(&message).is_some() {
             match (self.look(&sync, &message, now_millis()).await, purpose) {
                 (Ok(Looked::Found(held)), _) => self.take_found(&sync, &mut message, held).await,
-                (Ok(Looked::Nothing), Purpose::NewHour(_)) => {
+                (Ok(Looked::Nothing), Purpose::NewHour(_) | Purpose::Edit) => {
                     message.held = None;
                     return self.store_claimed(message, purpose).await;
                 }
-                (Ok(Looked::TooSoon), Purpose::NewHour(_)) => {
+                (Ok(Looked::TooSoon), Purpose::NewHour(_) | Purpose::Edit) => {
                     self.release(id).await?;
                     return Ok(Recalled::Done(Posted::Waiting(id)));
                 }
@@ -919,7 +1024,7 @@ impl<A: Accounts> Outbox<A> {
                 self.looked(id);
                 if !self.copy_left(&sync, &message).await {
                     self.forget(&message).await?;
-                    return Ok(Recalled::Done(Posted::Refused(canceled_elsewhere())));
+                    return Ok(Recalled::Gone);
                 }
                 self.store_claimed(message, purpose).await
             }
@@ -1090,8 +1195,49 @@ impl<A: Accounts> Outbox<A> {
         let (Some(raw), Some(copy)) = (&item.raw, &item.draft_id) else {
             return Ok(());
         };
-        sync.save_draft(raw.clone(), item.thread_id.clone(), Some(copy.clone())).await?;
+        sync.put_back_draft(raw.clone(), item.thread_id.clone(), Some(copy.clone())).await?;
         Ok(())
+    }
+
+    /// The held row whose draft `message` names, when `message` has no row
+    /// of its own: what a composer opened on the server's copy hands over.
+    async fn held_row_of(&self, message: &Queued) -> Result<Option<Queued>, SyncError> {
+        let (Some(draft), true) = (message.draft_id.clone(), message.id <= 0) else {
+            return Ok(None);
+        };
+        let account_id = message.account_id;
+        Ok(self.db.read(move |c| outbox::find_draft(c, account_id, &draft)).await?.filter(|row| row.held.is_some()))
+    }
+
+    /// Deletes the draft `old` once the server holds its words as `copy`.
+    async fn drop_old_copy(&self, account_id: AccountId, old: Option<&str>, copy: &str) {
+        let (Some(old), Some(sync)) = (old.filter(|old| *old != copy), self.accounts.account(account_id)) else {
+            return;
+        };
+        if let Err(err) = sync.delete_draft(old).await {
+            tracing::warn!(error = %err, "held, but the old copy stayed in Drafts");
+        }
+    }
+
+    /// Puts the whole message back over the copy a called-back hold left
+    /// in Drafts, for the composer to open, and writes the row as one that
+    /// sends that draft at its hour. When the save fails the row keeps its
+    /// bytes, Bcc and all, and the composer opens on those.
+    async fn back_as_draft(&self, mut row: Queued) -> Result<Queued, SyncError> {
+        if let (Some(sync), Some(raw)) = (self.accounts.account(row.account_id), row.raw.clone()) {
+            match sync.put_back_draft(raw, row.thread_id.clone(), row.draft_id.clone()).await {
+                Ok(saved) => {
+                    row.draft_id = Some(saved.draft_id);
+                    row.message_id = Some(saved.message_id);
+                    row.thread_id = Some(saved.thread_id);
+                    row.raw = None;
+                }
+                Err(err) => tracing::info!(error = %err, "called back, but the whole message could not go back in Drafts"),
+            }
+        }
+        let stored = row.clone();
+        self.db.write(move |c| outbox::put(c, &stored)).await?;
+        Ok(row)
     }
 
     /// Calls the hold back and holds the message again at `at`. Once the
@@ -1102,8 +1248,15 @@ impl<A: Accounts> Outbox<A> {
         let Some(message) = self.claim(message.id).await? else {
             return Ok(None);
         };
+        self.rehold(message, at).await
+    }
+
+    /// [`Outbox::hold_again`] for a row already claimed. `message` may
+    /// carry new words, which go to the server in place of the old.
+    async fn rehold(&self, message: Queued, at: EpochMillis) -> Result<Option<Queued>, SyncError> {
         let mut message = match self.recall(message, Purpose::NewHour(at)).await? {
             Recalled::Here(message) => *message,
+            Recalled::Gone => return Err(SyncError::Backend(BackendError::Refused(canceled_elsewhere()))),
             Recalled::Done(Posted::Waiting(_)) => {
                 return Err(SyncError::Backend(BackendError::Offline(gettext(
                     "The server could not be asked to let go of the message.",
@@ -1117,11 +1270,7 @@ impl<A: Accounts> Outbox<A> {
         message.held = None;
         match handed {
             Ok(Handed::Held(held)) => {
-                if let (Some(old), Some(sync)) = (old.filter(|old| *old != held.message_id), self.accounts.account(message.account_id))
-                    && let Err(err) = sync.delete_draft(&old).await
-                {
-                    tracing::warn!(error = %err, "held again, but the old copy stayed in Drafts");
-                }
+                self.drop_old_copy(message.account_id, old.as_deref(), &held.message_id).await;
                 adopt(&mut message, held);
             }
             Ok(Handed::Unconfirmed(mark)) => message.held = Some(mark),
@@ -1131,6 +1280,21 @@ impl<A: Accounts> Outbox<A> {
         let kept = message.clone();
         self.db.write(move |c| outbox::put(c, &message)).await?;
         Ok(Some(kept))
+    }
+}
+
+/// `message`, from a composer opened on the server's copy, in the place of
+/// the held `row`: the row's id, hold and copy, with the new words.
+fn taken_over(message: Queued, row: Queued) -> Queued {
+    Queued {
+        id: row.id,
+        held: row.held,
+        draft_id: row.draft_id,
+        message_id: row.message_id,
+        thread_id: row.thread_id,
+        send_at: row.send_at,
+        attempts: row.attempts,
+        ..message
     }
 }
 

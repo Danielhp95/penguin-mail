@@ -857,13 +857,13 @@ async fn a_scheduled_draft_saved_again_keeps_its_hour_under_its_new_message() {
         .save_draft(
             b"Subject: Monday\r\n\r\nEdited".to_vec(),
             None,
-            Some(draft_id),
+            Some(draft_id.clone()),
         )
         .await
         .unwrap();
     assert_ne!(Some(&saved.message_id), before.message_id.as_ref());
     outbox
-        .draft_saved(h.account_id, saved.clone())
+        .draft_saved(h.account_id, Some(draft_id), saved.clone())
         .await
         .unwrap();
 
@@ -879,7 +879,7 @@ async fn a_scheduled_draft_saved_again_keeps_its_hour_under_its_new_message() {
         .save_draft(b"Subject: Other\r\n\r\nHi".to_vec(), None, None)
         .await
         .unwrap();
-    outbox.draft_saved(h.account_id, other).await.unwrap();
+    outbox.draft_saved(h.account_id, None, other).await.unwrap();
     assert_eq!(h.db.read(outbox::scheduled).await.unwrap(), after);
 }
 

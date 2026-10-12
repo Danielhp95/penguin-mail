@@ -13,7 +13,7 @@ use mailrs_store::outbox::{self, Queued};
 use super::{Harness, over};
 use crate::fake::FakeJmap;
 use crate::tests::Connected;
-use crate::{Outbox, Posted, now_millis};
+use crate::{Outbox, Posted, Reopened, now_millis, server_holds};
 
 const HOUR: EpochMillis = 3_600_000;
 const MINUTE: EpochMillis = 60_000;
@@ -565,4 +565,133 @@ async fn a_row_asking_to_check_sent_can_be_dismissed_in_any_language() {
     h.fake.with(|s| s.submission_get = false);
     queue(&h).drop_one(id).await.unwrap();
     assert!(row(&h, id).await.is_none());
+}
+
+/// What a composer opened on the held copy hands the outbox: the copy's id
+/// as its draft, and the person's new words.
+fn from_copy(h: &Harness, copy: &str, at: EpochMillis) -> Queued {
+    Queued {
+        draft_id: Some(copy.into()),
+        raw: Some(
+            b"From: me@example.com\r\nTo: ada@example.com\r\nSubject: Trip\r\nMessage-ID: <edit@example.com>\r\n\r\nChanged\r\n"
+                .to_vec(),
+        ),
+        ..later(h, at)
+    }
+}
+
+fn changed() -> Vec<u8> {
+    b"From: me@example.com\r\nTo: ada@example.com\r\nSubject: Trip\r\nMessage-ID: <edit@example.com>\r\n\r\nChanged\r\n".to_vec()
+}
+
+fn sent_text(h: &Harness) -> Vec<String> {
+    h.fake.with(|s| s.sent.iter().map(|sent| String::from_utf8_lossy(&sent.raw).into_owned()).collect())
+}
+
+async fn copy_of(h: &Harness, id: i64) -> String {
+    row(h, id).await.unwrap().draft_id.unwrap()
+}
+
+#[tokio::test]
+async fn send_from_a_held_copy_sends_once_in_all() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    let copy = copy_of(&h, id).await;
+    let posted = queue(&h).post(from_copy(&h, &copy, now_millis())).await.unwrap();
+    assert!(matches!(posted, Posted::Sent(_)), "{posted:?}");
+    h.fake.release_due(i64::MAX);
+    assert_eq!(sent(&h), 1, "the hold was called back before the send: {:?}", sent_text(&h));
+    assert!(sent_text(&h)[0].contains("Changed"));
+    assert!(row(&h, id).await.is_none());
+}
+
+#[tokio::test]
+async fn scheduling_a_held_copy_again_sends_once_in_all() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    let copy = copy_of(&h, id).await;
+    let at = now_millis() + 2 * HOUR;
+    let posted = queue(&h).schedule(from_copy(&h, &copy, at)).await.unwrap();
+    assert_eq!(posted, Posted::Waiting(id), "the row that held it takes the new hour");
+    assert_eq!(pending(&h), 1, "one hold, at the new hour");
+    let kept = row(&h, id).await.unwrap();
+    assert_eq!(kept.send_at, at);
+    h.fake.release_due(i64::MAX);
+    queue(&h).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(sent(&h), 1, "{:?}", sent_text(&h));
+    assert!(sent_text(&h)[0].contains("Changed"));
+    let drafts = h.fake.with(|s| {
+        let box_id = s.role_id("drafts").unwrap();
+        s.emails.values().filter(|e| e.mailbox_ids.contains(&box_id) && !e.keywords.contains(mailrs_jmap::HELD)).count()
+    });
+    assert_eq!(drafts, 0, "no stray draft beside the new hold");
+}
+
+#[tokio::test]
+async fn an_edit_of_a_held_copy_sends_once_in_all() {
+    let h = holding().await;
+    let at = now_millis() + HOUR;
+    let id = scheduled(&h, at).await;
+    let outbox = queue(&h);
+    let Reopened::Draft(open) = outbox.reopen_held(id).await.unwrap() else {
+        panic!("the server let go of it");
+    };
+    assert_eq!(pending(&h), 0, "opening it called the hold back");
+    assert_eq!((open.held.as_deref(), open.send_at), (None, at));
+    // The composer saves the edit over the draft it opened.
+    let old = open.draft_id.clone();
+    let saved = h.sync.save_draft(changed(), open.thread_id.clone(), old.clone()).await.unwrap();
+    outbox.draft_saved(h.account_id, old, saved).await.unwrap();
+    h.fake.release_due(i64::MAX);
+    let drained = queue(&h).send_due(at + MINUTE).await.unwrap();
+    assert_eq!(drained.sent.len(), 1);
+    assert_eq!(sent(&h), 1, "{:?}", sent_text(&h));
+    assert!(sent_text(&h)[0].contains("Changed"));
+    assert!(row(&h, id).await.is_none());
+}
+
+#[tokio::test]
+async fn opening_a_held_copy_puts_the_whole_message_back_in_drafts() {
+    let h = holding().await;
+    let id = put(&h, blind(&h, now_millis() + HOUR)).await;
+    let Reopened::Draft(open) = queue(&h).reopen_held(id).await.unwrap() else {
+        panic!("the server let go of it");
+    };
+    let draft = open.draft_id.clone().unwrap();
+    let text = h.fake.with(|s| String::from_utf8_lossy(&s.emails[&draft].raw).into_owned());
+    assert!(text.contains("Bcc: grace@example.com"), "{text}");
+    assert!(open.raw.is_none(), "the draft holds the bytes now, so an edit is what goes");
+}
+
+#[tokio::test]
+async fn opening_a_held_copy_the_server_cannot_hear_leaves_it_held() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    h.fake.with(|s| s.submission_get = false);
+    match queue(&h).reopen_held(id).await.unwrap() {
+        Reopened::Locked { can_cancel, .. } => assert!(can_cancel),
+        other => panic!("expected Locked, got {other:?}"),
+    }
+    assert_eq!(pending(&h), 1);
+    assert!(server_holds(&row(&h, id).await.unwrap()));
+}
+
+#[tokio::test]
+async fn opening_a_held_copy_the_server_sent_says_so() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    h.fake.release_due(i64::MAX);
+    assert!(matches!(queue(&h).reopen_held(id).await.unwrap(), Reopened::AlreadySent));
+    assert_eq!(sent(&h), 1);
+}
+
+#[tokio::test]
+async fn saving_a_draft_over_a_held_copy_is_refused() {
+    let h = holding().await;
+    let id = scheduled(&h, now_millis() + HOUR).await;
+    let copy = copy_of(&h, id).await;
+    assert!(h.sync.save_draft(changed(), None, Some(copy.clone())).await.is_err());
+    assert!(h.fake.with(|s| s.emails.contains_key(&copy)), "the held copy stays");
+    h.fake.release_due(i64::MAX);
+    assert_eq!(sent(&h), 1);
 }

@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 
 use mailrs_domain::Role;
 use mailrs_store::messages::Change;
-use mailrs_store::{drafts, messages};
+use mailrs_domain::translate::gettext;
+use mailrs_store::{drafts, messages, outbox};
 
 use super::AccountSync;
 use super::refs::stored_id;
@@ -116,6 +117,20 @@ impl AccountSync {
         thread_id: Option<String>,
         draft_id: Option<String>,
     ) -> Result<SavedDraft, SyncError> {
+        if let Some(id) = &draft_id {
+            self.not_held(id).await?;
+        }
+        self.put_back_draft(raw, thread_id, draft_id).await
+    }
+
+    /// [`AccountSync::save_draft`] for the outbox, which saves over a held
+    /// copy only once the server has let go of it.
+    pub(crate) async fn put_back_draft(
+        &self,
+        raw: Vec<u8>,
+        thread_id: Option<String>,
+        draft_id: Option<String>,
+    ) -> Result<SavedDraft, SyncError> {
         let thread_id = thread_id.as_deref();
         let old = match &draft_id {
             Some(id) => Some(self.remote(id).await?),
@@ -140,6 +155,21 @@ impl AccountSync {
             .await;
         self.tell_local(&saved.message_id).await;
         Ok(saved)
+    }
+
+    /// Refuses to save over the draft `draft_id` while the server holds it
+    /// for Send Later: the server sends the copy it holds whatever happens
+    /// to the draft, so an edit saved over it would go out beside it.
+    async fn not_held(&self, draft_id: &str) -> Result<(), SyncError> {
+        let (account_id, draft) = (self.account_id, draft_id.to_string());
+        let row = self.db.read(move |c| outbox::find_draft(c, account_id, &draft)).await?;
+        if row.is_some_and(|row| row.held.is_some()) {
+            return Err(BackendError::Refused(gettext(
+                "The server holds this message to send at its hour. Cancel Send before you change it.",
+            ))
+            .into());
+        }
+        Ok(())
     }
 
     /// Sends a draft as the server holds it, as a scheduled send does.
