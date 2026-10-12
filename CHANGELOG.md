@@ -13,7 +13,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - The tray icon shows how many messages are unread in an orange badge, and "99+" past 99.
 - Keep 2 years, 5 years or all of your mail on this computer. Older mail downloads in the background while new mail keeps arriving, and a shorter choice frees the space at once.
 - Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
-- Add a JMAP account, such as Fastmail with an API token or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent.
+- Add a JMAP account, such as Fastmail with an API token or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent. The addresses and names you set up on the server appear in the From menu, each with its own signature.
 
 ## 1.0.7 (2026-10-10)
 
