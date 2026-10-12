@@ -27,12 +27,22 @@ impl Answered {
     }
 }
 
-pub fn record(conn: &Connection, account_id: AccountId, message_id: &str, answered: Answered, at: EpochMillis) -> Result<()> {
-    conn.execute(
+/// Keeps the person's answer for `message_id` unless one is kept already,
+/// in one step, so two answers at once never both go. True when this call
+/// kept it.
+pub fn record(conn: &Connection, account_id: AccountId, message_id: &str, answered: Answered, at: EpochMillis) -> Result<bool> {
+    let kept = conn.execute(
         "INSERT INTO receipts (account_id, message_id, answered, at) VALUES (?1, ?2, ?3, ?4) \
-         ON CONFLICT (account_id, message_id) DO UPDATE SET answered = excluded.answered, at = excluded.at",
+         ON CONFLICT (account_id, message_id) DO NOTHING",
         params![account_id, message_id, answered.as_str(), at],
     )?;
+    Ok(kept == 1)
+}
+
+/// Forgets the answer for `message_id`, for a receipt that proved not to
+/// go, so the question is open again.
+pub fn withdraw(conn: &Connection, account_id: AccountId, message_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM receipts WHERE account_id = ?1 AND message_id = ?2", params![account_id, message_id])?;
     Ok(())
 }
 

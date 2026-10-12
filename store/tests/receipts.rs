@@ -10,9 +10,19 @@ fn an_answer_is_kept_once_per_message() {
     let (conn, id) = db();
     store(&conn, &[meta(id, "a", "t1", 100, &["INBOX"])]);
     assert_eq!(receipts::answered(&conn, id, "a").unwrap(), None);
-    receipts::record(&conn, id, "a", Answered::Declined, 5).unwrap();
-    receipts::record(&conn, id, "a", Answered::Sent, 6).unwrap();
-    assert_eq!(receipts::answered(&conn, id, "a").unwrap(), Some(Answered::Sent), "the later answer wins");
+    assert!(receipts::record(&conn, id, "a", Answered::Declined, 5).unwrap(), "the first answer is kept");
+    assert!(!receipts::record(&conn, id, "a", Answered::Sent, 6).unwrap(), "a second is not");
+    assert_eq!(receipts::answered(&conn, id, "a").unwrap(), Some(Answered::Declined), "the first answer stays");
+}
+
+#[test]
+fn a_withdrawn_answer_leaves_the_question_open() {
+    let (conn, id) = db();
+    store(&conn, &[meta(id, "a", "t1", 100, &["INBOX"])]);
+    receipts::record(&conn, id, "a", Answered::Sent, 5).unwrap();
+    receipts::withdraw(&conn, id, "a").unwrap();
+    assert_eq!(receipts::answered(&conn, id, "a").unwrap(), None);
+    assert!(receipts::record(&conn, id, "a", Answered::Sent, 6).unwrap());
 }
 
 #[test]

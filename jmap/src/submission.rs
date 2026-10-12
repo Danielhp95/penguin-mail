@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::error::refuses_submission;
+use crate::error::refused_outright;
 use crate::mail::{SetError, pointer};
 use crate::session::{MAIL, SUBMISSION};
 use crate::{JmapClient, JmapError, Request, Session};
@@ -201,7 +201,7 @@ impl JmapClient {
         let mut answer = self.send(&request).await.map_err(unknown_if_sent)?;
         // An answer that is no clear refusal may follow a hold the server
         // made, and the look for it reads the copy in Drafts.
-        let unclear = |e: JmapError| if refuses_submission(&e) { e } else { JmapError::HoldUnknown };
+        let unclear = |e: JmapError| if refused_outright(&e) { e } else { JmapError::HoldUnknown };
         let made: Created = answer.take(&import, "Email/import").map_err(unclear)?;
         // A refused import leaves `#m` naming nothing, so nothing went.
         if let Some(refused) = made.not_created.as_ref().and_then(|n| n.get("m")) {
@@ -218,7 +218,7 @@ impl JmapClient {
                     return made.map(|id| HeldSubmission { id, email_id, thread_id }).map_err(unclear);
                 }
             },
-            Err(error) if refuses_submission(&error) => error,
+            Err(error) if refused_outright(&error) => error,
             Err(_) => return Err(JmapError::HoldUnknown),
         };
         // Nothing will go out, so the copy must not wait in Drafts.

@@ -6,8 +6,10 @@
 //! mail programs.
 //!
 //! A receipt goes out at most once. The record is written before the send,
-//! so a lost answer or a restart cannot send a second one; the cost is that
-//! a send that failed is not retried. A receipt also goes only to the
+//! and only by the first answer, so a lost answer, a restart or a second
+//! click cannot send a second one. A send the server refused outright
+//! takes the record back, so the person can try again; one that may have
+//! gone keeps it. A receipt also goes only to the
 //! sender's own address: one to anyone else tells a stranger the mail was
 //! opened.
 
@@ -61,6 +63,24 @@ fn receipt_mail(receipt: &ReceiptOut, original: Option<&str>, now: EpochMillis) 
         ))
         .write_to_vec()
         .map_err(|err| err.to_string())
+}
+
+/// Whether a failed send of a receipt proves it never reached the server:
+/// a refusal, or a sign-in or permission the server turned down before it
+/// acted. A lost connection proves nothing, since the request may have
+/// gone.
+fn nothing_went(err: &SyncError) -> bool {
+    matches!(
+        err,
+        SyncError::Backend(
+            BackendError::Refused(_)
+                | BackendError::NeedsReauth
+                | BackendError::NeedsPermission
+                | BackendError::NotFound
+                | BackendError::RateLimited(_)
+                | BackendError::Unsupported
+        )
+    )
 }
 
 impl AccountSync {
@@ -155,7 +175,11 @@ impl AccountSync {
         };
         let answered = if send { Answered::Sent } else { Answered::Declined };
         let (id, now) = (message_id.to_string(), now_millis());
-        self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await?;
+        // Only the answer this call keeps goes on: a second click, or the
+        // card and the assistant at once, find the first one kept.
+        if !self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await? {
+            return Ok(());
+        }
         if send {
             let receipt = ReceiptOut {
                 message_id: message_id.to_string(),
@@ -164,13 +188,24 @@ impl AccountSync {
                 subject: receipt_subject(&meta.subject),
                 text: receipt_text(&me),
             };
-            match self.mail.send_receipt(&receipt).await {
-                Ok(()) => {}
+            let sent = match self.mail.send_receipt(&receipt).await {
                 Err(SyncError::Backend(BackendError::Unsupported)) => {
-                    let raw = receipt_mail(&receipt, meta.rfc822_msgid.as_deref(), now_millis()).map_err(|_| no_receipt())?;
-                    self.send(raw, None, None).await?;
+                    match receipt_mail(&receipt, meta.rfc822_msgid.as_deref(), now_millis()) {
+                        Ok(raw) => self.send(raw, None, None).await.map(drop),
+                        Err(_) => Err(no_receipt().into()),
+                    }
                 }
-                Err(err) => return Err(err),
+                sent => sent,
+            };
+            if let Err(err) = sent {
+                // A failure that proves nothing went leaves the question
+                // open, so the person can send it again. Any other may
+                // follow a receipt that went, and the answer stays.
+                if nothing_went(&err) {
+                    let id = message_id.to_string();
+                    self.db.write(move |c| receipts::withdraw(c, account, &id)).await?;
+                }
+                return Err(err);
             }
         }
         self.mark_mdn_sent(message_id).await;

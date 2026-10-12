@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::error::{method_error, refuses_submission, unclear_after_send};
+use crate::error::{method_error, refused_outright, unclear_after_send};
 use crate::identity::EmailAddress;
 use crate::session::{MAIL, SUBMISSION};
 use crate::{JmapClient, JmapError, Request, Session};
@@ -729,7 +729,7 @@ impl JmapClient {
         let mut answer = self.send(&request).await.map_err(|e| unclear_after_send(e, JmapError::SubmitUnknown))?;
         let imported = answer
             .take::<ImportAnswer>(&import, "Email/import")
-            .map_err(|e| if refuses_submission(&e) { e } else { JmapError::SubmitUnknown })?;
+            .map_err(|e| if refused_outright(&e) { e } else { JmapError::SubmitUnknown })?;
         let made = match imported.one("m") {
             // An import that names neither a copy nor a refusal hides
             // whether `#m` was made and sent.
@@ -760,7 +760,7 @@ impl JmapClient {
             },
             Err(error) => error,
         };
-        if !refuses_submission(&error) {
+        if !refused_outright(&error) {
             match self.look_at_copy(&account, &sender, &email.id).await {
                 Ok(Look { submitted: Some(true), .. } | Look { draft: false, .. }) => {
                     // It went. A filing the server refuses does not undo that.
@@ -824,7 +824,7 @@ impl JmapClient {
                 Some(refused) => return Err(refused.error()),
                 None => return Err(JmapError::SubmitUnknown),
             },
-            Err(error) if refuses_submission(&error) => return Err(error),
+            Err(error) if refused_outright(&error) => return Err(error),
             Err(_) => return Err(JmapError::SubmitUnknown),
         }
         // It went; a copy the answer does not describe is still the one sent.

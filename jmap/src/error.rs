@@ -109,11 +109,11 @@ impl JmapError {
     }
 }
 
-/// Whether `err`, answered for a call that creates a submission, proves the
-/// server made none: a refusal of a kind that names what was wrong.
-/// Anything else, such as `serverFail`, an answer that would not read or
-/// one that is missing, may follow a submission the server queued.
-pub(crate) fn refuses_submission(err: &JmapError) -> bool {
+/// Whether `err`, answered for a call that sends (a submission, a read
+/// receipt), proves the server sent nothing: a refusal of a kind that names
+/// what was wrong. Anything else, such as `serverFail`, an answer that
+/// would not read or one that is missing, may follow a send the server made.
+pub fn refused_outright(err: &JmapError) -> bool {
     match err {
         JmapError::Forbidden(_)
         | JmapError::RequestTooLarge
