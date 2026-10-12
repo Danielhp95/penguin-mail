@@ -195,12 +195,12 @@ impl Effects for Ports {
 
     fn relist(&self) {
         self.0.refresh_counts();
-        self.0.reload_list();
+        self.0.listing.reload();
     }
 
     fn categories_moved(&self) {
         self.0.core.forget_remote();
-        self.0.reload_folder();
+        self.0.listing.reload_remote();
         self.0.refresh_counts();
     }
 

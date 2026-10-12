@@ -219,7 +219,7 @@ impl MainWindow {
                 .await
             {
                 Ok(()) => {
-                    this.change_screen(|screen| screen.label_deleted(account_id, &label_id));
+                    this.listing.change(|screen| screen.label_deleted(account_id, &label_id));
                     this.toast(&fill(&gettext("Deleted “{name}”"), &[("name", &name)]));
                 }
                 Err(err) => this.failed(&filing.delete_failed(), &err),

@@ -14,6 +14,7 @@ use mailrs_domain::{AccountId, ThreadSummary};
 
 use super::sidebar::DRAG_MAIL;
 use super::thread_row::{Avatar, OpenMenu, ThreadRow};
+use super::list_feed::order;
 use crate::diff::splice;
 use crate::photos::ContactPhotos;
 use mailrs_domain::translate::gettext;
@@ -591,6 +592,8 @@ impl ThreadList {
 
     /// Puts fresh rows in place of the ones belonging to `changed` threads.
     /// Rows that came back keep the list in date order; the rest drop out.
+    /// Which fresh rows belong below the last one loaded is the list
+    /// feed's call (`ListFeed::place`), made before they get here.
     pub fn replace_threads(&self, changed: &[(AccountId, String)], fresh: Vec<ThreadSummary>) {
         let touched = |row: &ThreadSummary| {
             changed
@@ -604,14 +607,8 @@ impl ThreadList {
             .filter(|row| !touched(row))
             .map(Rc::clone)
             .collect();
-        // Past the last loaded row the list is incomplete, so a row that
-        // sorts below it waits for the next page instead of jumping in.
-        let floor = rows.last().map(Rc::clone);
         for row in fresh {
             let row = Rc::new(row);
-            if floor.as_ref().is_some_and(|last| order(&row) < order(last)) {
-                continue;
-            }
             let at = rows.partition_point(|held| order(held) > order(&row));
             rows.insert(at, row);
         }
@@ -950,12 +947,6 @@ fn neighbour(len: usize, first: usize, last: usize) -> Option<usize> {
     } else {
         first.checked_sub(1)
     }
-}
-
-/// Where a row sorts in the list: newest first, ties broken as the store
-/// breaks them.
-fn order(row: &ThreadSummary) -> (i64, i64, &str) {
-    (row.last_message_at, -row.account_id, row.id.as_str())
 }
 
 /// Whether the list header shows `subtitle`: the layout has room, it says

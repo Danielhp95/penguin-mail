@@ -297,14 +297,14 @@ impl MainWindow {
                 .retain(|row| !done.iter().any(|target| covers(target, row)));
         }
         if after.prune {
-            self.prune_folder(done);
+            self.listing.prune(done.to_vec());
         }
         if after.relist_remote {
             self.core.forget_remote();
-            self.reload_folder();
+            self.listing.reload_remote();
         }
         if after.refresh {
-            self.queue_refresh();
+            self.listing.everything();
         }
         if after.counts {
             self.refresh_counts();

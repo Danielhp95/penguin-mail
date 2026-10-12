@@ -173,7 +173,7 @@ impl MainWindow {
             self.shown(),
             Mailbox::Scheduled | Mailbox::Outbox | Mailbox::Reminders
         ) {
-            self.reload_list();
+            self.listing.reload();
         }
     }
 
