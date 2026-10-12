@@ -156,14 +156,15 @@ pub async fn save(
             .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?,
     };
     let (thread, draft_id) = (draft.thread_id.clone(), draft.draft_id.clone());
+    let draft_id_was = draft_id.clone();
     let saved = core
         .call(async move { account.save_draft(raw, thread, draft_id).await })
         .await
         .map_err(|err| with_reason(&gettext("Draft not saved: {reason}"), &err, &[]))?;
     // A Send Later message waiting on this draft now names its new message.
-    let (outbox, account_id, kept) = (core.outbox(), draft.account_id, saved.clone());
+    let (outbox, account_id, kept, old) = (core.outbox(), draft.account_id, saved.clone(), draft_id_was);
     core.spawn(async move {
-        if let Err(err) = outbox.draft_saved(account_id, kept).await {
+        if let Err(err) = outbox.draft_saved(account_id, old, kept).await {
             tracing::warn!(error = %err, "could not update the store");
         }
     });

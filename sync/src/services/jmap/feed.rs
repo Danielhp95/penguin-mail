@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use mailrs_domain::Membership;
-use mailrs_jmap::Email;
+use mailrs_jmap::{Email, HELD};
 use serde::{Deserialize, Serialize};
 
 use super::{Jmap, JmapApi, KEYWORDS, backend};
@@ -64,7 +64,8 @@ impl<J: JmapApi> Jmap<J> {
         let mut relist = false;
         let mut restated = 0;
         for _ in 0..PAGES_PER_LOOK {
-            let each = self.known().mailboxes.len() + KEYWORDS.len();
+            // Each keyword the app knows, and the held one.
+            let each = self.known().mailboxes.len() + KEYWORDS.len() + 1;
             let fits = (MOST_RESTATED - restated.min(MOST_RESTATED)) / each.max(1);
             if fits == 0 && restated > 0 {
                 break;
@@ -95,7 +96,8 @@ impl<J: JmapApi> Jmap<J> {
     /// `email` as it stands: a gain of each mailbox and keyword it has, a
     /// loss of each known mailbox and keyword it lacks.
     fn restated(&self, email: &Email) -> Vec<RemoteChange> {
-        let has_mailbox: BTreeSet<&str> = email.mailbox_ids.iter().filter(|(_, on)| **on).map(|(id, _)| id.as_str()).collect();
+        let filed = self.filed_in(email);
+        let has_mailbox: BTreeSet<&str> = filed.iter().map(String::as_str).collect();
         let has_keyword: BTreeSet<&str> = email.keywords.iter().filter(|(_, on)| **on).map(|(k, _)| k.as_str()).collect();
         let mut gained: Vec<Membership> = has_mailbox.iter().map(|id| Membership::Mailbox((*id).to_string())).collect();
         gained.extend(has_keyword.iter().map(|k| Membership::Keyword((*k).to_string())));
@@ -106,7 +108,10 @@ impl<J: JmapApi> Jmap<J> {
             .filter(|id| !has_mailbox.contains(id.as_str()))
             .map(|id| Membership::Mailbox(id.clone()))
             .collect();
-        lost.extend(KEYWORDS.iter().filter(|k| !has_keyword.contains(**k)).map(|k| Membership::Keyword((*k).to_string())));
+        // The held keyword is no keyword the app offers, but the store
+        // keeps it while a hold lasts, so it has to go when the hold ends.
+        let known = KEYWORDS.iter().copied().chain([HELD]);
+        lost.extend(known.filter(|k| !has_keyword.contains(k)).map(|k| Membership::Keyword(k.to_string())));
         let mut out = vec![RemoteChange::Gained { id: email.id.clone(), thread_id: email.thread_id.clone(), memberships: gained }];
         if !lost.is_empty() {
             out.push(RemoteChange::Lost { id: email.id.clone(), memberships: lost });

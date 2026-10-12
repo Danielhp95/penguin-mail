@@ -1,8 +1,9 @@
 //! The banner above the message list for an account whose server is
 //! nearly full. Its one button opens Preferences on the Sync page, where
-//! Space on the Server shows every account, and takes the banner down for
-//! the run. One dismissed while nearly full comes back once the account
-//! is full.
+//! Space on the Server shows every account, and takes the banner down
+//! until the account's level changes: one dismissed while nearly full
+//! comes back once the account is full, and the other way round. The
+//! dismissal is kept in the settings, so a restart does not bring it back.
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -13,6 +14,7 @@ use mailrs_domain::translate::{fill, gettext};
 use mailrs_sync::Storage;
 
 use super::MainWindow;
+use crate::settings::Change;
 
 /// What the banner says about `address`, or `None` while it has room.
 pub(super) fn banner_line(address: &str, storage: Storage) -> Option<String> {
@@ -30,10 +32,10 @@ pub(super) fn banner_line(address: &str, storage: Storage) -> Option<String> {
 }
 
 /// Whether a banner the person took down stays down. `when_full` says
-/// whether the account was full then: one taken down while nearly full
-/// comes back when the account fills, since that is new news.
+/// whether the account was full then. Any other level is new news: full
+/// after nearly full, nearly full again after full, or room again.
 pub(super) fn stays_dismissed(when_full: bool, storage: Storage) -> bool {
-    when_full || !storage.full()
+    storage.past_warning() && storage.full() == when_full
 }
 
 impl MainWindow {
@@ -45,20 +47,26 @@ impl MainWindow {
             return;
         };
         let storage = app.storage();
-        let wanted: Vec<(AccountId, bool, String)> = {
-            let dismissed = self.storage_dismissed.borrow();
-            app.accounts()
-                .iter()
-                .filter_map(|account| {
-                    let space = *storage.get(&account.id)?;
-                    if dismissed.get(&account.id).is_some_and(|&full| stays_dismissed(full, space)) {
-                        return None;
-                    }
-                    Some((account.id, space.full(), banner_line(&account.email, space)?))
-                })
-                .collect()
-        };
-        let ids: HashSet<AccountId> = wanted.iter().map(|(id, _, _)| *id).collect();
+        let dismissed = app.settings().storage_dismissed;
+        let mut lapsed = Vec::new();
+        let mut wanted: Vec<(AccountId, String, bool, String)> = Vec::new();
+        for account in app.accounts() {
+            let Some(space) = storage.get(&account.id).copied() else {
+                continue;
+            };
+            match dismissed.get(&account.email.to_lowercase()) {
+                Some(&full) if stays_dismissed(full, space) => continue,
+                Some(_) => lapsed.push(account.email.clone()),
+                None => {}
+            }
+            if let Some(line) = banner_line(&account.email, space) {
+                wanted.push((account.id, account.email.clone(), space.full(), line));
+            }
+        }
+        for account in lapsed {
+            app.change_settings(Change::StorageDismissed { account, full: None });
+        }
+        let ids: HashSet<AccountId> = wanted.iter().map(|(id, _, _, _)| *id).collect();
         let mut widgets = self.storage_banner_widgets.borrow_mut();
         widgets.retain(|id, (banner, _)| {
             let keep = ids.contains(id);
@@ -67,7 +75,7 @@ impl MainWindow {
             }
             keep
         });
-        for (id, full, line) in wanted {
+        for (id, email, full, line) in wanted {
             if let Some((banner, was_full)) = widgets.get_mut(&id) {
                 banner.set_title(&line);
                 *was_full = full;
@@ -89,7 +97,9 @@ impl MainWindow {
                     return;
                 };
                 let full = window.storage_banner_widgets.borrow().get(&id).is_some_and(|(_, full)| *full);
-                window.storage_dismissed.borrow_mut().insert(id, full);
+                if let Some(app) = window.app.upgrade() {
+                    app.change_settings(Change::StorageDismissed { account: email.clone(), full: Some(full) });
+                }
                 window.rebuild_storage_banners();
                 window.show_preferences_page("sync");
             });
@@ -148,5 +158,11 @@ mod tests {
     #[test]
     fn a_banner_dismissed_while_full_stays_down() {
         assert!(stays_dismissed(true, used(100)));
+    }
+
+    #[test]
+    fn a_banner_dismissed_while_full_comes_back_at_the_next_level() {
+        assert!(!stays_dismissed(true, used(97)), "full to nearly full is a new level");
+        assert!(!stays_dismissed(false, used(50)), "room again ends the dismissal");
     }
 }

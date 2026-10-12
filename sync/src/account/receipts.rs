@@ -15,14 +15,14 @@ use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address as MimeAddress;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::mime::MimePart;
-use mailrs_domain::EpochMillis;
+use mailrs_domain::{EpochMillis, MessageMeta};
 use mailrs_domain::mailbox::keyword::MDN_SENT;
 use mailrs_domain::translate::{fill, gettext};
 use mailrs_store::receipts::{self, Answered};
 use mailrs_store::{accounts, bodies, messages};
 
 use super::AccountSync;
-use crate::{AnyMail, BackendError, MailBackend, MailOp, ReceiptOut, SyncError, now_millis};
+use crate::{AnyMail, BackendError, IdentityService, MailBackend, MailOp, ReceiptOut, SyncError, now_millis};
 
 /// "Read: Allotment rota".
 fn receipt_subject(subject: &str) -> String {
@@ -81,22 +81,64 @@ impl AccountSync {
             .await?)
     }
 
+    /// Whether the receipt `message_id` asks for still waits on the
+    /// person: nobody answered it, and the message reached one of the
+    /// account's addresses or masked addresses, which the receipt would go
+    /// from. Mail that reached none of them, through a list or a Bcc, asks
+    /// nothing: a receipt from another address would name it to the sender.
+    pub async fn receipt_open(&self, message_id: &str) -> Result<bool, SyncError> {
+        if self.receipt_answered(message_id).await? {
+            return Ok(false);
+        }
+        let (account, id) = (self.account_id, message_id.to_string());
+        let meta = self.db.read(move |c| messages::by_ids(c, account, std::slice::from_ref(&id))).await?;
+        let Some(meta) = meta.into_iter().next() else {
+            return Ok(false);
+        };
+        Ok(self.receipt_sender(&meta).await.is_some())
+    }
+
+    /// The address a receipt for `meta` goes from: the one of the
+    /// account's addresses or masked addresses the message was delivered
+    /// to, as for a reply. A server that would not list them leaves only
+    /// the account's own address.
+    async fn receipt_sender(&self, meta: &MessageMeta) -> Option<String> {
+        let account = self.account_id;
+        let mut mine: Vec<String> = match self.db.read(move |c| accounts::account(c, account)).await {
+            Ok(Some(me)) => vec![me.email],
+            _ => Vec::new(),
+        };
+        match self.services.identities.identities().await {
+            Ok(listed) => mine.extend(listed.into_iter().map(|a| a.email)),
+            Err(_) => tracing::info!(account, "could not list the account's addresses for a receipt"),
+        }
+        if let AnyMail::Jmap(jmap) = &self.services.mail
+            && jmap.masked_email()
+        {
+            match jmap.masked_addresses().await {
+                Ok(masked) => mine.extend(masked.into_iter().map(|m| m.email)),
+                Err(_) => tracing::info!(account, "could not list the account's masked addresses for a receipt"),
+            }
+        }
+        crate::masked::delivered_to(meta.to.iter().chain(&meta.cc), &mine)
+    }
+
     /// Sends the receipt `message_id` asks for, or declines it, and
     /// records the answer. A message already answered, here or on the
-    /// server, is left alone.
+    /// server, is left alone. The receipt goes from the address the
+    /// message was delivered to, and a message that reached none of the
+    /// account's addresses is refused.
     pub async fn answer_receipt(&self, message_id: &str, send: bool) -> Result<(), SyncError> {
         let (account, id) = (self.account_id, message_id.to_string());
-        let (me, meta, body) = self
+        let (meta, body) = self
             .db
             .read(move |c| {
                 Ok((
-                    accounts::account(c, account)?,
                     messages::by_ids(c, account, std::slice::from_ref(&id))?.into_iter().next(),
                     bodies::peek_body(c, account, &id)?,
                 ))
             })
             .await?;
-        let me = me.ok_or(BackendError::NotFound)?.email;
         let meta = meta.ok_or(BackendError::NotFound)?;
         let no_receipt = || BackendError::Refused(gettext("This message asks for no read receipt."));
         let to = body.and_then(|b| b.receipt_to).ok_or_else(no_receipt)?;
@@ -107,6 +149,10 @@ impl AccountSync {
         if self.receipt_answered(message_id).await? {
             return Ok(());
         }
+        let me = match send {
+            true => self.receipt_sender(&meta).await.ok_or_else(no_receipt)?,
+            false => String::new(),
+        };
         let answered = if send { Answered::Sent } else { Answered::Declined };
         let (id, now) = (message_id.to_string(), now_millis());
         self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await?;

@@ -20,7 +20,7 @@ use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnyS
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
+    Claimed, Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
     Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, Settled, SieveRules, Storage, SyncState, Unapplied,
     Unheld, Want, Withheld,
 };
@@ -329,6 +329,10 @@ impl MailBackend for AnyMail {
 
     async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
         forward_all!(AnyMail, self, find_hold(message_id))
+    }
+
+    async fn hold_of_copy(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        forward_all!(AnyMail, self, hold_of_copy(email_id))
     }
 
     async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {

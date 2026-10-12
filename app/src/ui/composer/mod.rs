@@ -290,6 +290,14 @@ pub struct Composer {
     asked: Cell<bool>,
     dirty: Cell<bool>,
     closing: Cell<bool>,
+    /// Set while the message shows read-only: a Send Later message the
+    /// server still holds, which nothing here may send, save or change.
+    locked: Cell<bool>,
+    /// Set once the message went to be sent or scheduled, and once a draft
+    /// of it was saved: either way it is no longer the one it opened as.
+    handed: Cell<bool>,
+    saved: Cell<bool>,
+    attach: gtk::Button,
     on_send: Box<dyn Fn(Draft, Built, SendWhen)>,
 }
 
@@ -719,6 +727,10 @@ impl Composer {
             asked: Cell::new(false),
             dirty: Cell::new(false),
             closing: Cell::new(false),
+            locked: Cell::new(false),
+            handed: Cell::new(false),
+            saved: Cell::new(false),
+            attach: attach.clone(),
             on_send: Box::new(on_send),
         });
         composer.fill_body();
@@ -1648,6 +1660,60 @@ impl Composer {
         Some(draft)
     }
 
+    /// Shows the message read-only under a banner that says why: a Send
+    /// Later message the server still holds, which the person can read but
+    /// not send, save or change here. `cancel`, when given, is the banner's
+    /// Cancel Send; the composer closes after it.
+    pub fn lock(self: &Rc<Self>, notice: &str, cancel: Option<Box<dyn Fn()>>) {
+        self.locked.set(true);
+        self.dirty.set(false);
+        // A caret would say the words can be changed. GTK draws none in a
+        // text view that is not editable, and none with no focus.
+        self.body.set_editable(false);
+        self.subject.set_editable(false);
+        gtk::prelude::GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
+        let banner = adw::Banner::builder().use_markup(false).title(notice).revealed(true).build();
+        if let Some(cancel) = cancel {
+            banner.set_button_label(Some(&gettext("Cancel Send")));
+            let weak = Rc::downgrade(self);
+            banner.connect_button_clicked(move |_| {
+                cancel();
+                if let Some(c) = weak.upgrade() {
+                    c.closing.set(true);
+                    c.window.close();
+                }
+            });
+        }
+        if let Some(toolbar) = self.toasts.child().and_downcast::<adw::ToolbarView>() {
+            toolbar.add_top_bar(&banner);
+            if let Some(content) = toolbar.content() {
+                content.set_sensitive(false);
+            }
+        }
+        for control in [self.send.upcast_ref::<gtk::Widget>(), self.more_menu.upcast_ref(), self.attach.upcast_ref(), self.protection.upcast_ref()] {
+            control.set_sensitive(false);
+        }
+        // Takes the menu's and the keys' actions away with the buttons.
+        self.window.insert_action_group("composer", None::<&gio::ActionGroup>);
+    }
+
+    /// Runs `unchanged` when the window closes on the message as it
+    /// opened: not sent, not scheduled, not saved, and with no change
+    /// made, kept or thrown away.
+    pub fn on_closed_unchanged(self: &Rc<Self>, unchanged: Box<dyn Fn()>) {
+        let weak = Rc::downgrade(self);
+        self.window.connect_close_request(move |_| {
+            if let Some(c) = weak.upgrade()
+                && !c.handed.get()
+                && !c.saved.get()
+                && !c.dirty.get()
+            {
+                unchanged();
+            }
+            glib::Propagation::Proceed
+        });
+    }
+
     /// Treats the message as unsaved, so closing asks before discarding it.
     pub fn mark_unsaved(&self) {
         self.dirty.set(true);
@@ -1686,6 +1752,9 @@ impl Composer {
     /// the gate wants asked, and passes it on for sending once nothing
     /// stands in the way.
     fn hand_over(self: &Rc<Self>, when: SendWhen) {
+        if self.locked.get() {
+            return;
+        }
         let this = Rc::clone(self);
         glib::spawn_future_local(async move { this.pass_gate(when).await });
     }
@@ -1731,6 +1800,7 @@ impl Composer {
                 email: identity.address.email.clone(),
             });
         }
+        self.handed.set(true);
         self.closing.set(true);
         self.window.close();
         (self.on_send)(draft, built, when);
@@ -1806,6 +1876,9 @@ impl Composer {
     /// their own key, since Gmail would otherwise hold it readable until it
     /// went out. `protection::draft` says how, and how it comes back.
     fn save_draft(self: &Rc<Self>, then_close: bool) {
+        if self.locked.get() {
+            return;
+        }
         let Some(draft) = self.collect() else {
             self.toast(&gettext(
                 "Choose a sender and enter a permitted address suffix.",
@@ -1825,6 +1898,7 @@ impl Composer {
             match protection::draft::save(&this.core, &draft, secret, standard).await {
                 Ok(saved) => {
                     this.base.borrow_mut().draft_id = Some(saved.draft_id);
+                    this.saved.set(true);
                     this.dirty.set(false);
                     if then_close {
                         this.closing.set(true);
@@ -1870,6 +1944,9 @@ impl Composer {
     }
 
     fn pick_files(self: &Rc<Self>) {
+        if self.locked.get() {
+            return;
+        }
         let dialog = gtk::FileDialog::builder()
             .title(gettext("Attach Files"))
             .modal(true)
@@ -2392,6 +2469,9 @@ impl Composer {
     }
 
     fn pick_images(self: &Rc<Self>) {
+        if self.locked.get() {
+            return;
+        }
         let filter = gtk::FileFilter::new();
         filter.set_name(Some(&gettext("Images")));
         filter.add_mime_type("image/*");

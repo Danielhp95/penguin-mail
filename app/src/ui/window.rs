@@ -17,8 +17,8 @@ use mailrs_domain::{
 };
 use mailrs_sync::sign_in::{Browser, Wanted};
 use mailrs_sync::{
-    History, Listing, Loaded, MailAction, MovedFrom, Offers, Permitted, Scope, TriageAction, View,
-    Withheld,
+    History, Listing, Loaded, MailAction, MovedFrom, Offers, Permitted, Reopened, Scope, TriageAction,
+    View, Withheld,
 };
 
 use super::add_account::{Done, Opening};
@@ -145,9 +145,6 @@ pub struct MainWindow {
     /// The storage banner of each nearly full account, beside the Grant
     /// Access banners, and whether the account was full when it went up.
     storage_banner_widgets: RefCell<HashMap<AccountId, (adw::Banner, bool)>>,
-    /// Accounts whose storage banner the person took down this run, and
-    /// whether each was full then.
-    storage_dismissed: RefCell<HashMap<AccountId, bool>>,
     /// The main menu's update entry: Check for Updates, or what to do with
     /// the one that is waiting.
     update_menu: gio::Menu,
@@ -856,7 +853,6 @@ impl MainWindow {
                 grant_banners,
                 grant_banner_widgets: RefCell::new(HashMap::new()),
                 storage_banner_widgets: RefCell::new(HashMap::new()),
-                storage_dismissed: RefCell::new(HashMap::new()),
                 update_menu: gio::Menu::new(),
                 about: RefCell::new(None),
                 stack,
@@ -1094,6 +1090,9 @@ impl MainWindow {
                 self.refresh_accounts(Reload::No);
                 if *state == AccountState::Ok {
                     self.account_ready_for_threads(*account_id);
+                    if let Some(app) = self.app.upgrade() {
+                        app.read_storage_of(*account_id);
+                    }
                 }
             }
             ChangeEvent::LabelsChanged { .. } => self.refresh_accounts(Reload::Yes),
@@ -2625,25 +2624,91 @@ impl MainWindow {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let (s, m) = (sync.clone(), message.id.clone());
-            let draft_id = this
+            let mut draft_id = this
                 .core
                 .call(async move { s.draft_id_for(&m).await })
                 .await
                 .ok()
                 .flatten();
+            let waiting = match draft_id.clone() {
+                Some(id) => {
+                    let outbox = this.core.outbox();
+                    this.core
+                        .call(async move { outbox.find_draft(account_id, &id).await })
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                None => None,
+            };
+            // A copy the server holds for Send Later is called back before
+            // the composer may touch it, or the server would send it beside
+            // whatever the person does here.
+            let mut source = message.id.clone();
+            let mut kept_bytes = None;
+            let mut locked = None;
+            // The row of a held message called back for this composer.
+            let mut reopened = None;
+            let send_at = waiting.as_ref().map(|row| row.send_at);
+            if let Some(row) = waiting.filter(|row| row.held.is_some()) {
+                let (outbox, id) = (this.core.outbox(), row.id);
+                match this.core.call(async move { outbox.reopen_held(id).await }).await {
+                    Ok(Reopened::Free) => {}
+                    Ok(Reopened::Draft(now)) => {
+                        reopened = Some(now.id);
+                        draft_id = now.draft_id.clone();
+                        source = now.message_id.clone().unwrap_or(source);
+                        kept_bytes = now.raw;
+                        this.scheduled_changed();
+                    }
+                    Ok(Reopened::AlreadySent) => {
+                        this.scheduled_changed();
+                        return this.toast(&gettext("The server had already sent this message."));
+                    }
+                    Ok(Reopened::Gone) => {
+                        this.scheduled_changed();
+                        return this.toast(&gettext(
+                            "This message was canceled in another app and is no longer in Drafts.",
+                        ));
+                    }
+                    Ok(Reopened::Locked { notice, can_cancel }) => {
+                        let target = row.thread_id.clone().map(|thread| Target {
+                            account_id,
+                            thread_id: thread,
+                            message_id: row.message_id.clone(),
+                        });
+                        locked = Some((notice, target.filter(|_| can_cancel)));
+                        // The server's copy has no Bcc; the row's bytes do.
+                        kept_bytes = row.raw.clone();
+                        draft_id = None;
+                    }
+                    Err(err) => {
+                        return this.toast(&with_reason(
+                            &gettext("Could not open the draft: {reason}"),
+                            &err,
+                            &[],
+                        ));
+                    }
+                }
+            }
             let mut draft = app.blank_draft(account_id);
             // Only the message as Gmail holds it carries the Bcc, the reply
             // headers and the bytes of the files, readable or encrypted.
             // Opening without them would save a draft that had lost them.
-            let (s, m) = (sync.clone(), message.id.clone());
-            let raw = match this.core.call(async move { s.raw_message(&m).await }).await {
-                Ok(raw) => raw,
-                Err(err) => {
-                    return this.toast(&with_reason(
-                        &gettext("Could not open the draft: {reason}"),
-                        &err,
-                        &[],
-                    ));
+            let raw = match kept_bytes {
+                Some(raw) => raw,
+                None => {
+                    let s = sync.clone();
+                    match this.core.call(async move { s.raw_message(&source).await }).await {
+                        Ok(raw) => raw,
+                        Err(err) => {
+                            return this.toast(&with_reason(
+                                &gettext("Could not open the draft: {reason}"),
+                                &err,
+                                &[],
+                            ));
+                        }
+                    }
                 }
             };
             if let Err(problem) =
@@ -2652,19 +2717,34 @@ impl MainWindow {
                 return this.toast(&problem);
             }
             draft.thread_id = in_thread.then_some(thread_id);
-            if let Some(id) = draft_id.clone() {
-                let outbox = this.core.outbox();
-                draft.send_at = this
-                    .core
-                    .call(async move { outbox.find_draft(account_id, &id).await })
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|s| s.send_at);
-            }
+            draft.send_at = send_at;
             draft.draft_id = draft_id;
             // The composer that saved it signed it then.
-            app.open_composer(draft, Signature::AsWritten);
+            let Some(composer) = app.open_composer(draft, Signature::AsWritten) else {
+                return;
+            };
+            // Closed as it opened, it goes back to the server for its hour,
+            // so it still goes with the laptop shut.
+            if let Some(id) = reopened {
+                let weak = Rc::downgrade(&this);
+                composer.on_closed_unchanged(Box::new(move || {
+                    if let Some(win) = weak.upgrade() {
+                        win.hold_unchanged(id);
+                    }
+                }));
+            }
+            if let Some((notice, target)) = locked {
+                let cancel = target.map(|target| {
+                    let weak = Rc::downgrade(&this);
+                    Box::new(move || {
+                        if let Some(win) = weak.upgrade() {
+                            let view = Rc::clone(&win.conversation);
+                            win.cancel_scheduled(&view, vec![target.clone()]);
+                        }
+                    }) as Box<dyn Fn()>
+                });
+                composer.lock(&notice, cancel);
+            }
         });
     }
 
@@ -2993,17 +3073,42 @@ impl MainWindow {
             } else {
                 RemoveSetting::Never
             };
-            let question = confirm(
-                &fill(
-                    &gettext("Remove {account}?"),
-                    &[("account", &account.email)],
-                ),
-                &crate::offered::remove_account_body(&account, remove),
-                &gettext("Remove"),
-                Tone::Destructive,
-            );
+            // The server sends what it holds whether or not the account is
+            // here, so those messages are called back first.
+            let (outbox, account_id) = (this.core.outbox(), account.id);
+            let held = this
+                .core
+                .call(async move { outbox.held_count(account_id).await })
+                .await
+                .unwrap_or_default();
+            let mut body = crate::offered::remove_account_body(&account, remove);
+            if let Some(line) = crate::offered::held_back_line(held) {
+                body = format!("{body}\n\n{line}");
+            }
+            let title = fill(&gettext("Remove {account}?"), &[("account", &account.email)]);
+            let question = confirm(&title, &body, &gettext("Remove"), Tone::Destructive);
             if !question.ask(&this.window).await {
                 return;
+            }
+            if held > 0 {
+                let outbox = this.core.outbox();
+                let left = this
+                    .core
+                    .call(async move { outbox.call_back_account(account_id).await })
+                    .await
+                    .unwrap_or(held);
+                this.scheduled_changed();
+                if left > 0 {
+                    let question = confirm(
+                        &title,
+                        &crate::offered::still_held_line(left),
+                        &gettext("Remove Anyway"),
+                        Tone::Destructive,
+                    );
+                    if !question.ask(&this.window).await {
+                        return;
+                    }
+                }
             }
             if this.conversation.read(|o| o.account_id) == Some(account.id) {
                 this.conversation.leave();

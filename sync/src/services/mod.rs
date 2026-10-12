@@ -880,6 +880,21 @@ pub struct Held {
     pub thread_id: String,
 }
 
+/// A hold found by the copy it left in Drafts, which another install of
+/// the app may have made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Claimed {
+    /// The server still holds it: the hold, the hour it goes, and the
+    /// message as it goes out, blind copies and all.
+    Held { held: Held, send_at: EpochMillis, raw: Vec<u8> },
+    /// It went, or someone called it back. The copy is filed as such: in
+    /// Sent, or back in Drafts as an ordinary draft.
+    Settled,
+    /// No submission sends it any more and the copy cannot say whether it
+    /// went.
+    Unknown,
+}
+
 /// What calling a hold back left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unheld {
@@ -1209,6 +1224,14 @@ pub trait MailBackend: Send + Sync + 'static {
     /// the message.
     fn find_hold(&self, message_id: &str) -> impl Future<Output = Result<Option<Held>, BackendError>> + Send {
         let _ = message_id;
+        async { Ok(None) }
+    }
+
+    /// The hold whose copy in Drafts is the message `email_id`, found by
+    /// the copy alone, for a hold this install has no row for. `None` when
+    /// the server holds nothing for it.
+    fn hold_of_copy(&self, email_id: &str) -> impl Future<Output = Result<Option<Claimed>, BackendError>> + Send {
+        let _ = email_id;
         async { Ok(None) }
     }
 

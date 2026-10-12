@@ -4,7 +4,7 @@
 //! removes meanwhile does not shift the rest past the listing.
 
 use mailrs_domain::{Address, Memberships, MessageMeta, Role};
-use mailrs_jmap::{Email, EmailAddress, EmailQuery, Hit, JmapError, META, Queried};
+use mailrs_jmap::{Email, EmailAddress, EmailQuery, HELD, Hit, JmapError, META, Queried};
 use serde_json::{Value, json};
 
 use super::{Jmap, JmapApi, backend};
@@ -103,7 +103,7 @@ impl<J: JmapApi> Jmap<J> {
     /// A message's metadata. The roles come from the last mailbox listing,
     /// so call `listed()` first.
     pub(super) fn meta_of(&self, email: &Email) -> MessageMeta {
-        let mailboxes: Vec<String> = email.mailbox_ids.iter().filter(|(_, on)| **on).map(|(id, _)| id.clone()).collect();
+        let mailboxes = self.filed_in(email);
         let roles: Vec<Role> = self.known().roles.iter().filter(|(_, id)| mailboxes.contains(id)).map(|(role, _)| *role).collect();
         let keywords: Vec<String> = email.keywords.iter().filter(|(_, on)| **on).map(|(k, _)| k.clone()).collect();
         let people = |list: &Option<Vec<EmailAddress>>| list.iter().flatten().filter_map(address).collect::<Vec<_>>();
@@ -129,6 +129,21 @@ impl<J: JmapApi> Jmap<J> {
             list_unsubscribe: email.list_unsubscribe.as_deref().map(|v| v.trim().to_string()),
             one_click: email.list_unsubscribe_post.as_deref().is_some_and(|v| v.to_ascii_lowercase().contains("one-click")),
         }
+    }
+
+    /// The mailboxes the store files `email` in. A copy held for Send
+    /// Later sits in Drafts on the server, but it is the outbox's, not a
+    /// draft: opened as one, it would go out twice. So the store files it
+    /// in no mailbox until the hold ends, on every install of the app.
+    pub(super) fn filed_in(&self, email: &Email) -> Vec<String> {
+        let held = email.keywords.get(HELD).copied().unwrap_or(false);
+        let drafts = if held { self.known().roles.get(&Role::Drafts).cloned() } else { None };
+        email
+            .mailbox_ids
+            .iter()
+            .filter(|(id, on)| **on && drafts.as_ref() != Some(*id))
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     fn inbox_id(&self) -> Option<String> {

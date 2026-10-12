@@ -167,6 +167,12 @@ pub enum Change {
         account: String,
         email: String,
     },
+    /// The person took an account's storage banner down while it was full
+    /// (`Some(true)`) or nearly full, or its level changed (`None`).
+    StorageDismissed {
+        account: String,
+        full: Option<bool>,
+    },
     /// The dictionaries to check an account's mail against. Empty follows
     /// the desktop's locale.
     SpellLanguages {
@@ -395,6 +401,14 @@ impl Change {
             Change::LastSender { account, email } => {
                 settings.last_sender.insert(account.to_lowercase(), email);
             }
+            Change::StorageDismissed { account, full } => match full {
+                Some(full) => {
+                    settings.storage_dismissed.insert(account.to_lowercase(), full);
+                }
+                None => {
+                    settings.storage_dismissed.remove(&account.to_lowercase());
+                }
+            },
             Change::SpellLanguages { account, languages } => {
                 let key = account.to_lowercase();
                 if languages.is_empty() {
@@ -616,6 +630,8 @@ settable! {
         // preference with nothing to show.
         language,
         last_sender,
+        // Which storage banners the person took down is their own click.
+        storage_dismissed,
         last_update_check,
         // Each server runs commands or reaches a service of the person's
         // choosing, so only Preferences adds one.
@@ -817,6 +833,7 @@ impl Effects {
             spell_languages,
             spell_words,
             last_sender,
+            storage_dismissed,
             send_as,
             send_as_checked,
             compose_format,
@@ -860,6 +877,8 @@ impl Effects {
             spell_languages,
             spell_words,
             last_sender,
+            // The window rebuilds its banners itself after a dismissal.
+            storage_dismissed,
             send_as,
             send_as_checked,
             compose_format,
@@ -1043,6 +1062,18 @@ mod tests {
         let effects = Change::ReadReceipts(ReadReceipts::Never).apply(&mut settings);
         assert_eq!(settings.read_receipts, ReadReceipts::Never);
         assert!(effects.is_empty(), "the next message opened reads it");
+    }
+
+    #[test]
+    fn a_storage_banner_taken_down_stays_down_across_runs() {
+        let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
+        assert!(settings.storage_dismissed.is_empty(), "an older file has none");
+        Change::StorageDismissed { account: "Dana@Home.example".into(), full: Some(false) }.apply(&mut settings);
+        let saved = toml::to_string(&settings).unwrap();
+        let read: Settings = toml::from_str(&saved).unwrap();
+        assert_eq!(read.storage_dismissed.get("dana@home.example"), Some(&false));
+        Change::StorageDismissed { account: "dana@home.example".into(), full: None }.apply(&mut settings);
+        assert!(settings.storage_dismissed.is_empty());
     }
 
     #[test]

@@ -58,6 +58,14 @@ pub(super) fn identity_for<'a>(identities: &'a [Identity], from: &str) -> Option
         .or_else(|| identities.first())
 }
 
+/// Whether `identity` sends as `from` itself: the same address, or a
+/// `*@domain` identity for its domain.
+pub(super) fn sends_as(identity: &Identity, from: &str) -> bool {
+    let domain = from.rsplit_once('@').map(|(_, d)| d);
+    identity.email.eq_ignore_ascii_case(from)
+        || identity.email.strip_prefix("*@").is_some_and(|d| domain.is_some_and(|domain| d.eq_ignore_ascii_case(domain)))
+}
+
 /// Why the server refused a submission, in words a person reads.
 fn refused_send(err: JmapError, from: &str) -> BackendError {
     let kind = match &err {

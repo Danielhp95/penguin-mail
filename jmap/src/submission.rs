@@ -63,6 +63,29 @@ pub struct SubmissionState {
     /// When the server sends or sent the message, RFC 3339 in UTC.
     #[serde(default)]
     pub send_at: Option<String>,
+    /// Who the server sends it to, the blind copies among them.
+    #[serde(default)]
+    pub envelope: Option<Envelope>,
+}
+
+/// The addresses a submission goes to, as the server keeps them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Envelope {
+    #[serde(default)]
+    pub rcpt_to: Vec<EnvelopeAddress>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct EnvelopeAddress {
+    pub email: String,
+}
+
+impl SubmissionState {
+    /// The addresses the server sends it to.
+    pub fn recipients(&self) -> Vec<String> {
+        self.envelope.iter().flat_map(|e| &e.rcpt_to).map(|a| a.email.clone()).collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,7 +222,7 @@ impl JmapClient {
         let account = submission_account(&session)?;
         let mut request = Request::new();
         let got = request.call(SUBMISSION, "EmailSubmission/get", json!({
-            "accountId": account, "ids": ids, "properties": ["id", "emailId", "undoStatus", "sendAt"]
+            "accountId": account, "ids": ids, "properties": ["id", "emailId", "undoStatus", "sendAt", "envelope"]
         }));
         let mut answer = self.send(&request).await?;
         Ok(answer.take::<Listing>(&got, "EmailSubmission/get")?.list)

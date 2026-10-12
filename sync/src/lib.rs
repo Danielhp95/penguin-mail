@@ -79,13 +79,13 @@ pub use mailbox::{
 pub use newsletters::Newsletters;
 pub use one_click::OneClick;
 pub use ops::{MailOp, MovedFrom};
-pub use outbox::{Cancelled, Drained, Outbox, OutboxHold, Posted};
+pub use outbox::{Cancelled, Drained, Outbox, OutboxHold, Posted, Reheld, Reopened, server_holds};
 pub use services::{
     AccountServices, AnyAutoReply, AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp, Backfill, Found, ID_PAGE_SIZE, LIST_PAGE_SIZE, RawMessage,
     RemoteRef, SearchQuery, Want, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules,
     AutoReplyService, CalendarService, ContactsService, Google, GraphApi, Imap, ImapApi, ImapSettings, Jmap, JmapApi, JmapSettings, JmapSieve,
     IdentityService, KeywordsOf, KeywordsPage, MailBackend, MailCapabilities, Microsoft, MicrosoftSettings, Missing, Offers, Pop3, Pop3Settings, Refused,
-    Priority, Relocated, RemoteChange, Held, ReceiptOut, Settled, Storage, Unheld,
+    Priority, Relocated, RemoteChange, Claimed, Held, ReceiptOut, Settled, Storage, Unheld,
     RulesService, SendAsAddress, SyncState, Unapplied, Changes, RAW_LIMIT, Submit, Withheld,
     background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesPlace, SieveRules, SERVER_REPLY_SCRIPT,
 };

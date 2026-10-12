@@ -113,3 +113,71 @@ async fn a_lost_answer_is_not_asked_again_after_a_restart() {
     assert!(h.sync.answer_receipt(&id, true).await.is_err());
     assert!(h.sync.receipt_answered(&id).await.unwrap(), "recorded before the send, so a retry cannot double it");
 }
+
+/// A message from Ines to `to`, asking for a receipt.
+fn asking_to(to: &str) -> Vec<u8> {
+    format!(
+        "From: Ines Duarte <ines@allotment.example>\r\nTo: {to}\r\nSubject: Rota\r\n\
+Message-ID: <rota-{to}>\r\nDisposition-Notification-To: ines@allotment.example\r\n\r\nThe rota is up.\r\n"
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+async fn a_receipt_for_mail_to_a_masked_address_goes_from_that_address() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MASKED_EMAIL)).await;
+    let crate::AnyMail::Jmap(jmap) = h.mail() else { unreachable!() };
+    let masked = jmap.make_masked("https://allotment.example", "Allotment").await.unwrap().email;
+    lets_send_as(&h, &masked);
+    let id = asked_by(&h, &asking_to(&masked)).await;
+    assert!(h.sync.receipt_open(&id).await.unwrap(), "the card asks");
+    h.sync.answer_receipt(&id, true).await.unwrap();
+    let sent = h.fake.with(|s| s.sent.clone());
+    assert_eq!(sent.len(), 1);
+    let read = mailrs_mime::read(&sent[0].raw);
+    assert_eq!(read.read_report.expect("a report").by, masked, "the sender learns nothing of the real address");
+    let raw = String::from_utf8_lossy(&sent[0].raw).into_owned();
+    assert!(!raw.contains("me@example.com"), "{raw}");
+}
+
+/// The server lets the account send as `address` too.
+fn lets_send_as(h: &Harness, address: &str) {
+    h.fake.with(|s| {
+        let mut identity = s.identities[0].clone();
+        identity.id = "I2".into();
+        identity.email = address.to_string();
+        s.identities.push(identity);
+    });
+}
+
+#[tokio::test]
+async fn mdn_send_never_names_another_address_than_the_one_mail_came_to() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MDN).with_capability(mailrs_jmap::MASKED_EMAIL)).await;
+    let crate::AnyMail::Jmap(jmap) = h.mail() else { unreachable!() };
+    let masked = jmap.make_masked("https://allotment.example", "Allotment").await.unwrap().email;
+    let id = asked_by(&h, &asking_to(&masked)).await;
+    // The server has no identity for the masked address, so MDN/send would
+    // write the receipt from the account's own address.
+    let _ = h.sync.answer_receipt(&id, true).await;
+    assert!(h.fake.with(|s| s.mdns.is_empty()), "no receipt from the real address");
+    let leaked = h.fake.with(|s| s.sent.iter().any(|sent| String::from_utf8_lossy(&sent.raw).contains("me@example.com")));
+    assert!(!leaked);
+}
+
+#[tokio::test]
+async fn mail_that_reached_none_of_my_addresses_asks_for_no_receipt() {
+    let h = over(FakeJmap::new()).await;
+    let id = asked_by(&h, &asking_to("allotment-list@lists.example")).await;
+    assert!(!h.sync.receipt_open(&id).await.unwrap(), "no card");
+    assert!(h.sync.answer_receipt(&id, true).await.is_err());
+    assert!(h.fake.with(|s| s.sent.is_empty()));
+}
+
+#[tokio::test]
+async fn an_answered_receipt_is_open_no_longer() {
+    let h = over(FakeJmap::new()).await;
+    let id = asked(&h).await;
+    assert!(h.sync.receipt_open(&id).await.unwrap());
+    h.sync.answer_receipt(&id, false).await.unwrap();
+    assert!(!h.sync.receipt_open(&id).await.unwrap());
+}
