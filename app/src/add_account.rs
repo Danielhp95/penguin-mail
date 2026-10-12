@@ -1762,6 +1762,17 @@ pub fn asks_dav_password(proposal: &JmapProposal, token: bool) -> bool {
             .is_some_and(|host| mailrs_discover::services_of(host).caldav.is_some())
 }
 
+/// Whether the password page asks for the calendar's app password when
+/// an account signs in again: it signed in through the browser, and its
+/// calendar or contacts server, in `refused`, refused that sign-in. A
+/// token account asks by [`asks_dav_password`].
+pub fn asks_dav_password_again(saved: &mailrs_store::jmap::JmapSaved, refused: &[mailrs_store::services::ServiceKind]) -> bool {
+    use mailrs_store::services::ServiceKind;
+
+    saved.auth == mailrs_store::jmap::JmapAuth::OAuth
+        && refused.iter().any(|kind| matches!(kind, ServiceKind::CalDav | ServiceKind::CardDav))
+}
+
 /// The session a browser sign-in for `proposal` goes to.
 pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowser {
     mailrs_sync::sign_in::JmapBrowser {
@@ -3721,6 +3732,26 @@ mod tests {
         assert!(saved_jmap(&account, &saved).token);
         let basic = mailrs_store::jmap::JmapSaved { auth: mailrs_store::jmap::JmapAuth::Basic, ..saved };
         assert!(!saved_jmap(&account, &basic).token);
+    }
+
+    #[test]
+    fn a_browser_account_whose_calendar_refused_the_sign_in_asks_for_its_app_password() {
+        use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
+        use mailrs_store::services::ServiceKind;
+
+        let saved = JmapSaved {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            auth: JmapAuth::OAuth,
+            user_name: None,
+            labels: true,
+            capabilities: Vec::new(),
+            oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+        };
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CalDav]));
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CardDav]));
+        assert!(!asks_dav_password_again(&saved, &[]), "a calendar that takes the token needs nothing more");
+        let token = JmapSaved { auth: JmapAuth::Bearer, oauth: None, ..saved };
+        assert!(!asks_dav_password_again(&token, &[ServiceKind::CalDav]), "a token account asks through its own rule");
     }
 
     #[test]

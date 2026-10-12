@@ -465,6 +465,14 @@ pub fn reason(account: &Account, missing: Missing, missed: Option<Miss>) -> Stri
         (Provider::Imap, Missing::AutoReply) => {
             gettext("{provider} cannot send automatic replies.")
         }
+        // A calendar or contacts server beside a browser sign-in that
+        // refused its token waits for an app password.
+        (Provider::Jmap, Missing::Calendar) if missed == Some(Miss::Refused) => gettext(
+            "{provider}'s calendar server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar.",
+        ),
+        (Provider::Jmap, Missing::Contacts) if missed == Some(Miss::Refused) => gettext(
+            "{provider}'s contacts server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar.",
+        ),
         // Penguin Mail reads mail over JMAP and nothing else yet, so what
         // the server may well offer is not set up on the account.
         (Provider::Jmap, Missing::Calendar) => {
@@ -926,6 +934,19 @@ mod tests {
         assert!(said.contains("Fastmail"), "{said}");
         assert!(said.contains("Reminders"), "{said}");
         assert!(said.contains("dana@fastmail.com"), "{said}");
+    }
+
+    #[test]
+    fn a_jmap_calendar_that_refused_the_browser_sign_in_asks_for_an_app_password() {
+        let account = Account { provider: Provider::Jmap, ..fastmail() };
+        assert_eq!(
+            super::reason(&account, Missing::Calendar, Some(Miss::Refused)),
+            "Fastmail's calendar server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar."
+        );
+        assert_eq!(
+            super::reason(&account, Missing::Contacts, Some(Miss::Refused)),
+            "Fastmail's contacts server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar."
+        );
     }
 
     #[test]

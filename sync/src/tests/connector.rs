@@ -835,3 +835,134 @@ async fn a_restart_reuses_the_accounts_oauth_session() {
     secrets.forget(&account).await.unwrap();
     assert!(secrets.jmap_sessions.held(account.id).is_none(), "a removed account leaves no session");
 }
+
+/// What the account keeps for `kind`, if anything.
+async fn kept(db: &Db, account: &Account, kind: mailrs_store::services::ServiceKind) -> Option<mailrs_store::services::FoundService> {
+    let id = account.id;
+    db.read(move |c| mailrs_store::services::load(c, id)).await.unwrap().into_iter().find(|f| f.kind == kind)
+}
+
+#[tokio::test]
+async fn an_oauth_fastmail_account_reaches_the_tables_calendar_and_contacts_with_its_token() {
+    use mailrs_store::services::ServiceKind;
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    let (found, changed) = crate::services::finding::keep_oauth_table(&db, &account, &saved.session_url).await.unwrap();
+    assert!(changed, "new servers restart the account's services");
+    let calendar = kept(&db, &account, ServiceKind::CalDav).await.expect("the table's calendar server is kept");
+    let contacts = kept(&db, &account, ServiceKind::CardDav).await.expect("the table's contacts server is kept");
+    assert_eq!(calendar.url, "https://caldav.fastmail.com/dav/calendars");
+    assert_eq!(contacts.url, "https://carddav.fastmail.com/dav/addressbooks");
+    assert!(calendar.confirmed && contacts.confirmed);
+    assert!(found.caldav.is_some() && found.carddav.is_some());
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))));
+    assert!(matches!(services.contacts, Some(crate::AnyContacts::Dav(_))));
+    let plan = crate::connect::dav_plan(vec![calendar, contacts], &saved, true, None, None, &[]);
+    assert_eq!(plan.len(), 2);
+    assert!(plan.iter().all(|(_, sign)| matches!(sign, crate::connect::DavSign::Bearer)), "both take the session's token");
+}
+
+#[tokio::test]
+async fn a_dav_host_off_the_table_waits_for_a_yes_on_an_oauth_account() {
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://jmap.example.org/jmap/session", &[mailrs_jmap::MAIL]);
+    let mut new = new_oauth(saved.clone());
+    new.provider_name = "jmap.example.org".into();
+    new.address = "me@example.org".into();
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new, 0).await.unwrap();
+    let id = account.id;
+    db.write(move |c| {
+        mailrs_store::services::save(c, id, &FoundService { kind: ServiceKind::CalDav, url: "https://dav.example.org/cal/".into(), user_name: "me@example.org".into(), confirmed: false, source: "well-known".into() })
+    })
+    .await
+    .unwrap();
+    let (found, changed) = crate::services::finding::keep_oauth_table(&db, &account, &saved.session_url).await.unwrap();
+    assert!(!changed && found.caldav.is_none(), "the table names no server for this provider");
+    assert!(!kept(&db, &account, ServiceKind::CalDav).await.unwrap().confirmed, "a found host still waits for a yes");
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(services.calendar.is_none(), "an unconfirmed host gets no token");
+}
+
+#[tokio::test]
+async fn the_tables_hosts_on_another_site_than_the_session_are_not_kept() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    // Fastmail's name, but a session somewhere else.
+    let saved = oauth_row("https://jmap.example.org/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    let (found, changed) = crate::services::finding::keep_oauth_table(&db, &account, &saved.session_url).await.unwrap();
+    assert!(!changed && found.caldav.is_none() && found.carddav.is_none());
+}
+
+/// A token source that hands out `a1`, and `a2` after one refresh.
+struct Refreshing(std::sync::atomic::AtomicUsize);
+
+impl mailrs_dav::TokenSource for Refreshing {
+    fn token<'a>(&'a self, refused: Option<&'a str>) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            match refused {
+                Some(_) => {
+                    self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok("a2".to_string())
+                }
+                None => Ok("a1".to_string()),
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_calendar_server_that_refuses_the_fresh_token_asks_for_an_app_password() {
+    use mailrs_dav::{DavApi, DavClient, Kind, Login};
+    use mailrs_store::services::{Miss, ServiceKind};
+    use std::time::Duration;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+    let server = MockServer::start().await;
+    Mock::given(any()).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    crate::services::finding::keep_oauth_table(&db, &account, &saved.session_url).await.unwrap();
+    let refreshing = Arc::new(Refreshing(std::sync::atomic::AtomicUsize::new(0)));
+    let source = crate::connect::dav_bearer(Arc::clone(&refreshing) as Arc<dyn mailrs_dav::TokenSource>, db.clone(), account.id, ServiceKind::CalDav);
+    let calendar = DavClient::over(format!("{}/cal/", server.uri()).parse().unwrap(), Kind::Calendar, Login::new("me@fastmail.com", ""))
+        .unwrap()
+        .with_bearer(source);
+    assert!(calendar.homes().await.is_err());
+    let id = account.id;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let misses = db.read(mailrs_store::services::all_misses).await.unwrap();
+            if misses.contains(&(id, ServiceKind::CalDav, Miss::Refused)) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the refusal was never kept");
+    let asked = server.received_requests().await.unwrap().len();
+    assert!(calendar.homes().await.is_err());
+    assert_eq!(server.received_requests().await.unwrap().len(), asked, "a refused server is not asked again");
+    assert_eq!(refreshing.0.load(std::sync::atomic::Ordering::SeqCst), 1, "one refresh and no more");
+    // The next start leaves the calendar out instead of refreshing again.
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(services.calendar.is_none(), "the refused calendar waits for an app password");
+    assert!(matches!(services.contacts, Some(crate::AnyContacts::Dav(_))), "contacts still take the token");
+    // An app password brings it back, over Basic.
+    secrets.passwords.save(account.id, "app-password").unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))));
+    let calendar_row = kept(&db, &account, ServiceKind::CalDav).await.unwrap();
+    let plan = crate::connect::dav_plan(vec![calendar_row], &saved, true, Some("app-password".into()), None, &[ServiceKind::CalDav]);
+    assert!(matches!(&plan[0].1, crate::connect::DavSign::Password(p) if p == "app-password"));
+}

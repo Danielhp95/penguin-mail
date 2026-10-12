@@ -183,21 +183,26 @@ impl<S: SignInServer, O: Fn(&str)> Trip<'_, S, O> {
 /// a kept client, one new client is registered and the consent page opens
 /// once more. Each wait for the browser ends after
 /// [`BROWSER_WAIT`], and the whole sign-in when `canceled` resolves.
+/// `dav_password`, when the person gave one, is kept as the app password
+/// for a calendar or contacts server that refused the browser sign-in.
 pub async fn jmap_in_browser(
     connector: &Connector,
     offer: JmapBrowser,
     address: &str,
+    dav_password: Option<String>,
     open: impl Fn(&str),
     canceled: impl Future<Output = ()>,
 ) -> Result<SignedIn, BrowserSignInError> {
-    signing_in(&Live, connector, offer, address, open, canceled, BROWSER_WAIT).await
+    signing_in(&Live, connector, offer, address, dav_password, open, canceled, BROWSER_WAIT).await
 }
 
+#[expect(clippy::too_many_arguments, reason = "jmap_in_browser's arguments, plus the server and the wait tests set")]
 pub(crate) async fn signing_in<S: SignInServer>(
     server: &S,
     connector: &Connector,
     offer: JmapBrowser,
     address: &str,
+    dav_password: Option<String>,
     open: impl Fn(&str),
     canceled: impl Future<Output = ()>,
     wait: Duration,
@@ -264,7 +269,7 @@ pub(crate) async fn signing_in<S: SignInServer>(
             oauth: Some(SavedOAuth { client_id, token_endpoint: metadata.token_endpoint }),
         },
         secret: refresh,
-        dav_password: None,
+        dav_password: dav_password.filter(|p| !p.is_empty()),
     };
     let Connector { db, config, secrets, .. } = connector;
     // The keyring takes the refresh token as the account is kept; when it
@@ -395,7 +400,22 @@ mod tests {
     /// me@fastmail.com whatever the person typed.
     async fn sign_in_as(server: &FakeServer, reach: &Connector, session_url: &str, pages: &Arc<Mutex<Vec<String>>>, address: &str) -> Result<SignedIn, BrowserSignInError> {
         let offer = JmapBrowser { session_url: session_url.into(), provider: None };
-        signing_in(server, reach, offer, address, browser(Arc::clone(pages)), std::future::pending(), Duration::from_secs(5)).await
+        signing_in(server, reach, offer, address, None, browser(Arc::clone(pages)), std::future::pending(), Duration::from_secs(5)).await
+    }
+
+    #[tokio::test]
+    async fn an_app_password_given_with_the_browser_sign_in_is_kept() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let offer = JmapBrowser { session_url: format!("{}/jmap/session", jmap.uri()), provider: None };
+        let signed = signing_in(&server, &reach, offer, "me@fastmail.com", Some("app-pw".into()), browser(Arc::clone(&pages)), std::future::pending(), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(reach.secrets.passwords.load(signed.account.id).unwrap().as_deref(), Some("app-pw"));
     }
 
     #[tokio::test]
@@ -451,7 +471,7 @@ mod tests {
     #[expect(dead_code, reason = "only compiled, to check the future is Send")]
     fn the_sign_in_can_move_between_threads(connector: &Connector, offer: JmapBrowser) {
         fn sends<T: Send>(_: T) {}
-        sends(jmap_in_browser(connector, offer, "", |_: &str| {}, std::future::pending::<()>()));
+        sends(jmap_in_browser(connector, offer, "", None, |_: &str| {}, std::future::pending::<()>()));
     }
 
     #[tokio::test]
@@ -606,7 +626,7 @@ mod tests {
         // comes back; the person cancels.
         let offer = JmapBrowser { session_url: session_url.clone(), provider: None };
         let silent = FakeServer::answering("unused", Vec::new());
-        let canceled = signing_in(&silent, &reach, offer, "me@fastmail.com", |_: &str| {}, std::future::ready(()), Duration::from_secs(5)).await;
+        let canceled = signing_in(&silent, &reach, offer, "me@fastmail.com", None, |_: &str| {}, std::future::ready(()), Duration::from_secs(5)).await;
         assert!(matches!(canceled, Err(BrowserSignInError::Canceled)));
         assert_eq!(silent.registrations(), 0);
         assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("old-1"), "a cancel changes nothing kept");

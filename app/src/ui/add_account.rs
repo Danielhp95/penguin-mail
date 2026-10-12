@@ -1097,7 +1097,9 @@ fn password_page() -> PasswordPage {
 /// What an account signing in again kept from before.
 enum Saved {
     Mail(add_account::Kept),
-    Jmap(mailrs_store::jmap::JmapSaved),
+    /// The session row, and the calendar and contacts servers that
+    /// refused a browser sign-in.
+    Jmap(mailrs_store::jmap::JmapSaved, Vec<mailrs_store::services::ServiceKind>),
 }
 
 struct ClosedPage {
@@ -1636,6 +1638,10 @@ struct Dialog {
     done: Box<dyn Fn(Done)>,
     /// The account signing in again, when that is why the dialog opened.
     again: Option<Account>,
+    /// The account signing in again signed in through the browser, and a
+    /// calendar or contacts server refused that sign-in: the password page
+    /// asks for the calendar's app password.
+    again_dav_refused: Cell<bool>,
     /// The tile picked, whose stamp the address page shows until the
     /// address names a provider.
     tile: Cell<Option<Tile>>,
@@ -1741,6 +1747,7 @@ impl Dialog {
             running: Running::default(),
             done,
             again,
+            again_dav_refused: Cell::new(false),
             tile: Cell::new(None),
             by_hand: Cell::new(false),
             typed: RefCell::new(None),
@@ -2506,7 +2513,8 @@ impl Dialog {
         let title = add_account::jmap_secret_title(token);
         page.password.set_title(&title);
         crate::ui::name(&page.password, &title);
-        page.dav_password.set_visible(add_account::asks_dav_password(proposal, token));
+        page.dav_password
+            .set_visible(add_account::asks_dav_password(proposal, token) || self.again_dav_refused.get());
         match add_account::jmap_hint(proposal, token) {
             Some((heading, body, link)) => page.hint.show(
                 "advice",
@@ -3094,7 +3102,12 @@ impl Dialog {
                 .core
                 .read(move |c| {
                     if let Some(saved) = mailrs_store::jmap::load(c, id)? {
-                        return Ok(Some(Saved::Jmap(saved)));
+                        let refused = mailrs_store::services::all_misses(c)?
+                            .into_iter()
+                            .filter(|(account, _, miss)| *account == id && *miss == mailrs_store::services::Miss::Refused)
+                            .map(|(_, kind, _)| kind)
+                            .collect();
+                        return Ok(Some(Saved::Jmap(saved, refused)));
                     }
                     if let Some(servers) = servers::load(c, id)? {
                         return Ok(Some(Saved::Mail(add_account::Kept::Imap(servers))));
@@ -3107,7 +3120,8 @@ impl Dialog {
                 })
                 .await;
             match saved {
-                Ok(Some(Saved::Jmap(saved))) => {
+                Ok(Some(Saved::Jmap(saved, refused))) => {
+                    this.again_dav_refused.set(add_account::asks_dav_password_again(&saved, &refused));
                     this.show_jmap(add_account::saved_jmap(&account, &saved));
                 }
                 Ok(Some(Saved::Mail(kept))) => {
@@ -3420,8 +3434,10 @@ impl Dialog {
         });
         let this = Rc::clone(self);
         let offer = add_account::jmap_browser(&proposal);
+        let dav_password = Some(self.password.dav_password.text().to_string())
+            .filter(|password| !password.is_empty() && self.password.dav_password.is_visible());
         glib::spawn_future_local(async move {
-            let signed = this.core.sign_in_jmap_browser(offer, address, urls, canceled).await;
+            let signed = this.core.sign_in_jmap_browser(offer, address, dav_password, urls, canceled).await;
             this.running.end();
             this.browser_jmap.replace(None);
             let canceling = this.browser_canceling.replace(false);

@@ -2781,6 +2781,12 @@ impl MainWindow {
                         &[("account", &account.email)],
                     ));
                     win.refresh_accounts(Reload::Yes);
+                    // A JMAP account may have signed in another way, through
+                    // the browser or with an app password for its calendar,
+                    // which changes the servers it can reach beside mail.
+                    if account.provider == Provider::Jmap {
+                        win.look_for_servers(&account);
+                    }
                 }
             }
         });
