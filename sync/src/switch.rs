@@ -1,28 +1,30 @@
 //! Switching an IMAP account to JMAP on the same server. The stored mail
-//! is matched to its JMAP ids by Message-ID and date, the mailboxes by
-//! role and then by path, and the store rewrites the account in one
+//! is matched to its JMAP ids by Message-ID and date, then by a second
+//! key for what that leaves out, the mailboxes by role and then by path,
+//! and the store rewrites the account in one
 //! transaction (`mailrs_store::switch`). OBJECTID would name each
 //! message's Email id directly, but the IMAP client cannot read `EMAILID`
 //! yet; the Message-ID match works on every server.
 //!
 //! Nothing in the store changes before the last step, and a failure before
 //! it leaves the IMAP account as it was. Drafts the JMAP server lacks go
-//! up to it first, from the bytes kept here, so the switch loses none.
+//! up to it first, from the bytes kept here, so the switch loses none; a
+//! draft without a Message-ID gets one first, the one change made earlier.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use mailrs_domain::translate::gettext;
 use mailrs_domain::{Account, AccountId, Provider};
-use mailrs_jmap::{Auth, EmailQuery, JmapClient, JmapError, Mailbox};
+use mailrs_jmap::{Auth, Email, EmailQuery, JmapClient, JmapError, Mailbox};
 use mailrs_store::Db;
 use mailrs_store::jmap::{JmapAuth, JmapSaved};
 use mailrs_store::services::ServiceKind;
 use mailrs_store::switch::{Adoption, Moved, StoredMailbox, StoredMessage, adopt_jmap, stored_mailboxes, stored_messages};
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::json;
+use serde_json::{Value, json};
 
-use crate::passwords::{PasswordError, PasswordStore, Secrets};
+use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
 use crate::{AnyJmap, BackendError, SyncError};
@@ -37,6 +39,16 @@ const SAME_MESSAGE_WITHIN: i64 = 86_400_000;
 
 /// Hits one search page asks for. The server may answer fewer.
 const PAGE: usize = 500;
+
+/// How many times a listing that changed while it was read starts again
+/// before the switch gives up and leaves the account as it was.
+const RESTARTS: usize = 8;
+
+/// Second-key conditions one search carries.
+const KEYS_PER_QUERY: usize = 20;
+
+/// What the second look reads of each hit.
+const SECOND_LOOK: [&str; 7] = ["id", "threadId", "messageId", "receivedAt", "size", "subject", "from"];
 
 /// A mailbox path as one comparable string: IMAP's `.` or `/` separators
 /// read as `/`, the `INBOX.` prefix of a dotted namespace drops, case folds.
@@ -87,28 +99,42 @@ pub fn match_mailboxes(stored: &[StoredMailbox], listed: &[Mailbox]) -> Vec<(Str
     out
 }
 
-/// The JMAP ids of the messages with these Message-IDs. Pages by position
-/// until a page comes back empty: a server that clamps a page to its own
-/// limit answers fewer hits than asked while more remain.
-async fn found_with<J: JmapApi>(api: &J, message_ids: &[&str]) -> Result<Vec<String>, BackendError> {
-    let conditions: Vec<_> = message_ids.iter().map(|id| has_message_id(id)).collect();
-    let filter = json!({ "operator": "OR", "conditions": conditions });
-    let (mut ids, mut position) = (Vec::new(), 0u64);
-    loop {
-        let query = EmailQuery { filter: Some(filter.clone()), position, limit: PAGE, total: false };
-        let hits = api.query(&query).await.map_err(backend)?.hits;
-        if hits.is_empty() {
+/// Every JMAP id `filter` matches. Pages by position, newest first, and
+/// starts over when the server's `queryState` moved between two pages: a
+/// message gone from an earlier page shifts the next page past a hit.
+async fn found_with<J: JmapApi>(api: &J, filter: &Value) -> Result<Vec<String>, BackendError> {
+    for _ in 0..=RESTARTS {
+        if let Some(ids) = one_listing(api, filter).await? {
             return Ok(ids);
         }
-        position += hits.len() as u64;
-        ids.extend(hits.into_iter().map(|h| h.id));
+    }
+    Err(BackendError::Changed)
+}
+
+/// One listing of `filter`, or None when it changed while it was read.
+/// Only an empty page ends it: a server that clamps a page to its own
+/// limit answers fewer hits than asked while more remain.
+async fn one_listing<J: JmapApi>(api: &J, filter: &Value) -> Result<Option<Vec<String>>, BackendError> {
+    let (mut ids, mut position, mut state) = (Vec::new(), 0u64, None::<String>);
+    loop {
+        let query = EmailQuery { filter: Some(filter.clone()), position, limit: PAGE, total: false };
+        let page = api.query(&query).await.map_err(backend)?;
+        if *state.get_or_insert_with(|| page.query_state.clone()) != page.query_state {
+            return Ok(None);
+        }
+        if page.hits.is_empty() {
+            return Ok(Some(ids));
+        }
+        position += page.hits.len() as u64;
+        ids.extend(page.hits.into_iter().map(|h| h.id));
     }
 }
 
 /// What the server holds under these Message-IDs: each bare Message-ID's
 /// JMAP ids, threads and `receivedAt`. Only one chunk's hits are held.
 async fn hits<J: JmapApi>(api: &J, message_ids: &[&str]) -> Result<HashMap<String, Vec<(String, String, i64)>>, BackendError> {
-    let ids = found_with(api, message_ids).await?;
+    let conditions: Vec<_> = message_ids.iter().map(|id| has_message_id(id)).collect();
+    let ids = found_with(api, &json!({ "operator": "OR", "conditions": conditions })).await?;
     let mut by_message_id: HashMap<String, Vec<(String, String, i64)>> = HashMap::new();
     for ids in ids.chunks(IDS_PER_QUERY) {
         let got = api.emails(ids, &["id", "threadId", "messageId", "receivedAt"]).await.map_err(backend)?;
@@ -122,11 +148,107 @@ async fn hits<J: JmapApi>(api: &J, message_ids: &[&str]) -> Result<HashMap<Strin
     Ok(by_message_id)
 }
 
+/// How a stored message the Message-ID and date left out is looked for
+/// again before the switch counts it as gone from the server.
+enum SecondKey<'a> {
+    /// Arrived within a day of `date`, with exactly this size.
+    DateAndSize { date: i64, size: u64 },
+    /// The date is unknown: the one copy under this bare Message-ID.
+    MessageId(&'a str),
+    /// No Message-ID and no date: the subject and the sender.
+    SubjectAndFrom { subject: &'a str, from: Option<&'a str> },
+}
+
+impl<'a> SecondKey<'a> {
+    fn of(message: &'a StoredMessage) -> Option<SecondKey<'a>> {
+        let message_id = message.message_id.as_deref().map(bare_message_id).filter(|i| !i.is_empty());
+        let from = message.from.as_deref().filter(|f| !f.trim().is_empty());
+        match (message.date > 0, message_id) {
+            (true, _) => u64::try_from(message.size).ok().filter(|s| *s > 0).map(|size| SecondKey::DateAndSize { date: message.date, size }),
+            (false, Some(id)) => Some(SecondKey::MessageId(id)),
+            (false, None) if !message.subject.trim().is_empty() || from.is_some() => {
+                Some(SecondKey::SubjectAndFrom { subject: message.subject.trim(), from })
+            }
+            (false, None) => None,
+        }
+    }
+
+    /// The search condition. It may match more than the key does, since
+    /// `subject` and `from` search for words; `holds` decides.
+    fn condition(&self) -> Value {
+        let stamp = |millis: i64| {
+            chrono::DateTime::from_timestamp_millis(millis).unwrap_or_default().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        };
+        match self {
+            SecondKey::DateAndSize { date, size } => json!({
+                "after": stamp(date - SAME_MESSAGE_WITHIN),
+                "before": stamp(date + SAME_MESSAGE_WITHIN + 1000),
+                "minSize": size,
+                "maxSize": size + 1,
+            }),
+            SecondKey::MessageId(id) => has_message_id(id),
+            SecondKey::SubjectAndFrom { subject, from } => {
+                let mut condition = serde_json::Map::new();
+                if !subject.is_empty() {
+                    condition.insert("subject".into(), json!(subject));
+                }
+                if let Some(from) = from {
+                    condition.insert("from".into(), json!(from));
+                }
+                Value::Object(condition)
+            }
+        }
+    }
+
+    fn holds(&self, email: &Email) -> bool {
+        match self {
+            SecondKey::DateAndSize { date, size } => {
+                email.size == *size && (received_millis(email) - date).abs() <= SAME_MESSAGE_WITHIN
+            }
+            SecondKey::MessageId(id) => email.message_id.iter().flatten().any(|m| bare_message_id(m) == *id),
+            SecondKey::SubjectAndFrom { subject, from } => {
+                email.subject.as_deref().unwrap_or_default().trim() == *subject
+                    && from.is_none_or(|from| email.from.iter().flatten().any(|a| a.email.eq_ignore_ascii_case(from)))
+            }
+        }
+    }
+}
+
+/// Pairs each stored message left out of `out` with the one JMAP message
+/// its second key finds, when exactly one untaken message answers it.
+async fn match_again<J: JmapApi>(
+    api: &J,
+    stored: &[StoredMessage],
+    taken: &mut BTreeSet<String>,
+    out: &mut Vec<Moved>,
+) -> Result<(), BackendError> {
+    let matched: BTreeSet<String> = out.iter().map(|m| m.from.clone()).collect();
+    let left: Vec<(&StoredMessage, SecondKey)> =
+        stored.iter().filter(|m| !matched.contains(&m.id)).filter_map(|m| SecondKey::of(m).map(|key| (m, key))).collect();
+    for chunk in left.chunks(KEYS_PER_QUERY) {
+        let conditions: Vec<Value> = chunk.iter().map(|(_, key)| key.condition()).collect();
+        let ids = found_with(api, &json!({ "operator": "OR", "conditions": conditions })).await?;
+        let mut found: Vec<Email> = Vec::new();
+        for ids in ids.chunks(IDS_PER_QUERY) {
+            found.extend(api.emails(ids, &SECOND_LOOK).await.map_err(backend)?.list);
+        }
+        for (message, key) in chunk {
+            let mut answers = found.iter().filter(|e| !taken.contains(&e.id) && key.holds(e));
+            if let (Some(email), None) = (answers.next(), answers.next()) {
+                taken.insert(email.id.clone());
+                out.push(Moved { from: message.id.clone(), to: email.id.clone(), thread: email.thread_id.clone() });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Each stored message's JMAP id and thread, by Message-ID and the
 /// nearest `receivedAt` within a day. A JMAP id goes to one stored message
 /// only, so two stored copies of one Message-ID never share it; the second
-/// copy stays unmatched when the server holds just one. A message without a
-/// Message-ID stays unmatched.
+/// copy stays unmatched when the server holds just one. A message this
+/// leaves out gets a second look by another key (`SecondKey`); one still
+/// unmatched after it is mail the server no longer holds.
 pub async fn match_messages<J: JmapApi>(api: &J, stored: &[StoredMessage]) -> Result<Vec<Moved>, BackendError> {
     let with_id: Vec<&StoredMessage> = stored.iter().filter(|m| m.message_id.as_deref().is_some_and(|i| !bare_message_id(i).is_empty())).collect();
     let mut taken = BTreeSet::new();
@@ -148,6 +270,7 @@ pub async fn match_messages<J: JmapApi>(api: &J, stored: &[StoredMessage]) -> Re
             }
         }
     }
+    match_again(api, stored, &mut taken, &mut out).await?;
     Ok(out)
 }
 
@@ -180,6 +303,48 @@ fn draft_bytes(conn: &Connection, account_id: AccountId, id: &str) -> mailrs_sto
         .optional()?)
 }
 
+/// `raw` with a `Message-ID: <id>` header first, in the line ending the
+/// message already uses.
+fn with_message_id(raw: &[u8], id: &str) -> Vec<u8> {
+    let end: &[u8] = if raw.windows(2).any(|w| w == b"\r\n") { b"\r\n" } else { b"\n" };
+    let mut out = Vec::with_capacity(raw.len() + id.len() + 16);
+    out.extend_from_slice(format!("Message-ID: <{id}>").as_bytes());
+    out.extend_from_slice(end);
+    out.extend_from_slice(raw);
+    out
+}
+
+/// Gives the stored draft `id` the Message-ID `message_id`: in its row,
+/// and in the bytes kept here, its local copy and any outbox row that
+/// sends it. The draft's bytes as they now read, if any are kept.
+fn stamp_draft(conn: &Connection, account_id: AccountId, id: &str, message_id: &str) -> mailrs_store::Result<Option<Vec<u8>>> {
+    conn.execute(
+        "UPDATE messages SET rfc822_msgid = ?3 WHERE account_id = ?1 AND id = ?2",
+        params![account_id, id, message_id],
+    )?;
+    let local = mailrs_store::local_messages::get(conn, account_id, id)?.map(|raw| with_message_id(&raw, message_id));
+    if let Some(raw) = &local {
+        mailrs_store::local_messages::put(conn, account_id, id, raw)?;
+    }
+    let queued: Vec<(i64, Vec<u8>)> = conn
+        .prepare("SELECT id, raw FROM outbox WHERE account_id = ?1 AND draft_id = ?2 AND raw IS NOT NULL")?
+        .query_map(params![account_id, id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut first = None;
+    for (row, raw) in queued {
+        let raw = with_message_id(&raw, message_id);
+        conn.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1", params![row, raw])?;
+        first.get_or_insert(raw);
+    }
+    Ok(local.or(first))
+}
+
+/// A fresh Message-ID in the account's domain, as the composer makes one.
+fn new_message_id(address: &str) -> String {
+    let domain = address.rsplit_once('@').map_or("penguin-mail.local", |(_, d)| d);
+    format!("{}.{}@{domain}", mailrs_gmail::random_token(12), std::process::id())
+}
+
 /// Pairs each stored draft the date match left out with a JMAP copy:
 /// one the server holds under its Message-ID at any date, or one imported
 /// now from the bytes kept here. An import dates its copy on arrival, so a
@@ -188,7 +353,7 @@ fn draft_bytes(conn: &Connection, account_id: AccountId, id: &str) -> mailrs_sto
 /// draft with no bytes here and no copy there has nothing left to carry.
 async fn carry_drafts<J: JmapApi>(
     db: &Db,
-    account_id: AccountId,
+    account: &Account,
     api: &J,
     listed: &[Mailbox],
     stored: &[StoredMessage],
@@ -222,9 +387,19 @@ async fn carry_drafts<J: JmapApi>(
             moved.push(Moved { from: draft.id.clone(), to: to.clone(), thread: thread.clone() });
             continue;
         }
-        let from = draft.id.clone();
+        let (from, account_id) = (draft.id.clone(), account.id);
+        // A draft without a Message-ID gets one before it goes up, in its
+        // row and its bytes here, so a retry after a failed swap finds the
+        // copy by it instead of uploading the draft again.
         let Some(raw) = db.read(move |c| draft_bytes(c, account_id, &from)).await? else {
             continue;
+        };
+        let raw = match draft.message_id.as_deref().is_some_and(|i| !bare_message_id(i).is_empty()) {
+            true => raw,
+            false => {
+                let (from, message_id) = (draft.id.clone(), new_message_id(&account.email));
+                db.write(move |c| stamp_draft(c, account_id, &from, &message_id)).await?.unwrap_or(raw)
+            }
         };
         let mailbox = drafts_mailbox.clone().ok_or_else(|| BackendError::Refused(gettext("The server has no Drafts mailbox.")))?;
         let blob = api.upload(raw).await.map_err(backend)?;
@@ -293,6 +468,29 @@ async fn keyring<T: Send + 'static>(work: impl FnOnce() -> Result<T, PasswordErr
     tokio::task::spawn_blocking(work).await.map_err(|e| PasswordError::Keyring(e.to_string()))?
 }
 
+/// Deletes the IMAP and SMTP passwords once the swap is in the database
+/// file. With `synchronous = NORMAL` a commit is not synced, and a power
+/// cut before the next checkpoint would bring the IMAP account back
+/// without its password. The switch is done whatever happens here: a
+/// password that stays is deleted when the person removes the account.
+async fn forget_imap_passwords(db: &Db, secrets: &Secrets, id: AccountId) {
+    match db.checkpoint().await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::warn!(account = id, "the switch is not in the database file yet, so the IMAP password stays");
+            return;
+        }
+        Err(err) => {
+            tracing::warn!(account = id, %err, "could not write the switch to the database file, so the IMAP password stays");
+            return;
+        }
+    }
+    let passwords = Arc::clone(&secrets.passwords);
+    if let Err(err) = keyring(move || first_error([passwords.delete_outgoing(id), passwords.delete(id)])).await {
+        tracing::warn!(account = id, %err, "the switch is done, and the keyring kept the IMAP password");
+    }
+}
+
 /// Signs in to the JMAP session with what the person typed, then switches.
 pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo) -> Result<Switched, SwitchError> {
     if account.provider != Provider::Imap {
@@ -317,8 +515,9 @@ pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo
 
 /// The switch over `api`, already signed in. The JMAP secret goes into the
 /// keyring just before the store's one transaction and out again when that
-/// fails. The IMAP password stays when a CalDAV, CardDAV or ManageSieve
-/// server the session does not replace signs in with it.
+/// fails. The IMAP password goes once the swap is in the database file,
+/// and stays when a CalDAV, CardDAV or ManageSieve server the session does
+/// not replace signs in with it.
 pub async fn to_jmap_over<J: JmapApi>(
     db: &Db,
     secrets: &Secrets,
@@ -331,6 +530,16 @@ pub async fn to_jmap_over<J: JmapApi>(
         return Err(SwitchError::NotImap);
     }
     let id = account.id;
+    // The account shown may be stale: a second click, or a retry after a
+    // switch that went through.
+    let provider = db.read(move |c| Ok(mailrs_store::accounts::account(c, id)?.map(|a| a.provider))).await?;
+    if provider != Some(Provider::Imap) {
+        return Err(SwitchError::NotImap);
+    }
+    // A switch that stopped between saving its secret and the swap left
+    // the secret here; nothing else keeps a JMAP secret for an IMAP account.
+    let jmap = Arc::clone(&secrets.jmap);
+    keyring(move || jmap.delete(id)).await?;
     let session = api.session().await.map_err(SwitchError::SignIn)?;
     if !session.offers(mailrs_jmap::MAIL) {
         return Err(SwitchError::SignIn(JmapError::UnknownCapability(mailrs_jmap::MAIL.to_string())));
@@ -339,7 +548,7 @@ pub async fn to_jmap_over<J: JmapApi>(
     let (stored, boxes, drafts) =
         db.read(move |c| Ok((stored_messages(c, id)?, stored_mailboxes(c, id)?, stored_drafts(c, id)?))).await?;
     let mut messages = match_messages(api, &stored).await?;
-    carry_drafts(db, id, api, &listed, &stored, &drafts, &mut messages).await?;
+    carry_drafts(db, account, api, &listed, &stored, &drafts, &mut messages).await?;
     drop(stored);
     let mailboxes = match_mailboxes(&boxes, &listed);
     let found = db.read(move |c| mailrs_store::services::load(c, id)).await?;
@@ -386,12 +595,7 @@ pub async fn to_jmap_over<J: JmapApi>(
         }
     };
     if !needs_dav_password {
-        let passwords = Arc::clone(&secrets.passwords);
-        keyring(move || {
-            passwords.delete_outgoing(id)?;
-            passwords.delete(id)
-        })
-        .await?;
+        forget_imap_passwords(db, secrets, id).await;
     }
     let account = db.read(move |c| mailrs_store::accounts::account(c, id)).await?.ok_or(SwitchError::NotImap)?;
     Ok(Switched { account, kept: adopted.kept, dropped: adopted.dropped, rules_off: adopted.rules_off })

@@ -18,7 +18,11 @@ use crate::{Result, StoreError, local_rules};
 pub struct StoredMessage {
     pub id: String,
     pub message_id: Option<String>,
+    /// When it arrived, or 0 when the server did not say.
     pub date: i64,
+    pub size: i64,
+    pub subject: String,
+    pub from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,9 +83,16 @@ const LOOSE_MESSAGE_TABLES: [&str; 4] = ["drafts", "invitations", "local_rules_r
 const THREAD_TABLES: [&str; 2] = ["reminders", "follow_up_dismissals"];
 
 pub fn stored_messages(conn: &Connection, account_id: AccountId) -> Result<Vec<StoredMessage>> {
-    let mut stmt = conn.prepare("SELECT id, rfc822_msgid, date FROM messages WHERE account_id = ?1")?;
+    let mut stmt = conn.prepare("SELECT id, rfc822_msgid, date, size, subject, from_addr FROM messages WHERE account_id = ?1")?;
     let rows = stmt.query_map(params![account_id], |row| {
-        Ok(StoredMessage { id: row.get(0)?, message_id: row.get(1)?, date: row.get(2)? })
+        Ok(StoredMessage {
+            id: row.get(0)?,
+            message_id: row.get(1)?,
+            date: row.get(2)?,
+            size: row.get(3)?,
+            subject: row.get(4)?,
+            from: row.get(5)?,
+        })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
