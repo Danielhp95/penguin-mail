@@ -131,13 +131,14 @@ pub fn delete(conn: &Connection, account_id: AccountId, id: &str) -> Result<Vec<
 }
 
 /// Removes a mailbox the server's listing no longer names, as [`delete`]
-/// does. A POP3 account's folders live only in the store, so a sync takes
-/// none of them away: it keeps the mailbox and answers no threads.
-pub fn gone(conn: &Connection, account_id: AccountId, id: &str) -> Result<Vec<String>> {
+/// does, and answers the threads it touched. A POP3 account's folders
+/// live only in the store, so a sync takes none of them away: it keeps
+/// the mailbox and answers `None`.
+pub fn gone(conn: &Connection, account_id: AccountId, id: &str) -> Result<Option<Vec<String>>> {
     if !deletion::allowed(conn, account_id, Cause::Sync)? {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    delete(conn, account_id, id)
+    delete(conn, account_id, id).map(Some)
 }
 
 /// The mailboxes the server listed, by id.

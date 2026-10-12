@@ -54,9 +54,11 @@ impl AccountSync {
                     .iter()
                     .filter(|s| remote.iter().all(|r| r.id != s.id))
                 {
-                    threads.extend(mailboxes::gone(c, account_id, &gone.id)?);
-                    changed = true;
-                    moved = true;
+                    if let Some(touched) = mailboxes::gone(c, account_id, &gone.id)? {
+                        threads.extend(touched);
+                        changed = true;
+                        moved = true;
+                    }
                 }
                 for mailbox in remote.iter().filter(|r| !stored.contains(r)) {
                     moved |= stored.iter().any(|s| s.id == mailbox.id && s.name != mailbox.name);

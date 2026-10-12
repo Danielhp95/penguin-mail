@@ -120,7 +120,7 @@ fn a_folder_the_listing_no_longer_names_stays_in_a_pop3_account() {
         .unwrap()
         .expect("a new account");
     store(&conn, &[meta(id, "pop3/u1", "t1", 100, &["Projects"])]);
-    assert!(mailboxes::gone(&conn, id, "Projects").unwrap().is_empty());
+    assert_eq!(mailboxes::gone(&conn, id, "Projects").unwrap(), None, "kept, so nothing changed");
     assert_eq!(labels_of(&conn, id, "pop3/u1"), ["Projects"]);
 }
 
@@ -128,6 +128,6 @@ fn a_folder_the_listing_no_longer_names_stays_in_a_pop3_account() {
 fn a_folder_a_server_no_longer_lists_leaves_with_its_filings() {
     let (conn, id) = db();
     store(&conn, &[meta(id, "a", "t1", 100, &["Projects"])]);
-    assert_eq!(mailboxes::gone(&conn, id, "Projects").unwrap(), ["t1"]);
+    assert_eq!(mailboxes::gone(&conn, id, "Projects").unwrap(), Some(vec!["t1".to_string()]));
     assert!(labels_of(&conn, id, "a").is_empty());
 }
