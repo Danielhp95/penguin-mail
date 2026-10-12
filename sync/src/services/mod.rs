@@ -10,6 +10,7 @@
 //! and its pacing are neutral.
 
 mod any;
+mod beside;
 mod caldav;
 mod carddav;
 mod clients;
@@ -30,6 +31,7 @@ pub use caldav::CalDav;
 pub use any::{AnyAutoReply, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules};
 pub use carddav::CardDav;
 pub use clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp};
+pub use beside::RulesBeside;
 pub use local::LocalRules;
 pub use google::{Google, ID_PAGE_SIZE, LIST_PAGE_SIZE, is_workspace};
 pub use imap::{Imap, ImapApi, ImapSettings, Submit};

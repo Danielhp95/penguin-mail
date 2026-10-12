@@ -687,12 +687,15 @@ fn switch_row(icon: &'static str, title: String, subtitle: String) -> SwitchRow 
     SwitchRow { icon, title, subtitle }
 }
 
-/// The dialog's rows for `account`. `calendar_stays` adds the line about
-/// the app password its calendars keep signing in with, for a provider
-/// whose JMAP takes a token while CalDAV takes that password.
-pub fn switch_rows(account: &Account, calendar_stays: bool) -> SwitchRows {
+/// The dialog's rows for `account`. `calendars` says the account reads
+/// calendars from a CalDAV server. Where the JMAP sign-in takes a `token`,
+/// a line says the app password those calendars sign in with stays, as at
+/// Fastmail, whose JMAP serves no calendar. Where it takes the password,
+/// the server may serve calendars over JMAP, and a line says the switch
+/// then reads them again from there.
+pub fn switch_rows(account: &Account, calendars: bool, token: bool) -> SwitchRows {
     let provider = mailrs_discover::resolved_provider_name(account.provider_name());
-    let changes = vec![
+    let mut changes = vec![
         switch_row(
             "penguin-mail-inbox-symbolic",
             gettext("New mail arrives as it is sent"),
@@ -716,7 +719,14 @@ pub fn switch_rows(account: &Account, calendar_stays: bool) -> SwitchRows {
             gettext("Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."),
         ),
     ];
-    if calendar_stays {
+    if calendars && !token {
+        changes.push(switch_row(
+            "penguin-mail-calendar-symbolic",
+            gettext("Calendars are read again where JMAP serves them"),
+            fill(&gettext("If {provider} offers calendars over JMAP, Penguin Mail reads them from there."), &[("provider", &provider)]),
+        ));
+    }
+    if calendars && token {
         stays.push(switch_row(
             "penguin-mail-calendar-symbolic",
             gettext("Calendar sign-in"),
@@ -736,20 +746,51 @@ pub struct SwitchFailure {
     pub again: bool,
 }
 
+/// What the switch dialog asked for, which a failure's words name.
+#[derive(Debug, Clone, Copy)]
+pub struct SwitchAsked<'a> {
+    pub provider: &'a str,
+    pub address: &'a str,
+    /// The field takes a token rather than a password.
+    pub token: bool,
+    /// The server also offers a sign-in in the browser.
+    pub browser: bool,
+}
+
+/// The failure toast's line for `reason`, a whole sentence.
+fn switch_line(reason: &str) -> String {
+    format!(
+        "{} {}",
+        with_reason(&gettext("Could not switch to JMAP: {reason}"), &reason, &[]),
+        gettext("Your IMAP account is unchanged.")
+    )
+}
+
 /// The failure toast's words for `err` from `Core::switch_to_jmap`.
-pub fn switch_failure(err: &anyhow::Error, provider: &str, token: bool) -> SwitchFailure {
+pub fn switch_failure(err: &anyhow::Error, asked: &SwitchAsked) -> SwitchFailure {
     use mailrs_jmap::JmapError;
     use mailrs_sync::switch::SwitchError;
+    let (provider, token) = (asked.provider, asked.token);
     let named = [("provider", provider)];
     let mut again = false;
     let reason = match err.downcast_ref::<SwitchError>() {
         Some(SwitchError::NotImap) => {
             return SwitchFailure { line: gettext("This account uses JMAP already."), again };
         }
-        Some(SwitchError::SignIn(JmapError::Unauthorized)) => match token {
-            true => fill(&gettext("{provider} did not accept the token."), &named),
-            false => fill(&gettext("{provider} did not accept the password."), &named),
-        },
+        Some(SwitchError::SignIn(JmapError::Unauthorized)) => {
+            let refused = match token {
+                true => fill(&gettext("{provider} did not accept the token."), &named),
+                false => fill(&gettext("{provider} did not accept the password."), &named),
+            };
+            match asked.browser {
+                true => format!("{refused} {}", gettext("You can choose Sign In With Browser instead.")),
+                false => refused,
+            }
+        }
+        Some(SwitchError::OtherAccount) => fill(
+            &gettext("{provider} signed in to another account, not {address}."),
+            &[("provider", provider), ("address", asked.address)],
+        ),
         Some(SwitchError::SignIn(JmapError::BadCredential)) => match token {
             true => gettext("The token holds a character that cannot be sent."),
             false => gettext("The password holds a character that cannot be sent."),
@@ -757,6 +798,9 @@ pub fn switch_failure(err: &anyhow::Error, provider: &str, token: bool) -> Switc
         Some(SwitchError::SignIn(JmapError::Network(_))) => fill(&gettext("{provider} does not answer."), &named),
         Some(SwitchError::SignIn(_)) => {
             fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
+        }
+        Some(SwitchError::Drafts(_)) => {
+            fill(&gettext("{provider} did not give the draft of a message waiting in Send Later."), &named)
         }
         Some(SwitchError::Sync(SyncError::Backend(BackendError::Changed))) => {
             again = true;
@@ -770,12 +814,36 @@ pub fn switch_failure(err: &anyhow::Error, provider: &str, token: bool) -> Switc
             }
         }
     };
-    let line = format!(
-        "{} {}",
-        with_reason(&gettext("Could not switch to JMAP: {reason}"), &reason, &[]),
-        gettext("Your IMAP account is unchanged.")
-    );
-    SwitchFailure { line, again }
+    SwitchFailure { line: switch_line(&reason), again }
+}
+
+/// The failure toast's words when Sign In With Browser did not end in a
+/// grant, or None when the person canceled it.
+pub fn switch_browser_failure(err: &anyhow::Error, provider: &str) -> Option<SwitchFailure> {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::sign_in::BrowserSignInError;
+    let named = [("provider", provider)];
+    let reason = match err.downcast_ref::<BrowserSignInError>() {
+        Some(BrowserSignInError::Canceled) => return None,
+        Some(BrowserSignInError::Jmap(
+            JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient | JmapError::Forbidden(_),
+        )) => fill(&gettext("{provider} refused the sign-in in the browser."), &named),
+        Some(BrowserSignInError::Jmap(JmapError::Declined)) => {
+            fill(&gettext("You did not allow Penguin Mail on {provider}'s page."), &named)
+        }
+        Some(BrowserSignInError::Jmap(JmapError::Network(_))) => fill(&gettext("{provider} does not answer."), &named),
+        Some(BrowserSignInError::Jmap(_)) => {
+            fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
+        }
+        _ => {
+            let said = err.to_string();
+            match said.ends_with(['.', '!', '?']) {
+                true => said,
+                false => format!("{said}."),
+            }
+        }
+    };
+    Some(SwitchFailure { line: switch_line(&reason), again: false })
 }
 
 /// The window's toast once `address` has switched, with the local rules
@@ -978,7 +1046,7 @@ mod tests {
 
     #[test]
     fn the_switch_says_what_moves_and_what_stays() {
-        let rows = super::switch_rows(&fastmail(), true);
+        let rows = super::switch_rows(&fastmail(), true, true);
         let said: Vec<String> = rows.changes.iter().chain(&rows.stays).map(|r| format!("{} {}", r.title, r.subtitle)).collect();
         let said = said.join("\n");
         assert!(said.contains("Fastmail"), "{said}");
@@ -1001,14 +1069,63 @@ mod tests {
 
     #[test]
     fn only_a_token_sign_in_names_the_calendar_password_that_stays() {
-        assert_eq!(super::switch_rows(&fastmail(), true).stays.len(), 3);
-        assert_eq!(super::switch_rows(&fastmail(), false).stays.len(), 2);
+        assert_eq!(super::switch_rows(&fastmail(), true, true).stays.len(), 3);
+        assert_eq!(super::switch_rows(&fastmail(), false, true).stays.len(), 2);
+    }
+
+    #[test]
+    fn a_password_server_says_its_calendars_may_come_over_jmap() {
+        let rows = super::switch_rows(&fastmail(), true, false);
+        assert_eq!(rows.stays.len(), 2, "no app password stays for the calendar");
+        let last = rows.changes.last().expect("rows");
+        assert_eq!(last.title, "Calendars are read again where JMAP serves them");
+        assert_eq!(last.subtitle, "If Fastmail offers calendars over JMAP, Penguin Mail reads them from there.");
+    }
+
+    const TOKEN: super::SwitchAsked<'static> =
+        super::SwitchAsked { provider: "Fastmail", address: "dana@fastmail.com", token: true, browser: false };
+
+    #[test]
+    fn a_refused_password_names_the_browser_when_the_server_offers_it() {
+        let refused = anyhow::Error::new(mailrs_sync::switch::SwitchError::SignIn(mailrs_jmap::JmapError::Unauthorized));
+        let asked = super::SwitchAsked { token: false, browser: true, ..TOKEN };
+        assert_eq!(
+            super::switch_failure(&refused, &asked).line,
+            "Could not switch to JMAP: Fastmail did not accept the password. You can choose Sign In With Browser instead. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_sign_in_to_another_account_names_the_one_that_switches() {
+        let other = anyhow::Error::new(mailrs_sync::switch::SwitchError::OtherAccount);
+        assert_eq!(
+            super::switch_failure(&other, &TOKEN).line,
+            "Could not switch to JMAP: Fastmail signed in to another account, not dana@fastmail.com. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_the_server_refused_says_so() {
+        let refused = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::Jmap(mailrs_jmap::JmapError::Unauthorized));
+        let failed = super::switch_browser_failure(&refused, "Fastmail").expect("words");
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail refused the sign-in in the browser. Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_canceled_browser_sign_in_says_nothing() {
+        let canceled = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::Canceled);
+        assert_eq!(super::switch_browser_failure(&canceled, "Fastmail"), None);
     }
 
     #[test]
     fn a_refused_token_says_the_imap_account_is_unchanged() {
         let refused = anyhow::Error::new(mailrs_sync::switch::SwitchError::SignIn(mailrs_jmap::JmapError::Unauthorized));
-        let failed = super::switch_failure(&refused, "Fastmail", true);
+        let failed = super::switch_failure(&refused, &TOKEN);
         assert_eq!(
             failed.line,
             "Could not switch to JMAP: Fastmail did not accept the token. Your IMAP account is unchanged."
@@ -1017,11 +1134,24 @@ mod tests {
     }
 
     #[test]
+    fn a_send_later_draft_the_server_kept_back_says_so() {
+        let kept = anyhow::Error::new(mailrs_sync::switch::SwitchError::Drafts(mailrs_sync::SyncError::Backend(
+            mailrs_sync::BackendError::NotFound,
+        )));
+        let failed = super::switch_failure(&kept, &TOKEN);
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail did not give the draft of a message waiting in Send Later. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
     fn mail_that_kept_changing_offers_another_try() {
         let changed = anyhow::Error::new(mailrs_sync::switch::SwitchError::Sync(mailrs_sync::SyncError::Backend(
             mailrs_sync::BackendError::Changed,
         )));
-        let failed = super::switch_failure(&changed, "Fastmail", true);
+        let failed = super::switch_failure(&changed, &TOKEN);
         assert!(failed.again);
         assert!(failed.line.ends_with("Your IMAP account is unchanged."), "{}", failed.line);
     }

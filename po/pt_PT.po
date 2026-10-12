@@ -2074,26 +2074,26 @@ msgstr ""
 "O Penguin Mail não conseguiu atualizar o arquivo de correio e manteve o "
 "anterior."
 
-#: app/src/core.rs:737 app/src/core.rs:812 app/src/core.rs:865
-#: app/src/core.rs:930 app/src/core.rs:1024
+#: app/src/core.rs:738 app/src/core.rs:813 app/src/core.rs:866
+#: app/src/core.rs:931 app/src/core.rs:1025
 msgid "Demo mode cannot add real accounts."
 msgstr "O modo de demonstração não adiciona contas reais."
 
-#: app/src/core.rs:751
+#: app/src/core.rs:752
 msgid "Canceled."
 msgstr "Cancelado."
 
-#: app/src/core.rs:755
+#: app/src/core.rs:756
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Desistiu de esperar pelo navegador ao fim de cinco minutos."
 
-#: app/src/core.rs:1174 app/src/core.rs:1197
+#: app/src/core.rs:1175 app/src/core.rs:1198
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Esta conta não guarda nenhuma palavra-passe que um servidor de calendário ou "
 "de contactos aceite."
 
-#: app/src/core.rs:1333
+#: app/src/core.rs:1337 app/src/core.rs:1376
 msgid "The demo cannot switch accounts."
 msgstr "O modo de demonstração não muda contas."
 
@@ -2360,7 +2360,7 @@ msgstr "Arquivar"
 
 #: app/src/notify.rs:63 app/src/ui/conversation.rs:388
 #: app/src/ui/conversation.rs:1095 app/src/ui/preferences.rs:140
-#: app/src/ui/rules.rs:381 app/src/ui/window/message_menu.rs:128
+#: app/src/ui/rules.rs:392 app/src/ui/window/message_menu.rs:128
 msgid "Mark as Read"
 msgstr "Marcar como lida"
 
@@ -2796,19 +2796,19 @@ msgstr ""
 "O correio de {address} só existe neste computador. Para guardar uma cópia, "
 "saia do Penguin Mail e faça depois uma cópia de segurança deste ficheiro."
 
-#: app/src/offered.rs:698
+#: app/src/offered.rs:701
 msgid "New mail arrives as it is sent"
 msgstr "O correio novo chega assim que é enviado"
 
-#: app/src/offered.rs:699
+#: app/src/offered.rs:702
 msgid "{provider} pushes it over JMAP, and you can send from your aliases."
 msgstr "{provider} entrega-o por JMAP e pode enviar a partir dos seus alias."
 
-#: app/src/offered.rs:703
+#: app/src/offered.rs:706
 msgid "Mail is matched over JMAP"
 msgstr "O correio é associado por JMAP"
 
-#: app/src/offered.rs:704
+#: app/src/offered.rs:707
 msgid ""
 "Penguin Mail keeps the mail on this computer and downloads again only the "
 "messages it cannot match."
@@ -2816,74 +2816,107 @@ msgstr ""
 "O Penguin Mail mantém o correio neste computador e só volta a transferir as "
 "mensagens que não consegue associar."
 
-#: app/src/offered.rs:710
+#: app/src/offered.rs:713
 msgid "Name, color and place"
 msgstr "Nome, cor e lugar"
 
-#: app/src/offered.rs:711
+#: app/src/offered.rs:714
 msgid "{address} keeps its spot in the sidebar."
 msgstr "{address} mantém o lugar na barra lateral."
 
-#: app/src/offered.rs:715
+#: app/src/offered.rs:718
 msgid "Your own data"
 msgstr "Os seus dados"
 
-#: app/src/offered.rs:716
+#: app/src/offered.rs:719
 msgid "Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."
 msgstr ""
 "Lembretes, seguimentos, sinalizadores, regras, VIP, assinaturas e rascunhos."
 
-#: app/src/offered.rs:722
+#: app/src/offered.rs:725
+msgid "Calendars are read again where JMAP serves them"
+msgstr "Os calendários são lidos de novo onde o JMAP os fornece"
+
+#: app/src/offered.rs:726
+msgid ""
+"If {provider} offers calendars over JMAP, Penguin Mail reads them from there."
+msgstr ""
+"Se {provider} disponibilizar calendários por JMAP, o Penguin Mail lê-os a "
+"partir daí."
+
+#: app/src/offered.rs:732
 msgid "Calendar sign-in"
 msgstr "Início de sessão dos calendários"
 
-#: app/src/offered.rs:723
+#: app/src/offered.rs:733
 msgid "The app password you use for calendars stays as it is."
 msgstr "A palavra-passe de aplicação que usa nos calendários fica como está."
 
-#: app/src/offered.rs:747
+#: app/src/offered.rs:764
+msgid "Could not switch to JMAP: {reason}"
+msgstr "Não foi possível mudar para JMAP: {reason}"
+
+#: app/src/offered.rs:765
+msgid "Your IMAP account is unchanged."
+msgstr "A sua conta IMAP fica como estava."
+
+#: app/src/offered.rs:778
 msgid "This account uses JMAP already."
 msgstr "Esta conta já usa JMAP."
 
-#: app/src/offered.rs:750
+#: app/src/offered.rs:782
 msgid "{provider} did not accept the token."
 msgstr "{provider} não aceitou o token."
 
-#: app/src/offered.rs:751
+#: app/src/offered.rs:783
 msgid "{provider} did not accept the password."
 msgstr "{provider} não aceitou a palavra-passe."
 
-#: app/src/offered.rs:754
+#: app/src/offered.rs:786
+msgid "You can choose Sign In With Browser instead."
+msgstr "Pode escolher Iniciar sessão com o navegador em alternativa."
+
+#: app/src/offered.rs:791
+msgid "{provider} signed in to another account, not {address}."
+msgstr "{provider} iniciou sessão noutra conta, não em {address}."
+
+#: app/src/offered.rs:795
 msgid "The token holds a character that cannot be sent."
 msgstr "O token tem um carácter que não pode ser enviado."
 
-#: app/src/offered.rs:755
+#: app/src/offered.rs:796
 msgid "The password holds a character that cannot be sent."
 msgstr "A palavra-passe tem um carácter que não pode ser enviado."
 
-#: app/src/offered.rs:757
+#: app/src/offered.rs:798 app/src/offered.rs:834
 msgid "{provider} does not answer."
 msgstr "{provider} não responde."
 
-#: app/src/offered.rs:763
+#: app/src/offered.rs:803
+msgid "{provider} did not give the draft of a message waiting in Send Later."
+msgstr ""
+"{provider} não entregou o rascunho de uma mensagem à espera em Enviar mais "
+"tarde."
+
+#: app/src/offered.rs:807
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 "O correio em {provider} continuou a mudar enquanto o Penguin Mail o "
 "associava."
 
-#: app/src/offered.rs:775
-msgid "Could not switch to JMAP: {reason}"
-msgstr "Não foi possível mudar para JMAP: {reason}"
+#: app/src/offered.rs:830
+msgid "{provider} refused the sign-in in the browser."
+msgstr "{provider} recusou o início de sessão no navegador."
 
-#: app/src/offered.rs:776
-msgid "Your IMAP account is unchanged."
-msgstr "A sua conta IMAP fica como estava."
+#: app/src/offered.rs:832
+msgid "You did not allow Penguin Mail on {provider}'s page."
+msgstr "Não autorizou o Penguin Mail na página de {provider}."
 
-#: app/src/offered.rs:786
+#: app/src/offered.rs:854
 msgid "{address} now uses JMAP"
 msgstr "{address} usa agora JMAP"
 
-#: app/src/offered.rs:790
+#: app/src/offered.rs:858
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."
@@ -3744,7 +3777,7 @@ msgstr "Todo o correio"
 msgid "Delete it"
 msgstr "Eliminá-la"
 
-#: app/src/rules.rs:257 app/src/ui/rules.rs:380
+#: app/src/rules.rs:257 app/src/ui/rules.rs:391
 msgid "Skip the Inbox"
 msgstr "Saltar a caixa de entrada"
 
@@ -3823,7 +3856,7 @@ msgstr "Contactos"
 msgid "Rules"
 msgstr "Regras"
 
-#: app/src/servers.rs:39
+#: app/src/servers.rs:39 app/src/ui/rules.rs:238
 msgid "On this computer, while Penguin Mail is open"
 msgstr "Neste computador, enquanto o Penguin Mail estiver aberto"
 
@@ -4400,7 +4433,9 @@ msgstr "Tempo restante"
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "O Penguin Mail deixa de esperar ao fim de cinco minutos."
 
-#: app/src/ui/add_account.rs:795
+#. The wait for the browser, in the button's place: a spinner and its
+#. line, with Open Page Again and Cancel under them.
+#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:140
 msgid "Open Page Again"
 msgstr "Abrir a página de novo"
 
@@ -4410,7 +4445,7 @@ msgstr "Copiar ligação"
 
 #: app/src/ui/add_account.rs:805 app/src/ui/add_account.rs:976
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:326
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:502
 msgid "Try Again"
 msgstr "Tentar de novo"
 
@@ -4421,12 +4456,13 @@ msgstr "Tentar de novo"
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
 #: app/src/ui/composer/mod.rs:1847 app/src/ui/composer/mod.rs:1926
 #: app/src/ui/composer/mod.rs:2252 app/src/ui/composer/mod.rs:2706
-#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:456 app/src/ui/rules.rs:636
+#: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:467 app/src/ui/rules.rs:647
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
-#: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
-#: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
-#: app/src/ui/window/arrange.rs:148 app/src/ui/window/images.rs:101
-#: app/src/ui/window/organize.rs:73 app/src/ui/window/organize.rs:122
+#: app/src/ui/switch_jmap.rs:141 app/src/ui/templates.rs:239
+#: app/src/ui/unsubscribe.rs:119 app/src/ui/vacation.rs:45
+#: app/src/ui/when.rs:52 app/src/ui/window/arrange.rs:148
+#: app/src/ui/window/images.rs:101 app/src/ui/window/organize.rs:73
+#: app/src/ui/window/organize.rs:122
 msgid "Cancel"
 msgstr "Cancelar"
 
@@ -4440,7 +4476,8 @@ msgstr "Iniciar sessão"
 msgid "Your Name"
 msgstr "O seu nome"
 
-#: app/src/ui/add_account.rs:939
+#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:112
+#: app/src/ui/switch_jmap.rs:115
 msgid "Sign In With Browser"
 msgstr "Iniciar sessão com o navegador"
 
@@ -4959,7 +4996,7 @@ msgstr "Testar"
 #: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/calendar/editor.rs:179
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
 #: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2706
-#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:449
+#: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:460
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/save_contacts.rs:110
@@ -6093,7 +6130,7 @@ msgid "New Calendar"
 msgstr "Novo calendário"
 
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:675
-#: app/src/ui/rules.rs:450 app/src/ui/smart_editor.rs:146
+#: app/src/ui/rules.rs:461 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
 msgid "Create"
@@ -6864,11 +6901,11 @@ msgid "Masked"
 msgstr "Mascarado"
 
 #: app/src/ui/composer/mod.rs:504 app/src/ui/composer/mod.rs:505
-#: app/src/ui/rules.rs:364
+#: app/src/ui/rules.rs:375
 msgid "From"
 msgstr "De"
 
-#: app/src/ui/composer/mod.rs:510 app/src/ui/rules.rs:365
+#: app/src/ui/composer/mod.rs:510 app/src/ui/rules.rs:376
 msgid "To"
 msgstr "Para"
 
@@ -6880,7 +6917,7 @@ msgstr "Cc"
 msgid "Bcc"
 msgstr "Bcc"
 
-#: app/src/ui/composer/mod.rs:526 app/src/ui/rules.rs:366
+#: app/src/ui/composer/mod.rs:526 app/src/ui/rules.rs:377
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr "Assunto"
@@ -8665,7 +8702,7 @@ msgstr "Esta mensagem não foi enviada"
 msgid "This message is waiting to be sent"
 msgstr "Esta mensagem está à espera de ser enviada"
 
-#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:450
+#: app/src/ui/rules.rs:73 app/src/ui/rules.rs:75 app/src/ui/rules.rs:461
 msgid "New Rule"
 msgstr "Nova regra"
 
@@ -8685,133 +8722,133 @@ msgstr "Adicionar regra"
 msgid "Made elsewhere. Change it where you made it."
 msgstr "Criada noutro local. Altere-a onde a criou."
 
-#: app/src/ui/rules.rs:237
+#: app/src/ui/rules.rs:248
 msgid "Off: its folder is not on this server"
 msgstr "Desligada: a pasta não existe neste servidor"
 
-#: app/src/ui/rules.rs:247
+#: app/src/ui/rules.rs:258
 msgid "Edit the rule for {mail}"
 msgstr "Editar a regra para {mail}"
 
-#: app/src/ui/rules.rs:258
+#: app/src/ui/rules.rs:269
 msgid "Delete Rule"
 msgstr "Eliminar regra"
 
-#: app/src/ui/rules.rs:265
+#: app/src/ui/rules.rs:276
 msgid "Delete the rule for {mail}"
 msgstr "Eliminar a regra para {mail}"
 
-#: app/src/ui/rules.rs:282
+#: app/src/ui/rules.rs:293
 msgid "Rules Written Elsewhere"
 msgstr "Regras escritas noutro sítio"
 
-#: app/src/ui/rules.rs:284
+#: app/src/ui/rules.rs:295
 msgid ""
 "Penguin Mail keeps these as they are. Change them where they were written."
 msgstr ""
 "O Penguin Mail mantém-nas tal como estão. Altere-as onde foram escritas."
 
-#: app/src/ui/rules.rs:315
+#: app/src/ui/rules.rs:326
 msgid "Rule deleted"
 msgstr "Regra eliminada"
 
-#: app/src/ui/rules.rs:319
+#: app/src/ui/rules.rs:330
 msgid "Could not delete the rule: {reason}"
 msgstr "Não foi possível eliminar a regra: {reason}"
 
-#: app/src/ui/rules.rs:327
+#: app/src/ui/rules.rs:338
 msgid "Could Not Load the Rules"
 msgstr "Não foi possível carregar as regras"
 
-#: app/src/ui/rules.rs:336
+#: app/src/ui/rules.rs:347
 msgid "Allow Rules"
 msgstr "Permitir regras"
 
-#: app/src/ui/rules.rs:367
+#: app/src/ui/rules.rs:378
 msgid "Has the Words"
 msgstr "Contém as palavras"
 
-#: app/src/ui/rules.rs:368
+#: app/src/ui/rules.rs:379
 msgid "Doesn't Have"
 msgstr "Não contém"
 
-#: app/src/ui/rules.rs:370
+#: app/src/ui/rules.rs:381
 msgid "Has an Attachment"
 msgstr "Tem um anexo"
 
-#: app/src/ui/rules.rs:372
+#: app/src/ui/rules.rs:383
 msgid "When Mail Matches"
 msgstr "Quando o correio corresponder"
 
-#: app/src/ui/rules.rs:382
+#: app/src/ui/rules.rs:393
 msgid "Star It"
 msgstr "Marcar com estrela"
 
-#: app/src/ui/rules.rs:383
+#: app/src/ui/rules.rs:394
 msgid "Never Send to Spam"
 msgstr "Nunca enviar para spam"
 
-#: app/src/ui/rules.rs:384
+#: app/src/ui/rules.rs:395
 msgid "Delete It"
 msgstr "Eliminar"
 
-#: app/src/ui/rules.rs:387
+#: app/src/ui/rules.rs:398
 msgid "Apply Label"
 msgstr "Aplicar etiqueta"
 
-#: app/src/ui/rules.rs:387
+#: app/src/ui/rules.rs:398
 msgid "Don't Apply a Label"
 msgstr "Não aplicar etiqueta"
 
-#: app/src/ui/rules.rs:388
+#: app/src/ui/rules.rs:399
 msgid "Don't Move"
 msgstr "Não mover"
 
-#: app/src/ui/rules.rs:388
+#: app/src/ui/rules.rs:399
 msgid "Move to Folder"
 msgstr "Mover para pasta"
 
-#: app/src/ui/rules.rs:398
+#: app/src/ui/rules.rs:409
 msgid "Do This"
 msgstr "Fazer isto"
 
-#: app/src/ui/rules.rs:438
+#: app/src/ui/rules.rs:449
 msgid "This rule also does things this form can't show. Saving keeps them."
 msgstr ""
 "Esta regra também faz coisas que este formulário não mostra. Ao guardar, "
 "mantêm-se."
 
-#: app/src/ui/rules.rs:449
+#: app/src/ui/rules.rs:460
 msgid "Edit Rule"
 msgstr "Editar regra"
 
-#: app/src/ui/rules.rs:522
+#: app/src/ui/rules.rs:533
 msgid "Rule added"
 msgstr "Regra adicionada"
 
-#: app/src/ui/rules.rs:537 app/src/ui/rules.rs:609
+#: app/src/ui/rules.rs:548 app/src/ui/rules.rs:620
 msgid "Could not add the rule: {reason}"
 msgstr "Não foi possível adicionar a regra: {reason}"
 
-#: app/src/ui/rules.rs:555
+#: app/src/ui/rules.rs:566
 msgid "Rule saved"
 msgstr "Regra guardada"
 
-#: app/src/ui/rules.rs:560
+#: app/src/ui/rules.rs:571
 msgid "Saved, but Gmail kept the old rule too, so both run now: {reason}"
 msgstr ""
 "Guardada, mas o Gmail manteve também a regra antiga, por isso as duas estão "
 "ativas: {reason}"
 
-#: app/src/ui/rules.rs:580
+#: app/src/ui/rules.rs:591
 msgid "Could not save the rule: {reason}"
 msgstr "Não foi possível guardar a regra: {reason}"
 
-#: app/src/ui/rules.rs:630
+#: app/src/ui/rules.rs:641
 msgid "Replace “{script}”?"
 msgstr "Substituir “{script}”?"
 
-#: app/src/ui/rules.rs:632
+#: app/src/ui/rules.rs:643
 msgid ""
 "{provider} runs one set of rules at a time, and it runs “{script}” now. "
 "Penguin Mail's rules would take its place; “{script}” stays on the server, "
@@ -8821,7 +8858,7 @@ msgstr ""
 "“{script}”. As regras do Penguin Mail ficariam no seu lugar; “{script}” "
 "continua no servidor, desligado."
 
-#: app/src/ui/rules.rs:636
+#: app/src/ui/rules.rs:647
 msgid "Replace"
 msgstr "Substituir"
 
@@ -9081,27 +9118,31 @@ msgstr "Dê um nome à caixa"
 msgid "Add a condition with a value"
 msgstr "Adicione uma condição com um valor"
 
-#: app/src/ui/switch_jmap.rs:79
+#: app/src/ui/switch_jmap.rs:92
 msgid "What changes"
 msgstr "O que muda"
 
-#: app/src/ui/switch_jmap.rs:80
+#: app/src/ui/switch_jmap.rs:93
 msgid "What stays"
 msgstr "O que fica"
 
-#: app/src/ui/switch_jmap.rs:89
+#: app/src/ui/switch_jmap.rs:102
 msgid "Sent to {host} and nowhere else."
 msgstr "Enviado para {host} e para mais nenhum lado."
 
-#: app/src/ui/switch_jmap.rs:107 app/src/ui/switch_jmap.rs:283
+#: app/src/ui/switch_jmap.rs:136 app/src/ui/switch_jmap.rs:399
 msgid "Matching your mail…"
 msgstr "A fazer corresponder o seu correio…"
 
-#: app/src/ui/switch_jmap.rs:115
+#: app/src/ui/switch_jmap.rs:150 app/src/ui/switch_jmap.rs:442
+msgid "Finish signing in on {provider}'s page in your browser."
+msgstr "Termine o início de sessão na página de {provider} no seu navegador."
+
+#: app/src/ui/switch_jmap.rs:165
 msgid "Switch"
 msgstr "Mudar"
 
-#: app/src/ui/switch_jmap.rs:125
+#: app/src/ui/switch_jmap.rs:175
 msgid "Switch to JMAP"
 msgstr "Mudar para JMAP"
 
@@ -11239,11 +11280,7 @@ msgstr ""
 "O servidor ainda tem esta mensagem e não foi possível pedir-lhe que a "
 "libertasse. Tente mais tarde."
 
-#: sync/src/outbox.rs:816
-msgid "Waiting for the account to switch to JMAP"
-msgstr "À espera de que a conta mude para JMAP"
-
-#: sync/src/outbox.rs:1457
+#: sync/src/outbox.rs:1456
 msgid "The server could not be asked to let go of the message."
 msgstr "Não foi possível pedir ao servidor que libertasse a mensagem."
 
@@ -11558,7 +11595,11 @@ msgstr ""
 "O Penguin Mail mantém Caixa de entrada, Enviadas, Rascunhos, Lixo, Spam e "
 "Arquivo."
 
-#: sync/src/services/sieve.rs:195
+#: sync/src/services/sieve.rs:140 sync/src/services/sieve.rs:333
+msgid "The rule is read-only."
+msgstr "A regra é só de leitura."
+
+#: sync/src/services/sieve.rs:215
 msgid ""
 "{provider} offers no encrypted connection for rules, so Penguin Mail does "
 "not send your password there."
@@ -11566,7 +11607,7 @@ msgstr ""
 "{provider} não oferece uma ligação cifrada para regras, por isso o Penguin "
 "Mail não envia lá a sua palavra-passe."
 
-#: sync/src/services/sieve.rs:208
+#: sync/src/services/sieve.rs:228
 msgid ""
 "{provider} cannot run this rule: its server lacks the Sieve extension "
 "“{extension}”."
@@ -11574,41 +11615,37 @@ msgstr ""
 "{provider} não consegue executar esta regra: o servidor não tem a extensão "
 "Sieve “{extension}”."
 
-#: sync/src/services/sieve.rs:213
+#: sync/src/services/sieve.rs:233
 msgid "The folder this rule files into is not on the server yet."
 msgstr "A pasta para onde esta regra arquiva ainda não está no servidor."
 
-#: sync/src/services/sieve.rs:216
+#: sync/src/services/sieve.rs:236
 msgid "A rule on {provider} cannot keep mail out of Spam."
 msgstr "Uma regra em {provider} não consegue manter mensagens fora do Spam."
 
-#: sync/src/services/sieve.rs:220
+#: sync/src/services/sieve.rs:240
 msgid "{provider} does not mark mail as important."
 msgstr "{provider} não marca mensagens como importantes."
 
-#: sync/src/services/sieve.rs:224
+#: sync/src/services/sieve.rs:244
 msgid "A rule can file mail into one folder."
 msgstr "Uma regra pode arquivar mensagens numa só pasta."
 
-#: sync/src/services/sieve.rs:227
+#: sync/src/services/sieve.rs:247
 msgid "Say which mail the rule is for"
 msgstr "Indique a que mensagens se aplica a regra"
 
-#: sync/src/services/sieve.rs:229
+#: sync/src/services/sieve.rs:249
 msgid "Choose what the rule does"
 msgstr "Escolha o que a regra faz"
 
-#: sync/src/services/sieve.rs:313
-msgid "The rule is read-only."
-msgstr "A regra é só de leitura."
-
-#: sync/src/sign_in.rs:208
+#: sync/src/sign_in.rs:210
 msgid ""
 "You signed in to a different account than {address}, so nothing changed."
 msgstr ""
 "Iniciou sessão numa conta diferente de {address}, por isso nada foi alterado."
 
-#: sync/src/sign_in.rs:215
+#: sync/src/sign_in.rs:217
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} já está no Penguin Mail como conta {provider}."
 
@@ -11706,6 +11743,9 @@ msgstr "Marcar como não sendo spam"
 #: sync/src/triage.rs:70
 msgid "Move to {folder}"
 msgstr "Mover para {folder}"
+
+#~ msgid "Waiting for the account to switch to JMAP"
+#~ msgstr "À espera de que a conta mude para JMAP"
 
 #~ msgid "Hide My Email works with Gmail accounts."
 #~ msgstr "O Ocultar o meu e-mail funciona com contas Gmail."

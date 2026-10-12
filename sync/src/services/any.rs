@@ -17,6 +17,7 @@ use mailrs_gmail::{ConnectionsPage, ContactFields, LabelColor, Person};
 use mailrs_mime::Parts;
 
 use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp};
+use super::beside::RulesBeside;
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
@@ -50,6 +51,7 @@ macro_rules! forward_rules {
             AnyRules::Sieve(adapter) => adapter.$method($($arg),*).await,
             AnyRules::JmapSieve(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Local(adapter) => adapter.$method($($arg),*).await,
+            AnyRules::Beside(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -138,6 +140,9 @@ pub enum AnyRules {
     Sieve(SieveRules<AnySieve>),
     JmapSieve(SieveRules<JmapSieve<AnyJmap>>),
     Local(LocalRules),
+    /// A JMAP server's Sieve script beside local rules a switch from IMAP
+    /// could not move into it.
+    Beside(RulesBeside),
 }
 
 /// An account's automatic reply.
@@ -587,6 +592,7 @@ impl RulesService for AnyRules {
         match self {
             AnyRules::Sieve(adapter) => adapter.queues_offline(),
             AnyRules::JmapSieve(adapter) => adapter.queues_offline(),
+            AnyRules::Beside(adapter) => adapter.queues_offline(),
             _ => false,
         }
     }
@@ -600,6 +606,7 @@ impl AnyRules {
         match self {
             AnyRules::Sieve(rules) => rules.follow_folders(moved).await,
             AnyRules::JmapSieve(rules) => rules.follow_folders(moved).await,
+            AnyRules::Beside(rules) => rules.server().follow_folders(moved).await,
             _ => Ok(()),
         }
     }
@@ -618,7 +625,21 @@ impl AnyRules {
         match self {
             AnyRules::Sieve(adapter) => adapter.listing().await,
             AnyRules::JmapSieve(adapter) => adapter.listing().await,
+            AnyRules::Beside(adapter) => adapter.listing().await,
             other => Ok((other.filters().await?, Vec::new())),
+        }
+    }
+
+    /// Whether some of the rules run on this computer.
+    pub fn runs_here(&self) -> bool {
+        matches!(self, AnyRules::Local(_) | AnyRules::Beside(_))
+    }
+
+    /// The ids of the rules that run on this computer beside a server's.
+    pub async fn kept_here(&self) -> Result<Vec<String>, BackendError> {
+        match self {
+            AnyRules::Beside(adapter) => adapter.kept_here().await,
+            _ => Ok(Vec::new()),
         }
     }
 }

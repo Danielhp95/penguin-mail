@@ -546,11 +546,12 @@ impl Core {
         self.engine.account(account_id)
     }
 
-    /// Whether the account's rules run on this computer.
+    /// Whether the account's rules, or some of them, run on this
+    /// computer.
     pub fn rules_here(&self, account_id: AccountId) -> bool {
         self.account(account_id)
-            .and_then(|sync| sync.services().rules.as_ref().map(|r| r.place()))
-            == Some(mailrs_sync::RulesPlace::ThisComputer)
+            .and_then(|sync| sync.services().rules.as_ref().map(|r| r.runs_here()))
+            .unwrap_or(false)
     }
 
     /// Runs the account's local rules over its new Inbox mail.
@@ -1318,7 +1319,7 @@ impl Core {
     /// stops while the switch runs; afterwards the account starts again on
     /// whatever the store names, JMAP or still IMAP, whether or not the
     /// switch went through.
-    pub async fn switch_to_jmap(&self, account: Account, to: mailrs_sync::switch::SwitchTo) -> Result<mailrs_sync::switch::Switched> {
+    pub async fn switch_to_jmap(&self, account: Account, how: mailrs_sync::switch::SwitchSignIn) -> Result<mailrs_sync::switch::Switched> {
         let engine = self.engine.current().ok_or_else(|| anyhow!("sync is not running"))?;
         let (db, secrets, outbox, demo) = (self.db.clone(), self.secrets.clone(), Arc::clone(&self.outbox), self.demo);
         let reach = Reach { connector: self.connector(), demo: self.demo_mail.clone() };
@@ -1328,16 +1329,23 @@ impl Core {
                 // A send already under way finishes first; anything due
                 // later waits for the account the switch leaves.
                 let _held = outbox.hold(id).await;
+                // Kept past the stop: it reads from the IMAP server the
+                // drafts Send Later messages name.
+                let imap = engine.account(id).ok();
                 engine.stop_account(id);
                 let switched = match demo {
                     true => Err(anyhow!(gettext("The demo cannot switch accounts."))),
-                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, to).await.map_err(anyhow::Error::from),
+                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, imap.as_deref(), how)
+                        .await
+                        .map_err(anyhow::Error::from),
                 };
+                drop(imap);
                 let now = match &switched {
                     Ok(switched) => Some(switched.account.clone()),
                     Err(_) => db.read(move |c| accounts::account(c, id)).await.ok().flatten(),
                 };
-                if let Err(err) = start_again(&reach, &engine, &db, &now.unwrap_or(account)).await {
+                let moved = switched.is_ok();
+                if let Err(err) = start_again(&reach, &engine, &db, &now.unwrap_or(account), moved).await {
                     tracing::warn!(account = id, error = %err, "could not start the account again after the switch");
                 }
                 switched
@@ -1352,11 +1360,46 @@ impl Core {
     }
 }
 
+impl Core {
+    /// Signs in on the JMAP server's own page in the browser for Switch to
+    /// JMAP, and hands back the grant; nothing is kept until the switch
+    /// runs. The account goes on syncing over IMAP while the browser is
+    /// open. `urls` and `cancel` work as for [`Core::sign_in_jmap_browser`].
+    pub async fn switch_grant(
+        &self,
+        offer: JmapBrowser,
+        address: String,
+        urls: async_channel::Sender<String>,
+        cancel: async_channel::Receiver<()>,
+    ) -> Result<mailrs_sync::sign_in::BrowserGrant> {
+        if self.demo {
+            bail!(gettext("The demo cannot switch accounts."));
+        }
+        self.call(async move {
+            let open = move |url: &str| {
+                let _ = urls.try_send(url.to_string());
+            };
+            let canceled = async move {
+                let _ = cancel.recv().await;
+            };
+            Ok::<_, anyhow::Error>(mailrs_sync::sign_in::browser_grant(offer, &address, open, canceled).await?)
+        })
+        .await
+    }
+}
+
 /// Starts `account`'s loop on the services the store names for it now,
-/// or marks it as needing a sign-in when nothing signs it in.
-async fn start_again(reach: &Reach, engine: &SyncEngine, db: &Db, account: &Account) -> Result<()> {
+/// or marks it as needing a sign-in when nothing signs it in. Once a
+/// switch went through, its local rules move into the server's Sieve
+/// script first, where the server runs one and takes them.
+async fn start_again(reach: &Reach, engine: &SyncEngine, db: &Db, account: &Account, switched: bool) -> Result<()> {
     match reach.connect(account).await? {
-        Connected::Ready(services) => engine.start_account(account.id, services),
+        Connected::Ready(mut services) => {
+            if switched {
+                mailrs_sync::switch::move_rules(&mut services).await;
+            }
+            engine.start_account(account.id, services);
+        }
         Connected::NeedsSignIn => {
             let id = account.id;
             db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth)).await?;
@@ -1797,7 +1840,7 @@ mod tests {
             secret: "not a token".into(),
         };
 
-        let switched = futures::executor::block_on(core.switch_to_jmap(fastmail.clone(), to));
+        let switched = futures::executor::block_on(core.switch_to_jmap(fastmail.clone(), mailrs_sync::switch::SwitchSignIn::Typed(to)));
 
         assert!(switched.is_err(), "the demo switches nothing");
         let after = core.engine.current().and_then(|e| e.account(fastmail.id).ok()).expect("it runs again");

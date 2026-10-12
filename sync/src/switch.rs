@@ -10,6 +10,9 @@
 //! it leaves the IMAP account as it was. Drafts the JMAP server lacks go
 //! up to it first, from the bytes kept here, so the switch loses none; a
 //! draft without a Message-ID gets one first, the one change made earlier.
+//! A Send Later message whose draft only the IMAP server holds takes the
+//! draft's bytes from it before the swap, since the JMAP send could not
+//! find the draft by its IMAP place.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
@@ -18,7 +21,7 @@ use mailrs_domain::translate::gettext;
 use mailrs_domain::{Account, AccountId, Provider};
 use mailrs_jmap::{Auth, Email, EmailQuery, JmapClient, JmapError, Mailbox};
 use mailrs_store::Db;
-use mailrs_store::jmap::{JmapAuth, JmapSaved};
+use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
 use mailrs_store::services::ServiceKind;
 use mailrs_store::switch::{Adoption, Moved, StoredMailbox, StoredMessage, adopt_jmap, stored_mailboxes, stored_messages};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -26,9 +29,10 @@ use serde_json::{Value, json};
 
 use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
+use crate::sign_in::BrowserGrant;
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
-use crate::{AnyJmap, BackendError, SyncError};
+use crate::{AccountServices, AccountSync, AnyJmap, AnyRules, BackendError, SyncError};
 
 /// Message-IDs one search asks for.
 const IDS_PER_QUERY: usize = 100;
@@ -386,6 +390,103 @@ fn new_message_id(address: &str) -> String {
     format!("{}.{}@{domain}", mailrs_gmail::random_token(12), std::process::id())
 }
 
+/// The reminders already shown, renamed for the JMAP calendar: each
+/// event's CalDAV calendar and id paired with the JMAP calendar and id of
+/// the event with the same UID (and the same occurrence, for a changed
+/// one). Without it a reminder shown before the switch goes up again once
+/// the JMAP calendar is read. A server that does not answer leaves the
+/// log as it is: the switch goes on, and at worst a reminder shows twice.
+async fn shown_reminders<J: JmapApi>(db: &Db, id: AccountId, api: &J) -> Vec<((String, String), (String, String))> {
+    let shown = db
+        .read(move |c| {
+            let mut stmt = c.prepare(
+                "SELECT DISTINCT r.calendar, r.event, e.uid, e.original_start FROM event_reminders_shown r \
+                 JOIN events e ON e.account_id = r.account_id AND e.calendar = r.calendar AND e.id = r.event \
+                 WHERE r.account_id = ?1",
+            )?;
+            let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<(String, String, String, Option<i64>)>>>()?)
+        })
+        .await;
+    let shown = match shown {
+        Ok(shown) => shown,
+        Err(err) => {
+            tracing::warn!(account = id, %err, "could not read the reminders already shown");
+            return Vec::new();
+        }
+    };
+    let mut renamed = Vec::new();
+    let mut by_uid: HashMap<String, Vec<mailrs_domain::calendar::Event>> = HashMap::new();
+    for (calendar, event, uid, original) in shown {
+        if !by_uid.contains_key(&uid) {
+            let page = match api.calendar_events_page(&json!({ "uid": uid }), 0, 8).await {
+                Ok(page) => page,
+                Err(err) => {
+                    tracing::info!(account = id, %err, "could not look up an event the reminders named");
+                    continue;
+                }
+            };
+            let events = page
+                .events
+                .iter()
+                .filter_map(|object| {
+                    let calendar = object["calendarIds"].as_object()?.iter().find(|(_, on)| on.as_bool() == Some(true))?.0.clone();
+                    Some(crate::services::jmap::jscal::events_of(object, &calendar, &[]))
+                })
+                .flatten()
+                .collect();
+            by_uid.insert(uid.clone(), events);
+        }
+        let mut same = by_uid[&uid].iter().filter(|e| e.original_start == original);
+        if let (Some(found), None) = (same.next(), same.next()) {
+            renamed.push(((calendar, event), (found.calendar.clone(), found.id.clone())));
+        }
+    }
+    renamed
+}
+
+/// A Send Later message whose draft only the IMAP server holds: its row,
+/// the draft's IMAP id and the bytes read from the server.
+struct Waiting {
+    row: i64,
+    draft_id: String,
+    raw: Vec<u8>,
+}
+
+/// Reads from the IMAP server the draft of every Send Later message that
+/// keeps no bytes here. Scheduled online, such a row names its draft by
+/// its IMAP place alone, which means nothing to JMAP. Any draft the
+/// server does not give stops the switch.
+async fn waiting_drafts(db: &Db, id: AccountId, imap: Option<&AccountSync>) -> Result<Vec<Waiting>, SwitchError> {
+    let named: Vec<(i64, String)> = db
+        .read(move |c| {
+            let mut stmt = c.prepare("SELECT id, draft_id FROM outbox WHERE account_id = ?1 AND raw IS NULL AND draft_id IS NOT NULL")?;
+            let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .await?;
+    let mut waiting = Vec::with_capacity(named.len());
+    for (row, draft_id) in named {
+        let imap = imap.ok_or(SwitchError::Drafts(SyncError::UnknownAccount(id)))?;
+        let raw = imap.raw(&draft_id).await.map_err(SwitchError::Drafts)?.to_vec();
+        waiting.push(Waiting { row, draft_id, raw });
+    }
+    Ok(waiting)
+}
+
+/// The JMAP id of the one copy in Drafts that carries `raw`'s Message-ID.
+async fn in_jmap_drafts<J: JmapApi>(api: &J, drafts: Option<&str>, raw: &[u8]) -> Result<Option<String>, BackendError> {
+    let (Some(drafts), Some(message_id)) = (drafts, message_id_header(raw)) else {
+        return Ok(None);
+    };
+    let filter = json!({ "operator": "AND", "conditions": [has_message_id(&message_id), { "inMailbox": drafts }] });
+    let mut found = found_with(api, &filter).await?;
+    Ok(match found.len() {
+        1 => found.pop(),
+        _ => None,
+    })
+}
+
 /// Pairs each stored draft the date match left out with a JMAP copy:
 /// one the server holds under its Message-ID at any date, or one imported
 /// now from the bytes kept here. An import dates its copy on arrival, so a
@@ -475,6 +576,13 @@ pub enum SwitchError {
     SignIn(JmapError),
     #[error("only an IMAP account can switch to JMAP")]
     NotImap,
+    /// The IMAP server did not give the draft of a message waiting in
+    /// Send Later.
+    #[error("could not read a Send Later draft from the IMAP server: {0}")]
+    Drafts(SyncError),
+    /// The session signs in to another account than this one.
+    #[error("the JMAP sign-in reached another account")]
+    OtherAccount,
     #[error(transparent)]
     Sync(#[from] SyncError),
 }
@@ -542,28 +650,138 @@ async fn forget_imap_passwords(db: &Db, secrets: &Secrets, id: AccountId) {
     }
 }
 
-/// Signs in to the JMAP session with what the person typed, then switches.
-pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo) -> Result<Switched, SwitchError> {
+/// Moves the local rules of an account just switched into its Sieve
+/// script, once its JMAP services are up and before they run. A server
+/// that will not take them (the person runs a script of their own that it
+/// cannot include) leaves them beside the script, running here as before.
+/// Answers whether they moved.
+pub async fn move_rules(services: &mut AccountServices) -> bool {
+    let Some(AnyRules::Beside(beside)) = services.rules.clone() else {
+        return false;
+    };
+    match beside.move_in().await {
+        Ok(()) => {
+            services.rules = Some(AnyRules::JmapSieve(beside.server().clone()));
+            true
+        }
+        Err(err) => {
+            tracing::info!(%err, "the local rules stay on this computer beside the server's");
+            false
+        }
+    }
+}
+
+/// How the switch signs in to the JMAP session.
+pub enum SwitchSignIn {
+    /// A password or a token the person typed.
+    Typed(SwitchTo),
+    /// A sign-in on the server's own page in the browser.
+    Browser { session_url: String, grant: BrowserGrant },
+}
+
+/// What one way of signing in becomes: the sign-in the checks send, and
+/// what the account keeps.
+pub struct Signed {
+    pub session_url: String,
+    pub auth: Auth,
+    pub kind: JmapAuth,
+    pub user_name: Option<String>,
+    pub oauth: Option<SavedOAuth>,
+    /// What the keyring keeps: the password, the token or the refresh
+    /// token.
+    pub secret: String,
+}
+
+/// What `how` signs in with. A browser grant's checks send its access
+/// token as it came: a session that refreshes here would rotate the
+/// refresh token before the keyring holds it.
+pub fn signed_with(how: SwitchSignIn, address: &str) -> Signed {
+    match how {
+        SwitchSignIn::Typed(to) => Signed {
+            auth: match to.token {
+                true => Auth::Bearer(to.secret.clone()),
+                false => Auth::Basic { user: to.user.clone(), password: to.secret.clone() },
+            },
+            kind: if to.token { JmapAuth::Bearer } else { JmapAuth::Basic },
+            user_name: (!to.token && !to.user.eq_ignore_ascii_case(address)).then_some(to.user),
+            oauth: None,
+            session_url: to.session_url,
+            secret: to.secret,
+        },
+        SwitchSignIn::Browser { session_url, grant } => Signed {
+            session_url,
+            auth: Auth::Bearer(grant.access_token),
+            kind: JmapAuth::OAuth,
+            user_name: None,
+            oauth: Some(grant.client),
+            secret: grant.refresh_token,
+        },
+    }
+}
+
+/// Signs in to the JMAP session, then switches. `imap` is the IMAP
+/// account's sync, which reads the drafts Send Later messages name; None
+/// when it is not running.
+pub async fn to_jmap(
+    db: &Db,
+    secrets: &Secrets,
+    account: &Account,
+    imap: Option<&AccountSync>,
+    how: SwitchSignIn,
+) -> Result<Switched, SwitchError> {
     if account.provider != Provider::Imap {
         return Err(SwitchError::NotImap);
     }
-    let auth = match to.token {
-        true => Auth::Bearer(to.secret.clone()),
-        false => Auth::Basic { user: to.user.clone(), password: to.secret.clone() },
+    // A browser grant the switch does not keep is revoked, so it does not
+    // stay valid on the server with nothing here to use it.
+    let unkept = match &how {
+        SwitchSignIn::Browser { session_url, grant } => Some(crate::JmapGrant {
+            session_url: session_url.clone(),
+            client_id: grant.client.client_id.clone(),
+            refresh_token: grant.refresh_token.clone(),
+        }),
+        SwitchSignIn::Typed(_) => None,
     };
-    let client = JmapClient::new(&to.session_url, auth).map_err(SwitchError::SignIn)?;
+    let switched = signed_in(db, secrets, account, imap, signed_with(how, &account.email)).await;
+    // `NotImap` here means another switch went through first and may sign
+    // in with the token saved for this one; it stays.
+    if let (Err(err), Some(grant)) = (&switched, unkept)
+        && !matches!(err, SwitchError::NotImap)
+    {
+        tokio::spawn(grant.revoke());
+    }
+    switched
+}
+
+async fn signed_in(db: &Db, secrets: &Secrets, account: &Account, imap: Option<&AccountSync>, signed: Signed) -> Result<Switched, SwitchError> {
+    let client = JmapClient::new(&signed.session_url, signed.auth).map_err(SwitchError::SignIn)?;
     let checked = mailrs_jmap::check(&client).await.map_err(SwitchError::SignIn)?;
     let session = &checked.session;
     let saved = JmapSaved {
-        session_url: to.session_url,
-        auth: if to.token { JmapAuth::Bearer } else { JmapAuth::Basic },
-        user_name: (!to.token && !to.user.eq_ignore_ascii_case(&account.email)).then_some(to.user),
+        session_url: signed.session_url,
+        auth: signed.kind,
+        user_name: signed.user_name,
         labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
-        oauth: None,
+        oauth: signed.oauth,
         owner: Some(crate::sign_in::SignedAs::of(&checked).owner),
     };
-    to_jmap_over(db, secrets, account, &AnyJmap::from(client), saved, to.secret).await
+    to_jmap_over(db, secrets, account, imap, &AnyJmap::from(client), saved, signed.secret).await
+}
+
+/// Whether the session signs in to the account at `address`: its user name
+/// is the address or its local part, or one of its identities sends from
+/// it.
+async fn same_account<J: JmapApi>(api: &J, session: &mailrs_jmap::Session, address: &str) -> Result<bool, SwitchError> {
+    let username = session.username.trim();
+    let local = address.split_once('@').map(|(local, _)| local);
+    // A login name that is the address's local part, as Cyrus and
+    // Stalwart name their users, is the same account too.
+    if username.eq_ignore_ascii_case(address) || local.is_some_and(|local| username.eq_ignore_ascii_case(local)) {
+        return Ok(true);
+    }
+    let identities = api.identities().await.map_err(backend)?;
+    Ok(identities.iter().any(|identity| identity.email.eq_ignore_ascii_case(address)))
 }
 
 /// The switch over `api`, already signed in. The JMAP secret goes into the
@@ -575,6 +793,7 @@ pub async fn to_jmap_over<J: JmapApi>(
     db: &Db,
     secrets: &Secrets,
     account: &Account,
+    imap: Option<&AccountSync>,
     api: &J,
     saved: JmapSaved,
     secret: String,
@@ -602,20 +821,42 @@ pub async fn to_jmap_over<J: JmapApi>(
     if !session.offers(mailrs_jmap::MAIL) {
         return Err(SwitchError::SignIn(JmapError::UnknownCapability(mailrs_jmap::MAIL.to_string())));
     }
+    // A browser already signed in to a second account at the provider
+    // hands back that account. Matched against its mail, most of this
+    // account's mail would go.
+    if !same_account(api, &session, &account.email).await? {
+        return Err(SwitchError::OtherAccount);
+    }
     let listed = api.mailboxes().await.map_err(backend)?.list;
     let (stored, boxes, drafts) =
         db.read(move |c| Ok((stored_messages(c, id)?, stored_mailboxes(c, id)?, stored_drafts(c, id)?))).await?;
+    let waiting = waiting_drafts(db, id, imap).await?;
     let mut messages = match_messages(api, &stored).await?;
     carry_drafts(db, account, api, &listed, &stored, &drafts, &mut messages).await?;
     drop(stored);
+    // A draft the swap gives an Email id keeps it; any other takes the
+    // JMAP copy in Drafts, or none, and the message sends from its bytes.
+    let drafts_mailbox = listed.iter().find(|m| m.role.as_deref() == Some("drafts")).map(|m| m.id.as_str());
+    let mut fill = Vec::with_capacity(waiting.len());
+    for Waiting { row, draft_id, raw } in waiting {
+        let draft = match messages.iter().any(|m| m.from == draft_id) {
+            true => None,
+            false => Some(in_jmap_drafts(api, drafts_mailbox, &raw).await?),
+        };
+        fill.push((row, raw, draft));
+    }
     let mailboxes = match_mailboxes(&boxes, &listed);
     let found = db.read(move |c| mailrs_store::services::load(c, id)).await?;
     let contacts_from_jmap = saved.offers(mailrs_jmap::CONTACTS);
     let needs_dav_password = found.iter().filter(|f| f.confirmed).any(|f| match f.kind {
-        ServiceKind::CalDav => true,
+        ServiceKind::CalDav => !saved.offers(mailrs_jmap::CALENDARS),
         ServiceKind::CardDav => !contacts_from_jmap,
         ServiceKind::Sieve => !saved.offers(mailrs_jmap::SIEVE),
     });
+    let reminders = match saved.offers(mailrs_jmap::CALENDARS) {
+        true => shown_reminders(db, id, api).await,
+        false => Vec::new(),
+    };
     let jmap = Arc::clone(&secrets.jmap);
     keyring(move || jmap.save(id, &secret)).await?;
     let adoption = Adoption { messages, mailboxes, saved, contacts_from_jmap };
@@ -636,6 +877,19 @@ pub async fn to_jmap_over<J: JmapApi>(
                  AND thread_id NOT IN (SELECT thread_id FROM messages WHERE account_id = ?1)",
                 params![id],
             )?;
+            for ((calendar, event), (to_calendar, to_event)) in &reminders {
+                c.execute(
+                    "UPDATE OR IGNORE event_reminders_shown SET calendar = ?4, event = ?5 \
+                     WHERE account_id = ?1 AND calendar = ?2 AND event = ?3",
+                    params![id, calendar, event, to_calendar, to_event],
+                )?;
+            }
+            for (row, raw, draft) in &fill {
+                c.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1 AND raw IS NULL", params![row, raw])?;
+                if let Some(draft) = draft {
+                    c.execute("UPDATE outbox SET draft_id = ?2 WHERE id = ?1", params![row, draft])?;
+                }
+            }
             Ok(Some(adopted))
         })
         .await;

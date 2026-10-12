@@ -117,6 +117,8 @@ pub struct RuleList {
     /// Blocks the server holds that nobody here wrote, shown read-only.
     pub elsewhere: Vec<String>,
     pub place: RulesPlace,
+    /// The rules that run on this computer beside the server's, by id.
+    pub here: Vec<String>,
     /// The server is not answering: the list is the last one read, with
     /// the changes waiting to go out applied.
     pub waiting: bool,
@@ -184,7 +186,8 @@ impl<A: Accounts> AccountSettings<A> {
         let queued = self.db.read(move |c| rule_changes::queued(c, account_id)).await?;
         let mut list = match rules.listing().await {
             Ok((filters, elsewhere)) => {
-                let list = RuleList { rules: filters, elsewhere, place: rules.place(), waiting: false };
+                let here = rules.kept_here().await?;
+                let list = RuleList { rules: filters, elsewhere, place: rules.place(), here, waiting: false };
                 self.remember_rules(account_id, Some(list.clone()));
                 list
             }
@@ -195,6 +198,7 @@ impl<A: Accounts> AccountSettings<A> {
                     rules: Vec::new(),
                     elsewhere: Vec::new(),
                     place: rules.place(),
+                    here: Vec::new(),
                     waiting: true,
                 });
                 list.waiting = true;

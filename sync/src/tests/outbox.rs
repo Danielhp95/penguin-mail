@@ -1129,21 +1129,21 @@ async fn a_message_that_falls_due_during_a_switch_waits_for_it() {
 }
 
 #[tokio::test]
-async fn a_message_sent_during_a_switch_waits_without_a_failed_try() {
+async fn a_message_sent_during_a_switch_waits_for_the_switch_to_end() {
     let h = harness().await;
-    let outbox = queue(&h);
+    let outbox = std::sync::Arc::new(queue(&h));
     let held = outbox.hold(h.account_id).await;
-
-    let posted = outbox.post(message(h.account_id, "Report")).await.unwrap();
-    let Posted::Waiting(id) = posted else {
-        panic!("expected it to wait, got {posted:?}");
-    };
-    assert!(h.fake.with(|s| s.sent.is_empty()));
-    let row = h.db.read(move |c| outbox::find(c, id)).await.unwrap().unwrap();
-    assert_eq!(row.attempts, 0, "the switch is no failed try");
-    assert!(row.send_at <= now_millis(), "it is due as soon as the switch ends");
+    let posting = tokio::spawn({
+        let (outbox, message) = (std::sync::Arc::clone(&outbox), message(h.account_id, "Report"));
+        async move { outbox.post(message).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(!posting.is_finished(), "Send Now waits for the switch");
+    // A row written now would keep the ids the switch is replacing.
+    assert!(h.db.read(outbox::list).await.unwrap().is_empty());
 
     drop(held);
-    let drained = outbox.send_due(now_millis()).await.unwrap();
-    assert_eq!(drained.sent.len(), 1);
+    let posted = posting.await.unwrap().unwrap();
+    assert!(matches!(posted, Posted::Sent(_)), "{posted:?}");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1);
 }

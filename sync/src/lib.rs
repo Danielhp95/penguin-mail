@@ -87,7 +87,7 @@ pub use services::{
     IdentityService, KeywordsOf, KeywordsPage, MailBackend, MailCapabilities, Microsoft, MicrosoftSettings, Missing, Offers, Pop3, Pop3Settings, Refused,
     Priority, Relocated, RemoteChange, Claimed, Held, ReceiptOut, Settled, Storage, Unheld,
     RulesService, SendAsAddress, SyncState, Unapplied, Changes, RAW_LIMIT, Submit, Withheld,
-    background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesPlace, SieveRules, SERVER_REPLY_SCRIPT,
+    background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesBeside, RulesPlace, SieveRules, SERVER_REPLY_SCRIPT,
 };
 pub use settings::{
     AccountSettings, AutomaticReply, HIDE_MY_EMAIL_LABEL, Permitted, Replaced, RuleList, SentRules,
