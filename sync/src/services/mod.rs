@@ -1428,6 +1428,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gmail_storage_comes_from_drive_and_needs_its_permission() {
+        let fake = FakeGmail::new();
+        fake.with(|s| s.drive_storage = Some(mailrs_gmail::DriveStorage { usage: 90, limit: Some(100) }));
+        let services = AccountServices::google(Arc::new(fake));
+        assert_eq!(services.mail.storage().await.unwrap(), Storage::new(90, 100, None));
+
+        let withheld = FakeGmail::new();
+        withheld.with(|s| s.drive_storage = Some(mailrs_gmail::DriveStorage { usage: 90, limit: Some(100) }));
+        withheld.withhold(mailrs_gmail::DRIVE_FILE_SCOPE);
+        let services = AccountServices::google(Arc::new(withheld));
+        assert_eq!(services.mail.storage().await.unwrap(), None, "no Drive permission, no number");
+    }
+
+    #[tokio::test]
     async fn an_adapter_that_holds_nothing_says_so() {
         let services = AccountServices::google(Arc::new(FakeGmail::new()));
         assert!(matches!(services.mail.schedule(b"raw", 0).await, Err(BackendError::Unsupported)));

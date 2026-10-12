@@ -189,6 +189,8 @@ pub struct FakeState {
     /// Every reader added to a Drive file: the file's id, the address,
     /// and how many calendar writes had reached the fake by then.
     pub drive_shares: Vec<(String, String, usize)>,
+    /// What Drive's `about.get` reports; `None` answers no limit and no use.
+    pub drive_storage: Option<mailrs_gmail::DriveStorage>,
     /// Play Google's answer to a write on an event already deleted: 410
     /// Gone, which the client reads as `ExpiredSyncToken`, rather than
     /// the 404 the fake gives otherwise.
@@ -401,6 +403,7 @@ impl FakeGmail {
                 offline: false,
                 drive_files: Vec::new(),
                 drive_shares: Vec::new(),
+                drive_storage: None,
                 deleted_answers_gone: false,
                 deleted_calendars: Vec::new(),
                 refuse_new_events: false,
@@ -1442,6 +1445,12 @@ impl GmailApi for FakeGmail {
             s.drive_shares.push((file_id.to_string(), email.to_string(), writes));
         });
         Ok(())
+    }
+
+    async fn drive_storage(&self) -> Result<mailrs_gmail::DriveStorage, GmailError> {
+        self.call("drive.about.get", 0).await?;
+        self.needs(mailrs_gmail::DRIVE_FILE_SCOPE)?;
+        Ok(self.with(|s| s.drive_storage).unwrap_or(mailrs_gmail::DriveStorage { usage: 0, limit: None }))
     }
 
     async fn remove_event(

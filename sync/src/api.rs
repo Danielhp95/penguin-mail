@@ -284,6 +284,8 @@ pub trait GmailApi: Send + Sync + 'static {
     /// Makes `email` a reader of the Drive file `file_id`, one the app
     /// uploaded, without Drive mailing them.
     fn share_file(&self, file_id: &str, email: &str) -> impl Future<Output = Result<(), GmailError>> + Send;
+    /// How full the Google account's storage is. Needs `drive.file`.
+    fn drive_storage(&self) -> impl Future<Output = Result<mailrs_gmail::DriveStorage, GmailError>> + Send;
 
     /// Moves `event` from its calendar to `destination`, and mails its
     /// guests when `notify` says so. Answers the event on `destination`.
@@ -576,6 +578,10 @@ impl GmailApi for AccountClient {
 
     async fn share_file(&self, file_id: &str, email: &str) -> Result<(), GmailError> {
         self.client.share_file(file_id, email).await
+    }
+
+    async fn drive_storage(&self) -> Result<mailrs_gmail::DriveStorage, GmailError> {
+        self.client.drive_storage().await
     }
 
     async fn move_event(
