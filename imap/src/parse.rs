@@ -15,7 +15,7 @@ use mailrs_domain::EpochMillis;
 use crate::guard::{BODY_BYTES, COMMAND_BYTES, SEARCH_BYTES, SELECT_BYTES};
 use crate::structure::BodyStructure;
 use crate::{
-    AppendUid, CopyUid, Fetched, FlagsOf, ImapError, Listed, Selected, SpecialUse, UidSet,
+    AppendUid, CopyUid, Fetched, FlagsOf, ImapError, Listed, QuotaUse, Selected, SpecialUse, UidSet,
 };
 
 /// The most answers one command may keep: messages, mailboxes, or pairs
@@ -135,6 +135,39 @@ impl Reads for UnreadReader<'_> {
                 }
             }
         }
+    }
+}
+
+/// The QUOTA answers to a GETQUOTAROOT, one use per resource. The
+/// QUOTAROOT line only names the roots, which the QUOTA lines repeat.
+#[derive(Default)]
+pub(crate) struct QuotaReader {
+    pub(crate) uses: Vec<QuotaUse>,
+}
+
+impl Reads for QuotaReader {
+    fn read(&mut self, response: &Response<'_>) {
+        use async_imap::imap_proto::QuotaResourceName;
+        let Response::Quota(quota) = response else {
+            return;
+        };
+        for resource in &quota.resources {
+            let name = match &resource.name {
+                QuotaResourceName::Storage => "STORAGE".to_string(),
+                QuotaResourceName::Message => "MESSAGE".to_string(),
+                QuotaResourceName::Atom(atom) => atom.to_ascii_uppercase(),
+            };
+            self.uses.push(QuotaUse {
+                root: quota.root_name.to_string(),
+                resource: name,
+                usage: resource.usage,
+                limit: resource.limit,
+            });
+        }
+    }
+
+    fn kept(&self) -> usize {
+        self.uses.len()
     }
 }
 
@@ -852,6 +885,50 @@ pub(crate) mod tests {
             assert!(rest.is_empty(), "{line:?} left {rest:?}");
             reader.read(&response);
         }
+    }
+
+    #[test]
+    fn a_quota_answer_reads_as_uses() {
+        let mut reader = QuotaReader::default();
+        feed(
+            &mut reader,
+            &[
+                "* QUOTAROOT INBOX \"User quota\"\r\n",
+                "* QUOTA \"User quota\" (STORAGE 10 1048576 MESSAGE 4 1000)\r\n",
+            ],
+        );
+        assert_eq!(
+            reader.uses,
+            [
+                QuotaUse { root: "User quota".into(), resource: "STORAGE".into(), usage: 10, limit: 1_048_576 },
+                QuotaUse { root: "User quota".into(), resource: "MESSAGE".into(), usage: 4, limit: 1000 },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unknown_quota_resource_keeps_its_name_in_upper_case() {
+        let mut reader = QuotaReader::default();
+        feed(&mut reader, &["* QUOTA \"\" (x-custom 1 2)\r\n"]);
+        assert_eq!(reader.uses.len(), 1);
+        assert_eq!(reader.uses[0].resource, "X-CUSTOM");
+    }
+
+    #[test]
+    fn a_quota_with_no_resources_keeps_nothing() {
+        let mut reader = QuotaReader::default();
+        feed(&mut reader, &["* QUOTA \"\" ()\r\n"]);
+        assert!(reader.uses.is_empty());
+    }
+
+    #[test]
+    fn a_huge_quota_number_does_not_panic() {
+        let mut reader = QuotaReader::default();
+        let line = "* QUOTA \"\" (STORAGE 18446744073709551615 18446744073709551615)\r\n";
+        feed(&mut reader, &[line]);
+        assert_eq!(reader.uses[0].limit, u64::MAX);
+        // Beyond u64 the parser refuses the line; nothing may panic or read.
+        assert!(Response::from_bytes(b"* QUOTA \"\" (STORAGE 99999999999999999999999 1)\r\n").is_err());
     }
 
     #[test]
