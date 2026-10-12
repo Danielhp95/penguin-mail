@@ -83,6 +83,12 @@ pub fn jmap_named(name: &str) -> Option<crate::JmapProvider> {
     Table::built_in().entries.iter().find(|e| e.name == name && e.jmap.is_some())?.jmap_provider()
 }
 
+/// The table's JMAP session URL for the provider whose display name is
+/// `name`.
+pub fn jmap_session_named(name: &str) -> Option<String> {
+    Table::built_in().entries.iter().find(|e| e.name == name)?.jmap.as_ref().map(|j| j.session.clone())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SieveEntry {

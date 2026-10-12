@@ -257,3 +257,35 @@ async fn saving_a_rule_that_is_off_turns_it_on() {
     let edited = rules.replace_filter(off.id.as_deref().unwrap(), &off).await.unwrap();
     assert!(!edited.off);
 }
+
+fn file_into(address: &str, mailbox: &str) -> Filter {
+    Filter {
+        action: FilterAction { add: vec![MailSet::Mailbox(mailbox.into())], ..FilterAction::default() },
+        ..archive_from(address)
+    }
+}
+
+#[tokio::test]
+async fn saving_a_rule_whose_folder_is_still_missing_keeps_it_off() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (_, rules) = engine_for(&h).await;
+    let off = rules.create_filter(&Filter { off: true, ..file_into("a@example.com", "Gone/Projects") }).await.unwrap();
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &off).await.unwrap();
+    assert!(edited.off, "the server still lacks the folder");
+    assert!(rules.filters().await.unwrap()[0].off);
+}
+
+#[tokio::test]
+async fn saving_a_rule_with_a_folder_the_server_has_turns_it_on() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (_, rules) = engine_for(&h).await;
+    let account_id = h.account_id;
+    let listed = h.db.read(move |c| mailrs_store::mailboxes::listed(c, account_id)).await.unwrap();
+    let there = &listed.first().expect("the bootstrap lists the server's folders").id;
+    let off = rules.create_filter(&Filter { off: true, ..file_into("a@example.com", "Gone/Projects") }).await.unwrap();
+    let fixed = file_into("a@example.com", there);
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &fixed).await.unwrap();
+    assert!(!edited.off);
+}

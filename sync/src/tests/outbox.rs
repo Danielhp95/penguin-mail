@@ -1106,3 +1106,42 @@ async fn drafts_reach_the_store_through_history() {
     h.sync.incremental().await.unwrap();
     assert!(stored(second.message_id).await.is_empty(), "deleted");
 }
+
+#[tokio::test]
+async fn a_message_that_falls_due_during_a_switch_waits_for_it() {
+    let h = harness().await;
+    let outbox = queue(&h);
+    let waiting = message(h.account_id, "Report");
+    let id = h.db.write(move |c| outbox::put(c, &waiting)).await.unwrap();
+    let held = outbox.hold(h.account_id).await;
+
+    let drained = outbox.send_due(now_millis()).await.unwrap();
+    assert!(!drained.changed, "nothing happened to it");
+    assert!(h.fake.with(|s| s.sent.is_empty()), "nothing went out while the switch ran");
+    let row = h.db.read(move |c| outbox::find(c, id)).await.unwrap().unwrap();
+    assert_eq!((row.attempts, row.problem), (0, None), "no failed try is counted");
+
+    drop(held);
+    let drained = outbox.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1, "it goes once the switch is over");
+}
+
+#[tokio::test]
+async fn a_message_sent_during_a_switch_waits_without_a_failed_try() {
+    let h = harness().await;
+    let outbox = queue(&h);
+    let held = outbox.hold(h.account_id).await;
+
+    let posted = outbox.post(message(h.account_id, "Report")).await.unwrap();
+    let Posted::Waiting(id) = posted else {
+        panic!("expected it to wait, got {posted:?}");
+    };
+    assert!(h.fake.with(|s| s.sent.is_empty()));
+    let row = h.db.read(move |c| outbox::find(c, id)).await.unwrap().unwrap();
+    assert_eq!(row.attempts, 0, "the switch is no failed try");
+    assert!(row.send_at <= now_millis(), "it is due as soon as the switch ends");
+
+    drop(held);
+    let drained = outbox.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1);
+}

@@ -14,8 +14,10 @@
 //! fix. The network coming back skips the rest of a wait, through
 //! [`Outbox::try_now`].
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 
+use mailrs_domain::translate::gettext;
 use mailrs_domain::{AccountId, EpochMillis, Target};
 use mailrs_gmail::GmailError;
 use mailrs_store::Db;
@@ -69,11 +71,38 @@ pub struct Cancelled {
 pub struct Outbox<A: Accounts> {
     accounts: Arc<A>,
     db: Db,
+    /// One lock per account that has sent or been held this run. A send
+    /// takes it to read; [`Outbox::hold`] takes it to write.
+    sending: Mutex<HashMap<AccountId, Arc<tokio::sync::RwLock<()>>>>,
+}
+
+/// Keeps an account's mail from going out until it drops. See
+/// [`Outbox::hold`].
+pub struct OutboxHold {
+    _lock: tokio::sync::OwnedRwLockWriteGuard<()>,
 }
 
 impl<A: Accounts> Outbox<A> {
     pub fn new(accounts: Arc<A>, db: Db) -> Self {
-        Outbox { accounts, db }
+        Outbox { accounts, db, sending: Mutex::default() }
+    }
+
+    fn lock_of(&self, account_id: AccountId) -> Arc<tokio::sync::RwLock<()>> {
+        let mut locks = self.sending.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(locks.entry(account_id).or_default())
+    }
+
+    /// Stops `account_id`'s mail going out until the answer drops, once a
+    /// send already under way has finished. A switch to JMAP holds the
+    /// account this way: a message that falls due meanwhile waits for the
+    /// account the switch leaves, and no try counts against it.
+    pub async fn hold(&self, account_id: AccountId) -> OutboxHold {
+        OutboxHold { _lock: self.lock_of(account_id).write_owned().await }
+    }
+
+    /// Leave to send for `account_id`, or None while it is held.
+    fn sending(&self, account_id: AccountId) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
+        self.lock_of(account_id).try_read_owned().ok()
     }
 
     /// Sends `message` now, and keeps it for later when the reason it would
@@ -85,6 +114,9 @@ impl<A: Accounts> Outbox<A> {
         if message.id > 0 && self.claim(message.id).await?.is_none() {
             return Ok(Posted::Waiting(message.id));
         }
+        let Some(_sending) = self.sending(message.account_id) else {
+            return self.wait_out_hold(message).await;
+        };
         match self.attempt(&message).await {
             Ok(sent) => {
                 self.forget(&message).await?;
@@ -151,7 +183,8 @@ impl<A: Accounts> Outbox<A> {
             let Some(mut message) = self.claim(due.id).await? else {
                 continue;
             };
-            if message.send_at > now || retry_delay(message.attempts).is_none() {
+            let sending = self.sending(message.account_id);
+            if message.send_at > now || retry_delay(message.attempts).is_none() || sending.is_none() {
                 self.release(message.id).await?;
                 continue;
             }
@@ -326,6 +359,19 @@ impl<A: Accounts> Outbox<A> {
         Ok(())
     }
 
+    /// Keeps a message posted while its account is held, due at once and
+    /// with no try counted, so the next pass after the hold sends it.
+    async fn wait_out_hold(&self, mut message: Queued) -> Result<Posted, SyncError> {
+        if message.id > 0 {
+            self.release(message.id).await?;
+            return Ok(Posted::Waiting(message.id));
+        }
+        message.problem = Some(gettext("Waiting for the account to switch to JMAP"));
+        message.send_at = now_millis();
+        let id = self.db.write(move |c| outbox::put(c, &message)).await?;
+        Ok(Posted::Waiting(id))
+    }
+
     /// One try at Gmail: from the bytes this computer holds, or from the
     /// Gmail draft when they are Gmail's. Sending bytes that came out of a
     /// draft deletes that draft, so Drafts is not left holding a copy of
@@ -372,6 +418,9 @@ impl<A: Accounts> Outbox<A> {
     }
 
     async fn save_draft(&self, message: &Queued) -> Result<SavedDraft, SyncError> {
+        // A held account is as good as not connected: Send Later keeps the
+        // bytes here, and a cancel leaves the message to the person.
+        let _sending = self.sending(message.account_id).ok_or(SyncError::UnknownAccount(message.account_id))?;
         let sync = self
             .accounts
             .account(message.account_id)

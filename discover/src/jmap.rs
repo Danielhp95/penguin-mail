@@ -194,4 +194,10 @@ mod tests {
         assert_eq!(fastmail.token_lacks, ["urn:ietf:params:jmap:vacationresponse"]);
         assert!(jmap_named("iCloud Mail").is_none());
     }
+
+    #[test]
+    fn the_table_names_fastmail_s_session_by_provider_name() {
+        assert_eq!(crate::jmap_session_named("Fastmail").as_deref(), Some("https://api.fastmail.com/jmap/session"));
+        assert!(crate::jmap_session_named("iCloud Mail").is_none());
+    }
 }

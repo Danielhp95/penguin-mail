@@ -78,7 +78,7 @@ pub use mailbox::{
 pub use newsletters::Newsletters;
 pub use one_click::OneClick;
 pub use ops::{MailOp, MovedFrom};
-pub use outbox::{Cancelled, Drained, Outbox, Posted};
+pub use outbox::{Cancelled, Drained, Outbox, OutboxHold, Posted};
 pub use services::{
     AccountServices, AnyAutoReply, AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp, Backfill, Found, ID_PAGE_SIZE, LIST_PAGE_SIZE, RawMessage,
     RemoteRef, SearchQuery, Want, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules,
