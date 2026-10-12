@@ -1664,6 +1664,11 @@ impl Composer {
     pub fn lock(self: &Rc<Self>, notice: &str, cancel: Option<Box<dyn Fn()>>) {
         self.locked.set(true);
         self.dirty.set(false);
+        // A caret would say the words can be changed. GTK draws none in a
+        // text view that is not editable, and none with no focus.
+        self.body.set_editable(false);
+        self.subject.set_editable(false);
+        gtk::prelude::GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
         let banner = adw::Banner::builder().use_markup(false).title(notice).revealed(true).build();
         if let Some(cancel) = cancel {
             banner.set_button_label(Some(&gettext("Cancel Send")));
