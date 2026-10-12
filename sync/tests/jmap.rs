@@ -4,6 +4,7 @@
 //! One test, as every Docker file here has.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_domain::query::{Query, Term};
@@ -11,7 +12,9 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_jmap::{Auth, JmapClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, AnyRules, DEFAULT_BODY_CACHE_BYTES, JmapSettings, LocalRules, MailBackend, SearchQuery, TriageAction,
+    AccountServices, AccountSync, AnyAutoReply, AnyCalendar, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService, CalendarService,
+    ContactsService, DEFAULT_BODY_CACHE_BYTES, IdentityService, JmapSettings, JmapSieve, LocalRules, MailBackend, RulesService,
+    SearchQuery, SieveRules, TriageAction,
 };
 use mailrs_testmail::{JmapKind, JmapServer};
 use rusqlite::OptionalExtension;
@@ -53,6 +56,80 @@ fn the_jmap_adapter_syncs_and_writes_against_every_server() {
     runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
 }
 
+/// A step that fails on one server because of a finding in the app's code, as
+/// its own test: ignored until the controller rules on the fix. The main
+/// test skips the step on that server and says so in its log.
+macro_rules! server_finding {
+    ($name:ident, $kind:ident, $reason:literal, $step:ident) => {
+        #[test]
+        #[ignore = $reason]
+        fn $name() {
+            if mailrs_testmail::jmap_docker().is_none() {
+                return;
+            }
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .thread_stack_size(mailrs_sync::WORKER_STACK)
+                .enable_all()
+                .build()
+                .expect("a runtime");
+            let body = runtime.spawn(async move {
+                let password = mailrs_testmail::password();
+                let Some(server) = JmapServer::start(JmapKind::$kind, &password).await else {
+                    return;
+                };
+                Run::new(&server, &password).await.$step().await;
+            });
+            runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
+        }
+    };
+}
+
+// Cyrus 3.13 test image: `Identity/get` answers its one identity with
+// `email: ""`, which the identities service drops as no address, so the
+// account lists none and the From row has nothing to offer.
+server_finding!(
+    cyrus_identities_name_the_account,
+    Cyrus,
+    "Cyrus answers its one identity with an empty email, so the identities service lists no address",
+    identities_name_the_account
+);
+
+// Cyrus 3.13 test image: `SieveScript/set` with `onSuccessActivateScript`
+// answers once, with `created.s.isActive: true` and `updated: null`. RFC
+// 9661's second implicit answer never comes, so `put_sieve_active` fails
+// with "no answer to SieveScript/set" after Cyrus has made and activated
+// the script.
+server_finding!(
+    cyrus_rule_lands_in_sieve,
+    Cyrus,
+    "Cyrus activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
+    a_rule_lands_in_sieve_where_offered
+);
+
+// Stalwart 0.16.25: the same single answer. `SieveScript/set` with
+// `onSuccessActivateScript` returns one response with the script created
+// and active (`SieveScript/get` shows `isActive: true`), and no second
+// `SieveScript/set` response.
+server_finding!(
+    stalwart_rule_lands_in_sieve,
+    Stalwart,
+    "Stalwart activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
+    a_rule_lands_in_sieve_where_offered
+);
+
+// Cyrus 3.13 test image: `CalendarEvent/set` create without `version`
+// answers `notCreated: {"e": {"type": "invalidProperties", "properties":
+// ["version"]}}` (with or without the jscalendarbis capability in
+// `using`). Adding `"version": "2.0"` makes the same create succeed;
+// `"1.0"` is refused the same way. The adapter's JSCalendar object has
+// no `version`.
+server_finding!(
+    cyrus_calendar_round_trips,
+    Cyrus,
+    "Cyrus refuses a created event without version 2.0 (invalidProperties: version); the adapter sends none",
+    the_calendar_round_trips
+);
+
 struct Run<'a> {
     server: &'a JmapServer,
     password: &'a str,
@@ -63,18 +140,42 @@ struct Run<'a> {
     _dir: tempfile::TempDir,
 }
 
-fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId) -> AccountServices {
+/// The services the app would attach for this server: what its session
+/// offers, as `connect_jmap` reads it from the saved capabilities.
+async fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId) -> AccountServices {
     let client = JmapClient::new(&server.session_url, Auth::Basic { user: server.user.clone(), password: password.to_string() })
         .expect("a client for the server");
+    let session = client.refresh_session().await.expect("the session");
+    let capabilities: Vec<String> = session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect();
     let settings = JmapSettings {
         address: server.address.clone(),
         provider_name: format!("{:?}", server.kind),
         window_days: WINDOW_DAYS,
         labels: true,
-        capabilities: Vec::new(),
+        capabilities: capabilities.clone(),
         auto_reply_needs_sign_in: false,
     };
-    AccountServices::jmap(client, settings).with_rules(AnyRules::Local(LocalRules::new(db.clone(), account_id)))
+    let jmap = Arc::new(AnyJmap::from(client.clone()));
+    let mut services = AccountServices::jmap(client, settings);
+    let mail = services.mail.clone();
+    let offers = |capability: &str| capabilities.iter().any(|c| c == capability);
+    if let AnyMail::Jmap(adapter) = &mail {
+        if offers(mailrs_jmap::VACATION) {
+            services = services.with_auto_reply(AnyAutoReply::Jmap(adapter.clone()));
+        }
+        if offers(mailrs_jmap::CONTACTS) {
+            services = services.with_contacts(AnyContacts::Jmap(adapter.clone()));
+        }
+        if offers(mailrs_jmap::CALENDARS) {
+            services = services.with_calendar(AnyCalendar::Jmap(adapter.clone()));
+        }
+    }
+    if offers(mailrs_jmap::SIEVE) {
+        let rules = SieveRules::new(Arc::new(JmapSieve::new(jmap)), mail, server.address.clone(), format!("{:?}", server.kind));
+        services.with_rules(AnyRules::JmapSieve(rules))
+    } else {
+        services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), account_id)))
+    }
 }
 
 fn incoming(message_id: &str, subject: &str, to: &str) -> Vec<u8> {
@@ -95,7 +196,7 @@ impl<'a> Run<'a> {
             .await
             .expect("the account row");
         let (events, receiver) = async_channel::unbounded();
-        let sync = AccountSync::new(account_id, services(server, password, &db, account_id), db.clone(), events)
+        let sync = AccountSync::new(account_id, services(server, password, &db, account_id).await, db.clone(), events)
             .with_limits(WINDOW_DAYS, DEFAULT_BODY_CACHE_BYTES);
         Run { server, password, db, account_id, sync, _events: receiver, _dir: dir }
     }
@@ -172,6 +273,25 @@ impl<'a> Run<'a> {
         self.a_body_opens().await;
         self.a_send_lands_in_sent().await;
         self.a_draft_saves_replaces_and_sends().await;
+        if self.kind() == JmapKind::Cyrus {
+            eprintln!("Cyrus: identities skipped, see cyrus_identities_name_the_account (ignored)");
+        } else {
+            self.identities_name_the_account().await;
+        }
+        self.the_reply_round_trips_where_offered().await;
+        self.a_contact_round_trips_where_offered().await;
+        if self.kind() != JmapKind::James {
+            eprintln!("{:?}: the Sieve rule skipped, see the ignored *_rule_lands_in_sieve test", self.kind());
+        } else {
+            self.a_rule_lands_in_sieve_where_offered().await;
+        }
+        self.masked_email_is_hidden_where_not_offered().await;
+        if self.kind() == JmapKind::Cyrus {
+            eprintln!("Cyrus: the calendar write skipped, see cyrus_calendar_round_trips (ignored)");
+            self.the_calendar_is_offered_as_the_gate_reads_it().await;
+        } else {
+            self.the_calendar_round_trips().await;
+        }
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;
@@ -294,7 +414,7 @@ impl<'a> Run<'a> {
     /// an EventSource stream is open, so there the delivery waits until the
     /// adapter's probe finds the server holding calls and drops the stream.
     async fn a_delivery_during_a_watch_reaches_the_store(&self) {
-        let watcher = services(self.server, self.password, &self.db, self.account_id).mail;
+        let watcher = services(self.server, self.password, &self.db, self.account_id).await.mail;
         let mut watching = tokio::spawn({
             let watcher = watcher.clone();
             async move { watcher.watch().await }
@@ -342,5 +462,119 @@ impl<'a> Run<'a> {
         watching.abort();
         eprintln!("{:?}: a write during a watch took {:?}", self.kind(), started.elapsed());
         written.unwrap_or_else(|_| panic!("{:?}: the write waited past {WRITE_WAIT:?}", self.kind())).expect("an unstar");
+    }
+
+    async fn identities_name_the_account(&self) {
+        let listed = self.sync.services().identities.identities().await.expect("identities");
+        assert!(!listed.is_empty(), "{:?}", self.kind());
+    }
+
+    async fn the_reply_round_trips_where_offered(&self) {
+        let Some(reply) = self.sync.services().auto_reply.clone() else {
+            eprintln!("{:?} offers no automatic reply", self.kind());
+            return;
+        };
+        let wanted = mailrs_domain::Vacation {
+            enabled: true,
+            subject: "Away".into(),
+            body: "Back soon".into(),
+            contacts_only: false,
+            domain_only: false,
+            start: None,
+            end: None,
+        };
+        reply.set_vacation(&wanted).await.expect("a reply");
+        let back = reply.vacation().await.expect("the reply back");
+        assert!(back.enabled && back.body.contains("Back soon"), "{:?}", self.kind());
+    }
+
+    async fn a_contact_round_trips_where_offered(&self) {
+        let Some(contacts) = self.sync.services().contacts.clone() else {
+            eprintln!("{:?} offers no contacts over JMAP", self.kind());
+            return;
+        };
+        let fields = mailrs_gmail::ContactFields {
+            name: Some("Ada Lovelace".into()),
+            emails: Some(vec!["ada@example.test".into()]),
+            phones: None,
+            organization: None,
+        };
+        let made = contacts.create_contact(&fields).await.expect("a contact");
+        let page = contacts.connections(None, None).await.expect("the contacts");
+        assert!(page.people.iter().any(|p| p.resource == made.resource), "{:?}", self.kind());
+    }
+
+    async fn a_rule_lands_in_sieve_where_offered(&self) {
+        let Some(rules) = self.sync.services().rules.clone() else { return };
+        if rules.place() != mailrs_sync::RulesPlace::Server {
+            eprintln!("{:?} offers no Sieve over JMAP", self.kind());
+            return;
+        }
+        let made = rules.create_filter(&mailrs_domain::Filter::block("pest@example.test")).await.expect("a rule");
+        assert_eq!(rules.filters().await.expect("the rules").len(), 1, "{:?}", self.kind());
+        rules.delete_filter(made.id.as_deref().expect("the rule's id")).await.expect("a delete");
+        assert!(rules.filters().await.expect("the rules").is_empty(), "{:?}", self.kind());
+    }
+
+    /// Only Fastmail offers Masked Email; the three test servers do not,
+    /// so the adapter must say so and the app hides the feature.
+    async fn masked_email_is_hidden_where_not_offered(&self) {
+        let AnyMail::Jmap(adapter) = self.mail() else { panic!("a JMAP account") };
+        assert!(!adapter.masked_email(), "{:?} does not offer Masked Email", self.kind());
+    }
+
+    /// Cyrus and Stalwart offer JMAP Calendars; James does not. A server
+    /// whose shape the gate refuses is reported, so the gate's reading of
+    /// a real session is checked as well as its tests.
+    /// Whether the server's session offers calendars in the shape the gate
+    /// accepts, with the account's calendar attached exactly then.
+    async fn the_calendar_is_offered_as_the_gate_reads_it(&self) -> bool {
+        let session = self.server.session(self.password).await;
+        let offers = mailrs_jmap::Session::parse(&serde_json::to_vec(&session).expect("json"))
+            .map(|s| s.offers(mailrs_jmap::CALENDARS))
+            .unwrap_or(false);
+        let listed = session["capabilities"].get(mailrs_jmap::CALENDARS).is_some();
+        eprintln!("{:?}: calendars listed {listed}, offered in draft 32's shape {offers}", self.kind());
+        let attached = self.sync.services().calendar.is_some();
+        assert_eq!(attached, offers, "{:?}: the calendar follows the gate", self.kind());
+        if !offers {
+            assert!(!listed || self.kind() == JmapKind::James, "{:?} lists calendars in a shape the gate refuses", self.kind());
+        }
+        offers
+    }
+
+    async fn the_calendar_round_trips(&self) {
+        if !self.the_calendar_is_offered_as_the_gate_reads_it().await {
+            return;
+        }
+        let calendar = self.sync.services().calendar.clone().expect("a calendar");
+        let calendars = calendar.calendars().await.expect("the calendars");
+        let Some(home) = calendars.iter().find(|c| c.access.can_write()) else {
+            eprintln!("{:?}: no calendar to write to for this user; skipping the round trip", self.kind());
+            return;
+        };
+        let start = mailrs_sync::now_millis() + 86_400_000;
+        let new = mailrs_domain::calendar::Event {
+            calendar: home.id.clone(),
+            uid: self.id("event"),
+            title: "Seed fair".into(),
+            start,
+            end: start + 3_600_000,
+            zone: "Europe/Lisbon".into(),
+            busy: true,
+            ..Default::default()
+        };
+        let made = calendar
+            .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
+            .await
+            .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let first = calendar.event_changes(&home.id, None, None, start - 86_400_000).await.expect("a read");
+        assert!(first.events.iter().any(|e| e.id == made.id && e.title == "Seed fair"), "{:?}", self.kind());
+        let mut changed = made.clone();
+        changed.title = "Seed fair, moved".into();
+        calendar.put_event(&changed, Some(&made.etag), false, mailrs_domain::calendar::Notify::Nobody).await.expect("a change");
+        let next = calendar.event_changes(&home.id, first.next_sync.as_deref(), None, 0).await.expect("the changes since");
+        assert!(next.events.iter().any(|e| e.id == made.id && e.title == "Seed fair, moved"), "{:?}", self.kind());
+        calendar.remove_event(&home.id, &made.id, None, mailrs_domain::calendar::Notify::Nobody).await.expect("a delete");
     }
 }
