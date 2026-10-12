@@ -4149,7 +4149,7 @@ msgstr "Penguin Mail: {summary}"
 msgid "Open Penguin Mail"
 msgstr "Abrir o Penguin Mail"
 
-#: app/src/tray.rs:290 app/src/ui/composer/mod.rs:321
+#: app/src/tray.rs:290 app/src/ui/composer/mod.rs:322
 #: app/src/ui/composer/mod.rs:613 app/src/ui/composer/mod.rs:1459
 #: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:394
 msgid "New Message"
@@ -4703,7 +4703,7 @@ msgstr "Pergunte ao Penguin Mail…"
 
 #: app/src/ui/assistant.rs:156 app/src/ui/assistant.rs:160
 #: app/src/ui/assistant.rs:454 app/src/ui/calendar/scope.rs:113
-#: app/src/ui/composer/mod.rs:338 app/src/ui/window/shortcuts.rs:492
+#: app/src/ui/composer/mod.rs:339 app/src/ui/window/shortcuts.rs:492
 msgid "Send"
 msgstr "Enviar"
 
@@ -5607,7 +5607,7 @@ msgstr "A enviar {file}"
 msgid "Could not attach {file}: {reason}"
 msgstr "Não foi possível anexar {file}: {reason}"
 
-#: app/src/ui/calendar/editor.rs:1818 app/src/ui/composer/mod.rs:366
+#: app/src/ui/calendar/editor.rs:1818 app/src/ui/composer/mod.rs:367
 msgid "More"
 msgstr "Mais"
 
@@ -6711,105 +6711,105 @@ msgstr ""
 msgid "Description"
 msgstr "Descrição"
 
-#: app/src/ui/composer/mod.rs:123 app/src/ui/templates.rs:23
+#: app/src/ui/composer/mod.rs:124 app/src/ui/templates.rs:23
 msgid "Templates"
 msgstr "Modelos"
 
-#: app/src/ui/composer/mod.rs:124 app/src/ui/composer/mod.rs:962
+#: app/src/ui/composer/mod.rs:125 app/src/ui/composer/mod.rs:962
 msgid "Preview"
 msgstr "Pré-visualizar"
 
-#: app/src/ui/composer/mod.rs:128
+#: app/src/ui/composer/mod.rs:129
 msgid "Sign"
 msgstr "Assinar"
 
-#: app/src/ui/composer/mod.rs:129
+#: app/src/ui/composer/mod.rs:130
 msgid "Encrypt"
 msgstr "Encriptar"
 
-#: app/src/ui/composer/mod.rs:136
+#: app/src/ui/composer/mod.rs:137
 msgid "Request Read Receipt"
 msgstr "Pedir recibo de leitura"
 
-#: app/src/ui/composer/mod.rs:330 app/src/ui/conversation.rs:1688
+#: app/src/ui/composer/mod.rs:331 app/src/ui/conversation.rs:1688
 msgid "Choose a Time…"
 msgstr "Escolher uma hora…"
 
-#: app/src/ui/composer/mod.rs:342 app/src/ui/composer/mod.rs:1789
+#: app/src/ui/composer/mod.rs:343 app/src/ui/composer/mod.rs:1789
 #: app/src/ui/sidebar.rs:1042
 msgid "Send Later"
 msgstr "Enviar mais tarde"
 
-#: app/src/ui/composer/mod.rs:344 app/src/ui/composer/mod.rs:1502
+#: app/src/ui/composer/mod.rs:345 app/src/ui/composer/mod.rs:1502
 msgid "Send (Ctrl+Enter)"
 msgstr "Enviar (Ctrl+Enter)"
 
-#: app/src/ui/composer/mod.rs:348
+#: app/src/ui/composer/mod.rs:349
 msgid "Attach Files (Ctrl+Shift+A)"
 msgstr "Anexar ficheiros (Ctrl+Shift+A)"
 
-#: app/src/ui/composer/mod.rs:355
+#: app/src/ui/composer/mod.rs:356
 msgid "Save as Template…"
 msgstr "Guardar como modelo…"
 
-#: app/src/ui/composer/mod.rs:372
+#: app/src/ui/composer/mod.rs:373
 msgid "Add a recipient this computer can encrypt to."
 msgstr "Adicione um destinatário para quem este computador saiba encriptar."
 
-#: app/src/ui/composer/mod.rs:417
+#: app/src/ui/composer/mod.rs:418
 msgid "Recipients"
 msgstr "Destinatários"
 
-#: app/src/ui/composer/mod.rs:418
+#: app/src/ui/composer/mod.rs:419
 msgid "Carbon copy"
 msgstr "Cópia"
 
-#: app/src/ui/composer/mod.rs:419
+#: app/src/ui/composer/mod.rs:420
 msgid "Blind carbon copy"
 msgstr "Cópia oculta"
 
-#: app/src/ui/composer/mod.rs:431
+#: app/src/ui/composer/mod.rs:432
 msgid "Cc/Bcc"
 msgstr "Cc/Bcc"
 
-#: app/src/ui/composer/mod.rs:432 app/src/ui/composer/mod.rs:1114
+#: app/src/ui/composer/mod.rs:433 app/src/ui/composer/mod.rs:1114
 msgid "Show Cc and Bcc"
 msgstr "Mostrar Cc e Bcc"
 
-#: app/src/ui/composer/mod.rs:443
+#: app/src/ui/composer/mod.rs:444
 msgid "+suffix or .suffix"
 msgstr "+sufixo ou .sufixo"
 
-#: app/src/ui/composer/mod.rs:446
+#: app/src/ui/composer/mod.rs:447
 msgid "Address Suffix"
 msgstr "Sufixo do endereço"
 
-#: app/src/ui/composer/mod.rs:458 app/src/ui/composer/mod.rs:463
+#: app/src/ui/composer/mod.rs:459 app/src/ui/composer/mod.rs:464
 msgid "New Masked Address"
 msgstr "Novo endereço mascarado"
 
-#: app/src/ui/composer/mod.rs:477
+#: app/src/ui/composer/mod.rs:478
 msgid "Masked"
 msgstr "Mascarado"
 
-#: app/src/ui/composer/mod.rs:492 app/src/ui/composer/mod.rs:493
+#: app/src/ui/composer/mod.rs:493 app/src/ui/composer/mod.rs:494
 #: app/src/ui/rules.rs:364
 msgid "From"
 msgstr "De"
 
-#: app/src/ui/composer/mod.rs:498 app/src/ui/rules.rs:365
+#: app/src/ui/composer/mod.rs:499 app/src/ui/rules.rs:365
 msgid "To"
 msgstr "Para"
 
-#: app/src/ui/composer/mod.rs:502
+#: app/src/ui/composer/mod.rs:503
 msgid "Cc"
 msgstr "Cc"
 
-#: app/src/ui/composer/mod.rs:504
+#: app/src/ui/composer/mod.rs:505
 msgid "Bcc"
 msgstr "Bcc"
 
-#: app/src/ui/composer/mod.rs:514 app/src/ui/rules.rs:366
+#: app/src/ui/composer/mod.rs:515 app/src/ui/rules.rs:366
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr "Assunto"
