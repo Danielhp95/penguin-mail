@@ -7,12 +7,16 @@
 mod api;
 mod bodies;
 mod cadence;
+mod contacts;
 mod errors;
 mod feed;
 mod fetch;
+mod identities;
 mod mailboxes;
 mod outgoing;
 mod search;
+mod sieve;
+mod vacation;
 mod writes;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -73,6 +77,11 @@ pub struct JmapSettings {
     /// A message can sit in several mailboxes, from the session's
     /// `maxMailboxesPerEmail` at sign-in.
     pub labels: bool,
+    /// The capabilities the session offered at sign-in, by URN.
+    pub capabilities: Vec<String>,
+    /// The automatic reply exists on the server but this sign-in cannot
+    /// reach it, as with a Fastmail API token.
+    pub auto_reply_needs_sign_in: bool,
 }
 
 /// What the adapter learned from its last listing. Its size follows the

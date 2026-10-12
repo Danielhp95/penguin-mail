@@ -511,6 +511,8 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
         provider_name: account.provider_name().to_string(),
         window_days,
         labels: saved.labels,
+        capabilities: saved.capabilities.clone(),
+        auto_reply_needs_sign_in: false,
     };
     Ok(AccountServices::jmap(db.clone(), id, client, settings))
 }

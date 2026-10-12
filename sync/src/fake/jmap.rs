@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mailrs_jmap::{
-    BodyPart, CORE, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header, Hit, Identity, Imported, JmapError, Listed, MAIL,
-    MailChanges, Mailbox, MailboxWrite, Pushed, Queried, SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse,
-    Submission, Thread, Threads,
+    AddressBook, BodyPart, CORE, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
+    Hit, Identity, Imported, JmapError, Listed, MAIL, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried,
+    SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse, SieveScript, Submission, Thread, Threads, VacationResponse,
 };
 use serde_json::{Map, Value, json};
 use tokio::sync::Notify;
@@ -124,6 +124,14 @@ pub struct JmapState {
     pub refuse_mailbox_roles: bool,
     /// Refuses every new mailbox, as `forbidden`.
     pub refuse_mailbox_creates: bool,
+    /// The automatic reply the server holds.
+    pub vacation: VacationResponse,
+    /// Contact cards by id, as JSContact JSON.
+    pub cards: BTreeMap<String, Value>,
+    pub books: Vec<AddressBook>,
+    /// Sieve scripts by id: name, text, whether active.
+    pub scripts: BTreeMap<String, (String, String, bool)>,
+    pub masked: BTreeMap<String, MaskedEmail>,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -404,6 +412,11 @@ impl FakeJmap {
             anchored_queries: 0,
             refuse_mailbox_roles: false,
             refuse_mailbox_creates: false,
+            vacation: VacationResponse::default(),
+            cards: BTreeMap::new(),
+            books: vec![AddressBook { id: "AB1".into(), name: "Personal".into(), is_default: true }],
+            scripts: BTreeMap::new(),
+            masked: BTreeMap::new(),
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -517,6 +530,33 @@ impl FakeJmap {
             }
         });
         self
+    }
+
+    /// Offers Sieve over JMAP with `extensions`.
+    pub fn with_sieve(self, extensions: &[&str]) -> FakeJmap {
+        let fake = self.with_capability(mailrs_jmap::SIEVE);
+        fake.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(mailrs_jmap::SIEVE.into(), json!({ "sieveExtensions": extensions }));
+            }
+        });
+        fake
+    }
+
+    /// A card another client made.
+    pub fn add_card(&self, name: &str, email: &str) -> String {
+        self.with(|s| {
+            let id = s.id("K");
+            s.cards.insert(
+                id.clone(),
+                json!({
+                    "id": id, "@type": "Card", "addressBookIds": { "AB1": true },
+                    "name": { "full": name }, "emails": { "e1": { "address": email } }
+                }),
+            );
+            s.record("ContactCard", &id, Op::Created);
+            id
+        })
     }
 
     pub fn without_capability(self, capability: &str) -> FakeJmap {
@@ -1089,6 +1129,131 @@ impl JmapApi for FakeJmap {
         Ok(self.with(|s| s.identities.clone()))
     }
 
+    async fn vacation(&self) -> Answer<VacationResponse> {
+        Ok(self.with(|s| s.vacation.clone()))
+    }
+
+    async fn set_vacation(&self, reply: &VacationResponse) -> Answer<()> {
+        self.called("VacationResponse/set");
+        self.with(|s| s.vacation = reply.clone());
+        Ok(())
+    }
+
+    async fn address_books(&self) -> Answer<Vec<AddressBook>> {
+        Ok(self.with(|s| s.books.clone()))
+    }
+
+    async fn cards_page(&self, position: u64, limit: usize) -> Answer<CardsPage> {
+        self.called("ContactCard/query");
+        Ok(self.with(|s| CardsPage {
+            state: s.state.to_string(),
+            cards: s.cards.values().skip(position as usize).take(limit).cloned().collect(),
+            position,
+            total: Some(s.cards.len() as u64),
+        }))
+    }
+
+    async fn card_changes(&self, since: &str, max: usize) -> Answer<CardChanges> {
+        self.called("ContactCard/changes");
+        self.with(|s| {
+            let changes = s.changes("ContactCard", since, max)?;
+            let cards = changes.created.iter().chain(&changes.updated).filter_map(|id| s.cards.get(id).cloned()).collect();
+            Ok(CardChanges { changes, cards })
+        })
+    }
+
+    async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
+        self.called("ContactCard/set");
+        self.with(|s| match write {
+            CardWrite::Create(card) => {
+                let id = s.id("K");
+                let mut card = card.clone();
+                card.insert("id".into(), json!(id));
+                s.cards.insert(id.clone(), Value::Object(card));
+                s.record("ContactCard", &id, Op::Created);
+                Ok(s.cards[&id].clone())
+            }
+            CardWrite::Update { id, patch } => {
+                let card = s.cards.get_mut(id).ok_or(JmapError::NotFound)?;
+                for (key, value) in patch {
+                    card[key] = value.clone();
+                }
+                let card = card.clone();
+                s.record("ContactCard", id, Op::Updated);
+                Ok(card)
+            }
+        })
+    }
+
+    async fn sieve_scripts(&self) -> Answer<Vec<SieveScript>> {
+        Ok(self.with(|s| {
+            s.scripts
+                .iter()
+                .map(|(id, (name, _, active))| SieveScript { id: id.clone(), name: Some(name.clone()), blob_id: format!("blob-{id}"), is_active: *active })
+                .collect()
+        }))
+    }
+
+    async fn sieve_text(&self, blob_id: &str) -> Answer<String> {
+        let id = blob_id.strip_prefix("blob-").ok_or(JmapError::NotFound)?;
+        self.with(|s| s.scripts.get(id).map(|(_, text, _)| text.clone())).ok_or(JmapError::NotFound)
+    }
+
+    async fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> Answer<String> {
+        self.called("SieveScript/set");
+        Ok(self.with(|s| {
+            let id = existing.map(str::to_string).unwrap_or_else(|| s.id("S"));
+            let active = s.scripts.get(&id).is_some_and(|(_, _, a)| *a);
+            s.scripts.insert(id.clone(), (name.to_string(), text.to_string(), active));
+            id
+        }))
+    }
+
+    async fn activate_sieve(&self, id: &str) -> Answer<()> {
+        self.with(|s| {
+            for (script, (_, _, active)) in s.scripts.iter_mut() {
+                *active = script == id;
+            }
+        });
+        Ok(())
+    }
+
+    async fn sieve_extensions(&self) -> Answer<Vec<String>> {
+        Ok(self.with(|s| {
+            let listed = s.session.account_capability(mailrs_jmap::SIEVE).and_then(|c| c.get("sieveExtensions")).and_then(Value::as_array);
+            listed.into_iter().flatten().filter_map(|e| e.as_str().map(str::to_string)).collect()
+        }))
+    }
+
+    async fn masked_emails(&self) -> Answer<Vec<MaskedEmail>> {
+        Ok(self.with(|s| s.masked.values().cloned().collect()))
+    }
+
+    async fn create_masked(&self, for_domain: &str, description: &str) -> Answer<MaskedEmail> {
+        self.called("MaskedEmail/set");
+        Ok(self.with(|s| {
+            let id = s.id("ME");
+            let made = MaskedEmail {
+                id: id.clone(),
+                email: format!("masked.{id}@example.com").to_lowercase(),
+                state: "enabled".into(),
+                for_domain: for_domain.into(),
+                description: description.into(),
+                created_at: Some("2026-10-11T10:00:00Z".into()),
+                last_message_at: None,
+            };
+            s.masked.insert(id, made.clone());
+            made
+        }))
+    }
+
+    async fn set_masked_state(&self, id: &str, state: MaskedState) -> Answer<()> {
+        self.with(|s| {
+            s.masked.get_mut(id).ok_or(JmapError::NotFound)?.state = state.as_str().to_string();
+            Ok(())
+        })
+    }
+
     async fn push(&self) -> Answer<Pushed> {
         // The client waits out a pause before it opens a stream.
         if let Some(until) = self.with(|s| s.push_paused_until) {
@@ -1327,6 +1492,37 @@ mod tests {
         let fake = FakeJmap::new();
         let set = fake.set_emails(&Map::new(), &["gone".into()]).await.unwrap();
         assert_eq!(set.refusal("gone").unwrap().kind, "notFound");
+    }
+
+    #[tokio::test]
+    async fn cards_change_and_the_changes_name_them() {
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::CONTACTS);
+        let first = fake.cards_page(0, 10).await.unwrap();
+        let id = fake.add_card("Ada", "ada@example.com");
+        let changed = fake.card_changes(&first.state, 100).await.unwrap();
+        assert_eq!(changed.changes.created, [id]);
+        assert_eq!(changed.cards[0]["name"]["full"], "Ada");
+    }
+
+    #[tokio::test]
+    async fn a_sieve_script_is_kept_and_activated() {
+        let fake = FakeJmap::new().with_sieve(&["fileinto", "vacation"]);
+        let id = fake.put_sieve("penguin-mail", None, "keep;").await.unwrap();
+        fake.activate_sieve(&id).await.unwrap();
+        let scripts = fake.sieve_scripts().await.unwrap();
+        assert!(scripts.iter().any(|s| s.id == id && s.is_active));
+        assert_eq!(fake.sieve_text(&scripts[0].blob_id).await.unwrap(), "keep;");
+        assert_eq!(fake.sieve_extensions().await.unwrap(), ["fileinto", "vacation"]);
+    }
+
+    #[tokio::test]
+    async fn a_masked_address_turns_off_and_comes_back() {
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::MASKED_EMAIL);
+        let made = fake.create_masked("https://shop.example", "Shop").await.unwrap();
+        fake.set_masked_state(&made.id, MaskedState::Disabled).await.unwrap();
+        assert_eq!(fake.masked_emails().await.unwrap()[0].state, "disabled");
+        fake.set_masked_state(&made.id, MaskedState::Enabled).await.unwrap();
+        assert_eq!(fake.masked_emails().await.unwrap()[0].state, "enabled");
     }
 
     #[tokio::test]

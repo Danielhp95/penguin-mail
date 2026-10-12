@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_jmap::{
-    Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed, MailChanges, Mailbox, MailboxWrite,
-    Pushed, Queried, Saved, Session, SetResponse, Submission, Threads,
+    AddressBook, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed,
+    MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried, Saved, Session, SetResponse, SieveScript,
+    Submission, Threads, VacationResponse,
 };
 use serde_json::{Map, Value};
 
@@ -33,6 +34,20 @@ pub trait JmapApi: Send + Sync + 'static {
     fn import(&self, blob_id: &str, mailbox_ids: &[String], keywords: &[&str], destroy: Option<&str>) -> impl Future<Output = Answer<Saved>> + Send;
     fn submit(&self, submission: &Submission) -> impl Future<Output = Answer<Imported>> + Send;
     fn identities(&self) -> impl Future<Output = Answer<Vec<Identity>>> + Send;
+    fn vacation(&self) -> impl Future<Output = Answer<VacationResponse>> + Send;
+    fn set_vacation(&self, reply: &VacationResponse) -> impl Future<Output = Answer<()>> + Send;
+    fn address_books(&self) -> impl Future<Output = Answer<Vec<AddressBook>>> + Send;
+    fn cards_page(&self, position: u64, limit: usize) -> impl Future<Output = Answer<CardsPage>> + Send;
+    fn card_changes(&self, since: &str, max: usize) -> impl Future<Output = Answer<CardChanges>> + Send;
+    fn set_card(&self, write: &CardWrite) -> impl Future<Output = Answer<Value>> + Send;
+    fn sieve_scripts(&self) -> impl Future<Output = Answer<Vec<SieveScript>>> + Send;
+    fn sieve_text(&self, blob_id: &str) -> impl Future<Output = Answer<String>> + Send;
+    fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> impl Future<Output = Answer<String>> + Send;
+    fn activate_sieve(&self, id: &str) -> impl Future<Output = Answer<()>> + Send;
+    fn sieve_extensions(&self) -> impl Future<Output = Answer<Vec<String>>> + Send;
+    fn masked_emails(&self) -> impl Future<Output = Answer<Vec<MaskedEmail>>> + Send;
+    fn create_masked(&self, for_domain: &str, description: &str) -> impl Future<Output = Answer<MaskedEmail>> + Send;
+    fn set_masked_state(&self, id: &str, state: MaskedState) -> impl Future<Output = Answer<()>> + Send;
     fn push(&self) -> impl Future<Output = Answer<Pushed>> + Send;
     /// When push comes back, while a stalled call has paused it.
     fn push_paused(&self) -> Option<tokio::time::Instant>;
@@ -85,6 +100,48 @@ impl JmapApi for JmapClient {
     }
     async fn identities(&self) -> Answer<Vec<Identity>> {
         mailrs_jmap::identity::identities(self).await
+    }
+    async fn vacation(&self) -> Answer<VacationResponse> {
+        JmapClient::vacation(self).await
+    }
+    async fn set_vacation(&self, reply: &VacationResponse) -> Answer<()> {
+        JmapClient::set_vacation(self, reply).await
+    }
+    async fn address_books(&self) -> Answer<Vec<AddressBook>> {
+        JmapClient::address_books(self).await
+    }
+    async fn cards_page(&self, position: u64, limit: usize) -> Answer<CardsPage> {
+        JmapClient::cards_page(self, position, limit).await
+    }
+    async fn card_changes(&self, since: &str, max: usize) -> Answer<CardChanges> {
+        JmapClient::card_changes(self, since, max).await
+    }
+    async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
+        JmapClient::set_card(self, write).await
+    }
+    async fn sieve_scripts(&self) -> Answer<Vec<SieveScript>> {
+        JmapClient::sieve_scripts(self).await
+    }
+    async fn sieve_text(&self, blob_id: &str) -> Answer<String> {
+        JmapClient::sieve_text(self, blob_id).await
+    }
+    async fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> Answer<String> {
+        JmapClient::put_sieve(self, name, existing, text).await
+    }
+    async fn activate_sieve(&self, id: &str) -> Answer<()> {
+        JmapClient::activate_sieve(self, id).await
+    }
+    async fn sieve_extensions(&self) -> Answer<Vec<String>> {
+        JmapClient::sieve_extensions(self).await
+    }
+    async fn masked_emails(&self) -> Answer<Vec<MaskedEmail>> {
+        JmapClient::masked_emails(self).await
+    }
+    async fn create_masked(&self, for_domain: &str, description: &str) -> Answer<MaskedEmail> {
+        JmapClient::create_masked(self, for_domain, description).await
+    }
+    async fn set_masked_state(&self, id: &str, state: MaskedState) -> Answer<()> {
+        JmapClient::set_masked_state(self, id, state).await
     }
     async fn push(&self) -> Answer<Pushed> {
         JmapClient::push(self, PUSH_IDLE).await

@@ -341,6 +341,20 @@ either_client! {
         fn import(blob_id: &str, mailbox_ids: &[String], keywords: &[&str], destroy: Option<&str>) -> Jmapped<Saved>;
         fn submit(submission: &Submission) -> Jmapped<Imported>;
         fn identities() -> Jmapped<Vec<Identity>>;
+        fn vacation() -> Jmapped<mailrs_jmap::VacationResponse>;
+        fn set_vacation(reply: &mailrs_jmap::VacationResponse) -> Jmapped<()>;
+        fn address_books() -> Jmapped<Vec<mailrs_jmap::AddressBook>>;
+        fn cards_page(position: u64, limit: usize) -> Jmapped<mailrs_jmap::CardsPage>;
+        fn card_changes(since: &str, max: usize) -> Jmapped<mailrs_jmap::CardChanges>;
+        fn set_card(write: &mailrs_jmap::CardWrite) -> Jmapped<Value>;
+        fn sieve_scripts() -> Jmapped<Vec<mailrs_jmap::SieveScript>>;
+        fn sieve_text(blob_id: &str) -> Jmapped<String>;
+        fn put_sieve(name: &str, existing: Option<&str>, text: &str) -> Jmapped<String>;
+        fn activate_sieve(id: &str) -> Jmapped<()>;
+        fn sieve_extensions() -> Jmapped<Vec<String>>;
+        fn masked_emails() -> Jmapped<Vec<mailrs_jmap::MaskedEmail>>;
+        fn create_masked(for_domain: &str, description: &str) -> Jmapped<mailrs_jmap::MaskedEmail>;
+        fn set_masked_state(id: &str, state: mailrs_jmap::MaskedState) -> Jmapped<()>;
         fn push() -> Jmapped<Pushed>;
     }
 }

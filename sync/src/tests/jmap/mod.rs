@@ -2,11 +2,15 @@
 //! account runs.
 
 mod bodies;
+mod contacts;
 mod feed;
 mod fetch;
+mod identities;
 mod mailboxes;
 mod outgoing;
+mod rules;
 mod search;
+mod vacation;
 mod watch;
 mod writes;
 

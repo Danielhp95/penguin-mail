@@ -71,6 +71,8 @@ fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId)
         provider_name: format!("{:?}", server.kind),
         window_days: WINDOW_DAYS,
         labels: true,
+        capabilities: Vec::new(),
+        auto_reply_needs_sign_in: false,
     };
     AccountServices::jmap(db.clone(), account_id, client, settings)
 }

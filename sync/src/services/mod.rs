@@ -442,6 +442,8 @@ impl AccountServices {
             provider_name: "Fastmail".into(),
             window_days: crate::DEFAULT_WINDOW_DAYS,
             labels: fake.with(|s| s.session.mailboxes_per_email() != Some(1)),
+            capabilities: fake.with(|s| s.session.capabilities.keys().filter(|c| s.session.offers(c)).cloned().collect()),
+            auto_reply_needs_sign_in: false,
         };
         let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
         AccountServices {
