@@ -2089,7 +2089,7 @@ msgstr ""
 "Esta conta não guarda nenhuma palavra-passe que um servidor de calendário ou "
 "de contactos aceite."
 
-#: app/src/core.rs:1327
+#: app/src/core.rs:1333
 msgid "The demo cannot switch accounts."
 msgstr "O modo de demonstração não muda contas."
 

@@ -938,7 +938,11 @@ async fn removing_a_browser_account_hands_its_newest_refresh_token_to_revoke() {
     let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved), 0).await.unwrap();
     crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     let session = secrets.jmap_sessions.held(account.id).unwrap();
-    let grant = crate::jmap_grant(&db, &secrets, &account).await.expect("a browser account has a grant to revoke");
+    let row = crate::jmap_grant(&db, &account).await.expect("a browser account has a grant to revoke");
+    // Reading the grant retires nothing: the account's row may still fail
+    // to go, and the account then keeps running on this session.
+    assert!(!session.retired(), "the session was retired before its account went");
+    let grant = row.retire(&secrets).await.expect("the grant's token");
     assert!(session.retired(), "the session is retired before its token is revoked");
     assert_eq!(
         (grant.session_url.as_str(), grant.client_id.as_str(), grant.refresh_token.as_str()),
@@ -951,7 +955,7 @@ async fn a_token_account_has_no_grant_to_revoke() {
     let (db, _dir) = store().await;
     let secrets = Secrets::memory();
     let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_jmap("me@fastmail.com", "fmu1-token"), 0).await.unwrap();
-    assert!(crate::jmap_grant(&db, &secrets, &account).await.is_none());
+    assert!(crate::jmap_grant(&db, &account).await.is_none());
 }
 
 #[tokio::test]

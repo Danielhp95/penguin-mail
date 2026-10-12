@@ -572,23 +572,40 @@ pub struct JmapGrant {
     pub(crate) refresh_token: String,
 }
 
-/// The browser grant of `account`, read before the account goes, or
-/// `None` for an account that signs in with a password or a token. The
-/// account's session is retired first, so the token is the newest one it
-/// held and nothing saves a later one; without a session, the keyring's.
-pub async fn jmap_grant(db: &Db, secrets: &Secrets, account: &Account) -> Option<JmapGrant> {
+/// Where a browser account's grant was made, read from its row before the
+/// row goes. No `Debug`: it holds the client id.
+pub struct JmapGrantRow {
+    id: AccountId,
+    session_url: String,
+    client_id: String,
+}
+
+/// The grant of `account` from its row, or `None` for an account that
+/// signs in with a password or a token. Read before the row is deleted;
+/// it retires nothing, so an account whose row stays keeps running.
+pub async fn jmap_grant(db: &Db, account: &Account) -> Option<JmapGrantRow> {
     if account.provider != Provider::Jmap {
         return None;
     }
     let id = account.id;
     let saved = db.read(move |c| mailrs_store::jmap::load(c, id)).await.ok()??;
     let client = saved.oauth.filter(|_| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)?;
-    let held = secrets.jmap_sessions.forget(id).await.filter(|token| !token.is_empty());
-    let refresh_token = match held {
-        Some(token) => token,
-        None => read_secret(Arc::clone(&secrets.jmap), id, STEP_WAIT).await.ok()??,
-    };
-    Some(JmapGrant { session_url: saved.session_url, client_id: client.client_id, refresh_token })
+    Some(JmapGrantRow { id, session_url: saved.session_url, client_id: client.client_id })
+}
+
+impl JmapGrantRow {
+    /// Once the account's row is gone: retires its session, so the token is
+    /// the newest one it held and nothing saves a later one, and answers
+    /// the grant to revoke. Without a session, the keyring's token.
+    pub async fn retire(self, secrets: &Secrets) -> Option<JmapGrant> {
+        let id = self.id;
+        let held = secrets.jmap_sessions.forget(id).await.filter(|token| !token.is_empty());
+        let refresh_token = match held {
+            Some(token) => token,
+            None => read_secret(Arc::clone(&secrets.jmap), id, STEP_WAIT).await.ok()??,
+        };
+        Some(JmapGrant { session_url: self.session_url, client_id: self.client_id, refresh_token })
+    }
 }
 
 impl JmapGrant {

@@ -1924,7 +1924,7 @@ msgstr ""
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 
-#: app/src/core.rs:1327
+#: app/src/core.rs:1333
 msgid "The demo cannot switch accounts."
 msgstr ""
 

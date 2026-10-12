@@ -1852,7 +1852,7 @@ msgstr "Gave up waiting for the browser after five minutes."
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "This account keeps no password a calendar or contacts server takes."
 
-#: app/src/core.rs:1327
+#: app/src/core.rs:1333
 msgid "The demo cannot switch accounts."
 msgstr "The demo cannot switch accounts."
 

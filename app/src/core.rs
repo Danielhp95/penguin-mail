@@ -1232,9 +1232,15 @@ impl Core {
             // Read while the account's row is still there.
             let grant = match demo {
                 true => None,
-                false => mailrs_sync::jmap_grant(&db, &secrets, &account).await,
+                false => mailrs_sync::jmap_grant(&db, &account).await,
             };
             db.write(move |c| accounts::delete_account(c, id)).await?;
+            // Only now that the row is gone: retiring the session stops it
+            // saving, and the token it answers is the one to revoke.
+            let grant = match grant {
+                Some(row) => row.retire(&secrets).await,
+                None => None,
+            };
             // The demo's secrets live in memory, so this never reaches the
             // person's keyring.
             secrets.forget(&account).await?;
