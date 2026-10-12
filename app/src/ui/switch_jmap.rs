@@ -38,6 +38,8 @@ struct Dialog {
     /// takes a sign-in on its own page.
     browser_offer: gtk::Box,
     browser: gtk::Button,
+    /// Closes the dialog; off while the switch runs.
+    cancel: gtk::Button,
     progress: gtk::Box,
     /// Open Page Again and Cancel, while the browser has the sign-in.
     waiting: gtk::Box,
@@ -163,7 +165,9 @@ pub fn present(
         .child(&page)
         .build();
     let switch = gtk::Button::builder().label(gettext("Switch")).css_classes(["suggested-action"]).sensitive(false).build();
+    let cancel = gtk::Button::with_label(&gettext("Cancel"));
     let header = adw::HeaderBar::builder().show_start_title_buttons(false).show_end_title_buttons(false).build();
+    header.pack_start(&cancel);
     header.pack_end(&switch);
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
@@ -192,6 +196,7 @@ pub fn present(
         toasts,
         secret: secret.clone(),
         switch: switch.clone(),
+        cancel: cancel.clone(),
         browser_offer,
         browser: browser.clone(),
         progress,
@@ -204,6 +209,12 @@ pub fn present(
         failure: std::cell::RefCell::default(),
         toast_room: std::cell::Cell::new(0),
         done: Box::new(done),
+    });
+    // Cancel does what Escape does: it closes the dialog, which the
+    // switch keeps open while it runs.
+    let closer = dialog.clone();
+    cancel.connect_clicked(move |_| {
+        closer.close();
     });
     let ready = switch.clone();
     secret.connect_changed(move |row| ready.set_sensitive(!row.text().is_empty()));
@@ -327,6 +338,7 @@ impl Dialog {
         self.secret.set_sensitive(!on);
         self.switch.set_sensitive(!on && !self.secret.text().is_empty());
         self.browser.set_sensitive(!on);
+        self.cancel.set_sensitive(!on);
         self.progress.set_visible(on);
         // Closing now would leave a failure with nowhere to show.
         self.dialog.set_can_close(!on);

@@ -465,7 +465,11 @@ impl Rules {
             .css_classes(["suggested-action"])
             .build();
         let cancel = gtk::Button::builder().label(gettext("Cancel")).build();
-        let header = adw::HeaderBar::builder().show_back_button(false).build();
+        // Cancel is the way out, so no close button beside it.
+        let header = adw::HeaderBar::builder()
+            .show_back_button(false)
+            .show_end_title_buttons(false)
+            .build();
         header.pack_start(&cancel);
         header.pack_end(&save);
         let toolbar = adw::ToolbarView::new();
