@@ -16,6 +16,7 @@ mod identities;
 mod mailboxes;
 mod outgoing;
 mod search;
+mod storage;
 mod sieve;
 mod vacation;
 mod writes;
@@ -40,7 +41,7 @@ pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
     Backfill, Changes, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
-    RemoteRef, SearchQuery, Settled, SyncState, Unapplied, Unheld, Want,
+    RemoteRef, SearchQuery, Settled, Storage, SyncState, Unapplied, Unheld, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -195,6 +196,10 @@ impl<J: JmapApi> Jmap<J> {
 impl<J: JmapApi> MailBackend for Jmap<J> {
     fn capabilities(&self) -> MailCapabilities {
         capabilities_of(self.settings.labels)
+    }
+
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        self.space().await
     }
 
     fn provider_name(&self) -> &str {

@@ -11,6 +11,7 @@ mod mailboxes;
 mod outgoing;
 mod rules;
 mod search;
+mod storage;
 mod vacation;
 mod watch;
 mod writes;

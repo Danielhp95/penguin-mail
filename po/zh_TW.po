@@ -10233,11 +10233,11 @@ msgstr "伺服器拒絕了此請求。"
 msgid "The server could not take this request."
 msgstr "伺服器無法接受此請求。"
 
-#: sync/src/services/jmap/mod.rs:251
+#: sync/src/services/jmap/mod.rs:256
 msgid "This server keeps no colors for its mailboxes."
 msgstr "此伺服器不會儲存信箱的顏色。"
 
-#: sync/src/services/jmap/mod.rs:324
+#: sync/src/services/jmap/mod.rs:329
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
 

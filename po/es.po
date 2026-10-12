@@ -2617,7 +2617,9 @@ msgstr "{provider} no clasifica la bandeja de entrada en categorías."
 msgid ""
 "{provider} does not let an API token change the automatic reply. Change it "
 "on {provider}'s website."
-msgstr "{provider} no permite que un token de API cambie la respuesta automática. Cámbiela en el sitio web de {provider}."
+msgstr ""
+"{provider} no permite que un token de API cambie la respuesta automática. "
+"Cámbiela en el sitio web de {provider}."
 
 #: app/src/offered.rs:539
 msgid "{address}: {reason}"
@@ -10704,11 +10706,11 @@ msgstr "El servidor ha rechazado esta solicitud."
 msgid "The server could not take this request."
 msgstr "El servidor no ha podido aceptar esta solicitud."
 
-#: sync/src/services/jmap/mod.rs:251
+#: sync/src/services/jmap/mod.rs:256
 msgid "This server keeps no colors for its mailboxes."
 msgstr "Este servidor no guarda colores para sus buzones."
 
-#: sync/src/services/jmap/mod.rs:324
+#: sync/src/services/jmap/mod.rs:329
 msgid "This server files sent mail itself."
 msgstr "Este servidor archiva por sí mismo el correo enviado."
 
