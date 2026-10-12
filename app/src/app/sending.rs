@@ -255,12 +255,10 @@ impl App {
                 Err(problem) => return this.reopen(draft, &problem),
             };
             let (outbox, kept, at) = (this.core.outbox(), draft.clone(), now_millis());
-            // Writing the draft down encodes its files, so it happens on
-            // the runtime rather than the GTK thread.
-            let posted = this
-                .core
-                .call(async move { outbox.post(queued(&kept, raw, at)).await })
-                .await;
+            // Writing the draft down encodes its files, so it happens on a
+            // thread of its own, not the GTK thread or the runtime.
+            let item = off_thread(move || queued(&kept, raw, at)).await;
+            let posted = this.core.call(async move { outbox.post(item).await }).await;
             match posted {
                 Ok(Posted::Sent(_)) => {
                     this.contacts_stale.set(true);
@@ -307,10 +305,8 @@ impl App {
                 Err(problem) => return this.reopen(draft, &problem),
             };
             let (outbox, kept) = (this.core.outbox(), draft.clone());
-            let posted = this
-                .core
-                .call(async move { outbox.schedule(queued(&kept, raw, at)).await })
-                .await;
+            let item = off_thread(move || queued(&kept, raw, at)).await;
+            let posted = this.core.call(async move { outbox.schedule(item).await }).await;
             match posted {
                 Ok(Posted::Refused(problem)) => this.reopen(
                     draft,

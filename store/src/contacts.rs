@@ -187,13 +187,12 @@ pub fn catch_up(conn: &Connection) -> Result<()> {
 /// last step.
 pub fn catch_up_step(conn: &Connection, limit: i64) -> Result<bool> {
     let (stale, last) = marks(conn)?;
-    if !stale && !take_off_deleted(conn)? {
-        // Counted again from the next step on.
-        return Ok(true);
-    }
     if stale && last == 0 {
         conn.execute("DELETE FROM correspondents", [])?;
         conn.execute("DELETE FROM contact_gone", [])?;
+    } else if !take_off_deleted(conn)? {
+        // Counted again from the next step on.
+        return Ok(true);
     }
     // The last row of this step; the step ends there, so a message filed
     // in two Sent folders is never split across two steps.
@@ -232,12 +231,18 @@ struct Gone {
     from_name: Option<String>,
     from_addr: Option<String>,
     to_cc: Option<(String, String)>,
+    /// How many Sent folders it was filed in: a recount counts a sent
+    /// message once for each.
+    filings: i64,
     date: EpochMillis,
 }
 
 impl Gone {
-    fn spread(&self, note: impl FnMut(Address, i64, EpochMillis) -> Result<()>) -> Result<()> {
-        spread(self.from_name.clone(), self.from_addr.clone(), self.to_cc.clone(), self.date, note)
+    fn spread(&self, mut note: impl FnMut(Address, i64, EpochMillis) -> Result<()>) -> Result<()> {
+        let times = self.filings.max(1);
+        spread(self.from_name.clone(), self.from_addr.clone(), self.to_cc.clone(), self.date, |address, weight, date| {
+            note(address, weight * times, date)
+        })
     }
 }
 
@@ -248,12 +253,13 @@ fn deleted(conn: &Connection) -> Result<Vec<Gone>> {
             "SELECT seq, from_name, from_addr, to_addrs, cc_addrs, date, sent FROM contact_gone ORDER BY seq",
         )?
         .query_map([], |row| {
-            let sent: bool = row.get(6)?;
+            let filings: i64 = row.get(6)?;
             Ok(Gone {
                 seq: row.get(0)?,
                 from_name: row.get(1)?,
                 from_addr: row.get(2)?,
-                to_cc: if sent { Some((row.get(3)?, row.get(4)?)) } else { None },
+                to_cc: if filings > 0 { Some((row.get(3)?, row.get(4)?)) } else { None },
+                filings,
                 date: row.get(5)?,
             })
         })?
@@ -850,6 +856,69 @@ mod tests {
             list_correspondents(&conn).unwrap(),
             whole_read(&conn).unwrap()
         );
+    }
+
+    /// A message filed in two Sent folders counts for its recipients once
+    /// per filing when every message is read, so deleting it takes off the
+    /// weight once per filing too.
+    #[test]
+    fn a_deletion_takes_off_one_weight_for_each_sent_filing() {
+        use mailrs_domain::{MailboxKind, Membership, RemoteMailbox, Role};
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        let second_sent = RemoteMailbox {
+            id: "Label_1".into(),
+            name: "Sent Items".into(),
+            kind: MailboxKind::Label,
+            role: Some(Role::Sent),
+            color: None,
+            hidden: false,
+        };
+        crate::mailboxes::upsert(&conn, id, &second_sent).unwrap();
+        let to_mara = |n: &str, name: &str| {
+            message(id, n, ("Dana", "dana@example.com"), &[(name, "mara@example.org")], gmail::SENT)
+        };
+        put_at(&conn, id, to_mara("m1", "Mara A"), 500);
+        put_at(&conn, id, to_mara("m2", "Mara O"), 3_000);
+        let twice = messages::Change::of("m1", Membership::Mailbox("Label_1".into()), true);
+        messages::apply(&conn, id, &[twice]).unwrap();
+        catch_up(&conn).unwrap();
+        assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap());
+        erase(&conn, id, "m1");
+        assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap(), "read after");
+        catch_up(&conn).unwrap();
+        assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap(), "caught up after");
+    }
+
+    /// A delete while a recount runs only touches the rows the recount
+    /// already passed, so a stream of deletions cannot restart it.
+    #[test]
+    fn a_deletion_during_a_recount_does_not_restart_it() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        let from = |n: &str, name: &str, who: &str| {
+            message(id, n, (name, who), &[("Dana", "dana@example.com")], gmail::INBOX)
+        };
+        put_at(&conn, id, from("m0", "Theo Lang", "theo@example.org"), 1_000);
+        put_at(&conn, id, from("m1", "Theo L.", "theo@example.org"), 3_000);
+        for n in 2..9 {
+            put_at(&conn, id, from(&format!("m{n}"), "P", &format!("p{n}@example.org")), 1_000 + n);
+        }
+        assert!(catch_up_step(&conn, 3).unwrap());
+        assert!(stale(&conn));
+        let counted = |conn: &Connection| -> i64 {
+            conn.query_row("SELECT counted_row FROM contact_marks", [], |row| row.get(0)).unwrap()
+        };
+        let passed = counted(&conn);
+        assert!(passed > 0);
+        erase(&conn, id, "m0");
+        erase(&conn, id, "m8");
+        assert_eq!(counted(&conn), passed, "the recount went on from where it was");
+        catch_up(&conn).unwrap();
+        assert!(!stale(&conn));
+        assert_eq!(list_correspondents(&conn).unwrap(), whole_read(&conn).unwrap());
     }
 
     /// With nothing new and nothing stale, the idle catch-up writes nothing.

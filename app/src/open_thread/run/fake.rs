@@ -688,7 +688,7 @@ impl Effects for FakeWindow {
     fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
         self.reached(Step::Clean);
         if self.with(|screen| screen.clean_fails) {
-            let failed = html.failures();
+            let failed = html.stand_ins().failures();
             return Box::pin(async move { failed });
         }
         let (done, cleaned) = oneshot::channel();

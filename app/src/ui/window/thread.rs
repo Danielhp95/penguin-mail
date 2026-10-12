@@ -324,13 +324,13 @@ impl Effects for Ports {
             if html.is_empty() {
                 return HashMap::new();
             }
-            let failed = html.failures();
+            let failed = html.stand_ins();
             self.core
                 .call(async move { tokio::task::spawn_blocking(move || html.clean()).await })
                 .await
                 .unwrap_or_else(|err| {
                     tracing::warn!(error = %err, "could not clean the bodies away from the window");
-                    failed
+                    failed.failures()
                 })
         })
     }

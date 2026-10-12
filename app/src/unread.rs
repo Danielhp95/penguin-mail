@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-use mailrs_domain::AccountId;
+use mailrs_domain::{AccountId, ChangeEvent};
 use mailrs_sync::mailbox::{Counts, Mailbox, Standard, View};
 
 /// All Inboxes, whose count the tray, the Dock and the space badge show.
@@ -56,7 +56,8 @@ pub async fn read<A: mailrs_sync::Accounts>(
     } = ask;
     match refresh {
         true => lists.counts(&mailboxes, &shown, &view).await,
-        false => lists.cached_counts(&mailboxes, &shown, &view).await,
+        // Only the tray and the Dock ask this way, for the inboxes.
+        false => lists.inbox_counts(&mailboxes).await,
     }
 }
 
@@ -148,9 +149,23 @@ impl<C: Counter + 'static> Unread<C> {
         self.listeners.borrow_mut().push(listener);
     }
 
-    /// Mail or a setting changed what the counts say.
+    /// Mail or a setting changed what the counts say. Only an open window
+    /// asks the servers again; the tray and the Dock read what is kept.
     pub fn changed(&self) {
-        self.ask(true);
+        self.ask(self.window.borrow().is_some());
+    }
+
+    /// The engine reported `event`. With a window open every event may
+    /// change what it shows. With none, only the events that move an inbox
+    /// count do.
+    pub fn heard(&self, event: &ChangeEvent) {
+        let moves_inboxes = matches!(
+            event,
+            ChangeEvent::ThreadsChanged { .. } | ChangeEvent::AccountStateChanged { .. }
+        );
+        if moves_inboxes || self.window.borrow().is_some() {
+            self.changed();
+        }
     }
 
     /// A server's count arrived or grew old. Only an open window asks the

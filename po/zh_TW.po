@@ -970,39 +970,39 @@ msgstr "尚未加密，因此未傳送：{reason}"
 msgid "Not signed, so not sent: {reason}"
 msgstr "尚未簽署，因此未傳送：{reason}"
 
-#: app/src/app/sending.rs:270
+#: app/src/app/sending.rs:268
 msgid "Message sent"
 msgstr "已傳送郵件"
 
-#: app/src/app/sending.rs:278
+#: app/src/app/sending.rs:276
 msgid "Waiting in the Outbox. It goes out as soon as it can."
 msgstr "正在 [寄件匣] 中等候，能傳送時就會送出。"
 
-#: app/src/app/sending.rs:283 app/src/app/sending.rs:288
+#: app/src/app/sending.rs:281 app/src/app/sending.rs:286
 msgid "Not sent: {reason}"
 msgstr "未傳送：{reason}"
 
-#: app/src/app/sending.rs:317 app/src/app/sending.rs:330
+#: app/src/app/sending.rs:313 app/src/app/sending.rs:326
 msgid "Not scheduled: {reason}"
 msgstr "未排程：{reason}"
 
-#: app/src/app/sending.rs:323
+#: app/src/app/sending.rs:319
 msgid "Will send {when}"
 msgstr "將於 {when} 傳送"
 
-#: app/src/app/sending.rs:381
+#: app/src/app/sending.rs:377
 msgid "Sent {message}"
 msgstr "已傳送 {message}"
 
-#: app/src/app/sending.rs:390
+#: app/src/app/sending.rs:386
 msgid "Still in the Outbox: {message}"
 msgstr "仍在 [寄件匣] 中：{message}"
 
-#: app/src/app/sending.rs:498
+#: app/src/app/sending.rs:494
 msgid "your message"
 msgstr "郵件"
 
-#: app/src/app/sending.rs:500
+#: app/src/app/sending.rs:496
 msgid "“{subject}”"
 msgstr "「{subject}」"
 
@@ -3434,7 +3434,7 @@ msgstr "標準加密（TLS）"
 msgid "Not encrypted in transit"
 msgstr "傳輸過程未加密"
 
-#: app/src/render.rs:551 app/src/ui/composer/mod.rs:2028
+#: app/src/render.rs:551 app/src/ui/composer/mod.rs:2085
 msgid "{count} attachment"
 msgid_plural "{count} attachments"
 msgstr[0] "{count} 個附件"
@@ -3478,8 +3478,8 @@ msgstr[0] "{named} 與其他 {count} 位"
 msgid "me"
 msgstr "我"
 
-#: app/src/render.rs:701 app/src/ui/composer/mod.rs:591
-#: app/src/ui/composer/mod.rs:595
+#: app/src/render.rs:701 app/src/ui/composer/mod.rs:594
+#: app/src/ui/composer/mod.rs:598
 msgid "Show trimmed content"
 msgstr "顯示省略的內容"
 
@@ -4036,8 +4036,8 @@ msgstr "Penguin Mail：{summary}"
 msgid "Open Penguin Mail"
 msgstr "開啟 Penguin Mail"
 
-#: app/src/tray.rs:267 app/src/ui/composer/mod.rs:340
-#: app/src/ui/composer/mod.rs:647 app/src/ui/composer/mod.rs:1502
+#: app/src/tray.rs:267 app/src/ui/composer/mod.rs:344
+#: app/src/ui/composer/mod.rs:650 app/src/ui/composer/mod.rs:1509
 #: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:432
 msgid "New Message"
 msgstr "新增郵件"
@@ -4236,8 +4236,8 @@ msgstr "重試"
 #: app/src/ui/calendar/editor.rs:183 app/src/ui/calendar/manage.rs:252
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/calendar/manage.rs:417
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
-#: app/src/ui/composer/mod.rs:1883 app/src/ui/composer/mod.rs:1962
-#: app/src/ui/composer/mod.rs:2289 app/src/ui/composer/mod.rs:2743
+#: app/src/ui/composer/mod.rs:1924 app/src/ui/composer/mod.rs:2014
+#: app/src/ui/composer/mod.rs:2346 app/src/ui/composer/mod.rs:2800
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:497 app/src/ui/rules.rs:681
 #: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:150
 #: app/src/ui/switch_jmap.rs:142 app/src/ui/switch_jmap.rs:167
@@ -4580,7 +4580,8 @@ msgstr ""
 
 #: app/src/ui/assistant.rs:154 app/src/ui/assistant.rs:159
 #: app/src/ui/assistant.rs:491 app/src/ui/calendar/scope.rs:113
-#: app/src/ui/composer/mod.rs:357 app/src/ui/window/shortcuts.rs:492
+#: app/src/ui/composer/mod.rs:359 app/src/ui/composer/mod.rs:1859
+#: app/src/ui/window/shortcuts.rs:492
 msgid "Send"
 msgstr "傳送"
 
@@ -4688,7 +4689,7 @@ msgid "Edit {server}"
 msgstr "編輯 {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
-#: app/src/ui/composer/mod.rs:2064 app/src/ui/composer/recipients.rs:318
+#: app/src/ui/composer/mod.rs:2121 app/src/ui/composer/recipients.rs:318
 #: app/src/ui/sender_prefs.rs:136 app/src/ui/window.rs:2820
 msgid "Remove"
 msgstr "移除"
@@ -4729,7 +4730,7 @@ msgstr ""
 "設定環境變數。URL 則透過 HTTP 連線至伺服器。"
 
 #: app/src/ui/assistant_mcp_prefs.rs:254 app/src/ui/calendar/manage.rs:348
-#: app/src/ui/composer/mod.rs:2738 app/src/ui/smart_editor.rs:37
+#: app/src/ui/composer/mod.rs:2795 app/src/ui/smart_editor.rs:37
 #: app/src/ui/templates.rs:190
 msgid "Name"
 msgstr "名稱"
@@ -4765,7 +4766,7 @@ msgstr "測試"
 
 #: app/src/ui/assistant_mcp_prefs.rs:341 app/src/ui/calendar/editor.rs:179
 #: app/src/ui/calendar/quick.rs:211 app/src/ui/calendar/scope.rs:111
-#: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2743
+#: app/src/ui/composer/editor.rs:343 app/src/ui/composer/mod.rs:2800
 #: app/src/ui/dav_edit.rs:26 app/src/ui/rules.rs:490
 #: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:144
 #: app/src/ui/templates.rs:233 app/src/ui/vacation.rs:41
@@ -5285,7 +5286,7 @@ msgstr "僅新會議"
 msgid "None"
 msgstr "無"
 
-#: app/src/ui/calendar/editor.rs:601 app/src/ui/composer/mod.rs:561
+#: app/src/ui/calendar/editor.rs:601 app/src/ui/composer/mod.rs:564
 #: app/src/ui/vacation.rs:249 app/src/ui/vacation.rs:273
 msgid "Message"
 msgstr "訊息"
@@ -5431,7 +5432,7 @@ msgstr "與參與者共用"
 msgid "Share {file} with the guests"
 msgstr "與參與者共用 {file}"
 
-#: app/src/ui/calendar/editor.rs:1648 app/src/ui/composer/mod.rs:2068
+#: app/src/ui/calendar/editor.rs:1648 app/src/ui/composer/mod.rs:2125
 msgid "Remove {file}"
 msgstr "移除 {file}"
 
@@ -5459,7 +5460,7 @@ msgstr "正在上傳 {file}"
 msgid "Could not attach {file}: {reason}"
 msgstr "無法附加 {file}：{reason}"
 
-#: app/src/ui/calendar/editor.rs:1825 app/src/ui/composer/mod.rs:385
+#: app/src/ui/calendar/editor.rs:1825 app/src/ui/composer/mod.rs:388
 msgid "More"
 msgstr "更多"
 
@@ -5990,7 +5991,7 @@ msgstr "已刪除「{title}」"
 msgid "Could not delete the event: {reason}"
 msgstr "無法刪除活動：{reason}"
 
-#: app/src/ui/calendar/mod.rs:2058 app/src/ui/composer/mod.rs:1356
+#: app/src/ui/calendar/mod.rs:2058 app/src/ui/composer/mod.rs:1363
 #: app/src/ui/window.rs:1916 app/src/ui/window/scheduled.rs:98
 #: app/src/ui/window/shortcuts.rs:458
 msgid "Undo"
@@ -6537,383 +6538,387 @@ msgstr "說明"
 #. Attach Files moves here on a narrow window, where its button goes
 #. so Send keeps its word; the action is off, and the item hidden,
 #. while the button shows.
-#: app/src/ui/composer/mod.rs:128
+#: app/src/ui/composer/mod.rs:130
 msgid "Attach Files…"
 msgstr "附加檔案…"
 
-#: app/src/ui/composer/mod.rs:131 app/src/ui/templates.rs:23
+#: app/src/ui/composer/mod.rs:133 app/src/ui/templates.rs:23
 msgid "Templates"
 msgstr "範本"
 
-#: app/src/ui/composer/mod.rs:132 app/src/ui/composer/mod.rs:1001
+#: app/src/ui/composer/mod.rs:134 app/src/ui/composer/mod.rs:1005
 msgid "Preview"
 msgstr "預覽"
 
-#: app/src/ui/composer/mod.rs:136
+#: app/src/ui/composer/mod.rs:138
 msgid "Sign"
 msgstr "簽署"
 
-#: app/src/ui/composer/mod.rs:137
+#: app/src/ui/composer/mod.rs:139
 msgid "Encrypt"
 msgstr "加密"
 
-#: app/src/ui/composer/mod.rs:144
+#: app/src/ui/composer/mod.rs:146
 msgid "Request Read Receipt"
 msgstr "要求讀取回條"
 
-#: app/src/ui/composer/mod.rs:349 app/src/ui/conversation.rs:1715
+#: app/src/ui/composer/mod.rs:353 app/src/ui/conversation.rs:1715
 msgid "Choose a Time…"
 msgstr "選擇時間…"
 
-#: app/src/ui/composer/mod.rs:361 app/src/ui/composer/mod.rs:1898
+#: app/src/ui/composer/mod.rs:364 app/src/ui/composer/mod.rs:1939
 #: app/src/ui/sidebar.rs:1042
 msgid "Send Later"
 msgstr "排程傳送"
 
-#: app/src/ui/composer/mod.rs:363 app/src/ui/composer/mod.rs:1545
+#: app/src/ui/composer/mod.rs:366 app/src/ui/composer/mod.rs:1552
 msgid "Send (Ctrl+Enter)"
 msgstr "傳送（Ctrl+Enter）"
 
-#: app/src/ui/composer/mod.rs:367
+#: app/src/ui/composer/mod.rs:370
 msgid "Attach Files (Ctrl+Shift+A)"
 msgstr "附加檔案（Ctrl+Shift+A）"
 
-#: app/src/ui/composer/mod.rs:374
+#: app/src/ui/composer/mod.rs:377
 msgid "Save as Template…"
 msgstr "儲存為範本…"
 
-#: app/src/ui/composer/mod.rs:391
+#: app/src/ui/composer/mod.rs:394
 msgid "Add a recipient this computer can encrypt to."
 msgstr "請新增此電腦可為其加密的收件者。"
 
-#: app/src/ui/composer/mod.rs:436
+#: app/src/ui/composer/mod.rs:439
 msgid "Recipients"
 msgstr "收件者"
 
-#: app/src/ui/composer/mod.rs:437
+#: app/src/ui/composer/mod.rs:440
 msgid "Carbon copy"
 msgstr "副本"
 
-#: app/src/ui/composer/mod.rs:438
+#: app/src/ui/composer/mod.rs:441
 msgid "Blind carbon copy"
 msgstr "密件副本"
 
-#: app/src/ui/composer/mod.rs:450
+#: app/src/ui/composer/mod.rs:453
 msgid "Cc/Bcc"
 msgstr "副本／密件副本"
 
-#: app/src/ui/composer/mod.rs:451 app/src/ui/composer/mod.rs:1157
+#: app/src/ui/composer/mod.rs:454 app/src/ui/composer/mod.rs:1164
 msgid "Show Cc and Bcc"
 msgstr "顯示副本與密件副本"
 
-#: app/src/ui/composer/mod.rs:462
+#: app/src/ui/composer/mod.rs:465
 msgid "+suffix or .suffix"
 msgstr "+字尾或 .字尾"
 
-#: app/src/ui/composer/mod.rs:465
+#: app/src/ui/composer/mod.rs:468
 msgid "Address Suffix"
 msgstr "地址字尾"
 
-#: app/src/ui/composer/mod.rs:477 app/src/ui/composer/mod.rs:482
+#: app/src/ui/composer/mod.rs:480 app/src/ui/composer/mod.rs:485
 msgid "New Masked Address"
 msgstr "新增遮罩地址"
 
-#: app/src/ui/composer/mod.rs:499
+#: app/src/ui/composer/mod.rs:502
 msgid "Masked"
 msgstr "遮罩"
 
-#: app/src/ui/composer/mod.rs:527 app/src/ui/composer/mod.rs:528
+#: app/src/ui/composer/mod.rs:530 app/src/ui/composer/mod.rs:531
 #: app/src/ui/rules.rs:405
 msgid "From"
 msgstr "寄件者"
 
-#: app/src/ui/composer/mod.rs:533 app/src/ui/rules.rs:406
+#: app/src/ui/composer/mod.rs:536 app/src/ui/rules.rs:406
 msgid "To"
 msgstr "收件者"
 
-#: app/src/ui/composer/mod.rs:537
+#: app/src/ui/composer/mod.rs:540
 msgid "Cc"
 msgstr "副本"
 
-#: app/src/ui/composer/mod.rs:539
+#: app/src/ui/composer/mod.rs:542
 msgid "Bcc"
 msgstr "密件副本"
 
-#: app/src/ui/composer/mod.rs:549 app/src/ui/rules.rs:407
+#: app/src/ui/composer/mod.rs:552 app/src/ui/rules.rs:407
 #: app/src/ui/templates.rs:192 app/src/ui/vacation.rs:238
 msgid "Subject"
 msgstr "主旨"
 
-#: app/src/ui/composer/mod.rs:616
+#: app/src/ui/composer/mod.rs:619
 msgid "Formatting"
 msgstr "格式"
 
-#: app/src/ui/composer/mod.rs:635 app/src/ui/composer/mod.rs:1322
+#: app/src/ui/composer/mod.rs:638 app/src/ui/composer/mod.rs:1329
 msgid "Forwarded Message"
 msgstr "轉寄的郵件"
 
-#: app/src/ui/composer/mod.rs:1155
+#: app/src/ui/composer/mod.rs:1162
 msgid "Hide Cc and Bcc"
 msgstr "隱藏副本與密件副本"
 
-#: app/src/ui/composer/mod.rs:1240
+#: app/src/ui/composer/mod.rs:1247
 msgid "Remove Quoted Text"
 msgstr "移除引用文字"
 
-#: app/src/ui/composer/mod.rs:1241
+#: app/src/ui/composer/mod.rs:1248
 msgid "Do Not Forward the Original"
 msgstr "不轉寄原始郵件"
 
-#: app/src/ui/composer/mod.rs:1351
+#: app/src/ui/composer/mod.rs:1358
 msgid "Quoted text removed"
 msgstr "已移除引用文字"
 
-#: app/src/ui/composer/mod.rs:1352
+#: app/src/ui/composer/mod.rs:1359
 msgid "Forwarded message removed"
 msgstr "已移除轉寄的郵件"
 
-#: app/src/ui/composer/mod.rs:1448
+#: app/src/ui/composer/mod.rs:1455
 msgid "Sending from {address}"
 msgstr "將從 {address} 寄出"
 
-#: app/src/ui/composer/mod.rs:1451
+#: app/src/ui/composer/mod.rs:1458
 msgid "Could not make a masked address: {reason}"
 msgstr "無法建立遮罩地址：{reason}"
 
-#: app/src/ui/composer/mod.rs:1510
+#: app/src/ui/composer/mod.rs:1517
 msgid "Scheduled to send {when}"
 msgstr "已排程於 {when} 傳送"
 
-#: app/src/ui/composer/mod.rs:1534 app/src/ui/composer/mod.rs:1920
+#: app/src/ui/composer/mod.rs:1541 app/src/ui/composer/mod.rs:1961
 msgid "Choose a sender and enter a permitted address suffix."
 msgstr "請選擇寄件者，並輸入允許使用的地址字尾。"
 
-#: app/src/ui/composer/mod.rs:1705 app/src/ui/queued.rs:65
+#: app/src/ui/composer/mod.rs:1712 app/src/ui/queued.rs:65
 #: app/src/ui/window/press.rs:439
 msgid "Cancel Send"
 msgstr "取消傳送"
 
-#: app/src/ui/composer/mod.rs:1850
+#: app/src/ui/composer/mod.rs:1851 app/src/ui/window/scheduled.rs:97
+msgid "Sending…"
+msgstr "正在傳送…"
+
+#: app/src/ui/composer/mod.rs:1891
 msgid "Attachment Missing?"
 msgstr "忘記附件了嗎？"
 
-#: app/src/ui/composer/mod.rs:1852
+#: app/src/ui/composer/mod.rs:1893
 msgid "The message says “{sentence}” and carries no file."
 msgstr "郵件提到「{sentence}」，但沒有附上檔案。"
 
-#: app/src/ui/composer/mod.rs:1857
+#: app/src/ui/composer/mod.rs:1898
 msgid "Add Attachment"
 msgstr "新增附件"
 
-#: app/src/ui/composer/mod.rs:1858
+#: app/src/ui/composer/mod.rs:1899
 msgid "Send Anyway"
 msgstr "仍要傳送"
 
-#: app/src/ui/composer/mod.rs:1876
+#: app/src/ui/composer/mod.rs:1917
 msgid "Send Without Encryption?"
 msgstr "是否不加密傳送？"
 
-#: app/src/ui/composer/mod.rs:1878
+#: app/src/ui/composer/mod.rs:1919
 msgid "This message was to go out encrypted, and it cannot be. {reason}"
 msgstr "此郵件原定加密傳送，但無法加密。{reason}"
 
-#: app/src/ui/composer/mod.rs:1884
+#: app/src/ui/composer/mod.rs:1925
 msgid "Send Readable"
 msgstr "以明文傳送"
 
-#: app/src/ui/composer/mod.rs:1899
+#: app/src/ui/composer/mod.rs:1940
 msgid "Penguin Mail sends it at this time while it runs, even in the tray."
 msgstr "Penguin Mail 執行時會在此時間傳送，即使只在系統匣中執行也一樣。"
 
-#: app/src/ui/composer/mod.rs:1900
+#: app/src/ui/composer/mod.rs:1941
 msgid "Schedule"
 msgstr "排程"
 
-#: app/src/ui/composer/mod.rs:1943
+#: app/src/ui/composer/mod.rs:1995
 msgid "Draft saved, encrypted to your own key"
 msgstr "已儲存草稿，並以自己的金鑰加密"
 
-#: app/src/ui/composer/mod.rs:1945
+#: app/src/ui/composer/mod.rs:1997
 msgid "Draft saved"
 msgstr "已儲存草稿"
 
-#: app/src/ui/composer/mod.rs:1955
+#: app/src/ui/composer/mod.rs:2007
 msgid "Save as Draft?"
 msgstr "是否儲存為草稿？"
 
-#: app/src/ui/composer/mod.rs:1957
+#: app/src/ui/composer/mod.rs:2009
 msgid "The draft is kept in Gmail, so you can finish it later on any device."
 msgstr "草稿會保留在 Gmail 中，稍後可在任何裝置上繼續撰寫。"
 
-#: app/src/ui/composer/mod.rs:1961
+#: app/src/ui/composer/mod.rs:2013
 msgid "Discard"
 msgstr "捨棄"
 
-#: app/src/ui/composer/mod.rs:1963
+#: app/src/ui/composer/mod.rs:2015
 msgid "Save Draft"
 msgstr "儲存草稿"
 
-#: app/src/ui/composer/mod.rs:1987
+#: app/src/ui/composer/mod.rs:2044
 msgid "Attach Files"
 msgstr "附加檔案"
 
-#: app/src/ui/composer/mod.rs:2023
+#: app/src/ui/composer/mod.rs:2080
 msgid "{files}  ·  {size}"
 msgstr "{files}  ·  {size}"
 
-#: app/src/ui/composer/mod.rs:2105
+#: app/src/ui/composer/mod.rs:2162
 msgid "Bold (Ctrl+B)"
 msgstr "粗體（Ctrl+B）"
 
-#: app/src/ui/composer/mod.rs:2106
+#: app/src/ui/composer/mod.rs:2163
 msgid "Italic (Ctrl+I)"
 msgstr "斜體（Ctrl+I）"
 
-#: app/src/ui/composer/mod.rs:2109
+#: app/src/ui/composer/mod.rs:2166
 msgid "Strikethrough (Ctrl+Shift+X)"
 msgstr "刪除線（Ctrl+Shift+X）"
 
-#: app/src/ui/composer/mod.rs:2112
+#: app/src/ui/composer/mod.rs:2169
 msgid "Code (Ctrl+E)"
 msgstr "程式碼（Ctrl+E）"
 
-#: app/src/ui/composer/mod.rs:2149
+#: app/src/ui/composer/mod.rs:2206
 msgid "Link (Ctrl+K)"
 msgstr "連結（Ctrl+K）"
 
-#: app/src/ui/composer/mod.rs:2159
+#: app/src/ui/composer/mod.rs:2216
 msgid "Bulleted List (Ctrl+Shift+8)"
 msgstr "符號清單（Ctrl+Shift+8）"
 
-#: app/src/ui/composer/mod.rs:2164
+#: app/src/ui/composer/mod.rs:2221
 msgid "Numbered List (Ctrl+Shift+7)"
 msgstr "編號清單（Ctrl+Shift+7）"
 
-#: app/src/ui/composer/mod.rs:2169
+#: app/src/ui/composer/mod.rs:2226
 msgid "Quote (Ctrl+Shift+9)"
 msgstr "引用（Ctrl+Shift+9）"
 
-#: app/src/ui/composer/mod.rs:2186
+#: app/src/ui/composer/mod.rs:2243
 msgid "Insert Image (Ctrl+Shift+P)"
 msgstr "插入圖片（Ctrl+Shift+P）"
 
-#: app/src/ui/composer/mod.rs:2196
+#: app/src/ui/composer/mod.rs:2253
 msgid "Paragraph"
 msgstr "段落"
 
-#: app/src/ui/composer/mod.rs:2197
+#: app/src/ui/composer/mod.rs:2254
 msgid "Heading 1"
 msgstr "標題 1"
 
-#: app/src/ui/composer/mod.rs:2198
+#: app/src/ui/composer/mod.rs:2255
 msgid "Heading 2"
 msgstr "標題 2"
 
-#: app/src/ui/composer/mod.rs:2199
+#: app/src/ui/composer/mod.rs:2256
 msgid "Heading 3"
 msgstr "標題 3"
 
-#: app/src/ui/composer/mod.rs:2200
+#: app/src/ui/composer/mod.rs:2257
 msgid "Code Block"
 msgstr "程式碼區塊"
 
-#: app/src/ui/composer/mod.rs:2214
+#: app/src/ui/composer/mod.rs:2271
 msgid "Turn Markdown into Formatting"
 msgstr "將 Markdown 轉為格式"
 
-#: app/src/ui/composer/mod.rs:2218
+#: app/src/ui/composer/mod.rs:2275
 msgid "Clear Formatting"
 msgstr "清除格式"
 
-#: app/src/ui/composer/mod.rs:2224
+#: app/src/ui/composer/mod.rs:2281
 msgid "Write in Markdown"
 msgstr "以 Markdown 撰寫"
 
-#: app/src/ui/composer/mod.rs:2231 app/src/ui/composer/mod.rs:2235
+#: app/src/ui/composer/mod.rs:2288 app/src/ui/composer/mod.rs:2292
 msgid "More Formatting"
 msgstr "更多格式"
 
-#: app/src/ui/composer/mod.rs:2272
+#: app/src/ui/composer/mod.rs:2329
 msgid "Add a Link"
 msgstr "新增連結"
 
-#: app/src/ui/composer/mod.rs:2278
+#: app/src/ui/composer/mod.rs:2335
 msgid "Text"
 msgstr "文字"
 
-#: app/src/ui/composer/mod.rs:2290
+#: app/src/ui/composer/mod.rs:2347
 msgid "Add Link"
 msgstr "新增連結"
 
-#: app/src/ui/composer/mod.rs:2326
+#: app/src/ui/composer/mod.rs:2383
 msgid "Markdown formatted"
 msgstr "已套用 Markdown 格式"
 
-#: app/src/ui/composer/mod.rs:2442
+#: app/src/ui/composer/mod.rs:2499
 msgid "Pasted as rich text"
 msgstr "已貼上為富文字"
 
-#: app/src/ui/composer/mod.rs:2443
+#: app/src/ui/composer/mod.rs:2500
 msgid "Paste as Plain Text"
 msgstr "貼上為純文字"
 
-#: app/src/ui/composer/mod.rs:2477
+#: app/src/ui/composer/mod.rs:2534
 msgid "Editing as Markdown"
 msgstr "以 Markdown 編輯"
 
-#: app/src/ui/composer/mod.rs:2513
+#: app/src/ui/composer/mod.rs:2570
 msgid "Images"
 msgstr "圖片"
 
-#: app/src/ui/composer/mod.rs:2518
+#: app/src/ui/composer/mod.rs:2575
 msgid "Insert Image"
 msgstr "插入圖片"
 
-#: app/src/ui/composer/mod.rs:2562
+#: app/src/ui/composer/mod.rs:2619
 msgid "Could not read the file: {reason}"
 msgstr "無法讀取檔案：{reason}"
 
-#: app/src/ui/composer/mod.rs:2637
+#: app/src/ui/composer/mod.rs:2694
 msgid "Could not paste the image"
 msgstr "無法貼上圖片"
 
-#: app/src/ui/composer/mod.rs:2682
+#: app/src/ui/composer/mod.rs:2739
 msgid "No Templates Yet"
 msgstr "尚無範本"
 
-#: app/src/ui/composer/mod.rs:2732
+#: app/src/ui/composer/mod.rs:2789
 msgid "Save as Template"
 msgstr "儲存為範本"
 
-#: app/src/ui/composer/mod.rs:2734
+#: app/src/ui/composer/mod.rs:2791
 msgid "Placeholders such as {{first_name}} fill in each time you use it."
 msgstr "每次使用時，會填入 {{first_name}} 等預留位置。"
 
-#: app/src/ui/composer/mod.rs:2757 app/src/ui/templates.rs:280
+#: app/src/ui/composer/mod.rs:2814 app/src/ui/templates.rs:280
 msgid "Give the template a name"
 msgstr "請為範本命名"
 
-#: app/src/ui/composer/mod.rs:2765
+#: app/src/ui/composer/mod.rs:2822
 msgid "Template saved"
 msgstr "已儲存範本"
 
-#: app/src/ui/composer/mod.rs:2768
+#: app/src/ui/composer/mod.rs:2825
 msgid "Template not saved: {reason}"
 msgstr "未儲存範本：{reason}"
 
-#: app/src/ui/composer/mod.rs:2840
+#: app/src/ui/composer/mod.rs:2897
 msgid "This looks like Markdown"
 msgstr "內容看起來像 Markdown"
 
-#: app/src/ui/composer/mod.rs:2846
+#: app/src/ui/composer/mod.rs:2903
 msgid "Format"
 msgstr "套用格式"
 
-#: app/src/ui/composer/mod.rs:2847
+#: app/src/ui/composer/mod.rs:2904
 msgid "Turn the Markdown into rich text"
 msgstr "將 Markdown 轉為富文字"
 
-#: app/src/ui/composer/mod.rs:2853 app/src/ui/composer/mod.rs:2857
+#: app/src/ui/composer/mod.rs:2910 app/src/ui/composer/mod.rs:2914
 msgid "Dismiss"
 msgstr "關閉"
 
@@ -9834,10 +9839,6 @@ msgstr "對話會立即離開收件匣，並在此時間移回，標示為未讀
 msgid "Could not open the conversation to reply to it"
 msgstr "無法開啟對話以回覆"
 
-#: app/src/ui/window/scheduled.rs:97
-msgid "Sending…"
-msgstr "正在傳送…"
-
 #: app/src/ui/window/scheduled.rs:197
 msgid "Could not cancel: {reason}"
 msgstr "無法取消：{reason}"
@@ -10735,86 +10736,86 @@ msgstr "垃圾桶"
 msgid "All Mail"
 msgstr "所有郵件"
 
-#: sync/src/mailbox.rs:792
+#: sync/src/mailbox.rs:801
 msgid "This smart mailbox has no conditions"
 msgstr "此智慧信箱沒有條件"
 
-#: sync/src/mailbox.rs:1290
+#: sync/src/mailbox.rs:1325
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr "{account} 的結果僅來自此電腦上的郵件"
 
-#: sync/src/mailbox.rs:1302
+#: sync/src/mailbox.rs:1337
 msgid "Could not load mail for {account}: {reason}"
 msgstr "無法載入 {account} 的郵件：{reason}"
 
-#: sync/src/mailbox.rs:1427
+#: sync/src/mailbox.rs:1462
 msgid "Returns {when}"
 msgstr "於 {when} 移回"
 
-#: sync/src/mailbox.rs:1470 sync/src/mailbox.rs:1553
+#: sync/src/mailbox.rs:1505 sync/src/mailbox.rs:1588
 msgid "No recipients"
 msgstr "沒有收件者"
 
-#: sync/src/mailbox.rs:1473 sync/src/mailbox.rs:1556
+#: sync/src/mailbox.rs:1508 sync/src/mailbox.rs:1591
 msgid "To {recipients}"
 msgstr "收件者：{recipients}"
 
-#: sync/src/mailbox.rs:1516
+#: sync/src/mailbox.rs:1551
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} 封未讀 · {category}"
 
-#: sync/src/mailbox.rs:1521
+#: sync/src/mailbox.rs:1556
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} 封未讀"
 
-#: sync/src/mailbox.rs:1528
+#: sync/src/mailbox.rs:1563
 msgid "Sent yesterday, no reply yet"
 msgstr "昨天傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1530
+#: sync/src/mailbox.rs:1565
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1590
+#: sync/src/mailbox.rs:1625
 msgid "The server has not sent this message yet."
 msgstr "伺服器尚未寄出這封郵件。"
 
-#: sync/src/mailbox.rs:1591
+#: sync/src/mailbox.rs:1626
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr "Penguin Mail 尚未確認伺服器已收下這封郵件。"
 
-#: sync/src/mailbox.rs:1601
+#: sync/src/mailbox.rs:1636
 msgid "Sends {when}."
 msgstr "於 {when} 傳送。"
 
-#: sync/src/mailbox.rs:1602
+#: sync/src/mailbox.rs:1637
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "即使 Penguin Mail 已關閉，伺服器仍會寄出。"
 
-#: sync/src/mailbox.rs:1604
+#: sync/src/mailbox.rs:1639
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1611
+#: sync/src/mailbox.rs:1646
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr "請查看寄件備份。Penguin Mail 無法確認是否已寄出。"
 
-#: sync/src/mailbox.rs:1614
+#: sync/src/mailbox.rs:1649
 msgid "Canceled in another app."
 msgstr "已在其他應用程式中取消。"
 
-#: sync/src/mailbox.rs:1616
+#: sync/src/mailbox.rs:1651
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1623
+#: sync/src/mailbox.rs:1658
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1630
+#: sync/src/mailbox.rs:1665
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 

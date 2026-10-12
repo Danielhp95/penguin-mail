@@ -1309,3 +1309,24 @@ async fn a_stopped_account_is_dropped_once_its_unread_counts_arrive() {
     .await
     .expect("the account stayed alive through the count task's wait");
 }
+
+#[tokio::test]
+async fn inbox_counts_read_only_the_inboxes_and_start_no_poll() {
+    let h = super::imap_harness().await;
+    h.imap.deliver("INBOX", b"Subject: New\r\n\r\nHi".to_vec(), now_millis());
+    h.bootstrap().await;
+    let service = Mailboxes::new(
+        Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))),
+        h.db.clone(),
+    );
+    let own = Mailbox::Standard { account_id: h.account_id, which: Standard::Inbox };
+    let all = Mailbox::Unified(Standard::Inbox);
+    let sidebar = [own.clone(), all.clone()];
+    let calls = h.imap.with(|s| s.calls.clone());
+    let light = service.inbox_counts(&sidebar).await.unwrap();
+    assert_eq!(h.imap.with(|s| s.calls.clone()), calls, "no server was asked");
+    assert_eq!(light.mailboxes.len(), 2, "nothing but the inboxes was counted: {:?}", light.mailboxes);
+    let full = service.cached_counts(&sidebar, &all, &view()).await.unwrap();
+    assert_eq!(light.mailboxes[&own], full.mailboxes[&own]);
+    assert_eq!(light.mailboxes[&all], full.mailboxes[&all]);
+}
