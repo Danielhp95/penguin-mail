@@ -156,6 +156,7 @@ sync/src/actions.rs
 sync/src/calendar_copy.rs
 sync/src/error.rs
 sync/src/mailbox.rs
+sync/src/outbox.rs
 sync/src/passwords.rs
 sync/src/services/imap/outgoing.rs
 sync/src/sign_in.rs

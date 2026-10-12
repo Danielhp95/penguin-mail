@@ -237,7 +237,7 @@ impl AccountSync {
     }
 
     /// Records which message a draft holds now.
-    async fn remember_draft(&self, draft_id: &str, message_id: &str) {
+    pub(super) async fn remember_draft(&self, draft_id: &str, message_id: &str) {
         let account_id = self.account_id;
         let (draft_id, message_id) = (draft_id.to_string(), message_id.to_string());
         self.pair_written(

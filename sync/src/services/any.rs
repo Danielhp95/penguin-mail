@@ -300,6 +300,10 @@ impl MailBackend for AnyMail {
         forward_all!(AnyMail, self, schedule(raw, at))
     }
 
+    async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
+        forward_all!(AnyMail, self, find_hold(message_id))
+    }
+
     async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
         forward_all!(AnyMail, self, unschedule(handle, message_id, send_at))
     }

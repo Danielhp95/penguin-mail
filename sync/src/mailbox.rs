@@ -1554,6 +1554,15 @@ fn recipients_of(message: &outbox::Queued) -> String {
 /// when it goes; one in the Outbox says why it has not gone and when the
 /// next try is.
 pub fn waiting_line(message: &outbox::Queued, now: DateTime<Local>) -> String {
+    // A server that still holds a message a quarter of an hour after its
+    // hour is late, and the row says so rather than an hour long gone.
+    const LATE: i64 = 15 * 60_000;
+    if message.problem.is_none()
+        && message.held.is_some()
+        && now.timestamp_millis() >= message.send_at.saturating_add(LATE)
+    {
+        return gettext("The server has not sent this message yet.");
+    }
     let Some(problem) = message.problem.as_deref() else {
         return fill(
             &gettext("Sends {when}"),

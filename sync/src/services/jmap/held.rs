@@ -9,8 +9,10 @@
 use mailrs_domain::mailbox::keyword::DRAFT;
 use mailrs_domain::translate::gettext;
 use mailrs_domain::{EpochMillis, Role};
-use mailrs_jmap::{Canceled, HELD, Hold, JmapError, SubmissionState, max_delayed_send};
+use mailrs_jmap::{Canceled, EmailQuery, HELD, Hold, JmapError, SubmissionState, max_delayed_send};
+use serde_json::json;
 
+use super::outgoing::has_message_id;
 use super::{Jmap, JmapApi, backend};
 use crate::services::imap::{envelope_of, without_bcc};
 use crate::services::{Held, Settled, Unheld};
@@ -121,6 +123,28 @@ impl<J: JmapApi> Jmap<J> {
         let hold = Hold { blob_id: blob, identity_id: identity.id, mail_from: from, rcpt_to: to, drafts, hold_for: seconds };
         let held = self.api().hold(&hold).await.map_err(refused_hold)?;
         Ok(Held { handle: held.id, message_id: held.email_id, thread_id: held.thread_id })
+    }
+
+    /// The hold on the copy in Drafts whose `Message-ID` is `message_id`,
+    /// for a hold whose answer never came back. A held copy that no
+    /// submission sends cannot say whether the server refused it or sent
+    /// it and forgot, so it answers an error.
+    pub(super) async fn held_copy(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
+        self.listed().await?;
+        let Some(drafts) = self.known().roles.get(&Role::Drafts).cloned() else {
+            return Ok(None);
+        };
+        let filter = json!({ "operator": "AND", "conditions": [
+            has_message_id(message_id), { "inMailbox": drafts }, { "hasKeyword": HELD }
+        ] });
+        let query = EmailQuery { filter: Some(filter), position: 0, limit: 1, total: false };
+        let Some(copy) = self.api().query(&query).await.map_err(backend)?.hits.into_iter().next() else {
+            return Ok(None);
+        };
+        match self.api().submission_for(&copy.id).await.map_err(backend)? {
+            Some(handle) => Ok(Some(Held { handle, message_id: copy.id, thread_id: copy.thread_id })),
+            None => Err(unreadable()),
+        }
     }
 
     pub(super) async fn release(&self, handle: &str, message_id: &str, at: EpochMillis) -> Result<Unheld, BackendError> {

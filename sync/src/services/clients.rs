@@ -358,6 +358,7 @@ either_client! {
         fn hold(hold: &Hold) -> Jmapped<HeldSubmission>;
         fn submissions(ids: &[String]) -> Jmapped<Vec<SubmissionState>>;
         fn answers_submission_get() -> Jmapped<bool>;
+        fn submission_for(email_id: &str) -> Jmapped<Option<String>>;
         fn cancel_submission(id: &str) -> Jmapped<Canceled>;
         fn file_held(email_id: &str, drafts: &str, sent: &str) -> Jmapped<()>;
         fn unhold(email_id: &str) -> Jmapped<()>;

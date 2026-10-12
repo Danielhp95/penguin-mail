@@ -205,6 +205,24 @@ impl JmapClient {
         Ok(answer.take::<Listing>(&got, "EmailSubmission/get")?.list)
     }
 
+    /// The submission that sends the message `email_id`, when the server
+    /// has one: how a client finds a hold whose answer it never got.
+    pub async fn submission_for(&self, email_id: &str) -> Result<Option<String>, JmapError> {
+        #[derive(Deserialize)]
+        struct Ids {
+            #[serde(default)]
+            ids: Vec<String>,
+        }
+        let session = self.session().await?;
+        let account = submission_account(&session)?;
+        let mut request = Request::new();
+        let asked = request.call(SUBMISSION, "EmailSubmission/query", json!({
+            "accountId": account, "filter": { "emailIds": [email_id] }
+        }));
+        let mut answer = self.send(&request).await?;
+        Ok(answer.take::<Ids>(&asked, "EmailSubmission/query")?.ids.into_iter().next())
+    }
+
     /// Whether the server answers `EmailSubmission/get`, without which a
     /// hold cannot be called back. Apache James answers `unknownMethod`.
     pub async fn answers_submission_get(&self) -> Result<bool, JmapError> {

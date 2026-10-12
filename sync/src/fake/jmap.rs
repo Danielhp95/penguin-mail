@@ -157,6 +157,8 @@ pub struct JmapState {
     /// The next cancel arrives just after the server sent the hold and
     /// forgot it, so it answers `notFound`.
     pub cancel_races_send: bool,
+    /// The answer the next `EmailSubmission/query` gets, once.
+    pub submission_query_failure: Option<JmapError>,
     /// How long an upload takes.
     pub upload_delay: std::time::Duration,
     log: Vec<(u64, &'static str, String, Op)>,
@@ -449,6 +451,7 @@ impl FakeJmap {
             mdns: Vec::new(),
             submission_get: true,
             hold_failure: None,
+            submission_query_failure: None,
             cancel_races_send: false,
             upload_delay: std::time::Duration::ZERO,
             log: Vec::new(),
@@ -1346,6 +1349,14 @@ impl JmapApi for FakeJmap {
     async fn answers_submission_get(&self) -> Answer<bool> {
         self.called("EmailSubmission/get ids=[]");
         Ok(self.with(|s| s.submission_get))
+    }
+
+    async fn submission_for(&self, email_id: &str) -> Answer<Option<String>> {
+        self.called("EmailSubmission/query");
+        self.with(|s| match s.submission_query_failure.take() {
+            Some(err) => Err(err),
+            None => Ok(s.holds.iter().find(|(_, hold)| hold.email_id == email_id).map(|(id, _)| id.clone())),
+        })
     }
 
     async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {

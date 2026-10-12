@@ -10169,21 +10169,38 @@ msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1559
+#: sync/src/mailbox.rs:1564
+msgid "The server has not sent this message yet."
+msgstr "伺服器尚未寄出這封郵件。"
+
+#: sync/src/mailbox.rs:1568
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1563
+#: sync/src/mailbox.rs:1572
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1570
+#: sync/src/mailbox.rs:1579
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1577
+#: sync/src/mailbox.rs:1586
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
+
+#: sync/src/outbox.rs:53
+msgid ""
+"Penguin Mail could not confirm whether this message went out. Check Sent."
+msgstr "Penguin Mail 無法確認這封郵件是否已寄出。請查看寄件備份。"
+
+#: sync/src/outbox.rs:726
+msgid "This message was canceled in another app and is no longer in Drafts."
+msgstr "這封郵件已在其他應用程式中取消，且已不在草稿中。"
+
+#: sync/src/outbox.rs:845
+msgid "The server could not be asked to let go of the message."
+msgstr "無法要求伺服器釋出這封郵件。"
 
 #: sync/src/passwords.rs:22
 msgid "The keyring refused: {reason}"

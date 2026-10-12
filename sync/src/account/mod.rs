@@ -2,6 +2,7 @@
 //! fetches, and triage. Each file adds methods to `AccountSync`.
 
 mod fetch;
+mod held;
 mod history;
 mod labels;
 mod listed;
