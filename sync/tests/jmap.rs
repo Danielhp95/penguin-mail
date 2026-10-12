@@ -555,13 +555,66 @@ impl<'a> Run<'a> {
             .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
             .await
             .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        // A create tried again, as after a lost answer, finds the first.
+        let again = calendar
+            .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
+            .await
+            .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(again.id, made.id, "{:?}: a create tried again makes no second event", self.kind());
         let first = calendar.event_changes(&home.id, None, None, start - 86_400_000).await.expect("a read");
         assert!(first.events.iter().any(|e| e.id == made.id && e.title == "Seed fair"), "{:?}", self.kind());
+        assert_eq!(first.events.iter().filter(|e| e.uid == new.uid).count(), 1, "{:?}", self.kind());
         let mut changed = made.clone();
         changed.title = "Seed fair, moved".into();
         calendar.put_event(&changed, Some(&made.etag), false, mailrs_domain::calendar::Notify::Nobody).await.expect("a change");
         let next = calendar.event_changes(&home.id, first.next_sync.as_deref(), None, 0).await.expect("the changes since");
         assert!(next.events.iter().any(|e| e.id == made.id && e.title == "Seed fair, moved"), "{:?}", self.kind());
         calendar.remove_event(&home.id, &made.id, None, mailrs_domain::calendar::Notify::Nobody).await.expect("a delete");
+        self.a_moved_series_takes_its_changed_occurrence(&calendar, &home.id, start).await;
+    }
+
+    /// A weekly series with one changed occurrence, moved an hour later
+    /// whole: the changed occurrence moves with it, and no occurrence
+    /// stays at the old time.
+    async fn a_moved_series_takes_its_changed_occurrence(&self, calendar: &AnyCalendar, home: &str, start: i64) {
+        use mailrs_domain::calendar::{Event, Notify, occurrence_id};
+        const HOUR: i64 = 3_600_000;
+        const WEEK: i64 = 7 * 86_400_000;
+        let start = start - start % HOUR;
+        let series = Event {
+            calendar: home.to_string(),
+            uid: self.id("weekly"),
+            title: "Watering".into(),
+            start,
+            end: start + HOUR,
+            zone: "Europe/Lisbon".into(),
+            busy: true,
+            rules: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
+            ..Default::default()
+        };
+        let made = calendar.put_event(&series, None, true, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let original = start + WEEK;
+        let late = Event {
+            id: occurrence_id(&made, original),
+            series: Some(made.id.clone()),
+            original_start: Some(original),
+            etag: String::new(),
+            rules: Vec::new(),
+            title: "Watering, late".into(),
+            ..made.clone()
+        };
+        calendar.put_event(&late, None, false, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let read = calendar.event_changes(home, None, None, start - 86_400_000).await.expect("a read");
+        let now = read.events.iter().find(|e| e.id == made.id).expect("the series").clone();
+        let moved = Event { start: now.start + HOUR, end: now.end + HOUR, ..now.clone() };
+        calendar.put_event(&moved, Some(&now.etag), false, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let read = calendar.event_changes(home, None, None, start - 86_400_000).await.expect("a read");
+        let changed: Vec<_> = read.events.iter().filter(|e| e.series.as_deref() == Some(made.id.as_str())).collect();
+        assert_eq!(changed.len(), 1, "{:?}: {changed:?}", self.kind());
+        assert_eq!((changed[0].title.as_str(), changed[0].original_start), ("Watering, late", Some(original + HOUR)), "{:?}", self.kind());
+        let series = read.events.iter().find(|e| e.id == made.id).expect("the series");
+        let shown = mailrs_domain::calendar::expand(series, original - HOUR, original + 2 * HOUR);
+        assert_eq!(shown.iter().map(|(at, _)| *at).collect::<Vec<_>>(), [original + HOUR], "{:?}: no occurrence stays at the old time", self.kind());
+        calendar.remove_event(home, &made.id, None, Notify::Nobody).await.expect("a delete");
     }
 }
