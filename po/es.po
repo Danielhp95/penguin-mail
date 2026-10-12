@@ -102,11 +102,11 @@ msgstr ""
 msgid ""
 "Every control named for screen readers and reachable from the keyboard, in "
 "American English, British English, French, German, Spanish, European "
-"Portuguese and Traditional Chinese (Taiwan)"
+"Portuguese, Traditional Chinese (Taiwan) and Vietnamese"
 msgstr ""
 "Todos los controles tienen nombre para los lectores de pantalla y se pueden "
 "usar con el teclado, en inglés americano, inglés británico, francés, alemán, "
-"español, portugués europeo y chino tradicional (Taiwán)"
+"español, portugués europeo, chino tradicional (Taiwán) y vietnamita"
 
 #: app/data/io.github.c9dev.PenguinMail.metainfo.xml:35
 msgid ""
