@@ -48,7 +48,9 @@ fn with_rules(accounts: Vec<Account>, offers: impl Fn(AccountId) -> Offers) -> V
 }
 
 /// `address` with a break allowed before its `@`, so a narrow row wraps it
-/// there rather than in the middle of a word.
+/// there rather than in the middle of a word. The break is no part of the
+/// address, so whatever shows it is named with the plain address for
+/// screen readers.
 fn breakable(address: &str) -> String {
     address.replacen('@', "\u{200b}@", 1)
 }
@@ -391,6 +393,7 @@ impl Dialog {
             .title(glib::markup_escape_text(&breakable(&hidden.address)))
             .subtitle(glib::markup_escape_text(&details.join(" · ")))
             .build();
+        crate::ui::name(&row, &hidden.address);
         if !hidden.active {
             row.add_css_class("dim-label");
         }
@@ -477,6 +480,7 @@ impl Dialog {
             .title(glib::markup_escape_text(&breakable(&masked.email)))
             .subtitle(glib::markup_escape_text(&masked_details(masked)))
             .build();
+        crate::ui::name(&row, &masked.email);
         if off {
             row.add_css_class("dim-label");
         }
@@ -785,15 +789,15 @@ impl Dialog {
                 .css_classes(["title-2"])
                 .build(),
         );
-        content.append(
-            &gtk::Label::builder()
-                .label(breakable(address))
-                .wrap(true)
-                .wrap_mode(gtk::pango::WrapMode::WordChar)
-                .justify(gtk::Justification::Center)
-                .css_classes(["title-4", "monospace"])
-                .build(),
-        );
+        let shown = gtk::Label::builder()
+            .label(breakable(address))
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .justify(gtk::Justification::Center)
+            .css_classes(["title-4", "monospace"])
+            .build();
+        crate::ui::name(&shown, address);
+        content.append(&shown);
         let copy_button = gtk::Button::builder()
             .label(gettext("Copy"))
             .halign(gtk::Align::Center)
