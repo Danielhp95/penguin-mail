@@ -759,6 +759,8 @@ struct BrowserPage {
     copy: gtk::Button,
     retry: gtk::Button,
     cancel: gtk::Button,
+    /// The row of buttons under the wait, stacked on a narrow window.
+    buttons: gtk::Box,
 }
 
 fn browser_page() -> BrowserPage {
@@ -843,6 +845,7 @@ fn browser_page() -> BrowserPage {
         copy,
         retry,
         cancel,
+        buttons,
     }
 }
 
@@ -1735,6 +1738,7 @@ impl Dialog {
         under.append(&filler());
         let stack = gtk::Overlay::builder().child(&under).build();
         stack.add_overlay(&nav);
+        let browser = browser_page();
         let window = adw::Dialog::builder()
             .title(gettext("Add Account"))
             .content_width(WIDTH)
@@ -1742,6 +1746,14 @@ impl Dialog {
             .child(&stack)
             .css_classes(["post-dialog"])
             .build();
+        // Open Page Again, Copy Link and Cancel need about 420 px on one
+        // line; narrower, they stack, so Cancel is never cut off.
+        if let Ok(condition) = adw::BreakpointCondition::parse("max-width: 440sp") {
+            let narrow = adw::Breakpoint::new(condition);
+            narrow.add_setter(&browser.buttons, "orientation", Some(&gtk::Orientation::Vertical.to_value()));
+            narrow.add_setter(&browser.cancel, "halign", Some(&gtk::Align::Fill.to_value()));
+            window.add_breakpoint(narrow);
+        }
         Rc::new(Dialog {
             core: Rc::clone(core),
             window,
@@ -1780,7 +1792,7 @@ impl Dialog {
             pick: pick_page(signs_in_to_microsoft(core)),
             address: address_page(),
             lookup: lookup_page(),
-            browser: browser_page(),
+            browser,
             password: password_page(),
             closed: closed_page(),
             finished: added_page(),
