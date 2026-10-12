@@ -10698,13 +10698,15 @@ msgstr "El servidor ha rechazado esta solicitud."
 msgid "The server could not take this request."
 msgstr "El servidor no ha podido aceptar esta solicitud."
 
-#: sync/src/services/jmap/jscal.rs:1031
+#: sync/src/services/jmap/jscal.rs:1127
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
-msgstr "Penguin Mail no puede leer cómo se repite este evento, así que no puede cambiar la repetición. Cámbiela en la aplicación que la estableció."
+msgstr ""
+"Penguin Mail no puede leer cómo se repite este evento, así que no puede "
+"cambiar la repetición. Cámbiela en la aplicación que la estableció."
 
-#: sync/src/services/jmap/jscal.rs:1035
+#: sync/src/services/jmap/jscal.rs:1131
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail no puede guardar esta repetición en un calendario JMAP."
 

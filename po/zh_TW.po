@@ -10227,13 +10227,15 @@ msgstr "伺服器拒絕了此請求。"
 msgid "The server could not take this request."
 msgstr "伺服器無法接受此請求。"
 
-#: sync/src/services/jmap/jscal.rs:1031
+#: sync/src/services/jmap/jscal.rs:1127
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
-msgstr "Penguin Mail 無法讀取此活動的重複方式，因此無法變更重複設定。請在設定它的應用程式中變更。"
+msgstr ""
+"Penguin Mail 無法讀取此活動的重複方式，因此無法變更重複設定。請在設定它的應用"
+"程式中變更。"
 
-#: sync/src/services/jmap/jscal.rs:1035
+#: sync/src/services/jmap/jscal.rs:1131
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail 無法將此重複設定儲存到 JMAP 行事曆。"
 

@@ -10744,15 +10744,19 @@ msgstr "Le serveur a refusé cette demande."
 msgid "The server could not take this request."
 msgstr "Le serveur n’a pas pu accepter cette demande."
 
-#: sync/src/services/jmap/jscal.rs:1031
+#: sync/src/services/jmap/jscal.rs:1127
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
-msgstr "Penguin Mail ne peut pas lire comment cet événement se répète, il ne peut donc pas modifier la répétition. Modifiez-la dans l’application qui l’a définie."
+msgstr ""
+"Penguin Mail ne peut pas lire comment cet événement se répète, il ne peut "
+"donc pas modifier la répétition. Modifiez-la dans l’application qui l’a "
+"définie."
 
-#: sync/src/services/jmap/jscal.rs:1035
+#: sync/src/services/jmap/jscal.rs:1131
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
-msgstr "Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
+msgstr ""
+"Penguin Mail ne peut pas enregistrer cette répétition dans un agenda JMAP."
 
 #: sync/src/services/jmap/mod.rs:249
 msgid "This server keeps no colors for its mailboxes."

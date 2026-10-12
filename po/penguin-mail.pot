@@ -10157,13 +10157,13 @@ msgstr ""
 msgid "The server could not take this request."
 msgstr ""
 
-#: sync/src/services/jmap/jscal.rs:1031
+#: sync/src/services/jmap/jscal.rs:1127
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
 msgstr ""
 
-#: sync/src/services/jmap/jscal.rs:1035
+#: sync/src/services/jmap/jscal.rs:1131
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr ""
 

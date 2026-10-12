@@ -542,17 +542,17 @@ fn exdates(fields: &Fields, clock: Clock, all_day: bool) -> Vec<String> {
         .collect()
 }
 
-/// The recurrence ids, as LocalDateTime on `clock`, that the event's
-/// `EXDATE` lines leave out.
-fn excluded_keys(rules: &[String], clock: Clock) -> Vec<String> {
+/// The instants the event's `EXDATE` lines leave out, a floating or
+/// zoneless one read on `clock`.
+fn excluded_instants(rules: &[String], clock: Clock) -> Vec<EpochMillis> {
     let mut keys = Vec::new();
     for line in rules.iter().filter(|l| l.to_ascii_uppercase().starts_with("EXDATE")) {
         let (head, values) = line.split_once(':').unwrap_or((line.as_str(), ""));
         let tzid = head.split(';').find_map(|p| p.strip_prefix("TZID=")).and_then(named_zone);
         for value in values.split(',').map(str::trim) {
             if value.len() == 8 {
-                if let Ok(date) = NaiveDate::parse_from_str(value, "%Y%m%d") {
-                    keys.push(format!("{}T00:00:00", date.format("%Y-%m-%d")));
+                if let Some(midnight) = NaiveDate::parse_from_str(value, "%Y%m%d").ok().and_then(|d| d.and_hms_opt(0, 0, 0)) {
+                    keys.push(midnight.and_utc().timestamp_millis());
                 }
                 continue;
             }
@@ -564,9 +564,7 @@ fn excluded_keys(rules: &[String], clock: Clock) -> Vec<String> {
                 (false, Some(tz)) => instant(&tz, naive),
                 (false, None) => clock.millis(naive),
             };
-            if let Some(at) = at {
-                keys.push(clock.text(at));
-            }
+            keys.extend(at);
         }
     }
     keys
@@ -599,6 +597,66 @@ fn reminders_of(fields: &Fields) -> Option<Vec<Reminder>> {
     }
     fields.map("alerts")?;
     Some(reminder_alerts(fields).map(|(_, r)| r).collect())
+}
+
+/// CSS's named colours (CSS Color Module Level 4), which JSCalendar's
+/// `color` may hold.
+const CSS_COLOURS: [(&str, &str); 148] = [
+    ("aliceblue", "#f0f8ff"), ("antiquewhite", "#faebd7"), ("aqua", "#00ffff"), ("aquamarine", "#7fffd4"), ("azure", "#f0ffff"),
+    ("beige", "#f5f5dc"), ("bisque", "#ffe4c4"), ("black", "#000000"), ("blanchedalmond", "#ffebcd"), ("blue", "#0000ff"),
+    ("blueviolet", "#8a2be2"), ("brown", "#a52a2a"), ("burlywood", "#deb887"), ("cadetblue", "#5f9ea0"),
+    ("chartreuse", "#7fff00"), ("chocolate", "#d2691e"), ("coral", "#ff7f50"), ("cornflowerblue", "#6495ed"),
+    ("cornsilk", "#fff8dc"), ("crimson", "#dc143c"), ("cyan", "#00ffff"), ("darkblue", "#00008b"), ("darkcyan", "#008b8b"),
+    ("darkgoldenrod", "#b8860b"), ("darkgray", "#a9a9a9"), ("darkgreen", "#006400"), ("darkgrey", "#a9a9a9"),
+    ("darkkhaki", "#bdb76b"), ("darkmagenta", "#8b008b"), ("darkolivegreen", "#556b2f"), ("darkorange", "#ff8c00"),
+    ("darkorchid", "#9932cc"), ("darkred", "#8b0000"), ("darksalmon", "#e9967a"), ("darkseagreen", "#8fbc8f"),
+    ("darkslateblue", "#483d8b"), ("darkslategray", "#2f4f4f"), ("darkslategrey", "#2f4f4f"), ("darkturquoise", "#00ced1"),
+    ("darkviolet", "#9400d3"), ("deeppink", "#ff1493"), ("deepskyblue", "#00bfff"), ("dimgray", "#696969"),
+    ("dimgrey", "#696969"), ("dodgerblue", "#1e90ff"), ("firebrick", "#b22222"), ("floralwhite", "#fffaf0"),
+    ("forestgreen", "#228b22"), ("fuchsia", "#ff00ff"), ("gainsboro", "#dcdcdc"), ("ghostwhite", "#f8f8ff"), ("gold", "#ffd700"),
+    ("goldenrod", "#daa520"), ("gray", "#808080"), ("green", "#008000"), ("greenyellow", "#adff2f"), ("grey", "#808080"),
+    ("honeydew", "#f0fff0"), ("hotpink", "#ff69b4"), ("indianred", "#cd5c5c"), ("indigo", "#4b0082"), ("ivory", "#fffff0"),
+    ("khaki", "#f0e68c"), ("lavender", "#e6e6fa"), ("lavenderblush", "#fff0f5"), ("lawngreen", "#7cfc00"),
+    ("lemonchiffon", "#fffacd"), ("lightblue", "#add8e6"), ("lightcoral", "#f08080"), ("lightcyan", "#e0ffff"),
+    ("lightgoldenrodyellow", "#fafad2"), ("lightgray", "#d3d3d3"), ("lightgreen", "#90ee90"), ("lightgrey", "#d3d3d3"),
+    ("lightpink", "#ffb6c1"), ("lightsalmon", "#ffa07a"), ("lightseagreen", "#20b2aa"), ("lightskyblue", "#87cefa"),
+    ("lightslategray", "#778899"), ("lightslategrey", "#778899"), ("lightsteelblue", "#b0c4de"), ("lightyellow", "#ffffe0"),
+    ("lime", "#00ff00"), ("limegreen", "#32cd32"), ("linen", "#faf0e6"), ("magenta", "#ff00ff"), ("maroon", "#800000"),
+    ("mediumaquamarine", "#66cdaa"), ("mediumblue", "#0000cd"), ("mediumorchid", "#ba55d3"), ("mediumpurple", "#9370db"),
+    ("mediumseagreen", "#3cb371"), ("mediumslateblue", "#7b68ee"), ("mediumspringgreen", "#00fa9a"),
+    ("mediumturquoise", "#48d1cc"), ("mediumvioletred", "#c71585"), ("midnightblue", "#191970"), ("mintcream", "#f5fffa"),
+    ("mistyrose", "#ffe4e1"), ("moccasin", "#ffe4b5"), ("navajowhite", "#ffdead"), ("navy", "#000080"), ("oldlace", "#fdf5e6"),
+    ("olive", "#808000"), ("olivedrab", "#6b8e23"), ("orange", "#ffa500"), ("orangered", "#ff4500"), ("orchid", "#da70d6"),
+    ("palegoldenrod", "#eee8aa"), ("palegreen", "#98fb98"), ("paleturquoise", "#afeeee"), ("palevioletred", "#db7093"),
+    ("papayawhip", "#ffefd5"), ("peachpuff", "#ffdab9"), ("peru", "#cd853f"), ("pink", "#ffc0cb"), ("plum", "#dda0dd"),
+    ("powderblue", "#b0e0e6"), ("purple", "#800080"), ("rebeccapurple", "#663399"), ("red", "#ff0000"), ("rosybrown", "#bc8f8f"),
+    ("royalblue", "#4169e1"), ("saddlebrown", "#8b4513"), ("salmon", "#fa8072"), ("sandybrown", "#f4a460"),
+    ("seagreen", "#2e8b57"), ("seashell", "#fff5ee"), ("sienna", "#a0522d"), ("silver", "#c0c0c0"), ("skyblue", "#87ceeb"),
+    ("slateblue", "#6a5acd"), ("slategray", "#708090"), ("slategrey", "#708090"), ("snow", "#fffafa"), ("springgreen", "#00ff7f"),
+    ("steelblue", "#4682b4"), ("tan", "#d2b48c"), ("teal", "#008080"), ("thistle", "#d8bfd8"), ("tomato", "#ff6347"),
+    ("turquoise", "#40e0d0"), ("violet", "#ee82ee"), ("wheat", "#f5deb3"), ("white", "#ffffff"), ("whitesmoke", "#f5f5f5"),
+    ("yellow", "#ffff00"), ("yellowgreen", "#9acd32"),
+];
+
+/// A CSS colour as `#rrggbb`: a hex one in either case or length, or one
+/// of CSS's named colours. Anything else, such as `rgb(...)`, is `None`.
+fn colour_of(text: &str) -> Option<String> {
+    let text = text.trim();
+    if let Some(hex) = text.strip_prefix('#') {
+        if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        return match hex.len() {
+            6 => Some(format!("#{}", hex.to_ascii_lowercase())),
+            3 => Some(hex.chars().fold(String::from("#"), |mut out, c| {
+                out.push(c.to_ascii_lowercase());
+                out.push(c.to_ascii_lowercase());
+                out
+            })),
+            _ => None,
+        };
+    }
+    CSS_COLOURS.iter().find(|(name, _)| name.eq_ignore_ascii_case(text)).map(|(_, hex)| (*hex).to_string())
 }
 
 /// The first location with a name, which the copy shows as the place.
@@ -674,7 +732,7 @@ fn one_event(fields: Fields, calendar: &str, me: &[String], series: bool) -> Opt
         title: text("title"),
         place: place_of(&fields).map(|(_, name)| name.to_string()).unwrap_or_default(),
         description: text("description"),
-        color: fields.text("color").filter(|c| c.starts_with('#')).map(str::to_string),
+        color: fields.text("color").and_then(colour_of),
         busy: fields.text("freeBusyStatus") != Some("free"),
         status: Status::parse(fields.text("status").unwrap_or("confirmed")),
         private: matches!(fields.text("privacy"), Some("private" | "secret")),
@@ -705,7 +763,7 @@ fn overlay(object: &Value, patch: &Map<String, Value>, original: EpochMillis) ->
         if let Some(fields) = over.as_object_mut()
             && !fields.contains_key(&top)
         {
-            fields.insert(top.clone(), object.get(&top).cloned().unwrap_or(Value::Null));
+            fields.insert(top.clone(), object.get(&top).map_or(Value::Null, bounded_copy));
         }
         set_path(&mut over, path, value.clone());
         if let Some(fields) = over.as_object_mut() {
@@ -720,6 +778,27 @@ fn overlay(object: &Value, patch: &Map<String, Value>, original: EpochMillis) ->
         over.insert("start".into(), json!(clock.text(original)));
     }
     over
+}
+
+/// A copy of one series property for an override. A map keeps at most
+/// the entries the copy reads, so a series with thousands of
+/// participants and a thousand overrides costs no more than reading it.
+fn bounded_copy(value: &Value) -> Value {
+    match value.as_object() {
+        Some(map) if map.len() > MOST_LISTED => Value::Object(map.iter().take(MOST_LISTED).map(|(k, v)| (k.clone(), v.clone())).collect()),
+        _ => value.clone(),
+    }
+}
+
+/// The key the server holds for the occurrence that starts at `at`: the
+/// override's own key when there is one, so a key inside a clock-change
+/// gap (01:30, read as 02:30) goes back as the server wrote it, and the
+/// time on `clock` otherwise.
+fn server_key(fields: &Fields, clock: Clock, at: EpochMillis) -> String {
+    fields
+        .map("recurrenceOverrides")
+        .and_then(|o| o.keys().take(MOST_OVERRIDES).find(|key| clock.parse(key) == Some(at)).cloned())
+        .unwrap_or_else(|| clock.text(at))
 }
 
 /// The event `object` holds, then one per changed occurrence of it.
@@ -892,6 +971,7 @@ impl Entries<'_, '_> {
     fn fresh(&self, prefix: &str) -> String {
         let taken = |id: &str| {
             self.fields.map(self.key).is_some_and(|m| m.contains_key(id))
+                || self.fields.base.get(self.key).is_some_and(|m| m.get(id).is_some())
                 || self.patch.contains_key(&format!("{}/{}", self.key, pointer(id)))
                 || self.patch.get(self.key).is_some_and(|whole| whole.get(id).is_some())
         };
@@ -908,6 +988,12 @@ fn changes(before: &model::Event, after: &model::Event, fields: Fields) -> Patch
     }
     if after.description != before.description {
         patch.insert("description".into(), json!(after.description));
+        // The editor writes plain text, or HTML once the notes hold more
+        // than one line or a link. The type follows what it wrote.
+        let wanted = if mailrs_mime::notes::text(&after.description) == after.description { "text/plain" } else { "text/html" };
+        if fields.text("descriptionContentType").unwrap_or("text/plain") != wanted {
+            patch.insert("descriptionContentType".into(), json!(wanted));
+        }
     }
     if after.status != before.status {
         patch.insert("status".into(), json!(after.status.as_str()));
@@ -1003,6 +1089,16 @@ fn changes(before: &model::Event, after: &model::Event, fields: Fields) -> Patch
             participants.put(&id, Some(participant_value(&person)));
         }
     }
+    for (id, _, address) in people(&fields) {
+        let named = |event: &model::Event| event.guests.iter().find(|g| g.email.eq_ignore_ascii_case(&address)).map(|g| g.name.clone());
+        // A guest list the editor rebuilt carries no names; only a new
+        // name goes, never a name taken away.
+        if let (Some(was), Some(Some(name))) = (named(before), named(after))
+            && was.as_deref() != Some(name.as_str())
+        {
+            patch.insert(format!("participants/{}/name", pointer(id)), json!(name));
+        }
+    }
     if after.my_answer != before.my_answer
         && let Some((id, _, _)) =
             people(&fields).find(|(_, _, address)| before.guests.iter().any(|g| g.me && !g.organizer && g.email.eq_ignore_ascii_case(address)))
@@ -1072,7 +1168,8 @@ pub(crate) fn object_of(event: &model::Event) -> Result<Map<String, Value>, Back
     if let Some(line) = event.rules.iter().find(|l| model::is_rule_line(l)) {
         object.insert("recurrenceRule".into(), rule_object(line, clock, event.all_day).ok_or_else(unwritable_repeat)?);
     }
-    let excluded: Map<String, Value> = excluded_keys(&event.rules, clock).into_iter().map(|key| (key, json!({ "excluded": true }))).collect();
+    let excluded: Map<String, Value> =
+        excluded_instants(&event.rules, clock).into_iter().map(|at| (clock.text(at), json!({ "excluded": true }))).collect();
     if !excluded.is_empty() {
         object.insert("recurrenceOverrides".into(), Value::Object(excluded));
     }
@@ -1119,17 +1216,18 @@ pub(crate) fn patch_of(event: &model::Event, current: &Value, me: &[String]) -> 
         };
         patch.insert(key.into(), rule);
     }
-    if !before.unread_rule {
-        let (clock, _) = fields.clock();
-        let had = excluded_keys(&before.rules, clock);
-        let want = excluded_keys(&event.rules, clock);
-        let mut overrides = Entries { patch: &mut patch, fields, key: "recurrenceOverrides" };
-        for key in want.iter().filter(|k| !had.contains(k)) {
-            overrides.put(key, Some(json!({ "excluded": true })));
-        }
-        for key in had.iter().filter(|k| !want.contains(k)) {
-            overrides.put(key, None);
-        }
+    let (clock, _) = fields.clock();
+    let had = excluded_instants(&before.rules, clock);
+    let want = excluded_instants(&event.rules, clock);
+    if before.unread_rule && want.iter().any(|at| !had.contains(at)) {
+        return Err(unreadable_repeat());
+    }
+    let mut overrides = Entries { patch: &mut patch, fields, key: "recurrenceOverrides" };
+    for at in want.iter().filter(|at| !had.contains(at)) {
+        overrides.put(&server_key(&fields, clock, *at), Some(json!({ "excluded": true })));
+    }
+    for at in had.iter().filter(|at| !want.contains(at)) {
+        overrides.put(&server_key(&fields, clock, *at), None);
     }
     if before.limited() {
         only_mine(&mut patch);
@@ -1142,8 +1240,7 @@ pub(crate) fn patch_of(event: &model::Event, current: &Value, me: &[String]) -> 
 /// matches the series again leaves the override.
 pub(crate) fn override_of(event: &model::Event, current: &Value, me: &[String]) -> Result<Value, BackendError> {
     let original = event.original_start.ok_or(BackendError::NotFound)?;
-    let (clock, _) = Fields::of(current).clock();
-    let key = clock.text(original);
+    let key = override_key(current, original);
     let mut over: Map<String, Value> = current
         .get("recurrenceOverrides")
         .and_then(|o| o.get(&key))
@@ -1188,10 +1285,23 @@ fn override_set(over: &mut Map<String, Value>, path: &str, value: Value, series:
     }
 }
 
-/// The recurrence id of the occurrence that started at `original`, on the
-/// series' clock.
-pub(crate) fn override_key(event: &model::Event, original: EpochMillis) -> String {
-    clock_for(event).text(original)
+/// The recurrence id of the occurrence of `current` that started at
+/// `original`: the server's own key when it has an override there.
+pub(crate) fn override_key(current: &Value, original: EpochMillis) -> String {
+    let fields = Fields::of(current);
+    server_key(&fields, fields.clock().0, original)
+}
+
+/// The recurrence id to mark excluded when the occurrence of `current`
+/// that started at `original` is deleted. A series whose rule the copy
+/// cannot read is refused: the copy does not know its occurrences.
+pub(crate) fn exclusion_key(current: &Value, original: EpochMillis) -> Result<String, BackendError> {
+    let fields = Fields::of(current);
+    let (clock, _) = fields.clock();
+    if matches!(repeat_of(&fields, clock, fields.all_day()), Repeat::Unread) {
+        return Err(unreadable_repeat());
+    }
+    Ok(server_key(&fields, clock, original))
 }
 
 #[cfg(test)]
@@ -1522,7 +1632,7 @@ mod tests {
         let object = seed_swap();
         let mut series = series_of(&object, &ines());
         assert_eq!(series.description, "<p>Bring <b>beans</b></p>");
-        assert_eq!(series.color, None, "a named colour is not one the app shows");
+        assert_eq!(series.color.as_deref(), Some("#ff0000"), "a named colour reads as its hex");
         assert_eq!(series.reminders, Some(vec![Reminder { minutes: 30, method: ReminderMethod::Notification }]));
         series.title = "Seed and plant swap".into();
         let patch = patch_of(&series, &object, &ines()).unwrap();
@@ -1678,7 +1788,7 @@ mod tests {
         occurrence.end = original + 5_400_000;
         occurrence.rules.clear();
         occurrence.title = "Rota, swapped".into();
-        assert_eq!(override_key(&series, original), "2026-10-27T09:00:00");
+        assert_eq!(override_key(&object, original), "2026-10-27T09:00:00");
         assert_eq!(override_of(&occurrence, &object, &ines()).unwrap(), json!({"title": "Rota, swapped"}));
     }
 
@@ -1718,5 +1828,129 @@ mod tests {
             .collect();
         let object = json!({"id": "f", "start": "2026-10-06T09:00:00", "recurrenceOverrides": overrides});
         assert!(events_of(&object, "c", &[]).len() <= MOST_OVERRIDES + 1);
+    }
+
+    fn gap_series(overrides: Value) -> Value {
+        json!({
+            "id": "ev-8", "title": "Night watering", "start": "2026-03-28T01:30:00", "timeZone": "Europe/Lisbon", "duration": "PT1H",
+            "recurrenceRule": {"@type": "RecurrenceRule", "frequency": "daily", "count": 5},
+            "recurrenceOverrides": overrides
+        })
+    }
+
+    #[test]
+    fn an_override_copies_a_bounded_share_of_a_huge_map() {
+        let participants: Map<String, Value> = (0..5000)
+            .map(|n| (format!("p{n:05}"), json!({"calendarAddress": format!("mailto:g{n}@allotment.example"), "roles": {"attendee": true}})))
+            .collect();
+        let overrides: Map<String, Value> = (0..1000)
+            .map(|n| (format!("2027-01-01T{:02}:{:02}:00", n / 60 % 24, n % 60), json!({"participants/p00001/participationStatus": "declined"})))
+            .collect();
+        let object = json!({"id": "f", "start": "2026-10-06T09:00:00", "participants": participants, "recurrenceOverrides": overrides});
+        let patch = object["recurrenceOverrides"]["2027-01-01T00:00:00"].as_object().unwrap().clone();
+        let over = overlay(&object, &patch, utc("2027-01-01T00:00:00Z"));
+        assert!(over["participants"].as_object().unwrap().len() <= MOST_LISTED, "the copy stops where reading stops");
+        assert_eq!(over["participants"]["p00001"]["participationStatus"], "declined");
+        let events = events_of(&object, "c", &[]);
+        assert_eq!(events.len(), 1001);
+        assert!(events.iter().all(|e| e.guests.len() <= MOST_LISTED));
+    }
+
+    #[test]
+    fn a_gap_exclusion_keeps_the_server_s_key() {
+        let object = gap_series(json!({"2026-03-29T01:30:00": {"excluded": true}}));
+        let mut series = series_of(&object, &[]);
+        series.rules.retain(|l| model::is_rule_line(l));
+        let patch = patch_of(&series, &object, &[]).unwrap();
+        assert_eq!(Value::Object(patch), json!({"recurrenceOverrides/2026-03-29T01:30:00": null}));
+        assert_eq!(exclusion_key(&object, utc("2026-03-29T01:30:00Z")).unwrap(), "2026-03-29T01:30:00");
+    }
+
+    #[test]
+    fn a_gap_override_keeps_the_server_s_key() {
+        let object = gap_series(json!({"2026-03-29T01:30:00": {"title": "Gap", "description": "Hose"}}));
+        let events = events_of(&object, "cal-1", &[]);
+        let original = utc("2026-03-29T01:30:00Z");
+        assert_eq!(override_key(&object, original), "2026-03-29T01:30:00");
+        let mut moved = events[1].clone();
+        moved.title = "Gap night".into();
+        assert_eq!(override_of(&moved, &object, &[]).unwrap(), json!({"title": "Gap night", "description": "Hose"}));
+    }
+
+    #[test]
+    fn the_app_s_expander_leaves_out_each_exclusion_at_its_instant() {
+        for (object, excluded) in [
+            (lisbon_weekly(), utc("2026-10-13T08:00:00Z")),
+            (gap_series(json!({"2026-03-29T01:30:00": {"excluded": true}})), utc("2026-03-29T01:30:00Z")),
+        ] {
+            let series = series_of(&object, &[]);
+            let whole = model::Event { rules: series.rules.iter().filter(|l| model::is_rule_line(l)).cloned().collect(), ..series.clone() };
+            let (from, to) = (series.start, series.start + 30 * DAY);
+            let all: Vec<EpochMillis> = model::expand(&whole, from, to).into_iter().map(|(start, _)| start).collect();
+            let kept: Vec<EpochMillis> = model::expand(&series, from, to).into_iter().map(|(start, _)| start).collect();
+            let gone: Vec<EpochMillis> = all.iter().copied().filter(|s| !kept.contains(s)).collect();
+            assert_eq!(gone, [excluded], "{all:?}");
+        }
+    }
+
+    #[test]
+    fn a_title_edit_through_the_series_editor_leaves_the_rule_alone() {
+        use mailrs_domain::calendar::series::{Picked, RepeatScope, Step, change};
+        let object = lisbon_weekly();
+        let events = events_of(&object, "cal-1", &ines());
+        let series = &events[0];
+        let picked = Picked { original_start: series.start, start: series.start };
+        let edited = model::Event { title: "Rota for all".into(), ..series.clone() };
+        let steps = change(series, &events[1..], picked, edited, RepeatScope::All, "new");
+        let [Step::Save(saved)] = steps.as_slice() else { panic!("{steps:?}") };
+        assert_eq!(saved.rules, series.rules, "the lines stay byte for byte");
+        let patch = patch_of(saved, &object, &ines()).unwrap();
+        assert_eq!(keys(&patch), ["title"]);
+    }
+
+    #[test]
+    fn an_occurrence_of_an_unread_rule_cannot_be_deleted() {
+        let mut object = lisbon_weekly();
+        object["recurrenceRule"] = json!({"@type": "RecurrenceRule", "frequency": "yearly", "rscale": "hebrew"});
+        let original = utc("2026-10-27T09:00:00Z");
+        assert!(matches!(exclusion_key(&object, original), Err(BackendError::Refused(_))));
+        let mut series = series_of(&object, &ines());
+        series.rules.push("EXDATE:20261027T090000Z".into());
+        assert!(matches!(patch_of(&series, &object, &ines()), Err(BackendError::Refused(_))));
+    }
+
+    #[test]
+    fn a_description_edit_says_its_content_type() {
+        let object = seed_swap();
+        let mut plain = series_of(&object, &ines());
+        plain.description = "Bring beans".into();
+        assert_eq!(
+            Value::Object(patch_of(&plain, &object, &ines()).unwrap()),
+            json!({"description": "Bring beans", "descriptionContentType": "text/plain"})
+        );
+        let mut lines = series_of(&object, &ines());
+        lines.description = "Bring beans<br>and seeds".into();
+        assert_eq!(Value::Object(patch_of(&lines, &object, &ines()).unwrap()), json!({"description": "Bring beans<br>and seeds"}));
+        let plain_object = lisbon_weekly();
+        let mut first = series_of(&plain_object, &ines());
+        first.description = "Bring gloves".into();
+        assert_eq!(Value::Object(patch_of(&first, &plain_object, &ines()).unwrap()), json!({"description": "Bring gloves"}));
+    }
+
+    #[test]
+    fn clearing_a_named_colour_sends_null() {
+        let object = seed_swap();
+        let mut series = series_of(&object, &ines());
+        series.color = None;
+        assert_eq!(Value::Object(patch_of(&series, &object, &ines()).unwrap()), json!({"color": null}));
+    }
+
+    #[test]
+    fn a_guest_s_new_name_is_sent() {
+        let object = seed_swap();
+        let mut series = series_of(&object, &ines());
+        let bo = series.guests.iter_mut().find(|g| g.email == "bo@allotment.example").unwrap();
+        bo.name = Some("Bo Lin".into());
+        assert_eq!(Value::Object(patch_of(&series, &object, &ines()).unwrap()), json!({"participants/bo/name": "Bo Lin"}));
     }
 }
