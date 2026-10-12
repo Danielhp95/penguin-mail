@@ -928,8 +928,8 @@ fn state_line(storage: mailrs_sync::Storage) -> String {
 }
 
 /// One row per account whose server says how full it is, with a bar in
-/// the accent, the warning colour past the server's mark and red once
-/// full. `None` while no server has said, so the page shows no empty
+/// ink while there is room, the warning colour past the server's mark and
+/// red once full. `None` while no server has said, so the page shows no empty
 /// group. Below 450 sp the bar moves under the amount.
 fn server_space(app: &Rc<App>, narrow: &adw::Breakpoint) -> Option<adw::PreferencesGroup> {
     let storage = app.storage();

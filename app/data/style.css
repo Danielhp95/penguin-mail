@@ -784,8 +784,8 @@ button.invitation-pill buttoncontent > box { border-spacing: 8px; }
    the amount, a 150 px bar 6 px tall on the `pill` track, then the
    percentage or a "Full" chip. The bar is ink with room, so colour is
    left for trouble: the mockup's `warn` past the warning mark and its
-   `bad` once full; the
-   amount under the address takes the same colour at weight 600. */
+   `bad` once full, where the amount under the address takes the same
+   colour at weight 600. */
 .server-space-row { padding: 12px 16px; min-height: 40px; }
 .server-space-row .title { font-size: 1.02em; }
 .server-space-row .subtitle { font-size: 0.89em; opacity: 0.75; }
