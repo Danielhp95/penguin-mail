@@ -503,6 +503,19 @@ impl Composer {
         choices.append(&from);
         choices.append(&suffix);
         choices.append(&mask);
+        // The empty room after the address still opens the list, as the
+        // whole row did when the drop-down filled it.
+        let click = gtk::GestureClick::new();
+        let opens = from.downgrade();
+        click.connect_released(move |gesture, _, x, y| {
+            let (Some(from), Some(row)) = (opens.upgrade(), gesture.widget()) else {
+                return;
+            };
+            if row.pick(x, y, gtk::PickFlags::DEFAULT).as_ref() == Some(&row) {
+                from.emit_by_name::<()>("activate", &[]);
+            }
+        });
+        choices.add_controller(click);
         let sender_fields = gtk::Box::new(gtk::Orientation::Vertical, 4);
         sender_fields.set_hexpand(true);
         sender_fields.append(&choices);
@@ -2765,9 +2778,11 @@ fn from_dropdown(identities: &[Identity]) -> gtk::DropDown {
     // A flattened list of lists is a section model, which is what gives the
     // popup its headings.
     let model = gtk::FlattenListModel::new(Some(sections));
+    // As wide as the address, so its arrow sits right after the words it
+    // changes rather than at the window's far edge.
     let from = gtk::DropDown::builder()
         .model(&model)
-        .hexpand(true)
+        .halign(gtk::Align::Start)
         .valign(gtk::Align::Center)
         .css_classes(["flat", "composer-from"])
         .build();
