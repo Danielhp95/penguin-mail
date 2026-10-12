@@ -6,16 +6,18 @@
 //! Fastmail and Stalwart both work this way, so no client id is built in.
 
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_discover::JmapProvider;
 use mailrs_domain::{AccountId, Provider};
 use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens};
 use mailrs_jmap::{Auth, JmapClient, JmapError};
-use mailrs_store::accounts;
+use mailrs_store::{Db, accounts};
 use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
 
 use super::{BrowserSignInError, NewJmap, SignedAs, SignedIn, jmap_signed_in};
+use crate::passwords::{PasswordStore, Secrets};
 use crate::{Connector, JmapGrant, connect_jmap, now_millis};
 
 /// How long the sign-in waits for the browser to come back: RFC 8252's
@@ -287,20 +289,37 @@ pub(crate) async fn signing_in<S: SignInServer>(
     // refuses, a new account goes again and the sign-in fails. The new
     // refresh token, and maybe a new client, need a new session:
     // `jmap_signed_in` retires the old one once it keeps the token.
+    let address = new.address.clone();
     let account = match jmap_signed_in(db, secrets, new, now_millis()).await {
         Ok(account) => account,
-        // The grant belongs to another account, and nothing keeps it.
-        Err(err @ super::JmapSignInError::DifferentAccount { .. }) => {
-            server.revoke(refused);
+        Err(err) => {
+            // The grant belongs to another account, or a keyring or store
+            // failure left it unkept: a live refresh token nothing holds is
+            // revoked. One an account took before a later step failed is
+            // the token it signs in with, and stays.
+            if !held_by(db, secrets, &address, &refused.refresh_token).await {
+                server.revoke(refused);
+            }
             return Err(err.into());
         }
-        Err(err) => return Err(err.into()),
     };
     // A new grant may carry what a calendar server refused before.
     crate::connect::try_the_token_again(db, account.id).await?;
     let window_days = config.engine_config().window_days;
     let services = connect_jmap(db, secrets, &account, window_days).await?;
     Ok(SignedIn { account, name: None, services })
+}
+
+/// Whether the account at `address` keeps `refresh_token` as its secret.
+/// A store or keyring that cannot answer says no.
+async fn held_by(db: &Db, secrets: &Secrets, address: &str, refresh_token: &str) -> bool {
+    let email = address.to_string();
+    let Ok(Some(account)) = db.read(move |c| accounts::account_by_email(c, &email)).await else {
+        return false;
+    };
+    let jmap = Arc::clone(&secrets.jmap);
+    let kept = tokio::task::spawn_blocking(move || jmap.load(account.id)).await;
+    matches!(kept, Ok(Ok(Some(token))) if token == refresh_token)
 }
 
 #[cfg(test)]
@@ -540,6 +559,44 @@ mod tests {
         assert_eq!(accounts.len(), 1, "{accounts:?}");
         let saved = db.read(move |c| mailrs_store::jmap::load(c, held.id)).await.unwrap().unwrap();
         assert_eq!(saved.auth, JmapAuth::OAuth);
+    }
+
+    /// A keyring that will not take the new refresh token leaves nothing
+    /// holding the grant, so it is revoked.
+    #[tokio::test]
+    async fn a_grant_the_keyring_refuses_is_revoked() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let crate::passwords::Passwords::Memory(kept) = &*reach.secrets.jmap else { unreachable!("tests keep secrets in memory") };
+        kept.refuse_saves();
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let refused = sign_in(&server, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await;
+        assert!(matches!(refused, Err(BrowserSignInError::KeptJmap(crate::sign_in::JmapSignInError::Password(_)))), "{:?}", refused.err());
+        assert_eq!(server.revoked(), [("client-1".to_string(), "r1".to_string())]);
+    }
+
+    /// The account took the new refresh token before a later step failed:
+    /// the grant is the one it signs in with, so it stays.
+    #[tokio::test]
+    async fn a_grant_the_account_already_holds_is_not_revoked() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let server = FakeServer::answering("client", vec![tokens("r1"), tokens("r2")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let id = sign_in(&server, &reach, &session_url, &pages).await.unwrap().account.id;
+        let crate::passwords::Passwords::Memory(passwords) = &*reach.secrets.passwords else { unreachable!("tests keep secrets in memory") };
+        passwords.refuse_saves();
+        let offer = JmapBrowser { session_url: session_url.clone(), provider: None };
+        let failed = signing_in(&server, &reach, offer, "me@fastmail.com", Some("app-pw".into()), browser(Arc::clone(&pages)), std::future::pending(), Duration::from_secs(5)).await;
+        assert!(failed.is_err());
+        assert_eq!(reach.secrets.jmap.load(id).unwrap().as_deref(), Some("r2"));
+        assert!(server.revoked().is_empty(), "{:?}", server.revoked());
     }
 
     async fn kept_client_id(db: &Db, id: i64) -> Option<String> {
