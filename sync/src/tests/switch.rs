@@ -503,3 +503,57 @@ async fn a_draft_without_a_message_id_goes_up_once_across_a_retry() {
     let bytes = h.db.read(move |c| mailrs_store::local_messages::get(c, id, &new)).await.unwrap().unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("Message-ID: <"), "the local copy carries the id it went up with");
 }
+
+#[tokio::test]
+async fn a_message_gone_from_the_server_never_takes_another_by_date_and_size() {
+    let fake = FakeJmap::new();
+    // B has A's size and day but another Message-ID: another message.
+    fake.deliver("inbox", &raw("b@x"), 1_000_000);
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", Some("a@x"), 1_000_000, &raw("a@x"), "s")]).await.unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn a_match_by_date_and_size_needs_the_same_subject() {
+    let fake = FakeJmap::new();
+    fake.deliver("inbox", &raw_without_id("Trap"), 1_000_000);
+    let mail = raw_without_id("Trip");
+    let moved = match_messages(&fake, &[stored_as("INBOX/7/1", None, 1_000_000, &mail, "Trip")]).await.unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn two_stored_messages_one_second_key_finds_match_neither() {
+    let fake = FakeJmap::new();
+    let mail = raw_without_id("Trip");
+    fake.deliver("inbox", &mail, 1_000_000);
+    let moved = match_messages(
+        &fake,
+        &[stored_as("INBOX/7/1", None, 1_000_000, &mail, "Trip"), stored_as("Copy/3/1", None, 1_000_000, &mail, "Trip")],
+    )
+    .await
+    .unwrap();
+    assert!(moved.is_empty(), "{moved:?}");
+}
+
+#[tokio::test]
+async fn a_draft_whose_bytes_carry_a_message_id_keeps_it_and_gets_no_second() {
+    let (h, fake, secrets) = imap_with_jmap_twin_and(|h| {
+        h.imap.deliver_flagged("Drafts", &raw_without_id("Unsent"), &["\\Draft", "\\Seen"], crate::now_millis() - 3_600_000);
+    })
+    .await;
+    let id = h.account_id;
+    let old: String = h
+        .db
+        .read(move |c| Ok(c.query_row("SELECT id FROM messages WHERE account_id = ?1 AND subject = 'Unsent'", [id], |r| r.get(0))?))
+        .await
+        .unwrap();
+    // The row knows no Message-ID, but the bytes kept here carry one.
+    h.db.write(move |c| mailrs_store::local_messages::put(c, id, &old, &raw("kept@x"))).await.unwrap();
+    let account = account(&h).await;
+    to_jmap_over(&h.db, &secrets, &account, &fake, saved(), "fmu1-token".into()).await.unwrap();
+    let new = stored_id(&h, "kept@x").await.expect("the row now names the bytes' Message-ID");
+    let uploaded = fake.with(|s| s.emails[&new].raw.clone());
+    let headers = String::from_utf8_lossy(&uploaded).matches("Message-ID:").count();
+    assert_eq!(headers, 1);
+}

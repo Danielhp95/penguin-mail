@@ -24,6 +24,7 @@ use mailrs_store::switch::{Adoption, Moved, StoredMailbox, StoredMessage, adopt_
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
+use crate::account::message_id_header;
 use crate::passwords::{PasswordError, PasswordStore, Secrets, first_error};
 use crate::services::JmapApi;
 use crate::services::jmap::{backend, bare_message_id, has_message_id, received_millis};
@@ -339,26 +340,41 @@ fn with_message_id(raw: &[u8], id: &str) -> Vec<u8> {
     out
 }
 
-/// Gives the stored draft `id` the Message-ID `message_id`: in its row,
-/// and in the bytes kept here, its local copy and any outbox row that
-/// sends it. The draft's bytes as they now read, if any are kept.
-fn stamp_draft(conn: &Connection, account_id: AccountId, id: &str, message_id: &str) -> mailrs_store::Result<Option<Vec<u8>>> {
-    conn.execute(
-        "UPDATE messages SET rfc822_msgid = ?3 WHERE account_id = ?1 AND id = ?2",
-        params![account_id, id, message_id],
-    )?;
-    let local = mailrs_store::local_messages::get(conn, account_id, id)?.map(|raw| with_message_id(&raw, message_id));
-    if let Some(raw) = &local {
-        mailrs_store::local_messages::put(conn, account_id, id, raw)?;
-    }
+/// Gives the stored draft `id` a Message-ID: the one its kept bytes
+/// already carry, else `fresh`. The row takes it, and the bytes kept
+/// here that lack one, its local copy and any outbox row that sends it,
+/// get the header. The draft's bytes as they now read, if any are kept.
+fn stamp_draft(conn: &Connection, account_id: AccountId, id: &str, fresh: String) -> mailrs_store::Result<Option<Vec<u8>>> {
+    let local = mailrs_store::local_messages::get(conn, account_id, id)?;
     let queued: Vec<(i64, Vec<u8>)> = conn
         .prepare("SELECT id, raw FROM outbox WHERE account_id = ?1 AND draft_id = ?2 AND raw IS NOT NULL")?
         .query_map(params![account_id, id], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    let Some(kept) = local.as_ref().or(queued.first().map(|(_, raw)| raw)) else {
+        return Ok(None);
+    };
+    let message_id = message_id_header(kept).unwrap_or(fresh);
+    conn.execute(
+        "UPDATE messages SET rfc822_msgid = ?3 WHERE account_id = ?1 AND id = ?2",
+        params![account_id, id, message_id],
+    )?;
+    let stamped = |raw: Vec<u8>| match message_id_header(&raw) {
+        Some(_) => (raw, false),
+        None => (with_message_id(&raw, &message_id), true),
+    };
+    let local = match local.map(stamped) {
+        Some((raw, true)) => {
+            mailrs_store::local_messages::put(conn, account_id, id, &raw)?;
+            Some(raw)
+        }
+        other => other.map(|(raw, _)| raw),
+    };
     let mut first = None;
     for (row, raw) in queued {
-        let raw = with_message_id(&raw, message_id);
-        conn.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1", params![row, raw])?;
+        let (raw, changed) = stamped(raw);
+        if changed {
+            conn.execute("UPDATE outbox SET raw = ?2 WHERE id = ?1", params![row, raw])?;
+        }
         first.get_or_insert(raw);
     }
     Ok(local.or(first))
@@ -413,9 +429,10 @@ async fn carry_drafts<J: JmapApi>(
             continue;
         }
         let (from, account_id) = (draft.id.clone(), account.id);
-        // A draft without a Message-ID gets one before it goes up, in its
-        // row and its bytes here, so a retry after a failed swap finds the
-        // copy by it instead of uploading the draft again.
+        // A draft whose row has no Message-ID takes the one its bytes
+        // carry, or a new one written into them, before it goes up, so a
+        // retry after a failed swap finds the copy by it instead of
+        // uploading the draft again.
         let Some(raw) = db.read(move |c| draft_bytes(c, account_id, &from)).await? else {
             continue;
         };
@@ -423,7 +440,7 @@ async fn carry_drafts<J: JmapApi>(
             true => raw,
             false => {
                 let (from, message_id) = (draft.id.clone(), new_message_id(&account.email));
-                db.write(move |c| stamp_draft(c, account_id, &from, &message_id)).await?.unwrap_or(raw)
+                db.write(move |c| stamp_draft(c, account_id, &from, message_id)).await?.unwrap_or(raw)
             }
         };
         let mailbox = drafts_mailbox.clone().ok_or_else(|| BackendError::Refused(gettext("The server has no Drafts mailbox.")))?;
