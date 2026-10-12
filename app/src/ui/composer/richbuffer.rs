@@ -1119,7 +1119,7 @@ mod tests {
         let attachment = OutgoingAttachment {
             filename: "dot.png".into(),
             mime_type: "image/png".into(),
-            data: pixel.save_to_png_bytes().to_vec(),
+            data: pixel.save_to_png_bytes().into(),
             content_id: Some("dot@mailrs".into()),
         };
         let mut body = RichBody::from_markdown("Look **here** and there");
