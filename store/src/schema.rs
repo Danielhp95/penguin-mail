@@ -940,6 +940,50 @@ CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
     r#"
 CREATE INDEX events_by_uid ON events(account_id, lower(uid));
 "#,
+    // The recipient suggestions count correspondents from every message,
+    // and the app keeps that tally between reads, reading only the rows
+    // that came after. `epoch` moves on every other change that can alter
+    // the tally: a message deleted or given other addresses or date, mail
+    // filed in or out of a Sent mailbox, a mailbox taking or losing the
+    // Sent role. `born` tells this store from another at the same path.
+    r#"
+CREATE TABLE contact_marks (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    born  INTEGER NOT NULL,
+    epoch INTEGER NOT NULL
+);
+INSERT INTO contact_marks (id, born, epoch) VALUES (1, random(), 0);
+CREATE TRIGGER contacts_message_gone AFTER DELETE ON messages BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_message_changed AFTER UPDATE OF from_name, from_addr, to_addrs, cc_addrs, date ON messages
+WHEN OLD.from_name IS NOT NEW.from_name OR OLD.from_addr IS NOT NEW.from_addr
+    OR OLD.to_addrs IS NOT NEW.to_addrs OR OLD.cc_addrs IS NOT NEW.cc_addrs OR OLD.date IS NOT NEW.date
+BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_sent_filed AFTER INSERT ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent')
+BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_sent_unfiled AFTER DELETE ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_sent_role AFTER UPDATE OF role ON mailboxes
+WHEN (OLD.role IS 'sent') <> (NEW.role IS 'sent')
+BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+CREATE TRIGGER contacts_sent_gone AFTER DELETE ON mailboxes WHEN OLD.role IS 'sent' BEGIN
+    UPDATE contact_marks SET epoch = epoch + 1;
+END;
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
