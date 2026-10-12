@@ -80,3 +80,14 @@ fn only_addresses_on_one_site_share_it() {
     assert!(!shares_site("https://api.fastmail.com/jmap/session", "https://fastmail.com@dav.example.org/"));
     assert!(!shares_site("https://api.fastmail.com/jmap/session", "not a url"));
 }
+
+#[test]
+fn ip_addresses_share_a_site_only_with_themselves() {
+    use mailrs_dav::shares_site;
+
+    // The Public Suffix List would read both as the "domain" 2.10.
+    assert!(!shares_site("https://192.0.2.10/jmap/session", "https://198.51.2.10/dav/"));
+    assert!(shares_site("https://192.0.2.10/jmap/session", "https://192.0.2.10:8443/dav/"));
+    assert!(!shares_site("https://192.0.2.10/jmap/session", "https://10.2.10/dav/"));
+    assert!(!shares_site("https://[2001:db8::1]/jmap/session", "https://[2001:db8::2]/dav/"));
+}

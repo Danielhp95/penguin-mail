@@ -127,6 +127,13 @@ pub trait DavApi: Send + Sync + 'static {
 /// password may go there: iCloud serves the principal at caldav.icloud.com
 /// and the calendars at p12-caldav.icloud.com.
 pub fn same_site(host: &str, other: &str) -> bool {
+    // The Public Suffix List reads an IP address as a domain name, so
+    // 192.0.2.10 and 198.51.2.10 would both be "2.10". An address is a
+    // site of its own.
+    let is_ip = |h: &str| h.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>().is_ok();
+    if is_ip(host) || is_ip(other) {
+        return host.eq_ignore_ascii_case(other);
+    }
     match (psl::domain_str(host), psl::domain_str(other)) {
         (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
         _ => host.eq_ignore_ascii_case(other),
