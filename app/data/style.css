@@ -291,6 +291,10 @@ row.account-heading:hover .account-options,
 /* The row shows focus by tinting its label, since the flat fields cannot. */
 .composer-field:focus-within > .composer-label { color: var(--accent-color); }
 .composer-from-heading { padding: 6px 10px 2px; font-size: 0.82em; font-weight: 700; }
+/* Propose New Time over its list, in the invitation's More Answers menu. */
+.invitation-menu-heading { padding: 6px 10px 2px; font-size: 0.82em; font-weight: 700; opacity: 0.8; }
+.app-dark .invitation-menu-heading { opacity: 0.64; }
+.invitation-menu button { font-weight: 400; }
 .composer-body { font-size: 1.04em; line-height: 1.5; }
 .cc-toggle { font-size: 0.85em; opacity: 0.7; padding: 2px 8px; min-height: 24px; margin-top: 0.1em; }
 /* Under the From row: the address a suffix or a masked address sends

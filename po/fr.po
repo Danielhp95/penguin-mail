@@ -2396,14 +2396,14 @@ msgstr "Penguin Mail n’a pas pu démarrer"
 msgid "Report a Problem"
 msgstr "Signaler un problème"
 
-#: app/src/notify.rs:62 app/src/ui/conversation.rs:387
-#: app/src/ui/conversation.rs:543 app/src/ui/conversation.rs:1051
+#: app/src/notify.rs:62 app/src/ui/conversation.rs:388
+#: app/src/ui/conversation.rs:544 app/src/ui/conversation.rs:1052
 #: app/src/ui/window/message_menu.rs:125 app/src/ui/window/shortcuts.rs:392
 msgid "Archive"
 msgstr "Archiver"
 
-#: app/src/notify.rs:63 app/src/ui/conversation.rs:388
-#: app/src/ui/conversation.rs:1095 app/src/ui/preferences.rs:149
+#: app/src/notify.rs:63 app/src/ui/conversation.rs:389
+#: app/src/ui/conversation.rs:1096 app/src/ui/preferences.rs:149
 #: app/src/ui/rules.rs:422 app/src/ui/window/message_menu.rs:128
 msgid "Mark as Read"
 msgstr "Marquer comme lu"
@@ -2411,14 +2411,14 @@ msgstr "Marquer comme lu"
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:529 app/src/ui/hide_my_email.rs:554
+#: app/src/ui/conversation.rs:530 app/src/ui/hide_my_email.rs:554
 #: app/src/ui/hide_my_email.rs:580 app/src/ui/queued.rs:58
 #: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:108
 #: app/src/ui/window/organize.rs:204
 msgid "Delete"
 msgstr "Supprimer"
 
-#: app/src/notify.rs:65 app/src/ui/conversation.rs:537
+#: app/src/notify.rs:65 app/src/ui/conversation.rs:538
 #: app/src/ui/window/message_menu.rs:122 app/src/ui/window/shortcuts.rs:471
 msgid "Reply"
 msgstr "Répondre"
@@ -4311,7 +4311,7 @@ msgstr "Ouvrir Penguin Mail"
 
 #: app/src/tray.rs:290 app/src/ui/composer/mod.rs:336
 #: app/src/ui/composer/mod.rs:643 app/src/ui/composer/mod.rs:1497
-#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:405
+#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:421
 msgid "New Message"
 msgstr "Nouveau message"
 
@@ -4491,7 +4491,7 @@ msgstr "Penguin Mail arrête d’attendre après cinq minutes."
 
 #. The wait for the browser, in the button's place: a spinner and its
 #. line, with Open Page Again and Cancel under them.
-#: app/src/ui/add_account.rs:799 app/src/ui/switch_jmap.rs:142
+#: app/src/ui/add_account.rs:799 app/src/ui/switch_jmap.rs:141
 msgid "Open Page Again"
 msgstr "Rouvrir la page"
 
@@ -4501,7 +4501,7 @@ msgstr "Copier le lien"
 
 #: app/src/ui/add_account.rs:809 app/src/ui/add_account.rs:994
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:514
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:522
 msgid "Try Again"
 msgstr "Réessayer"
 
@@ -4514,7 +4514,7 @@ msgstr "Réessayer"
 #: app/src/ui/composer/mod.rs:2276 app/src/ui/composer/mod.rs:2730
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:497 app/src/ui/rules.rs:681
 #: app/src/ui/sender_prefs.rs:131 app/src/ui/smart_editor.rs:150
-#: app/src/ui/switch_jmap.rs:143 app/src/ui/switch_jmap.rs:168
+#: app/src/ui/switch_jmap.rs:142 app/src/ui/switch_jmap.rs:167
 #: app/src/ui/templates.rs:239 app/src/ui/unsubscribe.rs:119
 #: app/src/ui/vacation.rs:45 app/src/ui/when.rs:52
 #: app/src/ui/window/arrange.rs:148 app/src/ui/window/images.rs:101
@@ -4532,8 +4532,8 @@ msgstr "Se connecter"
 msgid "Your Name"
 msgstr "Votre nom"
 
-#: app/src/ui/add_account.rs:947 app/src/ui/switch_jmap.rs:114
-#: app/src/ui/switch_jmap.rs:117
+#: app/src/ui/add_account.rs:947 app/src/ui/switch_jmap.rs:113
+#: app/src/ui/switch_jmap.rs:116
 msgid "Sign In With Browser"
 msgstr "Se connecter avec le navigateur"
 
@@ -4646,7 +4646,7 @@ msgstr "Pas maintenant"
 
 #: app/src/ui/add_account.rs:1262 app/src/ui/calendar/editor.rs:1613
 #: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
-#: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
+#: app/src/ui/invitation.rs:488 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1370
 msgid "Grant Access"
 msgstr "Accorder l’accès"
@@ -5178,7 +5178,7 @@ msgstr ""
 "Approuver chaque message envoyé par l’assistant et chaque modification des "
 "paramètres Gmail, comme les réponses automatiques et les règles"
 
-#: app/src/ui/assistant_prefs.rs:178 app/src/ui/conversation.rs:667
+#: app/src/ui/assistant_prefs.rs:178 app/src/ui/conversation.rs:668
 #: app/src/ui/window/detached.rs:65
 msgid "Conversation"
 msgstr "Conversation"
@@ -6180,7 +6180,7 @@ msgstr ""
 "Il quitte votre liste d’agendas dans Google Agenda sur tous les appareils. "
 "Vous pourrez vous y réabonner plus tard."
 
-#: app/src/ui/calendar/manage.rs:324 app/src/ui/conversation.rs:376
+#: app/src/ui/calendar/manage.rs:324 app/src/ui/conversation.rs:377
 #: app/src/ui/unsubscribe.rs:120
 msgid "Unsubscribe"
 msgstr "Se désabonner"
@@ -6278,7 +6278,7 @@ msgid "Show Calendars"
 msgstr "Afficher les agendas"
 
 #: app/src/ui/calendar/mod.rs:388 app/src/ui/calendar/mod.rs:392
-#: app/src/ui/conversation.rs:517 app/src/ui/conversation.rs:521
+#: app/src/ui/conversation.rs:518 app/src/ui/conversation.rs:522
 msgid "Assistant (Ctrl+J)"
 msgstr "Assistant (Ctrl+J)"
 
@@ -6354,8 +6354,8 @@ msgstr "Absent du bureau"
 msgid "Could not save the event: {reason}"
 msgstr "Impossible d’enregistrer l’événement : {reason}"
 
-#: app/src/ui/calendar/next.rs:87 app/src/ui/invitation.rs:807
-#: app/src/ui/invitation.rs:946 app/src/ui/invitation/strip.rs:168
+#: app/src/ui/calendar/next.rs:87 app/src/ui/invitation.rs:838
+#: app/src/ui/invitation.rs:977 app/src/ui/invitation/strip.rs:168
 msgid "Untitled event"
 msgstr "Événement sans titre"
 
@@ -6407,24 +6407,24 @@ msgid "Show all guests"
 msgstr "Afficher tous les invités"
 
 #: app/src/ui/calendar/popover.rs:315 app/src/ui/calendar/popover.rs:776
-#: app/src/ui/invitation.rs:317
+#: app/src/ui/invitation.rs:322
 msgid "Answer"
 msgstr "Répondre"
 
-#: app/src/ui/calendar/popover.rs:329 app/src/ui/invitation.rs:328
+#: app/src/ui/calendar/popover.rs:329 app/src/ui/invitation.rs:333
 msgid "Add a note"
 msgstr "Ajouter une note"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:332
+#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:338
 msgid "Note with your answer"
 msgstr "Note jointe à votre réponse"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:332
+#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:338
 msgid "The organizer reads it with your answer"
 msgstr "L’organisateur la lit avec votre réponse"
 
 #: app/src/ui/calendar/popover.rs:339 app/src/ui/calendar/popover.rs:346
-#: app/src/ui/invitation.rs:358
+#: app/src/ui/invitation.rs:374
 msgid "Propose New Time"
 msgstr "Proposer un nouvel horaire"
 
@@ -6680,7 +6680,7 @@ msgstr "Renommer…"
 msgid "Delete…"
 msgstr "Supprimer…"
 
-#: app/src/ui/calendar/sidebar.rs:1267 app/src/ui/conversation.rs:575
+#: app/src/ui/calendar/sidebar.rs:1267 app/src/ui/conversation.rs:576
 msgid "Unsubscribe…"
 msgstr "Se désabonner…"
 
@@ -6731,7 +6731,7 @@ msgstr[1] "{yes} sur {count} ont dit oui"
 
 #. The calendar's popover words its people line the same way.
 #: app/src/ui/calendar/words.rs:231 app/src/ui/calendar/words.rs:592
-#: app/src/ui/invitation.rs:1195
+#: app/src/ui/invitation.rs:1228
 msgid "{name}, organizer"
 msgstr "{name}, organisateur"
 
@@ -6857,7 +6857,7 @@ msgstr "Organisateur"
 msgid "No answer yet"
 msgstr "Pas encore de réponse"
 
-#: app/src/ui/calendar/words.rs:588 app/src/ui/invitation.rs:1273
+#: app/src/ui/calendar/words.rs:588 app/src/ui/invitation.rs:1306
 msgid "You"
 msgstr "Vous"
 
@@ -6912,7 +6912,7 @@ msgstr "Chiffrer"
 msgid "Request Read Receipt"
 msgstr "Demander un accusé de lecture"
 
-#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1688
+#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1689
 msgid "Choose a Time…"
 msgstr "Choisir une heure…"
 
@@ -7353,7 +7353,7 @@ msgstr "Utiliser {host} pour {account}"
 msgid "Find Again"
 msgstr "Rechercher à nouveau"
 
-#: app/src/ui/contacts_prefs.rs:120 app/src/ui/conversation.rs:527
+#: app/src/ui/contacts_prefs.rs:120 app/src/ui/conversation.rs:528
 #: app/src/ui/queued.rs:60 app/src/ui/sidebar.rs:1481
 msgid "Edit…"
 msgstr "Modifier…"
@@ -7421,227 +7421,227 @@ msgstr "Non autorisé lors de votre connexion"
 msgid "No Conversation Selected"
 msgstr "Aucune conversation sélectionnée"
 
-#: app/src/ui/conversation.rs:370
+#: app/src/ui/conversation.rs:371
 msgid "Remote images are hidden to protect your privacy"
 msgstr "Les images distantes sont masquées pour protéger votre vie privée"
 
-#: app/src/ui/conversation.rs:371
+#: app/src/ui/conversation.rs:372
 msgid "Load Images"
 msgstr "Charger les images"
 
-#: app/src/ui/conversation.rs:375
+#: app/src/ui/conversation.rs:376
 msgid "This message is from a mailing list"
 msgstr "Ce message provient d’une liste de diffusion"
 
-#: app/src/ui/conversation.rs:389 app/src/ui/conversation.rs:1102
+#: app/src/ui/conversation.rs:390 app/src/ui/conversation.rs:1103
 #: app/src/ui/window/message_menu.rs:130
 msgid "Flag"
 msgstr "Drapeau"
 
-#: app/src/ui/conversation.rs:390 app/src/ui/conversation.rs:553
-#: app/src/ui/conversation.rs:882 app/src/ui/conversation.rs:1107
+#: app/src/ui/conversation.rs:391 app/src/ui/conversation.rs:554
+#: app/src/ui/conversation.rs:883 app/src/ui/conversation.rs:1108
 msgid "Mute"
 msgstr "Sourdine"
 
-#: app/src/ui/conversation.rs:391 app/src/ui/conversation.rs:545
-#: app/src/ui/conversation.rs:1044 app/src/ui/window/shortcuts.rs:411
+#: app/src/ui/conversation.rs:392 app/src/ui/conversation.rs:546
+#: app/src/ui/conversation.rs:1045 app/src/ui/window/shortcuts.rs:411
 msgid "Junk"
 msgstr "Indésirable"
 
-#: app/src/ui/conversation.rs:392 app/src/ui/conversation.rs:544
-#: app/src/ui/conversation.rs:1039 app/src/ui/window/message_menu.rs:126
+#: app/src/ui/conversation.rs:393 app/src/ui/conversation.rs:545
+#: app/src/ui/conversation.rs:1040 app/src/ui/window/message_menu.rs:126
 msgid "Move to Trash"
 msgstr "Mettre à la corbeille"
 
-#: app/src/ui/conversation.rs:419
+#: app/src/ui/conversation.rs:420
 msgid "Several Conversations Selected"
 msgstr "Plusieurs conversations sélectionnées"
 
-#: app/src/ui/conversation.rs:421
+#: app/src/ui/conversation.rs:422
 msgid "Actions and shortcuts apply to all of them. Esc clears the selection."
 msgstr ""
 "Les actions et les raccourcis s’appliquent à toutes. Échap efface la "
 "sélection."
 
-#: app/src/ui/conversation.rs:467
+#: app/src/ui/conversation.rs:468
 msgid "Archive (E or Ctrl+Alt+A)"
 msgstr "Archiver (E ou Ctrl+Alt+A)"
 
-#: app/src/ui/conversation.rs:469 app/src/ui/conversation.rs:1022
+#: app/src/ui/conversation.rs:470 app/src/ui/conversation.rs:1023
 msgid "Move to Trash (Delete)"
 msgstr "Mettre à la corbeille (Suppr)"
 
-#: app/src/ui/conversation.rs:470 app/src/ui/conversation.rs:1032
+#: app/src/ui/conversation.rs:471 app/src/ui/conversation.rs:1033
 msgid "Junk (Ctrl+Shift+J)"
 msgstr "Indésirable (Ctrl+Maj+J)"
 
-#: app/src/ui/conversation.rs:473
+#: app/src/ui/conversation.rs:474
 msgid "Mark as Unread (Ctrl+Shift+U)"
 msgstr "Marquer comme non lu (Ctrl+Maj+U)"
 
-#: app/src/ui/conversation.rs:478 app/src/ui/conversation.rs:482
-#: app/src/ui/conversation.rs:1728
+#: app/src/ui/conversation.rs:479 app/src/ui/conversation.rs:483
+#: app/src/ui/conversation.rs:1729
 msgid "Flag (Ctrl+Shift+L)"
 msgstr "Drapeau (Ctrl+Maj+L)"
 
-#: app/src/ui/conversation.rs:479 app/src/ui/conversation.rs:485
+#: app/src/ui/conversation.rs:480 app/src/ui/conversation.rs:486
 msgid "Choose Flag Color"
 msgstr "Choisir la couleur du drapeau"
 
-#: app/src/ui/conversation.rs:486
+#: app/src/ui/conversation.rs:487
 msgid "Flags it in the color you chose last, or takes the flag off"
 msgstr "Ajoute un drapeau de la dernière couleur choisie, ou retire le drapeau"
 
-#: app/src/ui/conversation.rs:490
+#: app/src/ui/conversation.rs:491
 msgid "Reply (Ctrl+R)"
 msgstr "Répondre (Ctrl+R)"
 
-#: app/src/ui/conversation.rs:493
+#: app/src/ui/conversation.rs:494
 msgid "Reply All (Ctrl+Shift+R)"
 msgstr "Répondre à tous (Ctrl+Maj+R)"
 
-#: app/src/ui/conversation.rs:495
+#: app/src/ui/conversation.rs:496
 msgid "Forward (Ctrl+Shift+F)"
 msgstr "Transférer (Ctrl+Maj+F)"
 
-#: app/src/ui/conversation.rs:497
+#: app/src/ui/conversation.rs:498
 msgid "Edit Draft"
 msgstr "Modifier le brouillon"
 
-#: app/src/ui/conversation.rs:504 app/src/ui/conversation.rs:507
+#: app/src/ui/conversation.rs:505 app/src/ui/conversation.rs:508
 msgid "More Actions"
 msgstr "Plus d’actions"
 
-#: app/src/ui/conversation.rs:528 app/src/ui/queued.rs:56
+#: app/src/ui/conversation.rs:529 app/src/ui/queued.rs:56
 msgid "Send Now"
 msgstr "Envoyer maintenant"
 
-#: app/src/ui/conversation.rs:538 app/src/ui/window/message_menu.rs:123
+#: app/src/ui/conversation.rs:539 app/src/ui/window/message_menu.rs:123
 msgid "Reply All"
 msgstr "Répondre à tous"
 
-#: app/src/ui/conversation.rs:539 app/src/ui/window/message_menu.rs:124
+#: app/src/ui/conversation.rs:540 app/src/ui/window/message_menu.rs:124
 #: app/src/ui/window/shortcuts.rs:484
 msgid "Forward"
 msgstr "Transférer"
 
-#: app/src/ui/conversation.rs:548
+#: app/src/ui/conversation.rs:549
 msgid "Flag or Unflag"
 msgstr "Ajouter ou retirer le drapeau"
 
-#: app/src/ui/conversation.rs:550
+#: app/src/ui/conversation.rs:551
 msgid "Mark Read or Unread"
 msgstr "Marquer comme lu ou non lu"
 
-#: app/src/ui/conversation.rs:558 app/src/ui/window/message_menu.rs:135
+#: app/src/ui/conversation.rs:559 app/src/ui/window/message_menu.rs:135
 msgid "Tags…"
 msgstr "Mots-clés…"
 
-#: app/src/ui/conversation.rs:562 app/src/ui/sidebar.rs:1048
+#: app/src/ui/conversation.rs:563 app/src/ui/sidebar.rs:1048
 #: app/src/ui/window/reminders.rs:25 app/src/ui/window/reminders.rs:30
 msgid "Remind Me"
 msgstr "Me le rappeler"
 
-#: app/src/ui/conversation.rs:566
+#: app/src/ui/conversation.rs:567
 msgid "Open in New Window"
 msgstr "Ouvrir dans une nouvelle fenêtre"
 
-#: app/src/ui/conversation.rs:569
+#: app/src/ui/conversation.rs:570
 msgid "Print…"
 msgstr "Imprimer…"
 
-#: app/src/ui/conversation.rs:570
+#: app/src/ui/conversation.rs:571
 msgid "View Source"
 msgstr "Afficher la source"
 
-#: app/src/ui/conversation.rs:571 app/src/ui/window/message_menu.rs:136
+#: app/src/ui/conversation.rs:572 app/src/ui/window/message_menu.rs:136
 msgid "Export…"
 msgstr "Exporter…"
 
-#: app/src/ui/conversation.rs:574 app/src/ui/conversation.rs:849
+#: app/src/ui/conversation.rs:575 app/src/ui/conversation.rs:850
 msgid "Add Sender to VIPs"
 msgstr "Ajouter l’expéditeur aux VIP"
 
-#: app/src/ui/conversation.rs:577
+#: app/src/ui/conversation.rs:578
 msgid "Always Load Images…"
 msgstr "Toujours charger les images…"
 
 #. Both sender items leave a rule on the server, so an account
 #. without rules turns them off, and the menu leaves them out.
-#: app/src/ui/conversation.rs:582
+#: app/src/ui/conversation.rs:583
 msgid "Block Sender…"
 msgstr "Bloquer l’expéditeur…"
 
-#: app/src/ui/conversation.rs:587 app/src/ui/conversation.rs:869
+#: app/src/ui/conversation.rs:588 app/src/ui/conversation.rs:870
 msgid "Categorize Sender"
 msgstr "Classer l’expéditeur"
 
-#: app/src/ui/conversation.rs:615 app/src/ui/conversation.rs:617
+#: app/src/ui/conversation.rs:616 app/src/ui/conversation.rs:618
 msgid "Tags"
 msgstr "Mots-clés"
 
-#: app/src/ui/conversation.rs:847
+#: app/src/ui/conversation.rs:848
 msgid "Remove Sender from VIPs"
 msgstr "Retirer l’expéditeur des VIP"
 
-#: app/src/ui/conversation.rs:880 app/src/ui/conversation.rs:1105
+#: app/src/ui/conversation.rs:881 app/src/ui/conversation.rs:1106
 msgid "Unmute"
 msgstr "Retirer la sourdine"
 
-#: app/src/ui/conversation.rs:1021
+#: app/src/ui/conversation.rs:1022
 msgid "Delete Forever (Delete)"
 msgstr "Supprimer définitivement (Suppr)"
 
-#: app/src/ui/conversation.rs:1030
+#: app/src/ui/conversation.rs:1031
 msgid "Not Junk (Ctrl+Shift+J)"
 msgstr "Non indésirable (Ctrl+Maj+J)"
 
-#: app/src/ui/conversation.rs:1038 app/src/ui/window/message_menu.rs:127
+#: app/src/ui/conversation.rs:1039 app/src/ui/window/message_menu.rs:127
 #: app/src/ui/window/press.rs:425
 msgid "Delete Forever"
 msgstr "Supprimer définitivement"
 
-#: app/src/ui/conversation.rs:1043
+#: app/src/ui/conversation.rs:1044
 msgid "Not Junk"
 msgstr "Non indésirable"
 
-#: app/src/ui/conversation.rs:1097 app/src/ui/window/message_menu.rs:129
+#: app/src/ui/conversation.rs:1098 app/src/ui/window/message_menu.rs:129
 msgid "Mark as Unread"
 msgstr "Marquer comme non lu"
 
-#: app/src/ui/conversation.rs:1100 app/src/ui/window/message_menu.rs:131
+#: app/src/ui/conversation.rs:1101 app/src/ui/window/message_menu.rs:131
 msgid "Unflag"
 msgstr "Retirer le drapeau"
 
-#: app/src/ui/conversation.rs:1116
+#: app/src/ui/conversation.rs:1117
 msgid "{count} Conversation Selected"
 msgid_plural "{count} Conversations Selected"
 msgstr[0] "{count} conversation sélectionnée"
 msgstr[1] "{count} conversations sélectionnées"
 
-#: app/src/ui/conversation.rs:1122
+#: app/src/ui/conversation.rs:1123
 msgid "{count} Message Selected"
 msgid_plural "{count} Messages Selected"
 msgstr[0] "{count} message sélectionné"
 msgstr[1] "{count} messages sélectionnés"
 
-#: app/src/ui/conversation.rs:1727
+#: app/src/ui/conversation.rs:1728
 msgid "Unflag (Ctrl+Shift+L)"
 msgstr "Retirer le drapeau (Ctrl+Maj+L)"
 
-#: app/src/ui/conversation.rs:1740
+#: app/src/ui/conversation.rs:1741
 msgid "Mark as Read (U)"
 msgstr "Marquer comme lu (U)"
 
-#: app/src/ui/conversation.rs:1741
+#: app/src/ui/conversation.rs:1742
 msgid "Mark as Unread (U)"
 msgstr "Marquer comme non lu (U)"
 
-#: app/src/ui/conversation.rs:1969
+#: app/src/ui/conversation.rs:1970
 msgid "{color} (Ctrl+Alt+{number})"
 msgstr "{color} (Ctrl+Alt+{number})"
 
-#: app/src/ui/conversation.rs:1986 app/src/ui/window/message_menu.rs:258
+#: app/src/ui/conversation.rs:1987 app/src/ui/window/message_menu.rs:258
 msgid "Clear Flag"
 msgstr "Retirer le drapeau"
 
@@ -7955,60 +7955,68 @@ msgstr "Impossible d’ajouter à votre agenda : {reason}"
 msgid "{calendar} ({account})"
 msgstr "{calendar} ({account})"
 
-#: app/src/ui/invitation.rs:339
+#: app/src/ui/invitation.rs:345
 msgid "What the answer covers"
 msgstr "Ce que couvre la réponse"
 
-#: app/src/ui/invitation.rs:341
+#: app/src/ui/invitation.rs:347
 msgid "This Event"
 msgstr "Cet événement"
 
-#: app/src/ui/invitation.rs:346
+#: app/src/ui/invitation.rs:352
 msgid "All Events"
 msgstr "Tous les événements"
 
-#: app/src/ui/invitation.rs:371 app/src/ui/invitation.rs:376
+#: app/src/ui/invitation.rs:364
+msgid "Add a Note"
+msgstr "Ajouter une note"
+
+#: app/src/ui/invitation.rs:388 app/src/ui/invitation.rs:393
+msgid "More Answers"
+msgstr "Autres réponses"
+
+#: app/src/ui/invitation.rs:399 app/src/ui/invitation.rs:404
 msgid "Add to Calendar"
 msgstr "Ajouter à l’agenda"
 
-#: app/src/ui/invitation.rs:384
+#: app/src/ui/invitation.rs:412
 msgid "Calendar to add to"
 msgstr "Agenda de destination"
 
-#: app/src/ui/invitation.rs:385
+#: app/src/ui/invitation.rs:413
 msgid "The calendar the events go on"
 msgstr "L’agenda où vont les événements"
 
-#: app/src/ui/invitation.rs:394
+#: app/src/ui/invitation.rs:422
 msgid "Events to add"
 msgstr "Événements à ajouter"
 
-#: app/src/ui/invitation.rs:399 app/src/ui/invitation.rs:405
+#: app/src/ui/invitation.rs:427 app/src/ui/invitation.rs:433
 #: app/src/ui/sidebar.rs:133
 msgid "Show in Calendar"
 msgstr "Afficher dans l’agenda"
 
-#: app/src/ui/invitation.rs:458
+#: app/src/ui/invitation.rs:485
 msgid "Penguin Mail needs permission to show this event in Calendar."
 msgstr ""
 "Penguin Mail a besoin d’une autorisation pour afficher cet événement dans "
 "l’agenda."
 
-#: app/src/ui/invitation.rs:863
+#: app/src/ui/invitation.rs:894
 msgid "Added to your calendar"
 msgstr "Ajouté à votre agenda"
 
-#: app/src/ui/invitation.rs:865
+#: app/src/ui/invitation.rs:896
 msgid "Added {count} events to your calendar"
 msgid_plural "Added {count} events to your calendar"
 msgstr[0] "{count} événement ajouté à votre agenda"
 msgstr[1] "{count} événements ajoutés à votre agenda"
 
-#: app/src/ui/invitation.rs:870
+#: app/src/ui/invitation.rs:901
 msgid "Added to {calendar}"
 msgstr "Ajouté à {calendar}"
 
-#: app/src/ui/invitation.rs:872
+#: app/src/ui/invitation.rs:903
 msgid "Added {count} events to {calendar}"
 msgid_plural "Added {count} events to {calendar}"
 msgstr[0] "{count} événement ajouté à {calendar}"
@@ -8016,101 +8024,101 @@ msgstr[1] "{count} événements ajoutés à {calendar}"
 
 #. A file with several events names none of them on the card's
 #. head: the list below does, one row each.
-#: app/src/ui/invitation.rs:956
+#: app/src/ui/invitation.rs:987
 msgid "{count} events"
 msgid_plural "{count} events"
 msgstr[0] "{count} événement"
 msgstr[1] "{count} événements"
 
-#: app/src/ui/invitation.rs:1033
+#: app/src/ui/invitation.rs:1066
 msgid "Pick a Time…"
 msgstr "Choisir un horaire…"
 
-#: app/src/ui/invitation.rs:1078
+#: app/src/ui/invitation.rs:1111
 msgid "No reply yet"
 msgstr "Pas encore de réponse"
 
-#: app/src/ui/invitation.rs:1148
+#: app/src/ui/invitation.rs:1181
 msgid "Half an Hour Later"
 msgstr "Une demi-heure plus tard"
 
-#: app/src/ui/invitation.rs:1151
+#: app/src/ui/invitation.rs:1184
 msgid "An Hour Later"
 msgstr "Une heure plus tard"
 
-#: app/src/ui/invitation.rs:1153
+#: app/src/ui/invitation.rs:1186
 msgid "Same Time Tomorrow"
 msgstr "Même heure demain"
 
-#: app/src/ui/invitation.rs:1157
+#: app/src/ui/invitation.rs:1190
 msgid "Same Time Next Week"
 msgstr "Même heure la semaine prochaine"
 
-#: app/src/ui/invitation.rs:1172
+#: app/src/ui/invitation.rs:1205
 msgid "You have {event} then"
 msgstr "Vous avez {event} à ce moment-là"
 
-#: app/src/ui/invitation.rs:1174
+#: app/src/ui/invitation.rs:1207
 msgid "You have {event} and {other} then"
 msgstr "Vous avez {event} et {other} à ce moment-là"
 
-#: app/src/ui/invitation.rs:1178
+#: app/src/ui/invitation.rs:1211
 msgid "You have {event} and {count} more then"
 msgid_plural "You have {event} and {count} more then"
 msgstr[0] "Vous avez {event} et {count} autre à ce moment-là"
 msgstr[1] "Vous avez {event} et {count} autres à ce moment-là"
 
-#: app/src/ui/invitation.rs:1191
+#: app/src/ui/invitation.rs:1224
 msgid "Reply to the invitation from {organizer}"
 msgstr "Répondre à l’invitation de {organizer}"
 
-#: app/src/ui/invitation.rs:1299
+#: app/src/ui/invitation.rs:1332
 msgid "{count} yes"
 msgid_plural "{count} yes"
 msgstr[0] "{count} oui"
 msgstr[1] "{count} oui"
 
-#: app/src/ui/invitation.rs:1307
+#: app/src/ui/invitation.rs:1340
 msgid "{count} no"
 msgid_plural "{count} no"
 msgstr[0] "{count} non"
 msgstr[1] "{count} non"
 
-#: app/src/ui/invitation.rs:1315
+#: app/src/ui/invitation.rs:1348
 msgid "{count} maybe"
 msgid_plural "{count} maybe"
 msgstr[0] "{count} peut-être"
 msgstr[1] "{count} peut-être"
 
-#: app/src/ui/invitation.rs:1323
+#: app/src/ui/invitation.rs:1356
 msgid "{count} awaiting"
 msgid_plural "{count} awaiting"
 msgstr[0] "{count} en attente"
 msgstr[1] "{count} en attente"
 
-#: app/src/ui/invitation.rs:1331
+#: app/src/ui/invitation.rs:1364
 msgid "{count} guest"
 msgid_plural "{count} guests"
 msgstr[0] "{count} invité"
 msgstr[1] "{count} invités"
 
-#: app/src/ui/invitation.rs:1337
+#: app/src/ui/invitation.rs:1370
 msgid "{guests} · {answers}"
 msgstr "{guests} · {answers}"
 
-#: app/src/ui/invitation.rs:1347
+#: app/src/ui/invitation.rs:1380
 msgid "This meeting moved from {when}"
 msgstr "Cette réunion a été déplacée depuis {when}"
 
-#: app/src/ui/invitation.rs:1350
+#: app/src/ui/invitation.rs:1383
 msgid "The organizer changed this meeting"
 msgstr "L’organisateur a modifié cette réunion"
 
-#: app/src/ui/invitation.rs:1351
+#: app/src/ui/invitation.rs:1384
 msgid "The organizer canceled this meeting"
 msgstr "L’organisateur a annulé cette réunion"
 
-#: app/src/ui/invitation.rs:1352
+#: app/src/ui/invitation.rs:1385
 msgid "This meeting is canceled"
 msgstr "Cette réunion est annulée"
 
@@ -9211,31 +9219,31 @@ msgstr "Donnez un nom à la boîte"
 msgid "Add a condition with a value"
 msgstr "Ajoutez une condition avec une valeur"
 
-#: app/src/ui/switch_jmap.rs:94
+#: app/src/ui/switch_jmap.rs:93
 msgid "What changes"
 msgstr "Ce qui change"
 
-#: app/src/ui/switch_jmap.rs:95
+#: app/src/ui/switch_jmap.rs:94
 msgid "What stays"
 msgstr "Ce qui reste"
 
-#: app/src/ui/switch_jmap.rs:104
+#: app/src/ui/switch_jmap.rs:103
 msgid "Sent to {host} and nowhere else."
 msgstr "Envoyé à {host} et nulle part ailleurs."
 
-#: app/src/ui/switch_jmap.rs:138 app/src/ui/switch_jmap.rs:411
+#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:411
 msgid "Matching your mail…"
 msgstr "Rapprochement de votre courrier…"
 
-#: app/src/ui/switch_jmap.rs:152 app/src/ui/switch_jmap.rs:454
+#: app/src/ui/switch_jmap.rs:151 app/src/ui/switch_jmap.rs:454
 msgid "Finish signing in on {provider}'s page in your browser."
 msgstr "Terminez la connexion sur la page de {provider} dans votre navigateur."
 
-#: app/src/ui/switch_jmap.rs:167
+#: app/src/ui/switch_jmap.rs:166
 msgid "Switch"
 msgstr "Basculer"
 
-#: app/src/ui/switch_jmap.rs:179
+#: app/src/ui/switch_jmap.rs:178
 msgid "Switch to JMAP"
 msgstr "Passer à JMAP"
 
