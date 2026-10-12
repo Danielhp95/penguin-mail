@@ -12,8 +12,7 @@ use mailrs_domain::translate::gettext;
 use mailrs_store::{drafts, messages, outbox};
 
 use super::AccountSync;
-use super::refs::stored_id;
-use crate::{BackendError, MailBackend, SavedDraft, SyncError};
+use crate::{BackendError, SavedDraft, SyncError};
 
 impl AccountSync {
     /// Sends raw RFC 822 bytes, then deletes `draft_id` if the message came
@@ -26,24 +25,16 @@ impl AccountSync {
         thread_id: Option<String>,
         draft_id: Option<String>,
     ) -> Result<String, SyncError> {
-        let sent = self.services.mail.send(&raw, thread_id.as_deref()).await?;
+        let sent = self.mail.send(&raw, thread_id.as_deref()).await?;
         let message_id = self.file_sent(&raw).await.unwrap_or_else(|| sent.clone());
         if let Some(draft_id) = draft_id {
             // The message has gone out, so nothing after this may fail the
-            // send: the outbox would send it again.
-            let name = match self.remote(&draft_id).await {
-                Ok(name) => name,
-                Err(err) => {
-                    tracing::warn!(account = self.account_id, error = %err, "sent, but could not read where the draft sits");
-                    draft_id.clone()
-                }
-            };
-            // A server that keeps one copy of the same bytes sent the draft
-            // itself and filed it in Sent: deleting it would delete the sent
-            // message.
-            if name != sent
-                && let Err(err) = self.services.mail.delete_draft(&name).await
-                && !matches!(err, BackendError::NotFound)
+            // send: the outbox would send it again. A server that keeps one
+            // copy of the same bytes sent the draft itself and filed it in
+            // Sent: deleting it would delete the sent message.
+            if draft_id != sent
+                && let Err(err) = self.mail.delete_draft(&draft_id).await
+                && !matches!(err, SyncError::Backend(BackendError::NotFound))
             {
                 tracing::warn!(account = self.account_id, error = %err, "sent, but could not delete the draft");
             }
@@ -57,7 +48,7 @@ impl AccountSync {
     /// change to the store itself, and no sync follows to say so, so the
     /// window hears of the thread here.
     async fn tell_local(&self, message_id: &str) {
-        if !self.services.mail.capabilities().local_mailboxes {
+        if !self.mail.capabilities().local_mailboxes {
             return;
         }
         let (account_id, id) = (self.account_id, message_id.to_string());
@@ -75,7 +66,7 @@ impl AccountSync {
     /// whatever happens here, so a failure goes to the log and never to
     /// the caller, which would send the message again.
     async fn file_sent(&self, raw: &[u8]) -> Option<String> {
-        let mail = &self.services.mail;
+        let mail = &self.mail;
         if mail.capabilities().files_sent_mail {
             return None;
         }
@@ -103,11 +94,7 @@ impl AccountSync {
         let Some(id) = message_id_header(raw) else {
             return Ok(None);
         };
-        let Some(found) = self.services.mail.find_sent(&id).await? else {
-            return Ok(None);
-        };
-        let resolved = self.resolve(vec![found.clone()]).await?;
-        Ok(Some(stored_id(&found, &resolved).unwrap_or(found)))
+        self.mail.find_sent(&id).await
     }
 
     /// Saves a draft on the server, replacing `draft_id` when given. If
@@ -135,18 +122,9 @@ impl AccountSync {
         draft_id: Option<String>,
     ) -> Result<SavedDraft, SyncError> {
         let thread_id = thread_id.as_deref();
-        let old = match &draft_id {
-            Some(id) => Some(self.remote(id).await?),
-            None => None,
-        };
-        let saved = match self
-            .services
-            .mail
-            .save_draft(old.as_deref(), &raw, thread_id)
-            .await
-        {
-            Err(BackendError::NotFound) if draft_id.is_some() => {
-                self.services.mail.save_draft(None, &raw, thread_id).await?
+        let saved = match self.mail.save_draft(draft_id.as_deref(), &raw, thread_id).await {
+            Err(SyncError::Backend(BackendError::NotFound)) if draft_id.is_some() => {
+                self.mail.save_draft(None, &raw, thread_id).await?
             }
             other => other?,
         };
@@ -180,8 +158,7 @@ impl AccountSync {
     /// server that does not file what it sends gets a copy of the draft in
     /// Sent, read before the draft goes.
     pub async fn send_draft(&self, draft_id: &str) -> Result<Option<String>, SyncError> {
-        let name = self.remote(draft_id).await?;
-        let copy = match self.services.mail.capabilities().files_sent_mail {
+        let copy = match self.mail.capabilities().files_sent_mail {
             true => None,
             false => match self.raw(draft_id).await {
                 Ok(raw) => Some(raw),
@@ -189,10 +166,10 @@ impl AccountSync {
                 Err(err) => return Err(err),
             },
         };
-        let sent = match self.services.mail.send_draft(&name).await {
+        let sent = match self.mail.send_draft(draft_id).await {
             Ok(id) => Some(id),
-            Err(BackendError::NotFound) => None,
-            Err(err) => return Err(err.into()),
+            Err(SyncError::Backend(BackendError::NotFound)) => None,
+            Err(err) => return Err(err),
         };
         let sent = match (sent, copy) {
             (Some(id), Some(raw)) => Some(self.file_sent(&raw).await.unwrap_or(id)),
@@ -206,10 +183,9 @@ impl AccountSync {
     }
 
     pub async fn delete_draft(&self, draft_id: &str) -> Result<(), SyncError> {
-        let name = self.remote(draft_id).await?;
-        match self.services.mail.delete_draft(&name).await {
-            Ok(()) | Err(BackendError::NotFound) => {}
-            Err(err) => return Err(err.into()),
+        match self.mail.delete_draft(draft_id).await {
+            Ok(()) | Err(SyncError::Backend(BackendError::NotFound)) => {}
+            Err(err) => return Err(err),
         }
         self.forget_draft(draft_id).await;
         Ok(())
@@ -251,8 +227,7 @@ impl AccountSync {
         {
             return Ok(Some(draft_id));
         }
-        let listed = self.services.mail.list_drafts().await?;
-        let listed = self.drafts_as_stored(listed).await?;
+        let listed = self.mail.list_drafts().await?;
         let found = listed
             .iter()
             .find(|d| d.message_id == message_id)
@@ -314,10 +289,7 @@ impl AccountSync {
         };
         match raw.and_then(|raw| mailrs_mime::part(&raw, part_path)) {
             Some(bytes) => Ok(bytes),
-            None => {
-                let name = self.remote(message_id).await?;
-                Ok(self.services.mail.fetch_part(&name, part_path).await?)
-            }
+            None => self.mail.fetch_part(message_id, part_path).await,
         }
     }
 
@@ -369,10 +341,9 @@ impl AccountSync {
                 })
                 .await?
         };
-        let names = self.remotes(&ids).await?;
         let mut entry = Vec::new();
         for batch in export_batches(&sizes) {
-            let raws = self.services.mail.fetch_raw(&names[batch]).await?;
+            let raws = self.mail.fetch_raw(&ids[batch]).await?;
             for raw in raws {
                 entry.clear();
                 crate::export::append(&mut entry, &raw.bytes);
@@ -404,11 +375,7 @@ impl AccountSync {
                 return Ok(stored);
             }
         }
-        let found = self
-            .services
-            .mail
-            .fetch_whole(vec![thread_id.to_string()])
-            .await?;
+        let found = self.mail.fetch_whole(vec![thread_id.to_string()]).await?;
         if !found.gone_threads.is_empty() {
             return Err(BackendError::NotFound.into());
         }

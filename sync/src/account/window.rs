@@ -11,7 +11,6 @@ use mailrs_store::{accounts, mailboxes, messages, window};
 
 use super::fetch::store_fetched;
 use super::{AccountSync, window_longer, window_reach};
-use super::refs::stored_id;
 use crate::{BackendError, MailBackend, RemoteRef, SyncError, Want};
 
 const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
@@ -40,8 +39,8 @@ impl AccountSync {
     /// page. `backfill_step` loads the rest.
     pub async fn bootstrap(&self) -> Result<(), SyncError> {
         self.set_state(AccountState::Bootstrapping).await?;
-        let start = self.services.mail.changes(None).await?.state;
-        let listed = self.services.mail.mailboxes().await?;
+        let start = self.mail.state_now().await?;
+        let listed = self.mail.mailboxes().await?;
         let account_id = self.account_id;
         let window_days = self.window_days;
         let generation = self
@@ -71,7 +70,7 @@ impl AccountSync {
             return Ok(());
         }
         let (account_id, now) = (self.account_id, self.window_days);
-        let local = self.services.mail.capabilities().local_mailboxes;
+        let local = self.mail.capabilities().local_mailboxes;
         let (stored, cursor) = self
             .db
             .read(move |c| Ok((accounts::window_days(c, account_id)?, accounts::sync_cursor(c, account_id)?)))
@@ -126,8 +125,8 @@ impl AccountSync {
             return self.bootstrap().await;
         }
         self.set_state(AccountState::Bootstrapping).await?;
-        let start = self.services.mail.changes(None).await?.state;
-        let listed = self.services.mail.mailboxes().await?;
+        let start = self.mail.state_now().await?;
+        let listed = self.mail.mailboxes().await?;
         let listed_ids: Vec<String> = listed.iter().map(|m| m.id.clone()).collect();
         let generation = self
             .db
@@ -138,21 +137,17 @@ impl AccountSync {
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
 
-        let listed = self
-            .services
-            .mail
-            .window_ids(self.window_days, None)
-            .await?;
+        // The server's own names, since on a folder server each one says
+        // which mailbox holds the message; `listing_as_stored` reads them
+        // back as store ids below.
+        let server = self.mail.untranslated();
+        let listed = server.window_ids(self.window_days, None).await?;
         let members = match self.renames() {
             true => mailboxes_holding(&listed),
             false => {
                 let mut members: HashMap<String, HashSet<String>> = HashMap::new();
                 for label in &listed_ids {
-                    let carrying = self
-                        .services
-                        .mail
-                        .window_ids(self.window_days, Some(label))
-                        .await?;
+                    let carrying = server.window_ids(self.window_days, Some(label)).await?;
                     members.insert(label.clone(), carrying.into_iter().map(|m| m.id).collect());
                 }
                 members
@@ -162,7 +157,7 @@ impl AccountSync {
         // message can be asked whether it is in it.
         let sets: Vec<(String, MailSet)> = members
             .keys()
-            .map(|id| (id.clone(), self.services.mail.set_of(id)))
+            .map(|id| (id.clone(), self.mail.set_of(id)))
             .collect();
         let (listed, members) = self.listing_as_stored(listed, members).await?;
         let ids: Vec<String> = listed.iter().map(|m| m.id.clone()).collect();
@@ -271,7 +266,7 @@ impl AccountSync {
         let Some(days) = window_reach(self.window_days) else {
             return Ok(());
         };
-        if self.services.mail.capabilities().local_mailboxes {
+        if self.mail.capabilities().local_mailboxes {
             return Ok(());
         }
         let cutoff = now - days * DAY_MILLIS;
@@ -289,14 +284,10 @@ impl AccountSync {
     /// asked nothing; a mailbox already followed is asked nothing either,
     /// since the slow poll covers it from the first time.
     pub async fn follow_mailbox(&self, mailbox: &str) -> Result<(), SyncError> {
-        if !self.renames() || !self.services.mail.follow(mailbox) {
+        if !self.renames() || !self.mail.follow(mailbox) {
             return Ok(());
         }
-        let listed = self
-            .services
-            .mail
-            .window_ids(self.window_days, Some(mailbox))
-            .await?;
+        let listed = self.mail.window_ids(self.window_days, Some(mailbox)).await?;
         let fetched = self.fetch(listed.into_iter().map(Want::from).collect()).await?;
         let account_id = self.account_id;
         let touched = self
@@ -333,7 +324,7 @@ impl AccountSync {
     /// it works: anything Gmail changes after the fetch has a history id
     /// past the cursor and reaches the store through the next replay.
     pub async fn reconcile_inbox(&self) -> Result<(), SyncError> {
-        let _moves = self.hold_moves().await;
+        let _moves = self.mail.hold_moves().await;
         let account_id = self.account_id;
         let cursor = self
             .db
@@ -342,17 +333,11 @@ impl AccountSync {
         if !cursor.backfill_done || cursor.state.is_none() {
             return Ok(());
         }
-        let inbox = match self.services.mail.inbox_ids().await {
-            Err(BackendError::Unsupported) => return Ok(()),
+        let inbox = match self.mail.inbox_ids().await {
+            Err(SyncError::Backend(BackendError::Unsupported)) => return Ok(()),
             listed => listed?,
         };
-        let remote: HashSet<String> = self
-            .listing_as_stored(inbox, HashMap::new())
-            .await?
-            .0
-            .into_iter()
-            .map(|m| m.id)
-            .collect();
+        let remote: HashSet<String> = inbox.into_iter().map(|m| m.id).collect();
         // Every message that differs is one the store holds, so the store
         // names its thread and the fetch can share a call per thread.
         let mut differ: Vec<Want> = self
@@ -411,13 +396,14 @@ impl AccountSync {
             return Ok((listed, members));
         }
         let resolved = self
+            .mail
             .resolve(listed.iter().map(|m| m.id.clone()).collect())
             .await?;
         let listed = listed
             .into_iter()
             .filter_map(|m| {
                 Some(RemoteRef {
-                    id: stored_id(&m.id, &resolved)?,
+                    id: resolved.stored(&m.id)?,
                     thread_id: m.thread_id,
                 })
             })
@@ -427,7 +413,7 @@ impl AccountSync {
             .map(|(mailbox, names)| {
                 let ids = names
                     .iter()
-                    .filter_map(|name| stored_id(name, &resolved))
+                    .filter_map(|name| resolved.stored(name))
                     .collect();
                 (mailbox, ids)
             })
@@ -445,34 +431,21 @@ impl AccountSync {
             .await?)
     }
 
-    /// `listed` split into what the store lacks, as the server names it,
-    /// and the store ids of what it holds. On a folder server a held
-    /// message can sit under a name other than its store id, and a name
-    /// that is a moved message's stale id is neither.
+    /// `listed` split into what the store lacks and the ids of what it
+    /// holds.
     async fn split_held(
         &self,
         listed: Vec<RemoteRef>,
     ) -> Result<(Vec<RemoteRef>, Vec<String>), SyncError> {
-        let resolved = self
-            .resolve(listed.iter().map(|m| m.id.clone()).collect())
-            .await?;
-        let named: Vec<(RemoteRef, String)> = listed
-            .into_iter()
-            .filter_map(|m| Some((stored_id(&m.id, &resolved)?, m)))
-            .map(|(id, m)| (m, id))
-            .collect();
-        let ids: Vec<String> = named.iter().map(|(_, id)| id.clone()).collect();
+        let ids: Vec<String> = listed.iter().map(|m| m.id.clone()).collect();
         let account_id = self.account_id;
         let existing = self
             .db
             .read(move |c| messages::existing_ids(c, account_id, &ids))
             .await?;
         let (held, missing): (Vec<_>, Vec<_>) =
-            named.into_iter().partition(|(_, id)| existing.contains(id));
-        Ok((
-            missing.into_iter().map(|(m, _)| m).collect(),
-            held.into_iter().map(|(_, id)| id).collect(),
-        ))
+            listed.into_iter().partition(|m| existing.contains(&m.id));
+        Ok((missing, held.into_iter().map(|m| m.id).collect()))
     }
 
     /// Stores one page of the window listing and saves the next page token.
@@ -483,7 +456,6 @@ impl AccountSync {
         generation: i64,
     ) -> Result<Option<String>, SyncError> {
         let page = self
-            .services
             .mail
             .backfill(self.window_days, page_token.as_deref())
             .await?;

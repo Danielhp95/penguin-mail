@@ -19,7 +19,7 @@ use mailrs_store::{accounts, messages, remote_refs};
 use rusqlite::Connection;
 
 use super::AccountSync;
-use crate::{Found, MailBackend, SyncError, Want};
+use crate::{Found, SyncError, Want};
 
 /// What a fetch brought back.
 #[derive(Debug, Default)]
@@ -148,24 +148,21 @@ impl AccountSync {
     /// Metadata for `wants`, from the account's backend at its least cost.
     pub(super) async fn fetch(&self, wants: Vec<Want>) -> Result<Fetched, SyncError> {
         let asked_at = self.sync_state().await?;
-        let wants = self.wants_by_remote(wants).await?;
-        let found = self.services.mail.fetch(wants).await?;
-        let found = self.found_as_stored(found).await?;
+        let found = self.mail.fetch(wants).await?;
         Ok(Fetched::new(found, asked_at, self.local_threads()))
     }
 
     /// Every message of each thread.
     pub(super) async fn fetch_whole(&self, threads: Vec<String>) -> Result<Fetched, SyncError> {
         let asked_at = self.sync_state().await?;
-        let found = self.services.mail.fetch_whole(threads).await?;
-        let found = self.found_as_stored(found).await?;
+        let found = self.mail.fetch_whole(threads).await?;
         Ok(Fetched::new(found, asked_at, self.local_threads()))
     }
 
     /// Whether the account's server keeps no threads, so local threading
     /// places its mail.
     pub(super) fn local_threads(&self) -> bool {
-        !self.services.mail.capabilities().server_threads
+        !self.mail.capabilities().server_threads
     }
 
     /// The stored sync state, read before the server is asked so an answer

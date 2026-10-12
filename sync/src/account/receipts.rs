@@ -22,7 +22,7 @@ use mailrs_store::receipts::{self, Answered};
 use mailrs_store::{accounts, bodies, messages};
 
 use super::AccountSync;
-use crate::{AnyMail, BackendError, IdentityService, MailBackend, MailOp, ReceiptOut, SyncError, now_millis};
+use crate::{AnyMail, BackendError, IdentityService, MailOp, ReceiptOut, SyncError, now_millis};
 
 /// "Read: Allotment rota".
 fn receipt_subject(subject: &str) -> String {
@@ -112,7 +112,7 @@ impl AccountSync {
             Ok(listed) => mine.extend(listed.into_iter().map(|a| a.email)),
             Err(_) => tracing::info!(account, "could not list the account's addresses for a receipt"),
         }
-        if let AnyMail::Jmap(jmap) = &self.services.mail
+        if let AnyMail::Jmap(jmap) = self.mail.untranslated()
             && jmap.masked_email()
         {
             match jmap.masked_addresses().await {
@@ -156,37 +156,41 @@ impl AccountSync {
         let answered = if send { Answered::Sent } else { Answered::Declined };
         let (id, now) = (message_id.to_string(), now_millis());
         self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await?;
-        let remote = self.remote(message_id).await?;
         if send {
             let receipt = ReceiptOut {
-                message_id: remote.clone(),
+                message_id: message_id.to_string(),
                 from: me.clone(),
                 to,
                 subject: receipt_subject(&meta.subject),
                 text: receipt_text(&me),
             };
-            match self.services.mail.send_receipt(&receipt).await {
+            match self.mail.send_receipt(&receipt).await {
                 Ok(()) => {}
-                Err(BackendError::Unsupported) => {
+                Err(SyncError::Backend(BackendError::Unsupported)) => {
                     let raw = receipt_mail(&receipt, meta.rfc822_msgid.as_deref(), now_millis()).map_err(|_| no_receipt())?;
                     self.send(raw, None, None).await?;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => return Err(err),
             }
         }
-        self.mark_mdn_sent(&remote).await;
+        self.mark_mdn_sent(message_id).await;
         Ok(())
     }
 
     /// `$mdnsent` on the server, on IMAP and JMAP, for the person's other
     /// mail programs. Gmail and Outlook keep no such keyword. The record on
     /// this computer is what this app reads, so a refusal only goes to the log.
-    async fn mark_mdn_sent(&self, remote: &str) {
-        if !matches!(self.services.mail, AnyMail::Imap(_) | AnyMail::Jmap(_)) {
+    async fn mark_mdn_sent(&self, message_id: &str) {
+        if !matches!(self.mail.untranslated(), AnyMail::Imap(_) | AnyMail::Jmap(_)) {
             return;
         }
         let op = MailOp::SetKeyword { keyword: MDN_SENT.to_string(), on: true };
-        if self.services.mail.apply(&[remote.to_string()], &[op]).await.is_err() {
+        let moves = self.mail.hold_moves().await;
+        let marked = match moves.named(&[message_id.to_string()]).await {
+            Ok(named) => moves.apply(&named, &[op]).await.is_ok(),
+            Err(_) => false,
+        };
+        if !marked {
             // No server text, address or message id in the log.
             tracing::info!(account = self.account_id, "could not mark a message $mdnsent");
         }

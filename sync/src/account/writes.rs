@@ -10,15 +10,14 @@ use mailrs_domain::{Applied, ChangeEvent, Location, MailSet, Memberships, Role, 
 use mailrs_store::messages::Change;
 use mailrs_store::{labels, mailboxes, messages, reminders, remote_refs, threads};
 
+use super::store_mail::{Moves, Named};
 use super::{AccountSync, FETCH_CONCURRENCY};
 use crate::ops::{
     Roles, Tags, drop_protected, local_changes, moved_out_of, ops_for, reverse_changes, source_mailbox,
     split_keywords,
 };
 use crate::services::{Relocated, Unapplied};
-use crate::{
-    BackendError, MailBackend, MailOp, SyncError, TriageAction, backoff_delay, with_jitter,
-};
+use crate::{BackendError, MailOp, SyncError, TriageAction, backoff_delay, with_jitter};
 
 /// Attempts per write before a triage gives up.
 const WRITE_ATTEMPTS: u32 = 3;
@@ -56,7 +55,7 @@ impl AccountSync {
         targets: &[Target],
     ) -> Result<Vec<Result<(), SyncError>>, SyncError> {
         // A server that cannot erase mail answers before anything is sent.
-        if !self.services.mail.capabilities().delete_forever {
+        if !self.mail.capabilities().delete_forever {
             return Err(BackendError::Unsupported.into());
         }
         let ids = self.erasable(targets).await?;
@@ -64,15 +63,15 @@ impl AccountSync {
         all.sort();
         all.dedup();
         let mut refused: BTreeMap<String, BackendError> = BTreeMap::new();
-        let limit = self.services.mail.capabilities().batch_limit;
-        for chunk in all.chunks(limit) {
-            if let Err(Unapplied { error: err, .. }) =
-                self.services.mail.apply(chunk, &[MailOp::Destroy]).await
-            {
+        let limit = self.mail.capabilities().batch_limit;
+        let moves = self.mail.hold_moves().await;
+        let named = moves.named(&all).await?;
+        for chunk in named.chunks(limit) {
+            if let Err(Unapplied { error: err, .. }) = moves.apply(chunk, &[MailOp::Destroy]).await {
                 // Gmail refuses a missing permission before it erases
                 // anything, so no later batch would fare better.
                 let stop = matches!(err, BackendError::NeedsPermission);
-                refused.extend(chunk.iter().map(|id| (id.clone(), err.clone())));
+                refused.extend(chunk.iter().map(|m| (m.id().to_string(), err.clone())));
                 if stop {
                     for id in &all {
                         refused
@@ -83,6 +82,7 @@ impl AccountSync {
                 }
             }
         }
+        drop(moves);
         let erased: Vec<String> = all
             .iter()
             .filter(|id| !refused.contains_key(*id))
@@ -200,7 +200,7 @@ impl AccountSync {
     /// The account's tags, read from the store, where the last mailbox
     /// listing put them. A label account keeps none.
     pub(super) async fn tags(&self) -> Result<Tags, SyncError> {
-        if !self.services.mail.capabilities().tags {
+        if !self.mail.capabilities().tags {
             return Ok(Tags::new());
         }
         let account_id = self.account_id;
@@ -217,7 +217,7 @@ impl AccountSync {
         action: &TriageAction,
         from: Option<&MailSet>,
     ) -> Result<Vec<Applied>, SyncError> {
-        let mail = &self.services.mail;
+        let mail = &self.mail;
         let set_of = |id: &str| mail.set_of(id);
         let tags = self.tags().await?;
         let ops = ops_for(action, &mail.capabilities(), &self.roles(), &tags, set_of)?;
@@ -264,7 +264,7 @@ impl AccountSync {
     pub(super) fn roles(&self) -> Roles {
         Role::ALL
             .into_iter()
-            .filter_map(|role| self.services.mail.mailbox_for(role).map(|id| (role, id)))
+            .filter_map(|role| self.mail.mailbox_for(role).map(|id| (role, id)))
             .collect()
     }
 
@@ -357,29 +357,29 @@ impl AccountSync {
         self.emit_threads(threads.clone());
         // Mailboxes kept only here have nothing to tell: the store write
         // above is the whole change.
-        if self.services.mail.capabilities().local_mailboxes {
+        if self.mail.capabilities().local_mailboxes {
             return Ok(applied);
         }
         if to_server.is_empty() {
             return Ok(applied);
         }
 
-        let moves = self.hold_moves().await;
-        let names = self.remotes(&ids).await?;
+        let moves = self.mail.hold_moves().await;
+        let named = moves.named(&ids).await?;
         let writing = Writing {
             what: what.to_string(),
             conversations: threads.len(),
-            provider: self.services.mail.provider_name().to_string(),
+            provider: self.mail.provider_name().to_string(),
         };
         let mut budget = Budget::new(self.retry_max, self.wait_ceiling);
         let mut progress = Progress::default();
         let written = self
-            .write_ops(&mut budget, &ids, &names, &writing, &to_server, &mut progress)
+            .write_ops(&mut budget, &moves, &named, &writing, &to_server, &mut progress)
             .await;
         // What the server moved before any refusal has moved, so its refs
         // follow whatever else happened. A failure here still lets the
         // rollback below run for the messages the server never took.
-        let relocated = self.relocate(&ids, &names, progress.moved).await;
+        let relocated = self.relocate(progress.moved).await;
         drop(moves);
         self.mail_changed();
         if let Err(err) = written {
@@ -422,8 +422,7 @@ impl AccountSync {
         wanted: &BTreeMap<String, Option<BTreeSet<String>>>,
         ops: &[MailOp],
     ) -> Vec<&'static str> {
-        let mail = &self.services.mail;
-        let fallback = mail.capabilities().keywords.to_vec();
+        let fallback = self.mail.capabilities().keywords.to_vec();
         if !self.renames() || !ops.iter().any(|op| matches!(op, MailOp::SetKeyword { .. })) {
             return fallback;
         }
@@ -463,8 +462,10 @@ impl AccountSync {
             })
             .await?;
         let roles = self.roles();
+        // A server name is the message's place, which says the mailbox.
         let mut touched: BTreeSet<String> = self
-            .remotes(&ids)
+            .mail
+            .server_names(&ids)
             .await?
             .iter()
             .filter_map(|name| Location::parse(name).map(|at| at.mailbox))
@@ -476,7 +477,7 @@ impl AccountSync {
         }));
         let mut stored: Option<Vec<&'static str>> = None;
         for mailbox in &touched {
-            let here = self.services.mail.keywords_stored(mailbox).await?;
+            let here = self.mail.keywords_stored(mailbox).await?;
             stored = Some(match stored {
                 None => here.to_vec(),
                 Some(so_far) => so_far.into_iter().filter(|k| here.contains(k)).collect(),
@@ -485,8 +486,8 @@ impl AccountSync {
         Ok(stored)
     }
 
-    /// Sends `ops` over the messages `ids` names, which the server knows
-    /// as `names`, waiting out what is worth waiting out and sending the
+    /// Sends `ops` over the `named` messages, waiting out what is worth
+    /// waiting out and sending the
     /// rest after each wait. The waiting belongs to the action, not to each
     /// message, so a rate-limited archive of twenty threads waits its
     /// minute once rather than twenty times. `progress` collects the
@@ -495,18 +496,19 @@ impl AccountSync {
     async fn write_ops(
         &self,
         budget: &mut Budget,
-        ids: &[String],
-        names: &[String],
+        moves: &Moves<'_>,
+        named: &[Named],
         writing: &Writing,
         ops: &[MailOp],
         progress: &mut Progress,
     ) -> Result<(), BackendError> {
+        let taken = |messages: &[Named]| messages.iter().map(|m| m.id().to_string()).collect::<Vec<_>>();
         let mut from = 0;
         loop {
-            match self.services.mail.apply(&names[from..], ops).await {
+            match moves.apply(&named[from..], ops).await {
                 Ok(moved) => {
                     progress.moved.extend(moved);
-                    progress.taken.extend(ids[from..].iter().cloned());
+                    progress.taken.extend(taken(&named[from..]));
                     return Ok(());
                 }
                 Err(Unapplied {
@@ -515,10 +517,8 @@ impl AccountSync {
                     relocated,
                 }) => {
                     progress.moved.extend(relocated);
-                    let through = through.min(names.len() - from);
-                    progress
-                        .taken
-                        .extend(ids[from..from + through].iter().cloned());
+                    let through = through.min(named.len() - from);
+                    progress.taken.extend(taken(&named[from..from + through]));
                     from += through;
                     match budget.wait(&error) {
                         Some(delay) => self.hold_on(budget, delay, writing).await,
@@ -533,24 +533,11 @@ impl AccountSync {
     /// the mailbox it sits in now, which the store has not filed it under
     /// when the server made that mailbox for this move. A mailbox the store
     /// has not listed is listed.
-    async fn relocate(
-        &self,
-        ids: &[String],
-        names: &[String],
-        moved: Vec<Relocated>,
-    ) -> Result<(), SyncError> {
+    async fn relocate(&self, moved: Vec<Relocated>) -> Result<(), SyncError> {
         if moved.is_empty() {
             return Ok(());
         }
-        let by_name: HashMap<&str, &str> = names
-            .iter()
-            .map(String::as_str)
-            .zip(ids.iter().map(String::as_str))
-            .collect();
-        let placed: Vec<(String, Location)> = moved
-            .into_iter()
-            .filter_map(|r| Some((by_name.get(r.from.as_str())?.to_string(), r.to)))
-            .collect();
+        let placed: Vec<(String, Location)> = moved.into_iter().map(|r| (r.from, r.to)).collect();
         let account_id = self.account_id;
         let tags = self.tags().await?;
         let (touched, unknown) = self
@@ -650,7 +637,7 @@ impl AccountSync {
                 message: still_waiting(writing),
             });
         }
-        self.services.mail.stand_by(delay).await;
+        self.mail.stand_by(delay).await;
     }
 }
 

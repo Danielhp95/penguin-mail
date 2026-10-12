@@ -46,6 +46,7 @@ mod search;
 mod senders;
 mod settings;
 mod sieve;
+mod store_mail;
 mod stored_listing;
 mod switch;
 mod structure;
