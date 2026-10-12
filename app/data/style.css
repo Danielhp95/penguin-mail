@@ -771,32 +771,6 @@ button.invitation-pill buttoncontent > box { border-spacing: 8px; }
 .translation-card { padding: 10px 14px; border-radius: 12px; }
 .translation-card > image { color: var(--accent-color); }
 
-/* The storage banner (phase6_mock.py's `banner`): solid accent, its words
-   at weight 600, and the one button inverted, the banner's text colour as
-   fill and the accent as text, so it reads on the accent in both themes.
-   The mockup's dark banner puts dark words on a brighter orange; on the
-   app's own dark accent they read 3.6:1, so dark keeps the white words
-   (4.6:1). */
-banner.storage-banner > revealer > widget,
-banner.storage-banner > revealer > widget:backdrop {
-  background-color: var(--accent-fill, var(--accent-bg-color));
-  color: var(--accent-fg-color);
-}
-banner.storage-banner label { font-weight: 600; }
-/* Two accounts nearly full: a faint line keeps the two banners apart. */
-banner.storage-banner + banner.storage-banner > revealer > widget {
-  box-shadow: inset 0 1px alpha(var(--accent-fg-color), 0.3);
-}
-banner.storage-banner button {
-  min-height: 34px; min-width: 0; padding: 0 16px; border-radius: 10px;
-  background: var(--accent-fg-color);
-  color: var(--accent-fill, var(--accent-bg-color));
-  font-weight: 700;
-}
-banner.storage-banner button:hover { background: color-mix(in srgb, var(--accent-fg-color) 90%, transparent); }
-banner.storage-banner button:active { background: color-mix(in srgb, var(--accent-fg-color) 80%, transparent); }
-banner.storage-banner button:focus-visible { outline-color: alpha(var(--accent-fg-color), 0.7); }
-
 /* Space on the Server (phase6_mock.py's `server_space`): the address over
    the amount, a 150 px bar 6 px tall on the `pill` track, then the
    percentage or a "Full" chip. The bar is the accent with room, the
