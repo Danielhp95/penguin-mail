@@ -561,6 +561,7 @@ pub async fn to_jmap(db: &Db, secrets: &Secrets, account: &Account, to: SwitchTo
         labels: session.mailboxes_per_email().is_none_or(|most| most > 1),
         capabilities: session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect(),
         oauth: None,
+        owner: Some(crate::sign_in::SignedAs::of(&checked).owner),
     };
     to_jmap_over(db, secrets, account, &AnyJmap::from(client), saved, to.secret).await
 }

@@ -534,12 +534,20 @@ impl JmapSessions {
         self.held_state().sessions.get(&id).map(|kept| Arc::clone(&kept.session))
     }
 
-    /// Drops the account's session, after a new sign-in brought a new
-    /// refresh token or the account went.
-    pub fn forget(&self, id: AccountId) {
-        let mut held = self.held_state();
-        held.sessions.remove(&id);
-        held.unanswered.remove(&id);
+    /// Drops the account's session before a new sign-in keeps its refresh
+    /// token, or as the account goes, and retires it: a task still holding
+    /// it saves nothing more over the new token or under a gone account.
+    /// Answers the newest refresh token the session held.
+    pub async fn forget(&self, id: AccountId) -> Option<String> {
+        let kept = {
+            let mut held = self.held_state();
+            held.unanswered.remove(&id);
+            held.sessions.remove(&id)
+        };
+        match kept {
+            Some(kept) => Some(kept.session.retire().await),
+            None => None,
+        }
     }
 
     /// Records that a sign-in with the account's kept client ran out or
@@ -553,6 +561,64 @@ impl JmapSessions {
     /// try the kept one again.
     pub(crate) fn kept_client_failed(&self, id: AccountId) -> bool {
         self.held_state().unanswered.contains(&id)
+    }
+}
+
+/// What revoking a browser sign-in the app no longer keeps needs: a
+/// removed account's, or one that reached someone else's account. No
+/// `Debug`: it holds the refresh token.
+pub struct JmapGrant {
+    pub(crate) session_url: String,
+    pub(crate) client_id: String,
+    pub(crate) refresh_token: String,
+}
+
+/// Where a browser account's grant was made, read from its row before the
+/// row goes. No `Debug`: it holds the client id.
+pub struct JmapGrantRow {
+    id: AccountId,
+    session_url: String,
+    client_id: String,
+}
+
+/// The grant of `account` from its row, or `None` for an account that
+/// signs in with a password or a token. Read before the row is deleted;
+/// it retires nothing, so an account whose row stays keeps running.
+pub async fn jmap_grant(db: &Db, account: &Account) -> Option<JmapGrantRow> {
+    if account.provider != Provider::Jmap {
+        return None;
+    }
+    let id = account.id;
+    let saved = db.read(move |c| mailrs_store::jmap::load(c, id)).await.ok()??;
+    let client = saved.oauth.filter(|_| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)?;
+    Some(JmapGrantRow { id, session_url: saved.session_url, client_id: client.client_id })
+}
+
+impl JmapGrantRow {
+    /// Once the account's row is gone: retires its session, so the token is
+    /// the newest one it held and nothing saves a later one, and answers
+    /// the grant to revoke. Without a session, the keyring's token.
+    pub async fn retire(self, secrets: &Secrets) -> Option<JmapGrant> {
+        let id = self.id;
+        let held = secrets.jmap_sessions.forget(id).await.filter(|token| !token.is_empty());
+        let refresh_token = match held {
+            Some(token) => token,
+            None => read_secret(Arc::clone(&secrets.jmap), id, STEP_WAIT).await.ok()??,
+        };
+        Some(JmapGrant { session_url: self.session_url, client_id: self.client_id, refresh_token })
+    }
+}
+
+impl JmapGrant {
+    /// Asks the server to revoke the refresh token, and the grant with it
+    /// (RFC 7009), giving up after a few seconds. The log says only how it
+    /// went, never the server's words or the token.
+    pub async fn revoke(self) {
+        match mailrs_jmap::oauth::revoke(&self.session_url, &self.client_id, &self.refresh_token).await {
+            Ok(true) => tracing::info!("revoked a browser sign-in the app no longer keeps"),
+            Ok(false) => tracing::info!("the server offers no revocation; the grant stays until it runs out"),
+            Err(_) => tracing::warn!("could not revoke a browser sign-in the app no longer keeps"),
+        }
     }
 }
 

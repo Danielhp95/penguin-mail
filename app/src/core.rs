@@ -973,6 +973,7 @@ impl Core {
                     .cloned()
                     .collect(),
                 oauth: None,
+                owner: None,
             };
             let new = NewJmap {
                 address,
@@ -980,6 +981,7 @@ impl Core {
                 saved,
                 secret,
                 dav_password,
+                signed_as: mailrs_sync::sign_in::SignedAs::of(&checked),
             };
             let account = jmap_signed_in(&db, &secrets, new, now_millis()).await?;
             let services = connect_jmap(&db, &secrets, &account, window_days).await?;
@@ -1224,13 +1226,28 @@ impl Core {
         // Nothing is left to reverse the account's actions through, and
         // its mail goes with it.
         self.actions.forget_account(account.id);
-        let (db, secrets) = (self.db.clone(), self.secrets.clone());
+        let (db, secrets, demo) = (self.db.clone(), self.secrets.clone(), self.demo);
         self.call(async move {
             let id = account.id;
+            // Read while the account's row is still there.
+            let grant = match demo {
+                true => None,
+                false => mailrs_sync::jmap_grant(&db, &account).await,
+            };
             db.write(move |c| accounts::delete_account(c, id)).await?;
+            // Only now that the row is gone: retiring the session stops it
+            // saving, and the token it answers is the one to revoke.
+            let grant = match grant {
+                Some(row) => row.retire(&secrets).await,
+                None => None,
+            };
             // The demo's secrets live in memory, so this never reaches the
             // person's keyring.
             secrets.forget(&account).await?;
+            // On its own task: the removal never waits on the server.
+            if let Some(grant) = grant {
+                tokio::spawn(grant.revoke());
+            }
             Ok::<_, anyhow::Error>(())
         })
         .await
@@ -1646,6 +1663,7 @@ mod tests {
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
                     oauth: None,
+                    owner: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })
@@ -1671,6 +1689,7 @@ mod tests {
                     labels: true,
                     capabilities: vec![mailrs_jmap::MAIL.into()],
                     oauth: None,
+                    owner: None,
                 })?;
                 Ok(mailrs_store::accounts::account(c, id)?.unwrap())
             })

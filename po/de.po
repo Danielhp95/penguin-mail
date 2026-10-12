@@ -2124,7 +2124,7 @@ msgstr ""
 "alten behalten."
 
 #: app/src/core.rs:737 app/src/core.rs:812 app/src/core.rs:865
-#: app/src/core.rs:930 app/src/core.rs:1022
+#: app/src/core.rs:930 app/src/core.rs:1024
 msgid "Demo mode cannot add real accounts."
 msgstr "Im Demo-Modus können keine echten Konten hinzugefügt werden."
 
@@ -2136,13 +2136,13 @@ msgstr "Abgebrochen."
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Nach fünf Minuten Warten auf den Browser aufgegeben."
 
-#: app/src/core.rs:1172 app/src/core.rs:1195
+#: app/src/core.rs:1174 app/src/core.rs:1197
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Dieses Konto speichert kein Passwort, das ein Kalender- oder Kontaktserver "
 "annimmt."
 
-#: app/src/core.rs:1316
+#: app/src/core.rs:1333
 msgid "The demo cannot switch accounts."
 msgstr "Im Demo-Modus lassen sich keine Konten umstellen."
 
@@ -11669,7 +11669,14 @@ msgstr "Wählen Sie, was die Regel tut"
 msgid "The rule is read-only."
 msgstr "Die Regel ist schreibgeschützt."
 
-#: sync/src/sign_in.rs:207
+#: sync/src/sign_in.rs:208
+msgid ""
+"You signed in to a different account than {address}, so nothing changed."
+msgstr ""
+"Sie haben sich bei einem anderen Konto als {address} angemeldet, daher wurde "
+"nichts geändert."
+
+#: sync/src/sign_in.rs:215
 msgid "{address} is already in Penguin Mail as a {provider} account."
 msgstr "{address} ist bereits als {provider}-Konto in Penguin Mail vorhanden."
 
