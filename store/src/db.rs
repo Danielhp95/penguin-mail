@@ -60,8 +60,16 @@ impl Db {
                             // to date, so a read of it counts few rows. A
                             // failure leaves it as it was, and reads still
                             // count what it lacks.
-                            let _ = catch_up_contacts(&mut writer);
-                            match jobs.recv() {
+                            // A recount runs in steps, and a write that
+                            // arrives runs between two of them.
+                            let mut queued = None;
+                            while matches!(catch_up_contacts(&mut writer), Ok(true)) {
+                                if let Ok(job) = jobs.try_recv() {
+                                    queued = Some(job);
+                                    break;
+                                }
+                            }
+                            match queued.map_or_else(|| jobs.recv(), Ok) {
                                 Ok(job) => job,
                                 Err(_) => break,
                             }
@@ -164,12 +172,13 @@ impl Db {
     }
 }
 
-/// Runs [`crate::contacts::catch_up`] in a transaction of its own.
-fn catch_up_contacts(writer: &mut Connection) -> Result<()> {
+/// Runs one step of [`crate::contacts::catch_up_step`] in a transaction of
+/// its own. Returns whether more is left.
+fn catch_up_contacts(writer: &mut Connection) -> Result<bool> {
     let tx = writer.transaction()?;
-    crate::contacts::catch_up(&tx)?;
+    let more = crate::contacts::catch_up_step(&tx, crate::contacts::STEP_ROWS)?;
     tx.commit()?;
-    Ok(())
+    Ok(more)
 }
 
 impl Inner {

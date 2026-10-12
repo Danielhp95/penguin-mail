@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use mailrs_domain::{AccountId, Address, EpochMillis};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::Result;
 use crate::address_book;
@@ -157,35 +157,50 @@ pub fn list_correspondents(conn: &Connection) -> Result<Vec<Correspondent>> {
         })?;
         tally.found = rows.collect::<rusqlite::Result<_>>()?;
         tally.last_row = counted_row;
+        // Messages deleted since the last catch-up come off in memory; one
+        // that cannot be taken off sends this read over every message.
+        if !take_off(&mut tally.found, &deleted(conn)?) {
+            tally = Tally::default();
+        }
     }
     tally.read(conn)?;
     Ok(tally.ranked(&own))
 }
 
-/// Brings the kept tally up to date: counts the message rows after the
-/// last one it counted, or every row once it is stale. Runs inside the
-/// caller's transaction; the store's writer calls it when idle. The count
-/// keys on the messages' implicit rowids, which a VACUUM or a rebuilt
-/// table renumbers: either must mark the tally stale first.
+/// Message rows one step of [`catch_up`] counts before it lets a queued
+/// write run.
+pub const STEP_ROWS: i64 = 20_000;
+
+/// Brings the kept tally up to date: takes off the messages deleted since,
+/// counts the message rows after the last one it counted, or every row
+/// once it is stale. Runs inside the caller's transaction. The count keys
+/// on the messages' implicit rowids, which a VACUUM or a rebuilt table
+/// renumbers: either must mark the tally stale first.
 pub fn catch_up(conn: &Connection) -> Result<()> {
+    while catch_up_step(conn, STEP_ROWS)? {}
+    Ok(())
+}
+
+/// One bounded part of [`catch_up`]: at most `limit` message rows. Returns
+/// whether more is left, so the store's writer can commit between steps
+/// and let a queued write run. A recount leaves the tally stale until its
+/// last step.
+pub fn catch_up_step(conn: &Connection, limit: i64) -> Result<bool> {
     let (stale, last) = marks(conn)?;
-    if stale {
-        // Counted in memory and written once: an upsert per address of
-        // every message costs several times as long. The map goes when
-        // this returns.
-        let mut tally = Tally::default();
-        tally.read(conn)?;
-        conn.execute("DELETE FROM correspondents", [])?;
-        let mut insert = conn.prepare_cached(
-            "INSERT INTO correspondents (key, email, name, score, last_seen) VALUES (?1, ?2, ?3, ?4, ?5)",
-        )?;
-        for (key, person) in &tally.found {
-            insert.execute(rusqlite::params![key, person.email, person.name, person.score, person.last_seen])?;
-        }
-        conn.prepare_cached("UPDATE contact_marks SET stale = 0, counted_row = ?1")?
-            .execute([tally.last_row])?;
-        return Ok(());
+    if !stale && !take_off_deleted(conn)? {
+        // Counted again from the next step on.
+        return Ok(true);
     }
+    if stale && last == 0 {
+        conn.execute("DELETE FROM correspondents", [])?;
+        conn.execute("DELETE FROM contact_gone", [])?;
+    }
+    // The last row of this step; the step ends there, so a message filed
+    // in two Sent folders is never split across two steps.
+    let upto: Option<i64> = conn
+        .prepare_cached("SELECT rowid FROM messages WHERE rowid > ?1 ORDER BY rowid LIMIT 1 OFFSET ?2")?
+        .query_row(rusqlite::params![last, limit - 1], |row| row.get(0))
+        .optional()?;
     let mut upsert = conn.prepare_cached(
         "INSERT INTO correspondents (key, email, name, score, last_seen) VALUES (?1, ?2, ?3, ?4, ?5) \
          ON CONFLICT (key) DO UPDATE SET score = score + excluded.score, \
@@ -194,15 +209,137 @@ pub fn catch_up(conn: &Connection) -> Result<()> {
          last_seen = CASE WHEN excluded.last_seen >= last_seen OR name IS NULL \
              THEN max(last_seen, excluded.last_seen) ELSE last_seen END",
     )?;
-    let counted = each_address(conn, last, |address, weight, date| {
+    let counted = each_address(conn, last, upto.unwrap_or(i64::MAX), |address, weight, date| {
         if let Some((key, email, name)) = counted(address) {
             upsert.execute(rusqlite::params![key, email, name, weight, date])?;
         }
         Ok(())
     })?;
-    conn.prepare_cached("UPDATE contact_marks SET stale = 0, counted_row = ?1")?
-        .execute([counted.unwrap_or(last)])?;
-    Ok(())
+    let done = upto.is_none();
+    if stale {
+        let row = counted.unwrap_or(last);
+        conn.prepare_cached("UPDATE contact_marks SET stale = ?1, counted_row = ?2")?
+            .execute(rusqlite::params![!done, row])?;
+    } else if let Some(row) = counted {
+        conn.prepare_cached("UPDATE contact_marks SET counted_row = ?1")?.execute([row])?;
+    }
+    Ok(!done)
+}
+
+/// A counted message that was deleted, as the delete trigger kept it.
+struct Gone {
+    seq: i64,
+    from_name: Option<String>,
+    from_addr: Option<String>,
+    to_cc: Option<(String, String)>,
+    date: EpochMillis,
+}
+
+impl Gone {
+    fn spread(&self, note: impl FnMut(Address, i64, EpochMillis) -> Result<()>) -> Result<()> {
+        spread(self.from_name.clone(), self.from_addr.clone(), self.to_cc.clone(), self.date, note)
+    }
+}
+
+/// The messages deleted since the tally last caught up.
+fn deleted(conn: &Connection) -> Result<Vec<Gone>> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT seq, from_name, from_addr, to_addrs, cc_addrs, date, sent FROM contact_gone ORDER BY seq",
+        )?
+        .query_map([], |row| {
+            let sent: bool = row.get(6)?;
+            Ok(Gone {
+                seq: row.get(0)?,
+                from_name: row.get(1)?,
+                from_addr: row.get(2)?,
+                to_cc: if sent { Some((row.get(3)?, row.get(4)?)) } else { None },
+                date: row.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Takes the deleted messages off the kept tally. Returns false when one
+/// cannot be taken off, after marking the tally stale.
+fn take_off_deleted(conn: &Connection) -> Result<bool> {
+    let gone = deleted(conn)?;
+    let Some(newest) = gone.last().map(|g| g.seq) else {
+        return Ok(true);
+    };
+    // Only the correspondents these messages name.
+    let mut found = HashMap::new();
+    let mut load = conn.prepare_cached("SELECT email, name, score, last_seen FROM correspondents WHERE key = ?1")?;
+    for g in &gone {
+        g.spread(|address, _, _| {
+            if let Some((key, _, _)) = counted(address) {
+                if !found.contains_key(&key) {
+                    let person = load
+                        .query_row([&key], |row| {
+                            Ok(Correspondent { email: row.get(0)?, name: row.get(1)?, score: row.get(2)?, last_seen: row.get(3)? })
+                        })
+                        .optional()?;
+                    if let Some(person) = person {
+                        found.insert(key, person);
+                    }
+                }
+            }
+            Ok(())
+        })?;
+    }
+    let keys: Vec<String> = found.keys().cloned().collect();
+    if !take_off(&mut found, &gone) {
+        conn.execute("DELETE FROM contact_gone", [])?;
+        conn.execute("UPDATE contact_marks SET stale = 1, counted_row = 0", [])?;
+        return Ok(false);
+    }
+    for key in keys {
+        match found.get(&key) {
+            Some(person) => conn
+                .prepare_cached("UPDATE correspondents SET score = ?2 WHERE key = ?1")?
+                .execute(rusqlite::params![key, person.score])?,
+            None => conn.prepare_cached("DELETE FROM correspondents WHERE key = ?1")?.execute([&key])?,
+        };
+    }
+    conn.prepare_cached("DELETE FROM contact_gone WHERE seq <= ?1")?.execute([newest])?;
+    Ok(true)
+}
+
+/// Takes the `gone` messages' counts off `found`, in memory. Returns false
+/// when a count cannot be undone: the tally does not hold the address, or
+/// the message may have decided the name or the last date kept. The name
+/// depends on the order messages were counted in, so only a message with
+/// a name other than the one kept, and an earlier date than the last
+/// seen, leaves them as they were. A correspondent left with no score is
+/// dropped.
+fn take_off(found: &mut HashMap<String, Correspondent>, gone: &[Gone]) -> bool {
+    let mut ok = true;
+    for g in gone {
+        let spread = g.spread(|address, weight, date| {
+            let Some((key, _, name)) = counted(address) else {
+                return Ok(());
+            };
+            match found.get_mut(&key) {
+                None => ok = false,
+                Some(entry) if entry.score == weight => {
+                    found.remove(&key);
+                }
+                Some(entry)
+                    if entry.score > weight
+                        && date < entry.last_seen
+                        && name.as_ref().is_some_and(|n| entry.name.as_ref() != Some(n)) =>
+                {
+                    entry.score -= weight;
+                }
+                Some(_) => ok = false,
+            }
+            Ok(())
+        });
+        if spread.is_err() || !ok {
+            return false;
+        }
+    }
+    true
 }
 
 /// Whether the kept tally is stale, and the last message row it counted.
@@ -212,13 +349,40 @@ fn marks(conn: &Connection) -> Result<(bool, i64)> {
         .query_row([], |row| Ok((row.get(0)?, row.get(1)?)))?)
 }
 
-/// Hands each address of the message rows after `after` to `note`, in row
-/// order, the order the name kept depends on: a sent message's recipients
-/// with [`SENT_WEIGHT`], any other message's sender with 1. Returns the
-/// last row read, or `None` when there were none.
+/// Hands each address of one message to `note`: a sent message's
+/// recipients (`to_cc`, the JSON of both lists) with [`SENT_WEIGHT`], any
+/// other message's sender with 1.
+fn spread(
+    from_name: Option<String>,
+    from_addr: Option<String>,
+    to_cc: Option<(String, String)>,
+    date: EpochMillis,
+    mut note: impl FnMut(Address, i64, EpochMillis) -> Result<()>,
+) -> Result<()> {
+    match to_cc {
+        Some((to, cc)) => {
+            let to: Vec<Address> = serde_json::from_str(&to).unwrap_or_default();
+            let cc: Vec<Address> = serde_json::from_str(&cc).unwrap_or_default();
+            for address in to.into_iter().chain(cc) {
+                note(address, SENT_WEIGHT, date)?;
+            }
+        }
+        None => {
+            if let Some(email) = from_addr {
+                note(Address { name: from_name, email }, 1, date)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Hands each address of the message rows after `after`, up to row `upto`,
+/// to `note`, in row order, the order the name kept depends on. Returns
+/// the last row read, or `None` when there were none.
 fn each_address(
     conn: &Connection,
     after: i64,
+    upto: i64,
     mut note: impl FnMut(Address, i64, EpochMillis) -> Result<()>,
 ) -> Result<Option<i64>> {
     // Only sent mail needs its recipients, so only sent mail hands over
@@ -230,30 +394,21 @@ fn each_address(
          FROM messages m LEFT JOIN message_mailboxes s \
          ON s.account_id = m.account_id AND s.message_id = m.id \
          AND s.mailbox IN (SELECT key FROM mailboxes WHERE role = 'sent') \
-         WHERE m.rowid > ?1 ORDER BY m.rowid",
+         WHERE m.rowid > ?1 AND m.rowid <= ?2 ORDER BY m.rowid",
     )?;
-    let mut rows = stmt.query([after])?;
+    let mut rows = stmt.query([after, upto])?;
     let mut last = None;
     while let Some(row) = rows.next()? {
-        let date: EpochMillis = row.get(5)?;
-        match (row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?) {
-            (Some(to), Some(cc)) => {
-                let to: Vec<Address> = serde_json::from_str(&to).unwrap_or_default();
-                let cc: Vec<Address> = serde_json::from_str(&cc).unwrap_or_default();
-                for address in to.into_iter().chain(cc) {
-                    note(address, SENT_WEIGHT, date)?;
-                }
-            }
-            _ => {
-                if let Some(email) = row.get::<_, Option<String>>(2)? {
-                    note(Address { name: row.get(1)?, email }, 1, date)?;
-                }
-            }
-        }
+        let to_cc = match (row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?) {
+            (Some(to), Some(cc)) => Some((to, cc)),
+            _ => None,
+        };
+        spread(row.get(1)?, row.get(2)?, to_cc, row.get(5)?, &mut note)?;
         last = Some(row.get(0)?);
     }
     Ok(last)
 }
+
 
 /// The tally's key, address and name for `address`, or `None` for one not
 /// worth suggesting.
@@ -281,7 +436,7 @@ impl Tally {
     /// and moves `last_row` to the last of them.
     fn read(&mut self, conn: &Connection) -> Result<()> {
         let found = &mut self.found;
-        let last = each_address(conn, self.last_row, |address, weight, date| {
+        let last = each_address(conn, self.last_row, i64::MAX, |address, weight, date| {
             let Some((key, email, name)) = counted(address) else {
                 return Ok(());
             };
@@ -498,6 +653,262 @@ mod tests {
         put(&message(id, "m2", ("Dana", "dana@example.com"), &[("Bo", "bo@example.org")], gmail::SENT));
         let stale: bool = conn.query_row("SELECT stale FROM contact_marks", [], |row| row.get(0)).unwrap();
         assert!(!stale);
+    }
+
+    fn erase(conn: &Connection, id: mailrs_domain::AccountId, message: &str) {
+        messages::apply(
+            conn,
+            id,
+            &[messages::Change::Erase {
+                message_id: message.into(),
+            }],
+        )
+        .unwrap();
+    }
+
+    fn put_at(conn: &Connection, id: mailrs_domain::AccountId, mut meta: MessageMeta, date: i64) {
+        meta.date = date;
+        let upsert = messages::Change::Upsert {
+            meta: Box::new(meta),
+            generation: 1,
+        };
+        messages::apply(conn, id, &[upsert]).unwrap();
+    }
+
+    fn stale(conn: &Connection) -> bool {
+        conn.query_row("SELECT stale FROM contact_marks", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    /// Deleting a message that does not decide a correspondent's name or
+    /// last date takes its count off the tally; nothing is counted again.
+    #[test]
+    fn a_deletion_takes_its_count_off_the_tally_without_a_recount() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        let from_theo = |n: &str, name: &str| {
+            message(
+                id,
+                n,
+                (name, "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            )
+        };
+        put_at(&conn, id, from_theo("m1", "Theo Lang"), 1_000);
+        put_at(&conn, id, from_theo("m2", "Theo L."), 3_000);
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m3",
+                ("Dana", "dana@example.com"),
+                &[("Mara", "mara@example.org")],
+                gmail::SENT,
+            ),
+            500,
+        );
+        catch_up(&conn).unwrap();
+        for gone in ["m1", "m3"] {
+            erase(&conn, id, gone);
+            assert!(!stale(&conn), "after erasing {gone}");
+            assert_eq!(
+                list_correspondents(&conn).unwrap(),
+                whole_read(&conn).unwrap(),
+                "read after {gone}"
+            );
+            catch_up(&conn).unwrap();
+            assert_eq!(
+                list_correspondents(&conn).unwrap(),
+                whole_read(&conn).unwrap(),
+                "caught up after {gone}"
+            );
+        }
+    }
+
+    /// A deletion that decides the name or the last date cannot be taken
+    /// off; the tally is counted again, and still matches.
+    #[test]
+    fn a_deletion_that_decides_the_name_marks_the_tally_stale() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m1",
+                ("Theo Lang", "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            ),
+            1_000,
+        );
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m2",
+                ("Theo L.", "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            ),
+            3_000,
+        );
+        catch_up(&conn).unwrap();
+        erase(&conn, id, "m2");
+        assert_eq!(
+            list_correspondents(&conn).unwrap(),
+            whole_read(&conn).unwrap()
+        );
+        assert!(
+            catch_up_step(&conn, STEP_ROWS).unwrap(),
+            "the tally is counted again"
+        );
+        assert!(stale(&conn));
+        catch_up(&conn).unwrap();
+        assert!(!stale(&conn));
+        assert_eq!(
+            list_correspondents(&conn).unwrap(),
+            whole_read(&conn).unwrap()
+        );
+    }
+
+    /// A great many deletions waiting mark the tally stale instead of
+    /// piling up in `contact_gone`.
+    #[test]
+    fn many_waiting_deletions_mark_the_tally_stale() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m1",
+                ("Theo", "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            ),
+            1_000,
+        );
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m2",
+                ("T.", "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            ),
+            2_000,
+        );
+        catch_up(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO contact_gone (seq, date, sent) VALUES (1, 0, 0), (6000, 0, 0)",
+            [],
+        )
+        .unwrap();
+        erase(&conn, id, "m1");
+        assert!(stale(&conn));
+    }
+
+    /// SQLite hands a new row the number of the highest row deleted; the
+    /// tally must not take it for a row it already counted.
+    #[test]
+    fn mail_arriving_after_the_last_row_was_deleted_is_counted() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        let inbox = |n: &str, name: &str, who: &str| {
+            message(
+                id,
+                n,
+                (name, who),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            )
+        };
+        put_at(&conn, id, inbox("m1", "Theo", "theo@example.org"), 3_000);
+        put_at(&conn, id, inbox("m2", "T.", "theo@example.org"), 1_000);
+        catch_up(&conn).unwrap();
+        erase(&conn, id, "m2");
+        assert!(!stale(&conn));
+        put_at(&conn, id, inbox("m3", "Kai", "kai@example.org"), 2_000);
+        assert_eq!(
+            list_correspondents(&conn).unwrap(),
+            whole_read(&conn).unwrap()
+        );
+        catch_up(&conn).unwrap();
+        assert_eq!(
+            list_correspondents(&conn).unwrap(),
+            whole_read(&conn).unwrap()
+        );
+    }
+
+    /// With nothing new and nothing stale, the idle catch-up writes nothing.
+    #[test]
+    fn an_idle_catch_up_with_nothing_new_writes_nothing() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        put_at(
+            &conn,
+            id,
+            message(
+                id,
+                "m1",
+                ("Theo", "theo@example.org"),
+                &[("Dana", "dana@example.com")],
+                gmail::INBOX,
+            ),
+            1_000,
+        );
+        catch_up(&conn).unwrap();
+        let before = conn.total_changes();
+        catch_up(&conn).unwrap();
+        assert_eq!(conn.total_changes(), before);
+    }
+
+    /// A full recount runs in steps of a few messages, and the tally is
+    /// stale until the last of them.
+    #[test]
+    fn a_recount_runs_in_bounded_steps() {
+        let conn = open_in_memory().unwrap();
+        let id = accounts::insert_account(&conn, "dana@example.com", 0).unwrap();
+        list_gmail_roles(&conn, id);
+        for n in 0..7 {
+            let who = format!("p{}@example.org", n % 3);
+            put_at(
+                &conn,
+                id,
+                message(
+                    id,
+                    &format!("m{n}"),
+                    ("P", &who),
+                    &[("Dana", "dana@example.com")],
+                    gmail::INBOX,
+                ),
+                1_000 + n,
+            );
+        }
+        let mut steps = 0;
+        while catch_up_step(&conn, 3).unwrap() {
+            steps += 1;
+            assert!(stale(&conn), "still counting after step {steps}");
+        }
+        assert_eq!(steps, 2);
+        assert!(!stale(&conn));
+        assert_eq!(
+            list_correspondents(&conn).unwrap(),
+            whole_read(&conn).unwrap()
+        );
     }
 
     #[test]
