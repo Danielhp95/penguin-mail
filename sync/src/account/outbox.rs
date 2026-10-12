@@ -343,10 +343,11 @@ impl AccountSync {
         Ok(mbox)
     }
 
-    /// `export_mbox`, written to `out` one message at a time: each message
-    /// is fetched, written and dropped before the next is fetched, so a
-    /// long conversation costs two copies of its largest message and not
-    /// of the whole thread.
+    /// `export_mbox`, written to `out` one message at a time. The messages
+    /// are fetched in small batches ([`export_batches`]), which a server
+    /// that reads many at once answers in one round trip, and each one is
+    /// written and dropped before the next, so a long conversation costs a
+    /// batch's bytes at most and not the whole thread's.
     pub async fn export_mbox_to<W: AsyncWrite + Unpin>(
         &self,
         thread_id: &str,
@@ -357,10 +358,22 @@ impl AccountSync {
             Some(id) => vec![id.to_string()],
             None => self.thread_ids(thread_id).await?,
         };
+        let account_id = self.account_id;
+        let sizes = {
+            let ids = ids.clone();
+            self.db
+                .read(move |c| {
+                    ids.iter()
+                        .map(|id| messages::size_of(c, account_id, id))
+                        .collect::<mailrs_store::Result<Vec<_>>>()
+                })
+                .await?
+        };
         let names = self.remotes(&ids).await?;
         let mut entry = Vec::new();
-        for name in names {
-            for raw in self.services.mail.fetch_raw(&[name]).await? {
+        for batch in export_batches(&sizes) {
+            let raws = self.services.mail.fetch_raw(&names[batch]).await?;
+            for raw in raws {
                 entry.clear();
                 crate::export::append(&mut entry, &raw.bytes);
                 drop(raw);
@@ -409,6 +422,33 @@ impl AccountSync {
 
 }
 
+/// The most messages an export asks the server for at once.
+const EXPORT_BATCH: usize = 20;
+
+/// The most stored bytes one export batch may add up to, so a batch never
+/// holds much more in memory than one message the raw path would.
+const EXPORT_BATCH_BYTES: i64 = 2 * crate::RAW_LIMIT;
+
+/// The messages of an export, by their stored `sizes`, cut into runs the
+/// server is asked for together. A message of unknown size, or one too
+/// large to share the budget, goes alone.
+fn export_batches(sizes: &[Option<i64>]) -> Vec<std::ops::Range<usize>> {
+    let mut batches = Vec::new();
+    let (mut start, mut bytes) = (0, 0);
+    for (at, size) in sizes.iter().enumerate() {
+        let size = size.filter(|s| *s > 0 && *s <= EXPORT_BATCH_BYTES).unwrap_or(EXPORT_BATCH_BYTES);
+        if at > start && (at - start == EXPORT_BATCH || bytes + size > EXPORT_BATCH_BYTES) {
+            batches.push(start..at);
+            (start, bytes) = (at, 0);
+        }
+        bytes += size;
+    }
+    if start < sizes.len() {
+        batches.push(start..sizes.len());
+    }
+    batches
+}
+
 /// The `Message-ID` header of RFC 822 bytes, without its angle brackets.
 /// Only the header block is read, and a header folded onto the next line
 /// is unfolded first.
@@ -418,7 +458,18 @@ pub(crate) fn message_id_header(raw: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::message_id_header;
+    use super::{EXPORT_BATCH_BYTES, export_batches, message_id_header};
+
+    #[test]
+    fn an_export_asks_for_small_messages_together_and_large_ones_alone() {
+        let small = Some(1_000);
+        assert_eq!(export_batches(&[small; 45]), [0..20, 20..40, 40..45]);
+        let big = Some(EXPORT_BATCH_BYTES + 1);
+        assert_eq!(export_batches(&[small, big, small, None, small]), [0..1, 1..2, 2..3, 3..4, 4..5]);
+        let half = Some(EXPORT_BATCH_BYTES / 2);
+        assert_eq!(export_batches(&[half, half, half]), [0..2, 2..3]);
+        assert!(export_batches(&[]).is_empty());
+    }
 
     #[test]
     fn the_message_id_comes_from_the_header_block_alone() {
