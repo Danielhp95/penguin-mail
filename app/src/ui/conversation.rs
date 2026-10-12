@@ -56,8 +56,9 @@ pub enum Action {
     /// The Summarize pill above the thread: ask the assistant to sum up
     /// the conversation on screen.
     Summarize,
-    /// The read receipt card's buttons: send the receipt, or decline it.
-    Receipt(bool),
+    /// The read receipt card's buttons: send the receipt for the message,
+    /// or decline it.
+    Receipt { message_id: String, send: bool },
     Reply(ReplyKind),
     EditDraft,
     Archive,
@@ -1846,10 +1847,11 @@ impl ConversationView {
             actions(Action::ShowContact(address.to_string()));
         } else if uri == "mailrs:summarize" {
             actions(Action::Summarize);
-        } else if uri == "mailrs:receipt/send" {
-            actions(Action::Receipt(true));
-        } else if uri == "mailrs:receipt/decline" {
-            actions(Action::Receipt(false));
+        } else if let Some((message_id, send)) = crate::render::receipt::answer_of(uri) {
+            actions(Action::Receipt {
+                message_id: message_id.to_string(),
+                send,
+            });
         } else if let Some(address) = uri.strip_prefix("mailto:") {
             actions(Action::Mailto(
                 address.split('?').next().unwrap_or(address).to_string(),

@@ -81,7 +81,7 @@ pub enum Step {
     ReceiptAnswered,
     ReceiptCard,
     AnswerReceipt,
-    SentHere,
+    SentCopy,
     ReportChecked,
 }
 
@@ -167,8 +167,9 @@ pub struct Screen {
     pub receipt_cards: Vec<ReceiptCard>,
     /// Every answer given, with whether it sent.
     pub receipt_answers: Vec<(String, bool)>,
-    /// The Message-IDs the person's Sent mail holds.
-    pub sent: Vec<String>,
+    /// The Message-IDs the person's Sent mail holds, with each message's
+    /// recipients.
+    pub sent: Vec<(String, Vec<String>)>,
 }
 
 pub struct FakeWindow(pub RefCell<Screen>);
@@ -660,7 +661,11 @@ impl Desk for FakeWindow {
         self.with(|screen| screen.offers_receipts)
     }
 
-    fn unchecked_reports(&self) -> Vec<(String, String)> {
+    fn receipt_working(&self) -> bool {
+        self.read(OpenThread::receipt_working)
+    }
+
+    fn unchecked_reports(&self) -> Vec<(String, String, String)> {
         self.read(OpenThread::unchecked_reports)
     }
 }
@@ -875,10 +880,17 @@ impl Effects for FakeWindow {
         Box::pin(async move { answer })
     }
 
-    fn sent_here(&self, _account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<bool, String>> {
-        self.reached(Step::SentHere);
-        let sent = self.with(|screen| screen.sent.contains(&rfc822_msgid));
-        Box::pin(async move { Ok(sent) })
+    fn sent_recipients(&self, _account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<Vec<String>, String>> {
+        self.reached(Step::SentCopy);
+        let recipients = self.with(|screen| {
+            screen
+                .sent
+                .iter()
+                .filter(|(id, _)| *id == rfc822_msgid)
+                .flat_map(|(_, to)| to.clone())
+                .collect()
+        });
+        Box::pin(async move { Ok(recipients) })
     }
 
     fn sender_vip(&self, _vip: bool) {}

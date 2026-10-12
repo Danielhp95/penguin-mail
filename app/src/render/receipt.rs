@@ -38,7 +38,7 @@ pub(super) fn note(html: &mut String) {
 
 /// The card. Neither answer is suggested: sending tells the sender
 /// something, and the app leans neither way.
-pub(super) fn card(html: &mut String, to: &str, working: bool) {
+pub(super) fn card(html: &mut String, message_id: &str, to: &str, working: bool) {
     let detail = fill(
         &gettext("Sending a receipt tells {address} that you opened this message. Nothing is sent unless you choose."),
         &[("address", to)],
@@ -67,13 +67,26 @@ pub(super) fn card(html: &mut String, to: &str, working: bool) {
             false => {
                 let _ = write!(
                     html,
-                    "<a class=\"pill\" role=\"button\" href=\"mailrs:receipt/{answer}\">{}</a>",
+                    "<a class=\"pill\" role=\"button\" href=\"mailrs:receipt/{answer}/{}\">{}</a>",
+                    escape(message_id),
                     escape(&label)
                 );
             }
         }
     }
     html.push_str("</div></div>");
+}
+
+/// The message and the answer a link on the card carries: `true` sends
+/// the receipt, `false` declines it.
+pub fn answer_of(uri: &str) -> Option<(&str, bool)> {
+    let rest = uri.strip_prefix("mailrs:receipt/")?;
+    let (send, id) = match rest.split_once('/')? {
+        ("send", id) => (true, id),
+        ("decline", id) => (false, id),
+        _ => return None,
+    };
+    (!id.is_empty()).then_some((id, send))
 }
 
 /// A receipt that arrived, as one line: who read the message, and when.

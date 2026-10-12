@@ -97,6 +97,15 @@ impl MainWindow {
         }
     }
 
+    /// Asks the conversations on `account_id` again whether their receipt
+    /// question was answered, now that the account can say.
+    pub(super) fn account_ready_for_threads(self: &Rc<Self>, account_id: AccountId) {
+        for view in self.views() {
+            let run = self.thread_run(&view);
+            glib::spawn_future_local(async move { run.account_ready(account_id).await });
+        }
+    }
+
     /// The translation card's button.
     pub(super) fn translate_message(self: &Rc<Self>, view: &Rc<ConversationView>) {
         let run = self.thread_run(view);
@@ -105,10 +114,11 @@ impl MainWindow {
 
     /// The read receipt card's buttons. A card already at work has no
     /// message to answer for, so a second press sends nothing.
-    pub(super) fn answer_receipt(self: &Rc<Self>, view: &Rc<ConversationView>, send: bool) {
-        let Some(message_id) = view.find(OpenThread::receipt_asked) else {
+    pub(super) fn answer_receipt(self: &Rc<Self>, view: &Rc<ConversationView>, message_id: String, send: bool) {
+        // Only the message the card asks about, and only while it asks.
+        if view.find(OpenThread::receipt_asked).as_deref() != Some(message_id.as_str()) {
             return;
-        };
+        }
         let run = self.thread_run(view);
         glib::spawn_future_local(async move { run.answer_receipt(message_id, send).await });
     }
@@ -285,7 +295,11 @@ impl Desk for Ports {
             .is_some_and(|window| window.settings_with(|s| s.read_receipts == ReadReceipts::Ask))
     }
 
-    fn unchecked_reports(&self) -> Vec<(String, String)> {
+    fn receipt_working(&self) -> bool {
+        self.view.read(OpenThread::receipt_working).unwrap_or(false)
+    }
+
+    fn unchecked_reports(&self) -> Vec<(String, String, String)> {
         self.view
             .read(OpenThread::unchecked_reports)
             .unwrap_or_default()
@@ -646,20 +660,22 @@ impl Effects for Ports {
         })
     }
 
-    fn sent_here(&self, account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<bool, String>> {
+    fn sent_recipients(
+        &self,
+        account_id: AccountId,
+        rfc822_msgid: String,
+    ) -> Answer<'_, Result<Vec<String>, String>> {
         Box::pin(async move {
             self.core
-                .read(move |c| {
-                    // Stores keep a Message-ID with its angle brackets or
-                    // without, as the server gave it.
-                    for id in [format!("<{rfc822_msgid}>"), rfc822_msgid] {
-                        if mailrs_store::pop3::sent_with(c, account_id, &id)?.is_some() {
-                            return Ok(true);
-                        }
-                    }
-                    Ok(false)
-                })
+                .read(move |c| messages::sent_copies(c, account_id, &rfc822_msgid))
                 .await
+                .map(|copies| {
+                    copies
+                        .into_iter()
+                        .flat_map(|copy| copy.to.into_iter().chain(copy.cc))
+                        .map(|address| address.email)
+                        .collect()
+                })
                 .map_err(|err| err.to_string())
         })
     }

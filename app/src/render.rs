@@ -12,7 +12,7 @@ use crate::format::{avatar_hue, full_date, header_date, human_size, initials};
 use crate::quoted;
 use mailrs_domain::translate::{fill, fill_plural, gettext};
 
-mod receipt;
+pub mod receipt;
 
 pub use receipt::Receipt;
 
@@ -307,7 +307,7 @@ fn render_message(
         );
     }
     if let Some(Receipt::Asked { to, working }) = view.receipt {
-        receipt::card(html, to, working);
+        receipt::card(html, &meta.id, to, working);
     }
     render_body(html, view);
     html.push_str("</div></div></article>");
@@ -344,9 +344,14 @@ fn render_body(html: &mut String, view: &MessageView) {
         }
         BodyState::Loaded(body) => {
             if let Some(clean) = &view.sanitized {
+                // Mail's styles reach its own shadow host (`:host`), and a
+                // host moved up the page would paint over the sender row
+                // or the receipt card and take the clicks meant for them.
+                // The frame is the page's, so mail cannot style it, and it
+                // clips whatever the host paints outside it.
                 let _ = write!(
                     html,
-                    "<div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
+                    "<div class=\"body-frame\"><div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
                      <div class=\"root\">",
                     plain = if clean.paints { "" } else { " plain" },
                 );
@@ -358,7 +363,7 @@ fn render_body(html: &mut String, view: &MessageView) {
                     }
                     None => html.push_str(clean.html),
                 }
-                html.push_str("</div></template></div>");
+                html.push_str("</div></template></div></div>");
             } else {
                 let text = body.text.as_deref().unwrap_or("");
                 html.push_str("<div class=\"body text\">");
@@ -896,6 +901,7 @@ opacity 180ms cubic-bezier(0.23,1,0.32,1)}}\
 .body.status,.html{{background:var(--surface);border-radius:12px;padding:14px;\
 border:1px solid var(--line);overflow:hidden;margin-left:0}}\
 .html{{background:#fff}}\
+.body-frame{{contain:paint;margin:14px 0 2px}}.body-frame>.html{{margin:0}}\
 .html.plain{{background:var(--surface)}}\
 .status{{color:var(--dim);font-style:italic}}\
 blockquote.quote{{margin:6px 0;padding:0 0 0 12px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,transparent);color:var(--dim)}}\
@@ -2100,8 +2106,8 @@ mod tests {
         let page = page("Rota", vec![view]);
         assert!(page.contains("Read receipt requested"), "{page}");
         assert!(page.contains("Sending a receipt tells ann@example.com that you opened this message."), "{page}");
-        let send = page.find("href=\"mailrs:receipt/send\"").expect("Send Receipt");
-        let decline = page.find("href=\"mailrs:receipt/decline\"").expect("Don't Send");
+        let send = page.find("href=\"mailrs:receipt/send/m1\"").expect("Send Receipt");
+        let decline = page.find("href=\"mailrs:receipt/decline/m1\"").expect("Don't Send");
         assert!(send < decline, "Send Receipt comes first");
     }
 
@@ -2115,5 +2121,38 @@ mod tests {
         let page = page("Rota", vec![view]);
         assert!(!page.contains("mailrs:receipt/"), "{page}");
         assert!(page.contains("aria-disabled=\"true\""), "{page}");
+    }
+
+    /// Mail styles its own shadow host (`:host{position:relative;top:-110px}`)
+    /// and could paint over the receipt card or the sender row, with a
+    /// click landing on what it hides. A frame of the page's own around
+    /// every host clips what it paints.
+    #[test]
+    fn every_html_body_sits_in_a_frame_mail_cannot_style() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { html: Some("<p>Hi</p>".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.sanitized = Some(Sanitized { html: "<p>Hi</p>", paints: false, history: None });
+        let page = page("Hi", vec![view]);
+        let hosts = page.matches("<div class=\"body html").count();
+        assert_eq!(hosts, 1, "{page}");
+        assert_eq!(page.matches("<div class=\"body-frame\"><div class=\"body html").count(), hosts, "{page}");
+        assert!(page.contains(".body-frame{contain:paint"), "{page}");
+    }
+
+    #[test]
+    fn a_receipt_answer_names_its_message() {
+        let one = meta("m/1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: false });
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("href=\"mailrs:receipt/send/m/1\""), "{page}");
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/m/1"), Some(("m/1", true)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/decline/m1"), Some(("m1", false)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/"), None);
+        assert_eq!(receipt::answer_of("mailrs:receipt/send"), None);
     }
 }

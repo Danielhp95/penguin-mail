@@ -22,8 +22,25 @@ impl ThreadRun {
         futures::join!(self.receipt_card(wanted), self.reports(wanted));
     }
 
+    /// Asks again whether the card's question was answered, once the
+    /// account `account_id` connects. Until then nobody can say, and the
+    /// card stays down.
+    pub async fn account_ready(&self, account_id: mailrs_domain::AccountId) {
+        let Some(wanted) = self.on_screen() else {
+            return;
+        };
+        if wanted.target().account_id == account_id {
+            self.receipt_card(&wanted).await;
+        }
+    }
+
     async fn receipt_card(&self, wanted: &Want<'_>) {
         if wanted.on_screen(|_| self.desk.offers_receipts()) != Some(true) {
+            return;
+        }
+        // A redraw while the answer goes out must not offer the buttons
+        // again.
+        if self.desk.receipt_working() {
             return;
         }
         let Some(Some((message_id, to))) = wanted.on_screen(|_| self.desk.asks_receipt()) else {
@@ -40,7 +57,7 @@ impl ThreadRun {
         else {
             return;
         };
-        if !answered {
+        if !answered && !self.desk.receipt_working() {
             wanted.on_screen(|effects| effects.receipt_card(ReceiptCard::Asked { message_id, to }));
         }
     }
@@ -53,16 +70,18 @@ impl ThreadRun {
             return;
         };
         let account_id = wanted.target().account_id;
-        for (message_id, original) in unchecked {
-            let Some(sent) = wanted
+        for (message_id, original, by) in unchecked {
+            let Some(recipients) = wanted
                 .ask(
-                    |effects| effects.sent_here(account_id, original),
+                    |effects| effects.sent_recipients(account_id, original),
                     "could not look for the message a receipt answers",
                 )
                 .await
             else {
                 return;
             };
+            // Only someone the message went to can say they read it.
+            let sent = recipients.iter().any(|r| r.eq_ignore_ascii_case(&by));
             wanted.on_screen(|effects| effects.report_checked(message_id, sent));
         }
     }
@@ -72,6 +91,11 @@ impl ThreadRun {
         let Some(wanted) = self.on_screen() else {
             return;
         };
+        // One answer at a time: a second press while the first goes out
+        // could send a second receipt.
+        if self.desk.receipt_working() {
+            return;
+        }
         let account_id = wanted.target().account_id;
         wanted.on_screen(|effects| effects.receipt_card(ReceiptCard::Working));
         let asked = message_id.clone();
@@ -95,12 +119,18 @@ impl ThreadRun {
                 let answered = wanted
                     .wait(|effects| effects.receipt_answered(account_id, message_id))
                     .await;
-                let card = match (answered, wanted.on_screen(|_| self.desk.asks_receipt())) {
-                    (Some(Ok(false)), Some(Some((message_id, to)))) => ReceiptCard::Asked { message_id, to },
-                    _ => ReceiptCard::Hidden,
+                let (card, said) = match (answered, wanted.on_screen(|_| self.desk.asks_receipt())) {
+                    (Some(Ok(false)), Some(Some((message_id, to)))) => (
+                        ReceiptCard::Asked { message_id, to },
+                        gettext("Could not send the receipt: {reason}"),
+                    ),
+                    _ => (
+                        ReceiptCard::Hidden,
+                        gettext("The receipt was not sent, and Penguin Mail will not try again: {reason}"),
+                    ),
                 };
                 wanted.on_screen(|effects| effects.receipt_card(card));
-                let said = fill(&gettext("Could not send the receipt: {reason}"), &[("reason", &problem)]);
+                let said = fill(&said, &[("reason", &problem)]);
                 wanted.anyway(|effects| effects.toast(said));
             }
         }

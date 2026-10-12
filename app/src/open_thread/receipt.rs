@@ -60,21 +60,27 @@ impl OpenThread {
         })
     }
 
-    /// The receipts in the thread not yet checked against Sent, with the
-    /// Message-ID each says it answers.
-    pub fn unchecked_reports(&self) -> Vec<(String, String)> {
+    /// Whether the card's answer is on its way.
+    pub fn receipt_working(&self) -> bool {
+        self.receipt_card.as_ref().is_some_and(|(_, working)| *working)
+    }
+
+    /// The receipts in the thread not yet checked against Sent: each
+    /// one's message id, the Message-ID it says it answers, and who it
+    /// says read it.
+    pub fn unchecked_reports(&self) -> Vec<(String, String, String)> {
         self.messages
             .iter()
             .filter(|meta| !self.reports.contains_key(&meta.id))
             .filter_map(|meta| {
                 let report = self.bodies.get(&meta.id)?.as_ref().ok()?.read_report.as_ref()?;
-                Some((meta.id.clone(), report.original.clone()?))
+                Some((meta.id.clone(), report.original.clone()?, report.by.clone()))
             })
             .collect()
     }
 
     /// Notes whether the receipt `message_id` answers mail the person
-    /// sent. One that does draws as one line; one that does not draws as
+    /// sent, to the address that says it read it. One that does draws as one line; one that does not draws as
     /// the mail it is, and neither is asked about again.
     pub fn report_checked(&mut self, message_id: String, sent: bool) {
         self.reports.insert(message_id, sent);

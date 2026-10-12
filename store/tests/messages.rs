@@ -402,3 +402,26 @@ fn a_stored_message_reads_back_with_its_roles() {
     assert!(read[0].is_flagged());
     assert!(read[0].in_mailbox("Label_1"));
 }
+
+/// A read receipt names the message it answers by Message-ID, which a
+/// store keeps with its angle brackets or without them.
+#[test]
+fn sent_copies_are_found_by_message_id_in_either_spelling() {
+    let (conn, id) = db();
+    let bracketed = meta(id, "s1", "t1", 1, &["SENT"]);
+    let mut bare = meta(id, "s2", "t2", 2, &["SENT"]);
+    bare.rfc822_msgid = Some("s2@example.com".into());
+    let received = meta(id, "r1", "t3", 3, &["INBOX"]);
+    store(&conn, &[bracketed, bare, received]);
+    let found = |msgid: &str| -> Vec<String> {
+        messages::sent_copies(&conn, id, msgid)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect()
+    };
+    assert_eq!(found("s1@example.com"), ["s1"]);
+    assert_eq!(found("s2@example.com"), ["s2"]);
+    assert!(found("r1@example.com").is_empty(), "mail that came in is not Sent");
+    assert!(found("nobody@example.com").is_empty());
+}

@@ -1081,7 +1081,12 @@ impl MainWindow {
             // An account going offline and back changes the banner and the
             // sidebar, not the rows. Listing again would cost a Gmail
             // search for every folder and search on screen.
-            ChangeEvent::AccountStateChanged { .. } => self.refresh_accounts(Reload::No),
+            ChangeEvent::AccountStateChanged { account_id, state } => {
+                self.refresh_accounts(Reload::No);
+                if *state == AccountState::Ok {
+                    self.account_ready_for_threads(*account_id);
+                }
+            }
             ChangeEvent::LabelsChanged { .. } => self.refresh_accounts(Reload::Yes),
             ChangeEvent::ThreadsChanged {
                 account_id,
@@ -1726,7 +1731,7 @@ impl MainWindow {
         match action {
             Action::Invitation(action) => self.invitation_action(view, action),
             Action::Summarize => self.summarize(view),
-            Action::Receipt(send) => self.answer_receipt(view, send),
+            Action::Receipt { message_id, send } => self.answer_receipt(view, message_id, send),
             Action::Reply(kind) => self.reply(view, kind),
             Action::EditDraft => self.edit_draft_from(view),
             Action::Archive

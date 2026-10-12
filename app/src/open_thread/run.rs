@@ -136,9 +136,12 @@ pub trait Desk: Screen {
     fn asks_receipt(&self) -> Option<(String, String)>;
     /// Whether the person wants to be asked at all.
     fn offers_receipts(&self) -> bool;
-    /// The read receipts on screen not yet checked against Sent, with the
-    /// Message-ID each says it answers.
-    fn unchecked_reports(&self) -> Vec<(String, String)>;
+    /// Whether the receipt card's answer is on its way.
+    fn receipt_working(&self) -> bool;
+    /// The read receipts on screen not yet checked against Sent: each
+    /// one's message id, the Message-ID it says it answers, and who it says
+    /// read it.
+    fn unchecked_reports(&self) -> Vec<(String, String, String)>;
 }
 
 /// What the run asks of the store, Gmail and the view. A test answers with
@@ -245,9 +248,14 @@ pub trait Effects {
         message_id: String,
         send: bool,
     ) -> Answer<'_, Result<(), String>>;
-    /// Whether the person's Sent mail holds the message whose Message-ID
-    /// is `rfc822_msgid`, given without angle brackets.
-    fn sent_here(&self, account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<bool, String>>;
+    /// The To and Cc addresses of the messages in the person's Sent mail
+    /// whose Message-ID is `rfc822_msgid`, given without angle brackets.
+    /// None when Sent holds no such message.
+    fn sent_recipients(
+        &self,
+        account_id: AccountId,
+        rfc822_msgid: String,
+    ) -> Answer<'_, Result<Vec<String>, String>>;
 
     /// Puts a thread on screen, in place of whatever was there.
     fn show(&self, thread: OpenThread);
