@@ -1095,6 +1095,12 @@ impl MainWindow {
         }
     }
 
+    /// The network came back: an IMAP account looked at offline gets its
+    /// look for a JMAP session now, through the accounts' refresh.
+    pub(crate) fn network_back(self: &Rc<Self>) {
+        self.refresh_accounts(Reload::No);
+    }
+
     /// Re-reads the accounts and their labels, and with [`Reload::Yes`]
     /// lists the mailbox again. A remote mailbox lists through Gmail, so
     /// only a change that can alter its rows is worth that.

@@ -1262,6 +1262,17 @@ impl Core {
     }
 }
 
+/// The IMAP accounts in `accounts` not looked at yet this run, each noted
+/// in `looked`. Offline, only those the table answers for: discovery would
+/// find nothing, and the account would never be looked at again.
+fn to_look(accounts: Vec<Account>, looked: &mut HashSet<AccountId>, online: bool) -> Vec<Account> {
+    accounts
+        .into_iter()
+        .filter(|a| a.provider == Provider::Imap && (online || table_offer(a).is_some()))
+        .filter(|a| looked.insert(a.id))
+        .collect()
+}
+
 /// The table's JMAP session for an IMAP account whose provider it names,
 /// with no network at all.
 fn table_offer(account: &Account) -> Option<JmapFound> {
@@ -1293,10 +1304,8 @@ impl Core {
     /// the address's domain that the table does not name is no offer: the
     /// switch dialog has no place to ask whether the person trusts it.
     pub async fn look_for_jmap(&self, accounts: Vec<Account>) -> bool {
-        let fresh: Vec<Account> = accounts
-            .into_iter()
-            .filter(|a| a.provider == Provider::Imap && self.switch_looked.borrow_mut().insert(a.id))
-            .collect();
+        let online = self.demo || self.network.get();
+        let fresh = to_look(accounts, &mut self.switch_looked.borrow_mut(), online);
         let mut found_any = false;
         for account in fresh {
             let found = match table_offer(&account) {
@@ -1304,14 +1313,18 @@ impl Core {
                 None if self.demo => None,
                 None => {
                     let email = account.email.clone();
-                    self.call(async move {
-                        let net = RealNet::new()?;
-                        Ok::<_, anyhow::Error>(mailrs_discover::find_jmap(&net, &email).await)
-                    })
-                    .await
-                    .ok()
-                    .flatten()
-                    .filter(|found| !found.confirm)
+                    let looked = self
+                        .call(async move {
+                            let net = RealNet::new()?;
+                            Ok::<_, anyhow::Error>(mailrs_discover::find_jmap(&net, &email).await)
+                        })
+                        .await;
+                    // A look that could not start says nothing about the
+                    // server, so the account is looked at again later.
+                    if looked.is_err() {
+                        self.switch_looked.borrow_mut().remove(&account.id);
+                    }
+                    looked.ok().flatten().filter(|found| !found.confirm)
                 }
             };
             if let Some(found) = found {
@@ -1806,6 +1819,25 @@ mod tests {
             core.engine.current().expect("an engine is running").window_open(),
             "the new engine keeps the window open"
         );
+    }
+
+    /// Offline, discovery cannot answer, so an account that needs it is
+    /// not marked as looked at, and the look runs once the network is back.
+    #[test]
+    fn an_account_looked_for_offline_is_looked_for_again_online() {
+        let imap = |id, email: &str, name: Option<&str>| mailrs_domain::Account {
+            id,
+            email: email.into(),
+            state: mailrs_domain::AccountState::Ok,
+            provider: mailrs_domain::Provider::Imap,
+            provider_name: name.map(str::to_string),
+        };
+        let accounts = vec![imap(1, "me@fastmail.com", Some("Fastmail")), imap(2, "me@example.org", None)];
+        let mut looked = std::collections::HashSet::new();
+        let ids = |list: Vec<mailrs_domain::Account>| list.iter().map(|a| a.id).collect::<Vec<_>>();
+        assert_eq!(ids(super::to_look(accounts.clone(), &mut looked, false)), [1], "the table needs no network");
+        assert_eq!(ids(super::to_look(accounts.clone(), &mut looked, true)), [2]);
+        assert!(super::to_look(accounts, &mut looked, true).is_empty(), "once a run");
     }
 
     #[test]

@@ -232,6 +232,9 @@ impl App {
             app.core.set_network(available);
             if let Some(window) = app.window() {
                 window.calendar.network_changed();
+                if available {
+                    window.network_back();
+                }
             }
             if available {
                 // The folder on screen may have changed on Gmail while
