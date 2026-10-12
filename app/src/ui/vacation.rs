@@ -247,6 +247,21 @@ impl Form {
             .build();
         body.buffer().set_text(&reply.body);
         crate::ui::name(&body, &gettext("Message"));
+        // A text view has no placeholder, so a dim line sits where the
+        // text starts while there is none, and says what goes there.
+        let hint = gtk::Label::builder()
+            .label(gettext("The reply people get while you are away"))
+            .can_target(false)
+            .css_classes(["dim-label"])
+            .build();
+        // Buffer coordinates: they count the left margin but start under
+        // the top one.
+        body.add_overlay(&hint, 12, 0);
+        let shows = |buffer: &gtk::TextBuffer| buffer.char_count() == 0;
+        hint.set_visible(shows(&body.buffer()));
+        let placeholder = hint.clone();
+        body.buffer()
+            .connect_changed(move |buffer| placeholder.set_visible(shows(buffer)));
         let frame = gtk::ScrolledWindow::builder()
             .child(&body)
             .min_content_height(160)

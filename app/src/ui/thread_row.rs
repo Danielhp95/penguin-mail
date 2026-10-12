@@ -296,13 +296,20 @@ pub fn set_avatar_hue(avatar: &adw::Avatar, name: &str, address: &str) {
     }
 }
 
+/// Whose face the row shows, as a name and an address: the recipient on
+/// a row named after who its message goes to, else the newest sender.
+/// The address keys the colour, the photo and the VIP star.
+pub fn person(thread: &ThreadSummary) -> (&str, &str) {
+    match thread.recipient.as_deref() {
+        Some(to) => (to.display(), &to.email),
+        None => (&thread.from, &thread.from_email),
+    }
+}
+
 /// The name an avatar draws its initials from.
 fn display_name(thread: &ThreadSummary) -> String {
-    if thread.from.trim().is_empty() {
-        thread.from_email.clone()
-    } else {
-        thread.from.clone()
-    }
+    let (name, email) = person(thread);
+    if name.trim().is_empty() { email } else { name }.to_string()
 }
 
 fn flag_class(color: FlagColor) -> &'static str {
@@ -373,7 +380,8 @@ impl ThreadRow {
                 face.set_custom_image(gdk::Paintable::NONE);
             }
         }
-        set_avatar_hue(face, &thread.from, &thread.from_email);
+        let (name, email) = person(thread);
+        set_avatar_hue(face, name, email);
         imp.vip.get().expect("vip star exists").set_visible(vip);
         let get = |cell: &OnceCell<gtk::Label>| {
             cell.get()
@@ -539,6 +547,26 @@ mod tests {
             held_lines("The server has not sent this message yet."),
             ("The server has not sent this message yet.", None)
         );
+    }
+
+    #[test]
+    fn a_row_addressed_to_someone_draws_their_face() {
+        let theo = mailrs_domain::Address { name: Some("Theo Brandt".into()), email: "theo@example.org".into() };
+        let sent = mailrs_domain::ThreadSummary {
+            from: "To Theo Brandt".into(),
+            from_email: "me@example.org".into(),
+            recipient: Some(Box::new(theo)),
+            ..Default::default()
+        };
+        assert_eq!(super::person(&sent), ("Theo Brandt", "theo@example.org"));
+        assert_eq!(super::display_name(&sent), "Theo Brandt");
+        let received = mailrs_domain::ThreadSummary {
+            from: "Ines Duarte".into(),
+            from_email: "ines@example.org".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::person(&received), ("Ines Duarte", "ines@example.org"));
+        assert_eq!(super::display_name(&received), "Ines Duarte");
     }
 
     #[test]

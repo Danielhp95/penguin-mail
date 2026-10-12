@@ -415,6 +415,12 @@ pub struct ThreadSummary {
     /// hour, whether or not this app is running.
     #[serde(default)]
     pub held: bool,
+    /// For a row named after who its message goes to ("To Theo Brandt"
+    /// in Outbox, Send Later and Follow Up), the first recipient, whose
+    /// face, colour and VIP star the row shows. Boxed, so the other rows
+    /// pay one pointer for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient: Option<Box<Address>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

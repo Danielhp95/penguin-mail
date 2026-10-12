@@ -45,23 +45,34 @@ pub fn present(
     let dialog = adw::PreferencesDialog::builder()
         .search_enabled(true)
         .build();
+    // The phone layout. A dialog applies one breakpoint at a time, so
+    // every page puts its narrow setters on this one.
+    let narrow = adw::Breakpoint::new(
+        adw::BreakpointCondition::parse("max-width: 450sp").expect("valid breakpoint"),
+    );
     dialog.add(&general_page(app, &settings, &missing_lines(&offered, |id, missing| app.core.missed(id, missing))));
     let writing = writing_page(app, &settings, accounts, signature_of, &dialog);
     dialog.add(&writing);
-    dialog.add(&super::contacts_prefs::page(
+    let contacts = super::contacts_prefs::page(
         app,
         &settings,
         &offered,
         withheld,
         grant,
         &calendar_rows(app, &settings),
-    ));
+    );
+    dialog.add(&contacts);
+    // Five tabs share 360 px on a phone, about nine letters each, and
+    // "Contacts & Calendar" ended in "&…". The short name matches the
+    // page's address book icon, and search still finds every row.
+    narrow.add_setter(&contacts, "title", Some(&gettext("Contacts").to_value()));
     if signature_of.is_some() {
         dialog.set_visible_page(&writing);
     }
     let pending = Rc::new(RefCell::new(app.core.sync_config()));
-    dialog.add(&sync_page(app, &pending, &dialog));
+    dialog.add(&sync_page(app, &pending, &narrow));
     dialog.add(&super::assistant_prefs::page(app, &dialog));
+    dialog.add_breakpoint(narrow);
     let weak = Rc::downgrade(app);
     dialog.connect_closed(move |_| {
         let Some(app) = weak.upgrade() else { return };
@@ -745,7 +756,7 @@ fn spelling_group(
 fn sync_page(
     app: &Rc<App>,
     pending: &Rc<RefCell<SyncConfig>>,
-    dialog: &adw::PreferencesDialog,
+    narrow: &adw::Breakpoint,
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(gettext("Sync"))
@@ -783,27 +794,52 @@ fn sync_page(
         pending,
         |c, v| c.window_days = Some(v),
     );
-    // The line under the row says what the choice on show costs.
+    // The line under the row says what the choice on show costs, except
+    // on a phone, where the value needs the room.
+    let notes_shown = Rc::new(Cell::new(true));
     let picked: Vec<i64> = windows.iter().map(|(days, _)| *days).collect();
+    let shown = Rc::clone(&notes_shown);
     window.connect_selected_notify(move |row| {
+        if !shown.get() {
+            return;
+        }
         if let Some(days) = picked.get(row.selected() as usize) {
             row.set_subtitle(&window_note(*days));
         }
     });
     storage.add(&window);
     let caches = cache_choices();
-    storage.add(&sync_combo(
+    let cache_note = gettext("Bodies of mail you have read, kept for opening offline");
+    let cache = sync_combo(
         &caches,
         &gettext("Message Cache"),
-        Some(&gettext(
-            "Bodies of mail you have read, kept for opening offline",
-        )),
+        Some(&cache_note),
         nearest(&caches, current.body_cache_mb.unwrap_or(1024)),
         pending,
         |c, v| c.body_cache_mb = Some(v),
-    ));
+    );
+    storage.add(&cache);
     page.add(&storage);
-    if let Some(space) = server_space(app, dialog) {
+    // On a phone the two lines under these rows took the room their values
+    // need, and Message Cache read "1 …". They go below 450 sp.
+    {
+        let (shown, rows) = (Rc::clone(&notes_shown), (window.clone(), cache.clone()));
+        narrow.connect_apply(move |_| {
+            shown.set(false);
+            rows.0.set_subtitle("");
+            rows.1.set_subtitle("");
+        });
+        let (shown, rows) = (Rc::clone(&notes_shown), (window.clone(), cache.clone()));
+        let windows = window_choices();
+        narrow.connect_unapply(move |_| {
+            shown.set(true);
+            if let Some((days, _)) = windows.get(rows.0.selected() as usize) {
+                rows.0.set_subtitle(&window_note(*days));
+            }
+            rows.1.set_subtitle(&cache_note);
+        });
+    }
+    if let Some(space) = server_space(app, narrow) {
         page.add(&space);
     }
 
@@ -892,10 +928,10 @@ fn state_line(storage: mailrs_sync::Storage) -> String {
 }
 
 /// One row per account whose server says how full it is, with a bar in
-/// the accent, the warning colour past the server's mark and red once
-/// full. `None` while no server has said, so the page shows no empty
+/// ink while there is room, the warning colour past the server's mark and
+/// red once full. `None` while no server has said, so the page shows no empty
 /// group. Below 450 sp the bar moves under the amount.
-fn server_space(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> Option<adw::PreferencesGroup> {
+fn server_space(app: &Rc<App>, narrow: &adw::Breakpoint) -> Option<adw::PreferencesGroup> {
     let storage = app.storage();
     let rows: Vec<(String, mailrs_sync::Storage)> = app
         .accounts()
@@ -909,14 +945,9 @@ fn server_space(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> Option<adw::P
         .title(gettext("Space on the Server"))
         .description(gettext("How much of its space each server says your mail takes"))
         .build();
-    let narrow = adw::BreakpointCondition::parse("max-width: 450sp")
-        .ok()
-        .map(adw::Breakpoint::new);
-    if let Some(narrow) = &narrow {
-        narrow.add_setter(&group, "description", Some(&None::<String>.to_value()));
-    }
+    narrow.add_setter(&group, "description", Some(&None::<String>.to_value()));
     for (address, space) in rows {
-        group.add(&server_space_row(&address, space, narrow.as_ref()));
+        group.add(&server_space_row(&address, space, narrow));
     }
     let footer = gtk::Label::builder()
         .label(gettext("Accounts whose server does not report its space are not listed."))
@@ -925,16 +956,13 @@ fn server_space(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> Option<adw::P
         .css_classes(["server-space-footer"])
         .build();
     group.add(&footer);
-    if let Some(narrow) = narrow {
-        dialog.add_breakpoint(narrow);
-    }
     Some(group)
 }
 
 fn server_space_row(
     address: &str,
     space: mailrs_sync::Storage,
-    narrow: Option<&adw::Breakpoint>,
+    narrow: &adw::Breakpoint,
 ) -> adw::PreferencesRow {
     let tone = if space.full() {
         Some("full")
@@ -1008,12 +1036,10 @@ fn server_space_row(
             widget.add_css_class(tone);
         }
     }
-    if let Some(narrow) = narrow {
-        narrow.add_setter(&content, "orientation", Some(&gtk::Orientation::Vertical.to_value()));
-        narrow.add_setter(&content, "spacing", Some(&10.to_value()));
-        narrow.add_setter(&bar, "hexpand", Some(&true.to_value()));
-        narrow.add_setter(&end, "visible", Some(&false.to_value()));
-    }
+    narrow.add_setter(&content, "orientation", Some(&gtk::Orientation::Vertical.to_value()));
+    narrow.add_setter(&content, "spacing", Some(&10.to_value()));
+    narrow.add_setter(&bar, "hexpand", Some(&true.to_value()));
+    narrow.add_setter(&end, "visible", Some(&false.to_value()));
     adw::PreferencesRow::builder()
         .title(address)
         .activatable(false)

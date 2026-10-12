@@ -24,6 +24,8 @@ const SIDE: i32 = 20;
 const NARROW_SIDE: i32 = 14;
 /// The gap between the page's groups.
 const SPACING: i32 = 18;
+/// The room under the page, before any toast adds its own.
+const PAGE_FOOT: i32 = 22;
 
 struct Dialog {
     core: Rc<Core>,
@@ -38,6 +40,8 @@ struct Dialog {
     /// takes a sign-in on its own page.
     browser_offer: gtk::Box,
     browser: gtk::Button,
+    /// Closes the dialog; off while the switch runs.
+    cancel: gtk::Button,
     progress: gtk::Box,
     /// Open Page Again and Cancel, while the browser has the sign-in.
     waiting: gtk::Box,
@@ -50,9 +54,6 @@ struct Dialog {
     page: gtk::Box,
     /// The failure toast on show, which a new try takes away.
     failure: std::cell::RefCell<Option<adw::Toast>>,
-    /// The height the failure toast takes under the page while it shows,
-    /// so it covers nothing, as in the mockup.
-    toast_room: std::cell::Cell<i32>,
     done: Box<dyn Fn(Switched)>,
 }
 
@@ -85,7 +86,7 @@ pub fn present(
         .orientation(gtk::Orientation::Vertical)
         .spacing(SPACING)
         .margin_top(14)
-        .margin_bottom(22)
+        .margin_bottom(PAGE_FOOT)
         .margin_start(SIDE)
         .margin_end(SIDE)
         .build();
@@ -163,7 +164,9 @@ pub fn present(
         .child(&page)
         .build();
     let switch = gtk::Button::builder().label(gettext("Switch")).css_classes(["suggested-action"]).sensitive(false).build();
+    let cancel = gtk::Button::with_label(&gettext("Cancel"));
     let header = adw::HeaderBar::builder().show_start_title_buttons(false).show_end_title_buttons(false).build();
+    header.pack_start(&cancel);
     header.pack_end(&switch);
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
@@ -192,6 +195,7 @@ pub fn present(
         toasts,
         secret: secret.clone(),
         switch: switch.clone(),
+        cancel: cancel.clone(),
         browser_offer,
         browser: browser.clone(),
         progress,
@@ -202,8 +206,15 @@ pub fn present(
         scrolled,
         page,
         failure: std::cell::RefCell::default(),
-        toast_room: std::cell::Cell::new(0),
         done: Box::new(done),
+    });
+    // Cancel does what Escape does: it closes the dialog, which the
+    // switch keeps open while it runs.
+    let closer = dialog.downgrade();
+    cancel.connect_clicked(move |_| {
+        if let Some(dialog) = closer.upgrade() {
+            dialog.close();
+        }
     });
     let ready = switch.clone();
     secret.connect_changed(move |row| ready.set_sensitive(!row.text().is_empty()));
@@ -327,6 +338,7 @@ impl Dialog {
         self.secret.set_sensitive(!on);
         self.switch.set_sensitive(!on && !self.secret.text().is_empty());
         self.browser.set_sensitive(!on);
+        self.cancel.set_sensitive(!on);
         self.progress.set_visible(on);
         // Closing now would leave a failure with nowhere to show.
         self.dialog.set_can_close(!on);
@@ -344,8 +356,10 @@ impl Dialog {
         if width <= 0 || !self.scrolled.is_mapped() {
             return false;
         }
+        // The page's foot margin holds the toast's room (`make_toast_room`),
+        // and a measure counts margins.
         let page = self.page.measure(gtk::Orientation::Vertical, width).1;
-        self.dialog.set_content_height(self.header.height() + page + self.toast_room.get());
+        self.dialog.set_content_height(self.header.height() + page);
         true
     }
 
@@ -480,6 +494,14 @@ impl Dialog {
         }
     }
 
+    /// Keeps `room` pixels free under the page for the toast, so it covers
+    /// nothing, as in the mockup. The dialog
+    /// grows by that much where the window lets it; where it cannot, the
+    /// page still scrolls far enough that the toast covers none of it.
+    fn make_toast_room(&self, room: i32) {
+        self.page.set_margin_bottom(PAGE_FOOT + room);
+    }
+
     /// The failure toast. When the server's mail kept changing, it offers
     /// another try with what the person typed.
     fn fail(self: &Rc<Self>, line: &str, again: bool) {
@@ -510,17 +532,24 @@ impl Dialog {
         // The toast is its words, 10 px above and below them, at least 46
         // px, and 8 px from the page and 18 from the foot.
         let words_height = words.measure(gtk::Orientation::Vertical, chars * 15 / 2).1;
-        self.toast_room.set((words_height + 20).max(46) + 26);
+        self.make_toast_room((words_height + 20).max(46) + 26);
         let weak = Rc::downgrade(self);
         toast.connect_dismissed(move |_| {
             if let Some(this) = weak.upgrade() {
-                this.toast_room.set(0);
+                this.make_toast_room(0);
                 this.fit();
             }
         });
         self.toasts.add_toast(toast.clone());
         self.failure.replace(Some(toast));
         self.fit();
+        // Where the dialog could not grow, scroll the room into view, so
+        // the token card and its link sit above the toast, not under it.
+        let scrolled = self.scrolled.clone();
+        glib::idle_add_local_once(move || {
+            let adjustment = scrolled.vadjustment();
+            adjustment.set_value(adjustment.upper() - adjustment.page_size());
+        });
         self.secret.upcast_ref::<gtk::Widget>().announce(line, gtk::AccessibleAnnouncementPriority::High);
         self.focus_secret();
     }

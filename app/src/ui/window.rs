@@ -144,7 +144,7 @@ pub struct MainWindow {
     grant_banner_widgets: RefCell<HashMap<AccountId, adw::Banner>>,
     /// The storage banner of each nearly full account, beside the Grant
     /// Access banners, and whether the account was full when it went up.
-    storage_banner_widgets: RefCell<HashMap<AccountId, (adw::Banner, bool)>>,
+    storage_banner_widgets: RefCell<HashMap<AccountId, storage::StorageBand>>,
     /// The main menu's update entry: Check for Updates, or what to do with
     /// the one that is waiting.
     update_menu: gio::Menu,
@@ -1505,6 +1505,7 @@ impl MainWindow {
             self.follow_outbox();
             self.follow_categories();
             self.follow_follow_ups();
+            self.place_storage_banners();
         }
         if redraw.category {
             let category = self.screen.borrow().category();
