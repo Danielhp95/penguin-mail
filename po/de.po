@@ -3632,7 +3632,7 @@ msgstr[1] "{count} Nachrichten"
 msgid "Summarize"
 msgstr "Zusammenfassen"
 
-#: app/src/render.rs:261 app/src/ui/thread_row.rs:402
+#: app/src/render.rs:261 app/src/ui/thread_row.rs:403
 msgid "Unknown sender"
 msgstr "Unbekannter Absender"
 
@@ -3648,7 +3648,7 @@ msgstr "Kontakt"
 msgid "Contact card for {person}"
 msgstr "Kontaktkarte für {person}"
 
-#: app/src/render.rs:355 app/src/ui/thread_row.rs:164
+#: app/src/render.rs:355 app/src/ui/thread_row.rs:165
 msgid "Invitation"
 msgstr "Einladung"
 
@@ -3949,7 +3949,7 @@ msgstr "Regeln"
 msgid "On this computer, while Penguin Mail is open"
 msgstr "Auf diesem Rechner, solange Penguin Mail geöffnet ist"
 
-#: app/src/servers.rs:40 app/src/ui/thread_row.rs:145
+#: app/src/servers.rs:40 app/src/ui/thread_row.rs:146
 msgid "On the server"
 msgstr "Auf dem Server"
 
@@ -4343,7 +4343,7 @@ msgstr "Penguin Mail öffnen"
 
 #: app/src/tray.rs:290 app/src/ui/composer/mod.rs:336
 #: app/src/ui/composer/mod.rs:643 app/src/ui/composer/mod.rs:1497
-#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:431
+#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:432
 msgid "New Message"
 msgstr "Neue Nachricht"
 
@@ -9060,7 +9060,7 @@ msgid "Mailboxes"
 msgstr "Postfächer"
 
 #: app/src/ui/sidebar.rs:355 app/src/ui/sidebar.rs:1406
-#: app/src/ui/thread_list.rs:324
+#: app/src/ui/thread_list.rs:325
 msgid "Mail"
 msgstr "E-Mail"
 
@@ -9342,58 +9342,58 @@ msgstr "Text"
 msgid "New Template"
 msgstr "Neue Vorlage"
 
-#: app/src/ui/thread_list.rs:215
+#: app/src/ui/thread_list.rs:216
 msgid "No Mail"
 msgstr "Keine E-Mails"
 
 #. The two search terms are Gmail's own and stay in English.
-#: app/src/ui/thread_list.rs:233
+#: app/src/ui/thread_list.rs:234
 msgid "Search mail, e.g. from:ann has:attachment"
 msgstr "E-Mails durchsuchen, z. B. from:ann has:attachment"
 
-#: app/src/ui/thread_list.rs:252
+#: app/src/ui/thread_list.rs:253
 msgid "All Inboxes"
 msgstr "Alle Posteingänge"
 
-#: app/src/ui/thread_list.rs:272 app/src/ui/thread_list.rs:292
+#: app/src/ui/thread_list.rs:273 app/src/ui/thread_list.rs:293
 msgid "Show Mailboxes"
 msgstr "Postfächer anzeigen"
 
-#: app/src/ui/thread_list.rs:277
+#: app/src/ui/thread_list.rs:278
 msgid "New Message (C)"
 msgstr "Neue Nachricht (C)"
 
-#: app/src/ui/thread_list.rs:282
+#: app/src/ui/thread_list.rs:283
 msgid "Search (/)"
 msgstr "Suchen (/)"
 
 #. The tooltips already say what these do; the spoken name takes
 #. the words and leaves the keys to a property of their own.
-#: app/src/ui/thread_list.rs:291
+#: app/src/ui/thread_list.rs:292
 msgid "Search mail"
 msgstr "E-Mails durchsuchen"
 
-#: app/src/ui/thread_row.rs:101
+#: app/src/ui/thread_row.rs:102
 msgid "VIP"
 msgstr "VIP"
 
-#: app/src/ui/thread_row.rs:126 app/src/ui/window.rs:383
+#: app/src/ui/thread_row.rs:127 app/src/ui/window.rs:383
 msgid "Muted"
 msgstr "Stummgeschaltet"
 
-#: app/src/ui/thread_row.rs:323
+#: app/src/ui/thread_row.rs:324
 msgid "Unread invitation, {sender}, {subject}, {snippet}"
 msgstr "Ungelesene Einladung, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:324
+#: app/src/ui/thread_row.rs:325
 msgid "Unread, {sender}, {subject}, {snippet}"
 msgstr "Ungelesen, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:325
+#: app/src/ui/thread_row.rs:326
 msgid "Invitation, {sender}, {subject}, {snippet}"
 msgstr "Einladung, {sender}, {subject}, {snippet}"
 
-#: app/src/ui/thread_row.rs:326
+#: app/src/ui/thread_row.rs:327
 msgid "{sender}, {subject}, {snippet}"
 msgstr "{sender}, {subject}, {snippet}"
 
