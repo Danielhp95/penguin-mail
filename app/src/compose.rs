@@ -57,6 +57,17 @@ pub struct Identity {
     pub signature: String,
     /// The account's default, used when nothing else points at an address.
     pub default: bool,
+    /// The account makes masked addresses, so the composer offers one.
+    pub masks: bool,
+}
+
+/// The identity a message goes out as: `identity`, from the masked
+/// address made for this message when there is one.
+pub fn sender_with_mask(identity: &Identity, masked: Option<&Address>) -> Identity {
+    match masked {
+        Some(address) => Identity { address: address.clone(), ..identity.clone() },
+        None => identity.clone(),
+    }
 }
 
 /// The address a reply to `original` comes from: whichever of `mine` the
@@ -75,6 +86,29 @@ pub fn reply_from<'a>(mine: &'a [Address], original: &MessageMeta) -> Option<&'a
                 .as_ref()
                 .and_then(|from| mine.iter().find(|a| same_address(a, from)))
         })
+}
+
+/// The site a masked address is made for: the first recipient's domain,
+/// since a person writes to the site they sign up with. Empty when no
+/// recipient is a whole address yet.
+pub fn masked_site(to: &[Address]) -> String {
+    to.iter()
+        .filter(|a| is_address(&a.email))
+        .find_map(|a| a.email.rsplit_once('@'))
+        .map(|(_, domain)| domain.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// The masked address a saved draft goes out from, so reopening it does
+/// not put the account's own address back in its place: the draft's
+/// sender, when the chosen identity's account makes masked addresses and
+/// the sender is none of the addresses the From row lists.
+pub fn kept_mask(identities: &[Identity], chosen: &Identity, from: &Address) -> Option<Address> {
+    let listed = identities.iter().any(|i| {
+        i.address.email.eq_ignore_ascii_case(&from.email)
+            || i.suffixes.suffix(&i.address.email, &from.email).is_some()
+    });
+    (chosen.masks && is_address(&from.email) && !listed).then(|| from.clone())
 }
 
 /// Which row the From dropdown starts on. The draft's own address wins,
@@ -1724,7 +1758,59 @@ mod tests {
             address: addr(None, email),
             signature: signature.to_string(),
             default,
+            masks: false,
         }
+    }
+
+    #[test]
+    fn the_site_is_the_first_recipients_domain() {
+        let to = [addr(None, "hello@Allotment-Supplies.example"), addr(None, "x@other.example")];
+        assert_eq!(masked_site(&to), "allotment-supplies.example");
+    }
+
+    #[test]
+    fn no_recipient_gives_no_site() {
+        assert_eq!(masked_site(&[addr(None, "half typed")]), "");
+    }
+
+    #[test]
+    fn a_draft_from_a_masked_address_keeps_it() {
+        let mut fastmail = identity(1, "dana@fastmail.example", "", true);
+        fastmail.masks = true;
+        let from = addr(Some("Dana"), "tern.quill@fastmail.example");
+        let kept = kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from);
+        assert_eq!(kept.map(|a| a.email), Some("tern.quill@fastmail.example".to_string()));
+    }
+
+    #[test]
+    fn a_draft_from_one_of_the_accounts_addresses_has_no_mask() {
+        let mut fastmail = identity(1, "dana@fastmail.example", "", true);
+        fastmail.masks = true;
+        let mut alias = identity(1, "dana@home.example", "", false);
+        alias.masks = true;
+        // The From row opened on the alias, the address this account last
+        // sent from, while the new draft still names the account's own.
+        let from = addr(None, "Dana@Fastmail.example");
+        assert_eq!(kept_mask(&[fastmail, alias.clone()], &alias, &from), None);
+    }
+
+    #[test]
+    fn an_account_without_masks_keeps_no_mask() {
+        let plain = identity(1, "dana@example.com", "", true);
+        let from = addr(None, "someone.else@example.com");
+        assert_eq!(kept_mask(std::slice::from_ref(&plain), &plain, &from), None);
+    }
+
+    #[test]
+    fn a_masked_address_becomes_the_sender() {
+        let mut identity = identity(1, "me@fastmail.com", "", true);
+        identity.masks = true;
+        let masked = Address { name: Some("Me".into()), email: "kite.fern@fastmail.com".into() };
+        let sending = sender_with_mask(&identity, Some(&masked));
+        assert_eq!(sending.address.email, "kite.fern@fastmail.com");
+        assert_eq!(sending.account_id, 1);
+        let plain = sender_with_mask(&identity, None);
+        assert_eq!(plain.address.email, "me@fastmail.com");
     }
 
     #[test]

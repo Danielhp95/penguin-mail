@@ -557,6 +557,10 @@ impl App {
                         email: sender.email.clone(),
                     },
                     default: sender.default,
+                    masks: self
+                        .core
+                        .account(account.id)
+                        .is_some_and(|sync| sync.services().offers().masked_email),
                 });
             }
         }

@@ -252,7 +252,7 @@ row.account-heading:hover .account-options,
 .composer-field text:hover,
 .composer-field text:focus,
 .composer-field flowboxchild:hover,
-.composer-field > .composer-from > button {
+.composer-field .composer-from > button {
   background: none;
   box-shadow: none;
   border: none;
@@ -261,12 +261,15 @@ row.account-heading:hover .account-options,
   padding-left: 0;
   padding-right: 0;
 }
-.composer-field > .composer-from > button {
+.composer-field .composer-from > button {
   padding-top: 0;
   padding-bottom: 0;
   min-height: 1.9em;
 }
-.composer-field > .composer-from > button > box > label { padding-left: 0; }
+.composer-field .composer-from > button > box > label { padding-left: 0; }
+/* The chosen sender reads as field text, as the To and Subject rows do,
+   not as a button label. */
+.composer-field .composer-from > button label { font-weight: 400; }
 /* Taking the frame off took the focus ring with it. The colour on the
    label is the only other sign of where the cursor is, and a colour is no
    sign at all to someone who cannot tell it apart, so the row holding the
@@ -287,6 +290,26 @@ row.account-heading:hover .account-options,
 .composer-from-heading { padding: 6px 10px 2px; font-size: 0.82em; font-weight: 700; }
 .composer-body { font-size: 1.04em; line-height: 1.5; }
 .cc-toggle { font-size: 0.85em; opacity: 0.7; padding: 2px 8px; min-height: 24px; margin-top: 0.1em; }
+/* Under the From row: the address a suffix or a masked address sends
+   from, at 12.5px, and the "Masked" chip beside it, a 24 px capsule of
+   12px bold accent text on a 7 % accent tint (the jmap-34 composer-masked
+   mockup). The chip says the dropdown no longer decides the sender.
+   `text_contrast.rs` checks both. */
+.sender-preview { font-size: 0.85em; opacity: 0.75; }
+.app-dark .sender-preview { opacity: 0.64; }
+.masked-chip {
+  font-size: 0.82em;
+  font-weight: 700;
+  min-height: 24px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background-color: alpha(var(--accent-bg-color), 0.07);
+  color: oklab(from var(--accent-bg-color) min(l, 0.5) calc(a * min(1, 0.5 / l)) calc(b * min(1, 0.5 / l)));
+}
+.app-dark .masked-chip {
+  background-color: alpha(var(--accent-bg-color), 0.07);
+  color: oklab(from var(--accent-bg-color) max(l, 0.75) a b);
+}
 
 /* Recipients, as chips with the address under the pointer. */
 .recipient-chip {
