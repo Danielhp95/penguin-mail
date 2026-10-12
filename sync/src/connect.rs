@@ -541,6 +541,11 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
     {
         services = services.with_contacts(AnyContacts::Jmap(adapter));
     }
+    if saved.offers(mailrs_jmap::CALENDARS)
+        && let AnyMail::Jmap(adapter) = services.mail.clone()
+    {
+        services = services.with_calendar(AnyCalendar::Jmap(adapter));
+    }
     if saved.offers(mailrs_jmap::SIEVE) {
         let api = Arc::new(crate::JmapSieve::new(Arc::clone(&jmap_api)));
         let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string());
@@ -554,7 +559,7 @@ pub(crate) async fn connect_jmap_within<P: PasswordStore + 'static>(
             let skip = match service.kind {
                 ServiceKind::CardDav => saved.offers(mailrs_jmap::CONTACTS),
                 ServiceKind::Sieve => saved.offers(mailrs_jmap::SIEVE),
-                ServiceKind::CalDav => false,
+                ServiceKind::CalDav => saved.offers(mailrs_jmap::CALENDARS),
             };
             if !skip {
                 services = attach(services, &service, secret, account, account.provider_name());

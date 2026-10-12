@@ -426,6 +426,31 @@ async fn jmap_contacts_win_over_a_found_carddav_server() {
 }
 
 #[tokio::test]
+async fn jmap_calendars_win_over_a_found_caldav_server() {
+    use mailrs_jmap::{CALENDARS, MAIL};
+    use mailrs_store::jmap::JmapAuth;
+    use mailrs_store::services::{FoundService, ServiceKind};
+
+    for (capabilities, jmap) in [(&[MAIL, CALENDARS][..], true), (&[MAIL][..], false)] {
+        let (db, _dir) = store().await;
+        let secrets = Secrets::memory();
+        let account = jmap_signed_in_with(&db, &secrets, session_row(capabilities, JmapAuth::Basic), None).await;
+        let id = account.id;
+        db.write(move |c| {
+            mailrs_store::services::save(c, id, &FoundService { kind: ServiceKind::CalDav, url: "https://dav.example.org/cal/".into(), user_name: "me@example.org".into(), confirmed: true, source: "table".into() })
+        })
+        .await
+        .unwrap();
+        let services = crate::connect_jmap(&db, Arc::clone(&secrets.jmap), Arc::clone(&secrets.passwords), &account, 30).await.unwrap();
+        if jmap {
+            assert!(matches!(services.calendar, Some(crate::AnyCalendar::Jmap(_))), "JMAP Calendars, and CalDAV left alone");
+        } else {
+            assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "no JMAP Calendars, so CalDAV");
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_token_account_reaches_dav_only_with_its_app_password() {
     use mailrs_jmap::MAIL;
     use mailrs_store::jmap::JmapAuth;
