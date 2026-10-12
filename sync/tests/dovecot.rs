@@ -16,7 +16,8 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_imap::{ImapClient, Login, SmtpClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, EngineConfig, ImapSettings, SyncEngine,
+    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, EngineConfig, ImapSettings, MailBackend,
+    SyncEngine,
     TriageAction,
 };
 use mailrs_testmail::{Certs, Dovecot, Mailpit, Profile, Submission};
@@ -391,6 +392,7 @@ impl<'a> Run<'a> {
         self.a_send_reaches_the_sink_and_sent().await;
         self.search_finds_mail_past_the_window().await;
         self.a_new_uidvalidity_keeps_ids_and_bodies().await;
+        self.storage_comes_from_the_quota_root().await;
         self.idle_brings_new_mail().await;
     }
 
@@ -857,6 +859,18 @@ impl<'a> Run<'a> {
             self.where_server_has("INBOX", "late").await,
             "the ref names the new UIDVALIDITY"
         );
+    }
+
+    async fn storage_comes_from_the_quota_root(&self) {
+        let storage = self.sync.services().mail.storage().await.expect("a storage answer");
+        match self.profile {
+            Profile::Full | Profile::Sieve => {
+                let storage = storage.expect("Dovecot reports the 1 GiB quota");
+                assert_eq!(storage.limit, 1 << 30, "{:?}", self.profile);
+                assert!(storage.used > 0, "the seeded mail counts");
+            }
+            _ => assert_eq!(storage, None, "{:?} lists no QUOTA", self.profile),
+        }
     }
 
     async fn idle_brings_new_mail(self) {

@@ -18,7 +18,7 @@ use crate::connection::Conn;
 use crate::guard::PAST_BUDGET;
 use crate::{
     AppendUid, BodyStructure, Capabilities, CopyUid, Fetched, FlagsOf, ImapError, Listed, Login,
-    Selected, Since, UidSet, Woke,
+    QuotaUse, Selected, Since, UidSet, Woke,
 };
 
 /// The longest a connection stays in IDLE before the client ends it and
@@ -184,6 +184,11 @@ impl<D: Dial> ImapClient<D> {
         let capabilities = lease.worker.conn.capabilities;
         self.checkin(lease, &Ok::<(), ImapError>(()));
         Ok(capabilities)
+    }
+
+    /// The quota roots `mailbox` falls under (RFC 9208).
+    pub async fn quota_root(&self, mailbox: &str) -> Result<Vec<QuotaUse>, ImapError> {
+        on_worker!(self, conn => conn.quota_root(mailbox))
     }
 
     /// The whole mailbox's unread message count, without selecting it.

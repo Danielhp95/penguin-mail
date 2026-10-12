@@ -239,6 +239,7 @@ either_client! {
     now {}
     later {
         fn unread(mailbox: &str) -> Result<u32, ImapError>;
+        fn quota_root(mailbox: &str) -> Imapped<Vec<mailrs_imap::QuotaUse>>;
         fn capabilities() -> Imapped<Capabilities>;
         fn list() -> Imapped<Vec<Listed>>;
         fn select(mailbox: &str, since: Option<Since>) -> Imapped<Selected>;

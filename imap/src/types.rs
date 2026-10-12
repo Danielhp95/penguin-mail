@@ -24,6 +24,8 @@ pub struct Capabilities {
     pub uidplus: bool,
     /// SPECIAL-USE (RFC 6154): LIST marks Sent, Drafts, Trash and the rest.
     pub special_use: bool,
+    /// QUOTA (RFC 9208, RFC 2087): GETQUOTAROOT says how full the account is.
+    pub quota: bool,
 }
 
 impl Capabilities {
@@ -36,6 +38,7 @@ impl Capabilities {
             moves: true,
             uidplus: true,
             special_use: true,
+            quota: true,
         }
     }
 
@@ -54,6 +57,8 @@ impl Capabilities {
                 "MOVE" => caps.moves = true,
                 "UIDPLUS" => caps.uidplus = true,
                 "SPECIAL-USE" => caps.special_use = true,
+                "QUOTA" => caps.quota = true,
+                atom if atom.starts_with("QUOTA=") => caps.quota = true,
                 _ => {}
             }
         }
@@ -71,6 +76,17 @@ pub enum SpecialUse {
     Junk,
     Sent,
     Trash,
+}
+
+/// One resource of one quota root (RFC 9208): `STORAGE` counts KiB,
+/// `MESSAGE` counts messages.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuotaUse {
+    pub root: String,
+    /// Upper case, as RFC 9208 names it.
+    pub resource: String,
+    pub usage: u64,
+    pub limit: u64,
 }
 
 /// One mailbox from LIST.
@@ -371,6 +387,13 @@ Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n";
         let caps = Capabilities::from_atoms(["IMAP4rev1", "idle", "Move", "UIDPLUS", "AUTH=PLAIN"]);
         assert!(caps.idle && caps.moves && caps.uidplus);
         assert!(!caps.condstore && !caps.qresync && !caps.special_use);
+    }
+
+    #[test]
+    fn quota_is_read_from_its_atom_or_its_resources() {
+        assert!(Capabilities::from_atoms(["IMAP4rev1", "QUOTA"]).quota);
+        assert!(Capabilities::from_atoms(["quota=res-storage"]).quota);
+        assert!(!Capabilities::from_atoms(["IMAP4rev1", "IDLE"]).quota);
     }
 
     #[test]

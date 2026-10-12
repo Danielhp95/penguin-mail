@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use mailrs_imap::{
+use mailrs_imap::{QuotaUse, 
     AppendUid, BodyStructure, Capabilities, CopyUid, Fetched, FlagsOf, ImapClient, ImapError,
     Listed, Selected, Since, SmtpClient, UidSet, Woke,
 };
@@ -20,6 +20,10 @@ pub trait ImapApi: Send + Sync + 'static {
 
     /// Counts unread messages without downloading or selecting the mailbox.
     fn unread(&self, mailbox: &str) -> impl Future<Output = Result<u32, ImapError>> + Send;
+
+    /// The quota roots `mailbox` falls under, each resource with its use
+    /// and limit. Only asked of a server that lists QUOTA.
+    fn quota_root(&self, mailbox: &str) -> impl Future<Output = Result<Vec<QuotaUse>, ImapError>> + Send;
 
     /// Selects `mailbox` (with QRESYNC parameters when given) and reports its state and, under QRESYNC, what changed.
     /// Without QRESYNC, or when `since` names another UIDVALIDITY, `since`
@@ -147,6 +151,10 @@ pub trait Submit: Send + Sync + 'static {
 }
 
 impl ImapApi for ImapClient {
+    async fn quota_root(&self, mailbox: &str) -> Result<Vec<QuotaUse>, ImapError> {
+        ImapClient::quota_root(self, mailbox).await
+    }
+
     async fn unread(&self, mailbox: &str) -> Result<u32, ImapError> {
         self.unread(mailbox).await
     }
