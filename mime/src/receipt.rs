@@ -10,12 +10,42 @@ use crate::parts::Part;
 const MAX_REPORT_BYTES: usize = 16 * 1024;
 const MAX_REPORT_LINES: usize = 64;
 
-/// The address `Disposition-Notification-To` names, in lower case.
+/// The address `Disposition-Notification-To` names, in lower case. The
+/// header holds one mailbox (RFC 8098); anything else, or an address that
+/// is not one plain `local@domain`, asks for nothing.
 pub(crate) fn asked_at(header: Option<&str>) -> Option<String> {
-    crate::address::parse_address_list(header?)
-        .into_iter()
-        .map(|a| a.email.trim().to_ascii_lowercase())
-        .find(|email| email.contains('@'))
+    let header = header?;
+    // The address parser keeps the last `<...>` of a header, so a second
+    // angle pair would pass as if it were the only one.
+    if header.matches('<').count() > 1 {
+        return None;
+    }
+    let mut list = crate::address::parse_address_list(header);
+    if list.len() != 1 {
+        return None;
+    }
+    let email = list.remove(0).email.trim().to_ascii_lowercase();
+    let plain = email.matches('@').count() == 1
+        && !email.starts_with('@')
+        && !email.ends_with('@')
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control() || ";<>,\"".contains(c));
+    plain.then_some(email)
+}
+
+/// The fields of a report, each continuation line (one that starts with
+/// white space) joined to the field before it.
+fn unfolded(text: &str) -> impl Iterator<Item = String> + '_ {
+    let mut lines = text.lines().peekable();
+    std::iter::from_fn(move || {
+        let mut field = lines.next()?.to_string();
+        while let Some(next) = lines.next_if(|l| l.starts_with([' ', '\t'])) {
+            if field.len() < MAX_REPORT_BYTES {
+                field.push(' ');
+                field.push_str(next.trim());
+            }
+        }
+        Some(field)
+    })
 }
 
 /// The receipt `root` is, when it is a `multipart/report` with a
@@ -29,7 +59,7 @@ pub(crate) fn report(root: &Part) -> Option<ReadReport> {
     let data = part.data.as_deref()?;
     let text = String::from_utf8_lossy(&data[..data.len().min(MAX_REPORT_BYTES)]);
     let (mut final_recipient, mut original_recipient, mut displayed) = (None, None, None);
-    for line in text.lines().take(MAX_REPORT_LINES) {
+    for line in unfolded(&text).take(MAX_REPORT_LINES) {
         let Some((name, value)) = line.split_once(':') else {
             continue;
         };
@@ -54,6 +84,7 @@ pub(crate) fn report(root: &Part) -> Option<ReadReport> {
 
 #[cfg(test)]
 mod tests {
+    use super::asked_at;
     use mailrs_domain::ReadReport;
 
     const ASKS: &[u8] = b"From: Ines Duarte <ines@allotment.example>\r\nTo: dana@fastmail.example\r\n\
@@ -95,11 +126,93 @@ Original-Message-ID: <rota@fastmail.example>\r\nDisposition: manual-action/MDN-s
         assert_eq!(crate::read(ASKS).read_report, None);
     }
 
+    fn asking(value: &str) -> Option<String> {
+        let raw = format!("Subject: s\r\nDisposition-Notification-To: {value}\r\n\r\nhi\r\n");
+        crate::read(raw.as_bytes()).receipt_to
+    }
+
     #[test]
-    fn a_hostile_report_does_not_panic() {
-        let mut junk = report("displayed");
-        junk.extend(std::iter::repeat_n(b':', 100_000));
-        let _ = crate::read(&junk);
+    fn a_header_that_is_not_one_plain_address_asks_nothing() {
+        for bad in [
+            "a@x.example;b@y.example",
+            "a@x.example b@y.example",
+            "<a@x.example> <b@y.example>",
+            "a@@x.example",
+            "\"a@x.example\"",
+            "Ines <a@x.example>>",
+        ] {
+            assert_eq!(asking(bad), None, "{bad}");
+        }
+        assert_eq!(asking("Ines <a@x.example>").as_deref(), Some("a@x.example"));
+        assert_eq!(asking("a@x.example").as_deref(), Some("a@x.example"));
+    }
+
+    #[test]
+    fn an_address_with_a_control_character_asks_nothing() {
+        assert_eq!(asked_at(Some("Ines <a@x.example\r\nBcc: z@y.example>")), None);
+        assert_eq!(asked_at(Some("a\u{7}@x.example")), None);
+    }
+
+    #[test]
+    fn a_header_naming_several_mailboxes_asks_nothing() {
+        assert_eq!(asking("a@x.example, b@y.example"), None);
+        assert_eq!(asking("Ines <a@x.example>, Tomas <b@y.example>"), None);
+    }
+
+    fn report_with(fields: &str) -> Vec<u8> {
+        format!(
+            "From: t@allotment.example\r\nSubject: Read\r\nMIME-Version: 1.0\r\n\
+Content-Type: multipart/report; report-type=disposition-notification; boundary=\"b\"\r\n\r\n\
+--b\r\nContent-Type: message/disposition-notification\r\n\r\n{fields}--b--\r\n"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn a_folded_final_recipient_is_read_whole() {
+        let body = crate::read(&report_with(
+            "Final-Recipient: rfc822;\r\n tomas@allotment.example\r\nOriginal-Recipient: rfc822; other@allotment.example\r\nDisposition: manual-action/MDN-sent-manually; displayed\r\n",
+        ));
+        assert_eq!(body.read_report.map(|r| r.by).as_deref(), Some("tomas@allotment.example"));
+    }
+
+    #[test]
+    fn an_empty_final_recipient_falls_back_to_the_original() {
+        let body = crate::read(&report_with(
+            "Final-Recipient: rfc822;\r\nOriginal-Recipient: rfc822; other@allotment.example\r\nDisposition: manual-action/MDN-sent-manually; displayed\r\n",
+        ));
+        assert_eq!(body.read_report.map(|r| r.by).as_deref(), Some("other@allotment.example"));
+    }
+
+    #[test]
+    fn junk_inside_the_report_does_not_panic_or_hide_an_early_disposition() {
+        let mut fields = String::from(
+            "Final-Recipient: rfc822; tomas@allotment.example\r\nDisposition: manual-action/MDN-sent-manually; displayed\r\n",
+        );
+        fields.push_str(&":".repeat(100_000));
+        fields.push_str("\r\n");
+        let body = crate::read(&report_with(&fields));
+        assert_eq!(body.read_report.map(|r| r.displayed), Some(true));
+    }
+
+    #[test]
+    fn a_disposition_past_the_line_cap_is_not_read() {
+        let mut fields = String::from("Final-Recipient: rfc822; tomas@allotment.example\r\n");
+        fields.push_str(&"X-Pad: 1\r\n".repeat(100));
+        fields.push_str("Disposition: manual-action/MDN-sent-manually; displayed\r\n");
+        assert_eq!(crate::read(&report_with(&fields)).read_report, None);
+    }
+
+    #[test]
+    fn a_disposition_past_the_byte_cap_is_not_read() {
+        let mut fields = String::from("X-Pad: ");
+        fields.push_str(&"p".repeat(20 * 1024));
+        fields.push_str("\r\nFinal-Recipient: rfc822; tomas@allotment.example\r\nDisposition: x/y; displayed\r\n");
+        assert_eq!(crate::read(&report_with(&fields)).read_report, None);
+    }
+
+    #[test]
+    fn a_hostile_address_header_does_not_panic() {
         let _ = crate::read(b"Disposition-Notification-To: <<<;;;,,,\r\n\r\n");
     }
 }
