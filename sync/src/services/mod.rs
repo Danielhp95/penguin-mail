@@ -33,7 +33,7 @@ pub use clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySiev
 pub use local::LocalRules;
 pub use google::{Google, ID_PAGE_SIZE, LIST_PAGE_SIZE, is_workspace};
 pub use imap::{Imap, ImapApi, ImapSettings, Submit};
-pub use jmap::{Jmap, JmapApi, JmapSettings};
+pub use jmap::{Jmap, JmapApi, JmapSettings, JmapSieve};
 pub use microsoft::{GraphApi, Microsoft, MicrosoftSettings};
 pub use pop3::{Pop3, Pop3Settings};
 pub use pacing::{Priority, background, priority};

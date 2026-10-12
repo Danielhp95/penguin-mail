@@ -20,7 +20,7 @@ use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnyS
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    Held, IdentityService, Imap, Jmap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
+    Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
     Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, Settled, SieveRules, Storage, SyncState, Unapplied,
     Unheld, Want, Withheld,
 };
@@ -47,6 +47,7 @@ macro_rules! forward_rules {
             AnyRules::Google(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Microsoft(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Sieve(adapter) => adapter.$method($($arg),*).await,
+            AnyRules::JmapSieve(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Local(adapter) => adapter.$method($($arg),*).await,
         }
     };
@@ -131,6 +132,7 @@ pub enum AnyRules {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Sieve(SieveRules<AnySieve>),
+    JmapSieve(SieveRules<JmapSieve<AnyJmap>>),
     Local(LocalRules),
 }
 
@@ -551,6 +553,7 @@ impl RulesService for AnyRules {
     fn queues_offline(&self) -> bool {
         match self {
             AnyRules::Sieve(adapter) => adapter.queues_offline(),
+            AnyRules::JmapSieve(adapter) => adapter.queues_offline(),
             _ => false,
         }
     }
@@ -570,6 +573,7 @@ impl AnyRules {
     pub async fn listing(&self) -> Result<(Vec<Filter>, Vec<String>), BackendError> {
         match self {
             AnyRules::Sieve(adapter) => adapter.listing().await,
+            AnyRules::JmapSieve(adapter) => adapter.listing().await,
             other => Ok((other.filters().await?, Vec::new())),
         }
     }
