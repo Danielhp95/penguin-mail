@@ -17,6 +17,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - A JMAP account brings its contacts and rules from its server. Its calendar comes from JMAP when the server offers JMAP Calendars, as Stalwart and Cyrus do, with no separate calendar password; otherwise from CalDAV, and Fastmail's calendar takes an app password beside the API token.
 - Send Later on a JMAP server that can hold mail, such as Fastmail, leaves the message with the server, which sends it at its hour even with Penguin Mail closed. Going back to an older Penguin Mail while a message waits on the server can send it twice.
 - Make, turn off and delete Fastmail masked addresses from Hide My Email.
+- Switch an IMAP account to JMAP from its menu when its server speaks both, keeping its reminders, flags, rules and drafts.
 
 ## 1.0.7 (2026-10-10)
 

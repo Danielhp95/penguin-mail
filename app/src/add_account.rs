@@ -1488,7 +1488,7 @@ pub fn jmap_at(index: u32) -> bool {
     index == JMAP_INDEX
 }
 
-fn host_of(url: &str) -> String {
+pub(crate) fn host_of(url: &str) -> String {
     url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))

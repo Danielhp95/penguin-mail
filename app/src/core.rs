@@ -3,7 +3,7 @@
 //! UI hands futures to `Core::call` and awaits the result on the main loop.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -130,6 +130,11 @@ pub struct Core {
     /// account, read from the store at startup and kept by each search, so
     /// Preferences words its Not Available lines without waiting.
     misses: RefCell<HashMap<(AccountId, ServiceKind), Miss>>,
+    /// The IMAP accounts whose server also speaks JMAP, with the session
+    /// to sign in to, as `look_for_jmap` found them.
+    switch_offers: RefCell<HashMap<AccountId, JmapFound>>,
+    /// The accounts `look_for_jmap` has looked at this run, found or not.
+    switch_looked: RefCell<HashSet<AccountId>>,
     /// Where each kind of account keeps what signs it in: the keyring, or
     /// memory in the demo, which never touches the person's keyring.
     secrets: Secrets,
@@ -298,6 +303,8 @@ impl Core {
             smime: Smime::find().ok(),
             verdicts: RefCell::default(),
             misses: RefCell::new(misses),
+            switch_offers: RefCell::default(),
+            switch_looked: RefCell::default(),
             secrets: match demo {
                 true => Secrets::memory(),
                 false => Secrets::keyring(),
@@ -1151,6 +1158,117 @@ impl Core {
     }
 }
 
+/// The table's JMAP session for an IMAP account whose provider it names,
+/// with no network at all.
+fn table_offer(account: &Account) -> Option<JmapFound> {
+    if account.provider != Provider::Imap {
+        return None;
+    }
+    let name = mailrs_discover::resolved_provider_name(account.provider_name());
+    let provider = mailrs_discover::jmap_named(&name)?;
+    let session_url = mailrs_discover::jmap_session_named(&name)?;
+    Some(JmapFound { session_url, source: mailrs_discover::Source::Table, confirm: false, provider: Some(provider) })
+}
+
+impl Core {
+    /// The IMAP accounts whose server also speaks JMAP, as far as the
+    /// looks so far found.
+    pub fn switchable(&self) -> HashSet<AccountId> {
+        self.switch_offers.borrow().keys().copied().collect()
+    }
+
+    /// The JMAP session `account` can switch to: the one a look found, or
+    /// the table's before the look has run.
+    pub fn offer_of(&self, account: &Account) -> Option<JmapFound> {
+        self.switch_offers.borrow().get(&account.id).cloned().or_else(|| table_offer(account))
+    }
+
+    /// Looks once a run for a JMAP session for each IMAP account: the
+    /// table first, then discovery on the address's domain. Answers
+    /// whether it found a new one. The demo asks nobody. A session outside
+    /// the address's domain that the table does not name is no offer: the
+    /// switch dialog has no place to ask whether the person trusts it.
+    pub async fn look_for_jmap(&self, accounts: Vec<Account>) -> bool {
+        let fresh: Vec<Account> = accounts
+            .into_iter()
+            .filter(|a| a.provider == Provider::Imap && self.switch_looked.borrow_mut().insert(a.id))
+            .collect();
+        let mut found_any = false;
+        for account in fresh {
+            let found = match table_offer(&account) {
+                Some(found) => Some(found),
+                None if self.demo => None,
+                None => {
+                    let email = account.email.clone();
+                    self.call(async move {
+                        let net = RealNet::new()?;
+                        Ok::<_, anyhow::Error>(mailrs_discover::find_jmap(&net, &email).await)
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                    .filter(|found| !found.confirm)
+                }
+            };
+            if let Some(found) = found {
+                self.switch_offers.borrow_mut().insert(account.id, found);
+                found_any = true;
+            }
+        }
+        found_any
+    }
+
+    /// Switches `account` to JMAP. Its outgoing mail waits and its loop
+    /// stops while the switch runs; afterwards the account starts again on
+    /// whatever the store names, JMAP or still IMAP, whether or not the
+    /// switch went through.
+    pub async fn switch_to_jmap(&self, account: Account, to: mailrs_sync::switch::SwitchTo) -> Result<mailrs_sync::switch::Switched> {
+        let engine = self.engine.current().ok_or_else(|| anyhow!("sync is not running"))?;
+        let (db, secrets, outbox, demo) = (self.db.clone(), self.secrets.clone(), Arc::clone(&self.outbox), self.demo);
+        let reach = Reach { connector: self.connector(), demo: self.demo_mail.clone() };
+        let switched = self
+            .call(async move {
+                let id = account.id;
+                // A send already under way finishes first; anything due
+                // later waits for the account the switch leaves.
+                let _held = outbox.hold(id).await;
+                engine.stop_account(id);
+                let switched = match demo {
+                    true => Err(anyhow!(gettext("The demo cannot switch accounts."))),
+                    false => mailrs_sync::switch::to_jmap(&db, &secrets, &account, to).await.map_err(anyhow::Error::from),
+                };
+                let now = match &switched {
+                    Ok(switched) => Some(switched.account.clone()),
+                    Err(_) => db.read(move |c| accounts::account(c, id)).await.ok().flatten(),
+                };
+                if let Err(err) = start_again(&reach, &engine, &db, &now.unwrap_or(account)).await {
+                    tracing::warn!(account = id, error = %err, "could not start the account again after the switch");
+                }
+                switched
+            })
+            .await?;
+        let id = switched.account.id;
+        self.switch_offers.borrow_mut().remove(&id);
+        // Undo would reverse an action through the IMAP ids the switch
+        // replaced.
+        self.actions.forget_account(id);
+        Ok(switched)
+    }
+}
+
+/// Starts `account`'s loop on the services the store names for it now,
+/// or marks it as needing a sign-in when nothing signs it in.
+async fn start_again(reach: &Reach, engine: &SyncEngine, db: &Db, account: &Account) -> Result<()> {
+    match reach.connect(account).await? {
+        Connected::Ready(services) => engine.start_account(account.id, services),
+        Connected::NeedsSignIn => {
+            let id = account.id;
+            db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth)).await?;
+        }
+    }
+    Ok(())
+}
+
 /// What a search for an IMAP or POP3 account's other servers found in use.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ServicesFound {
@@ -1536,5 +1654,56 @@ mod tests {
             core.engine.current().expect("an engine is running").window_open(),
             "the new engine keeps the window open"
         );
+    }
+
+    #[test]
+    fn fastmail_is_switchable_from_the_table_alone() {
+        let account = mailrs_domain::Account {
+            id: 1,
+            email: "me@fastmail.com".into(),
+            state: mailrs_domain::AccountState::Ok,
+            provider: mailrs_domain::Provider::Imap,
+            provider_name: Some("Fastmail".into()),
+        };
+        let found = super::table_offer(&account).expect("the table names Fastmail's session");
+        assert_eq!(found.session_url, "https://api.fastmail.com/jmap/session");
+        let gmail = mailrs_domain::Account { provider: mailrs_domain::Provider::Gmail, ..account };
+        assert!(super::table_offer(&gmail).is_none(), "only an IMAP account switches");
+    }
+
+    /// The demo's Fastmail account, once its loop runs.
+    fn running_fastmail(core: &Core) -> mailrs_domain::Account {
+        let accounts = core.runtime.block_on(core.db.read(mailrs_store::accounts::list_accounts)).expect("the demo lists its accounts");
+        let fastmail = accounts.into_iter().find(|a| a.email == "dana@fastmail.example").expect("the demo has a Fastmail account");
+        for _ in 0..200 {
+            if core.engine.current().is_some_and(|e| e.account(fastmail.id).is_ok()) {
+                return fastmail;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("the Fastmail account never started");
+    }
+
+    #[test]
+    fn a_failed_switch_leaves_the_account_running_as_imap() {
+        let _demo = DEMO.lock().unwrap_or_else(PoisonError::into_inner);
+        let core = Core::open(true).expect("the demo core opens");
+        let fastmail = running_fastmail(&core);
+        let before = core.engine.current().and_then(|e| e.account(fastmail.id).ok()).expect("it runs");
+        let to = mailrs_sync::switch::SwitchTo {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            token: true,
+            user: fastmail.email.clone(),
+            secret: "not a token".into(),
+        };
+
+        let switched = futures::executor::block_on(core.switch_to_jmap(fastmail.clone(), to));
+
+        assert!(switched.is_err(), "the demo switches nothing");
+        let after = core.engine.current().and_then(|e| e.account(fastmail.id).ok()).expect("it runs again");
+        assert!(!Arc::ptr_eq(&before, &after), "the switch stopped it and started it again");
+        let id = fastmail.id;
+        let stored = core.runtime.block_on(core.db.read(move |c| mailrs_store::accounts::account(c, id))).unwrap().unwrap();
+        assert_eq!(stored.provider, mailrs_domain::Provider::Imap);
     }
 }

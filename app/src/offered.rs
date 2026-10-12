@@ -1,11 +1,11 @@
 //! What the window and the assistant offer for each account, read from
 //! the account's services, and the words for what an account lacks.
 
-use mailrs_domain::translate::{fill, gettext};
+use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
 use mailrs_domain::{Account, AccountId, Category, Provider, RemoveSetting};
 use mailrs_store::pop3::{FailReason, Failing};
 use mailrs_store::services::Miss;
-use mailrs_sync::{AccountServices, Mailbox, Missing, Offers, Withheld};
+use mailrs_sync::{AccountServices, BackendError, Mailbox, Missing, Offers, SyncError, Withheld};
 
 /// What an account offers. An account that is not running yet has no
 /// services to ask, and the window assumes it offers everything until it
@@ -634,6 +634,133 @@ pub fn reads_send_as(account: &Account) -> bool {
     matches!(account.provider, Provider::Gmail | Provider::Jmap)
 }
 
+/// One row of the Switch to JMAP dialog: an icon, what it is, and a line
+/// on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchRow {
+    pub icon: &'static str,
+    pub title: String,
+    pub subtitle: String,
+}
+
+/// What Switch to JMAP changes and what it keeps, as the dialog's rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchRows {
+    pub changes: Vec<SwitchRow>,
+    pub stays: Vec<SwitchRow>,
+}
+
+fn switch_row(icon: &'static str, title: String, subtitle: String) -> SwitchRow {
+    SwitchRow { icon, title, subtitle }
+}
+
+/// The dialog's rows for `account`. `calendar_stays` adds the line about
+/// the app password its calendars keep signing in with, for a provider
+/// whose JMAP takes a token while CalDAV takes that password.
+pub fn switch_rows(account: &Account, calendar_stays: bool) -> SwitchRows {
+    let provider = mailrs_discover::resolved_provider_name(account.provider_name());
+    let changes = vec![
+        switch_row(
+            "penguin-mail-inbox-symbolic",
+            gettext("New mail arrives as it is sent"),
+            fill(&gettext("{provider} pushes it over JMAP, and you can send from your aliases."), &[("provider", &provider)]),
+        ),
+        switch_row(
+            "weather-overcast-symbolic",
+            gettext("Mail is matched over JMAP"),
+            gettext("Penguin Mail keeps the mail on this computer and downloads again only the messages it cannot match."),
+        ),
+    ];
+    let mut stays = vec![
+        switch_row(
+            "penguin-mail-person-symbolic",
+            gettext("Name, color and place"),
+            fill(&gettext("{address} keeps its spot in the sidebar."), &[("address", &account.email)]),
+        ),
+        switch_row(
+            "penguin-mail-flag-outline-symbolic",
+            gettext("Your own data"),
+            gettext("Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."),
+        ),
+    ];
+    if calendar_stays {
+        stays.push(switch_row(
+            "penguin-mail-calendar-symbolic",
+            gettext("Calendar sign-in"),
+            gettext("The app password you use for calendars stays as it is."),
+        ));
+    }
+    SwitchRows { changes, stays }
+}
+
+/// What the switch dialog says when the switch did not go through, and
+/// whether it offers Try Again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchFailure {
+    pub line: String,
+    /// The server's mail kept changing while the switch matched it, and
+    /// another try may find it still.
+    pub again: bool,
+}
+
+/// The failure toast's words for `err` from `Core::switch_to_jmap`.
+pub fn switch_failure(err: &anyhow::Error, provider: &str, token: bool) -> SwitchFailure {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::switch::SwitchError;
+    let named = [("provider", provider)];
+    let mut again = false;
+    let reason = match err.downcast_ref::<SwitchError>() {
+        Some(SwitchError::NotImap) => {
+            return SwitchFailure { line: gettext("This account uses JMAP already."), again };
+        }
+        Some(SwitchError::SignIn(JmapError::Unauthorized)) => match token {
+            true => fill(&gettext("{provider} did not accept the token."), &named),
+            false => fill(&gettext("{provider} did not accept the password."), &named),
+        },
+        Some(SwitchError::SignIn(JmapError::BadCredential)) => match token {
+            true => gettext("The token holds a character that cannot be sent."),
+            false => gettext("The password holds a character that cannot be sent."),
+        },
+        Some(SwitchError::SignIn(JmapError::Network(_))) => fill(&gettext("{provider} does not answer."), &named),
+        Some(SwitchError::SignIn(_)) => {
+            fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
+        }
+        Some(SwitchError::Sync(SyncError::Backend(BackendError::Changed))) => {
+            again = true;
+            fill(&gettext("The mail on {provider} kept changing while Penguin Mail matched it."), &named)
+        }
+        _ => {
+            let said = err.to_string();
+            match said.ends_with(['.', '!', '?']) {
+                true => said,
+                false => format!("{said}."),
+            }
+        }
+    };
+    let line = format!(
+        "{} {}",
+        with_reason(&gettext("Could not switch to JMAP: {reason}"), &reason, &[]),
+        gettext("Your IMAP account is unchanged.")
+    );
+    SwitchFailure { line, again }
+}
+
+/// The window's toast once `address` has switched, with the local rules
+/// the switch turned off because the server lacks their folders.
+pub fn switched_line(address: &str, rules_off: usize) -> String {
+    let named = [("address", address)];
+    if rules_off == 0 {
+        return fill(&gettext("{address} now uses JMAP"), &named);
+    }
+    let count = rules_off.to_string();
+    fill_plural(
+        "{address} now uses JMAP. {count} rule is off because its folder is not on the server.",
+        "{address} now uses JMAP. {count} rules are off because their folders are not on the server.",
+        rules_off,
+        &[("address", address), ("count", &count)],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use mailrs_domain::{Account, AccountState, Provider, RemoveSetting};
@@ -789,6 +916,49 @@ mod tests {
             provider: Provider::Imap,
             provider_name: Some("Fastmail".into()),
         }
+    }
+
+    #[test]
+    fn the_switch_says_what_moves_and_what_stays() {
+        let rows = super::switch_rows(&fastmail(), true);
+        let said: Vec<String> = rows.changes.iter().chain(&rows.stays).map(|r| format!("{} {}", r.title, r.subtitle)).collect();
+        let said = said.join("\n");
+        assert!(said.contains("Fastmail"), "{said}");
+        assert!(said.contains("Reminders"), "{said}");
+        assert!(said.contains("dana@fastmail.com"), "{said}");
+    }
+
+    #[test]
+    fn only_a_token_sign_in_names_the_calendar_password_that_stays() {
+        assert_eq!(super::switch_rows(&fastmail(), true).stays.len(), 3);
+        assert_eq!(super::switch_rows(&fastmail(), false).stays.len(), 2);
+    }
+
+    #[test]
+    fn a_refused_token_says_the_imap_account_is_unchanged() {
+        let refused = anyhow::Error::new(mailrs_sync::switch::SwitchError::SignIn(mailrs_jmap::JmapError::Unauthorized));
+        let failed = super::switch_failure(&refused, "Fastmail", true);
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail did not accept the token. Your IMAP account is unchanged."
+        );
+        assert!(!failed.again);
+    }
+
+    #[test]
+    fn mail_that_kept_changing_offers_another_try() {
+        let changed = anyhow::Error::new(mailrs_sync::switch::SwitchError::Sync(mailrs_sync::SyncError::Backend(
+            mailrs_sync::BackendError::Changed,
+        )));
+        let failed = super::switch_failure(&changed, "Fastmail", true);
+        assert!(failed.again);
+        assert!(failed.line.ends_with("Your IMAP account is unchanged."), "{}", failed.line);
+    }
+
+    #[test]
+    fn the_done_toast_counts_the_rules_the_switch_turned_off() {
+        assert_eq!(super::switched_line("dana@fastmail.com", 0), "dana@fastmail.com now uses JMAP");
+        assert!(super::switched_line("dana@fastmail.com", 2).contains("2 rules"));
     }
 
     #[test]

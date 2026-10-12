@@ -100,6 +100,7 @@ app/src/ui/rules.rs
 app/src/ui/sidebar.rs
 app/src/ui/sidebar/sections.rs
 app/src/ui/smart_editor.rs
+app/src/ui/switch_jmap.rs
 app/src/ui/templates.rs
 app/src/ui/thread_list.rs
 app/src/ui/thread_row.rs

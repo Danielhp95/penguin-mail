@@ -821,6 +821,15 @@ impl MainWindow {
                 list_off.set_narrow(false);
             });
             window.add_breakpoint(narrow);
+            // `MAILRS_DEMO_SIZE=WxH` sizes the demo's window for a
+            // screenshot, where no window manager would.
+            if app.core.demo
+                && let Ok(size) = std::env::var("MAILRS_DEMO_SIZE")
+                && let Some((width, height)) = size.split_once('x')
+                && let (Ok(width), Ok(height)) = (width.parse(), height.parse())
+            {
+                window.set_default_size(width, height);
+            }
 
             let actions = gio::SimpleActionGroup::new();
             window.insert_action_group("win", Some(&actions));
@@ -1173,7 +1182,16 @@ impl MainWindow {
             .await
             .map(|ids| ids.into_iter().collect())
             .unwrap_or_default();
-        let (data, extras) = self.arrange(data, &settings, not_downloading);
+        let (data, extras) = self.arrange(data, &settings, not_downloading, self.core.switchable());
+        // Each IMAP account is looked at once a run; finding a JMAP
+        // session for one rebuilds its row with Switch to JMAP.
+        let imap: Vec<Account> = data.iter().map(|(a, _)| a.clone()).collect();
+        let looker = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            if looker.core.look_for_jmap(imap).await {
+                looker.refresh_accounts(Reload::No);
+            }
+        });
         self.list.set_vips(settings.vips.keys().cloned().collect());
         let mailbox = self.shown();
         if !matches!(mailbox, Mailbox::Search { .. }) {
@@ -3054,6 +3072,10 @@ impl MainWindow {
             Box::new(|win, account| win.show_rules(account)),
         );
         with_account(
+            "account-switch-jmap",
+            Box::new(|win, account| win.switch_to_jmap(account)),
+        );
+        with_account(
             "account-not-downloading",
             Box::new(|win, account| win.show_not_downloading(account)),
         );
@@ -3664,6 +3686,44 @@ impl MainWindow {
 
     /// The messages a POP3 account's server would not hand over after
     /// three tries, each with the server's words.
+    /// Opens Switch to JMAP for `account`, when a look found its session.
+    fn switch_to_jmap(self: &Rc<Self>, account: Account) {
+        let Some(found) = self.core.offer_of(&account) else {
+            return;
+        };
+        let win = Rc::clone(self);
+        let present = async move {
+            // The calendar line shows when the account's calendars sign in
+            // with the password the token replaces for mail.
+            let id = account.id;
+            let calendars = win
+                .core
+                .read(move |c| mailrs_store::services::load(c, id))
+                .await
+                .is_ok_and(|found| found.iter().any(|f| f.confirmed && f.kind == mailrs_store::services::ServiceKind::CalDav));
+            let done = Rc::clone(&win);
+            crate::ui::switch_jmap::present(&win.window, Rc::clone(&win.core), account, found, calendars, move |switched| {
+                done.switched_to_jmap(switched);
+            });
+        };
+        glib::spawn_future_local(present);
+    }
+
+    /// Says the switch went through, with a way to the Rules when it
+    /// turned some off, and reads the accounts again.
+    fn switched_to_jmap(self: &Rc<Self>, switched: mailrs_sync::switch::Switched) {
+        let line = crate::offered::switched_line(&switched.account.email, switched.rules_off);
+        let toast = crate::ui::toast(&line);
+        toast.set_timeout(if switched.rules_off > 0 { 10 } else { 4 });
+        if switched.rules_off > 0 {
+            toast.set_button_label(Some(&gettext("Show Rules")));
+            toast.set_action_name(Some("win.account-rules"));
+            toast.set_action_target_value(Some(&switched.account.id.to_variant()));
+        }
+        self.toasts.add_toast(toast);
+        self.refresh_accounts(Reload::Yes);
+    }
+
     fn show_not_downloading(self: &Rc<Self>, account: Account) {
         let win = Rc::clone(self);
         glib::spawn_future_local(async move {

@@ -38,6 +38,7 @@ pub mod rules;
 pub mod search_suggest;
 pub mod sidebar;
 pub mod smart_editor;
+pub mod switch_jmap;
 pub mod templates;
 pub mod texture;
 pub mod thread_list;

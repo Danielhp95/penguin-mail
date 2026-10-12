@@ -3,8 +3,8 @@
 //! assistant from the store; `crate::rules::RulesEngine` runs them.
 
 use mailrs_domain::translate::gettext;
-use mailrs_domain::{AccountId, Filter};
-use mailrs_store::{Db, local_rules};
+use mailrs_domain::{AccountId, Filter, MailSet, RemoteMailbox};
+use mailrs_store::{Db, local_rules, mailboxes};
 
 use super::RulesService;
 use crate::BackendError;
@@ -89,23 +89,26 @@ impl RulesService for LocalRules {
     }
 
     /// The edited rule takes the old one's turn, so a rule that files mail
-    /// still runs before the one that archives it.
+    /// still runs before the one that archives it. Saving turns a rule
+    /// that is off back on, unless a folder it names is still missing
+    /// from the server.
     async fn replace_filter(&self, old_id: &str, new: &Filter) -> Result<Filter, BackendError> {
         let (account_id, old_id) = (self.account_id, old_id.to_string());
-        let made = Filter { id: Some(new_id()), read_only: false, off: false, ..new.clone() };
-        let kept = made.clone();
-        let wrote = self
+        let mut made = Filter { id: Some(new_id()), read_only: false, off: false, ..new.clone() };
+        let (wrote, made) = self
             .db
             .write(move |c| {
                 let held = local_rules::list(c, account_id)?;
-                Ok(match held.iter().find(|f| f.id.as_deref() == Some(old_id.as_str())) {
+                let wrote = match held.iter().find(|f| f.id.as_deref() == Some(old_id.as_str())) {
                     None => Wrote::Missing,
                     Some(f) if f.read_only => Wrote::ReadOnly,
                     Some(_) => {
-                        local_rules::replace(c, account_id, &old_id, &kept)?;
+                        made.off = names_missing_mailbox(&made, &mailboxes::listed(c, account_id)?);
+                        local_rules::replace(c, account_id, &old_id, &made)?;
                         Wrote::Done
                     }
-                })
+                };
+                Ok((wrote, made))
             })
             .await
             .map_err(stored)?;
@@ -115,4 +118,15 @@ impl RulesService for LocalRules {
             Wrote::ReadOnly => Err(read_only()),
         }
     }
+}
+
+/// Whether `filter` files mail into, or out of, a folder the server does
+/// not list.
+fn names_missing_mailbox(filter: &Filter, listed: &[RemoteMailbox]) -> bool {
+    filter
+        .action
+        .add
+        .iter()
+        .chain(&filter.action.remove)
+        .any(|set| matches!(set, MailSet::Mailbox(id) if !listed.iter().any(|m| &m.id == id)))
 }
