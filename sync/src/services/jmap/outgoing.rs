@@ -19,13 +19,24 @@ use crate::services::imap::{envelope_of, without_bcc};
 /// The most drafts one listing names.
 const MOST_DRAFTS: usize = 500;
 
+/// A Message-ID without its angle brackets or the spaces around them, the
+/// form two spellings of one id compare equal in.
+pub(crate) fn bare_message_id(message_id: &str) -> &str {
+    message_id.trim().trim_matches(['<', '>'])
+}
+
+/// The filter condition for messages that carry `message_id`, with or
+/// without its angle brackets.
+pub(crate) fn has_message_id(message_id: &str) -> Value {
+    json!({ "header": ["Message-ID", format!("<{}>", bare_message_id(message_id))] })
+}
+
 /// The filter for the sent copies of the message `message_id`, with or
 /// without its angle brackets, in `within` when given. A draft carries the
 /// same Message-ID, so drafts are left out: taking one for the sent copy
 /// would leave the message unsent and the draft deleted.
 pub(super) fn sent_copies(message_id: &str, within: Option<&str>) -> Value {
-    let wanted = format!("<{}>", message_id.trim().trim_matches(['<', '>']));
-    let mut conditions = vec![json!({ "header": ["Message-ID", wanted] }), json!({ "notKeyword": "$draft" })];
+    let mut conditions = vec![has_message_id(message_id), json!({ "notKeyword": "$draft" })];
     if let Some(mailbox) = within {
         conditions.push(json!({ "inMailbox": mailbox }));
     }

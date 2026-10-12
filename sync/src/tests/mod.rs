@@ -44,6 +44,7 @@ mod senders;
 mod settings;
 mod sieve;
 mod stored_listing;
+mod switch;
 mod structure;
 mod thread_open;
 mod triage;
