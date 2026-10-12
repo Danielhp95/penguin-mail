@@ -502,6 +502,39 @@ impl<A: Accounts> AccountSettings<A> {
             .filter(|text| !text.is_empty()))
     }
 
+    /// The account's masked addresses, newest first.
+    pub async fn masked_addresses(&self, account_id: AccountId) -> Result<Vec<crate::masked::MaskedAddress>, SyncError> {
+        Ok(self.jmap(account_id)?.masked_addresses().await?)
+    }
+
+    /// A new masked address of `account_id` for `site`, with `note` saying
+    /// where it was given out.
+    pub async fn create_masked_address(
+        &self,
+        account_id: AccountId,
+        site: &str,
+        note: &str,
+    ) -> Result<crate::masked::MaskedAddress, SyncError> {
+        Ok(self.jmap(account_id)?.make_masked(site, note).await?)
+    }
+
+    pub async fn set_masked_state(
+        &self,
+        account_id: AccountId,
+        id: &str,
+        state: crate::masked::MaskedState,
+    ) -> Result<(), SyncError> {
+        Ok(self.jmap(account_id)?.set_masked(id, state).await?)
+    }
+
+    /// The account's JMAP adapter, when its session makes masked addresses.
+    fn jmap(&self, account_id: AccountId) -> Result<crate::Jmap<crate::AnyJmap>, SyncError> {
+        match &self.services(account_id)?.mail {
+            crate::AnyMail::Jmap(adapter) if adapter.masked_email() => Ok(adapter.clone()),
+            _ => Err(BackendError::Unsupported.into()),
+        }
+    }
+
     fn sync(&self, account_id: AccountId) -> Result<Arc<AccountSync>, SyncError> {
         self.accounts
             .account(account_id)

@@ -17,6 +17,7 @@ pub mod hidden;
 pub mod invitations;
 pub mod lock;
 pub mod mailbox;
+pub mod masked;
 pub mod newsletters;
 mod one_click;
 mod ops;

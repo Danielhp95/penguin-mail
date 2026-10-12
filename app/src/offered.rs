@@ -144,8 +144,8 @@ pub fn account_actions(offers: &[Offers]) -> [(&'static str, bool); 4] {
 /// `offers`. An account's menu reaches these through its own actions
 /// ([`account_menu_actions`]), which are off where the account lacks what
 /// they open, but the demo's script activates the `win.` action with any
-/// account's id. Hide My Email needs rules and labels
-/// ([`hides_addresses`]).
+/// account's id. Hide My Email needs masked addresses, or rules and
+/// labels ([`hides_addresses`]).
 pub fn account_action_on(name: &str, offers: Offers) -> bool {
     match name {
         "account-rules" => offers.rules,
@@ -159,8 +159,8 @@ pub fn account_action_on(name: &str, offers: Offers) -> bool {
 /// and whether each is on for an account that offers `offers`. A
 /// parameterized `win.` action serves every account, so it cannot be off
 /// for one; these belong to one account's row, so each is off where that
-/// account lacks what it opens. Hide My Email writes a rule for each
-/// address, so it needs rules.
+/// account lacks what it opens. Hide My Email needs masked addresses or
+/// a rule for each address ([`hides_addresses`]).
 pub fn account_menu_actions(offers: Offers) -> [(&'static str, bool); 3] {
     [
         ("vacation", offers.auto_reply),
@@ -169,11 +169,11 @@ pub fn account_menu_actions(offers: Offers) -> [(&'static str, bool); 3] {
     ]
 }
 
-/// Whether Hide My Email works for an account: each hidden address is a
-/// plus address with a rule behind it, and only Gmail keeps both a label
-/// for it and plus addressing everywhere.
+/// Whether Hide My Email works for an account: a server that makes
+/// masked addresses, or a plus address with a rule behind it on an
+/// account that keeps rules and labels.
 pub fn hides_addresses(offers: Offers) -> bool {
-    offers.rules && offers.labels
+    offers.masked_email || (offers.rules && offers.labels)
 }
 
 /// How the accounts on screen file mail: with labels, several at once, or
@@ -910,6 +910,12 @@ mod tests {
             reason(&fastmail(), Missing::AutoReply, None),
             "Fastmail cannot send automatic replies."
         );
+    }
+
+    #[test]
+    fn masked_email_alone_lets_hide_my_email_in() {
+        let masked = Offers { masked_email: true, rules: false, labels: false, ..Offers::EVERYTHING };
+        assert!(hides_addresses(masked));
     }
 
     #[test]

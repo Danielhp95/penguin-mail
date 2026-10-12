@@ -9,6 +9,7 @@ mod fetch;
 mod held;
 mod identities;
 mod mailboxes;
+mod masked;
 mod outgoing;
 mod rules;
 mod search;

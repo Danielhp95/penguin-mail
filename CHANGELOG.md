@@ -16,6 +16,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Add a JMAP account, such as Fastmail with an API token or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent. The addresses and names you set up on the server appear in the From menu, each with its own signature. Contacts kept on the server sync both ways, and so does the automatic reply when the server offers one, such as Stalwart.
 - A JMAP account brings its contacts and rules from its server, and its calendar from CalDAV; Fastmail's calendar takes an app password beside the API token.
 - Send Later on a JMAP server that can hold mail, such as Fastmail, leaves the message with the server, which sends it at its hour even with Penguin Mail closed. Going back to an older Penguin Mail while a message waits on the server can send it twice.
+- Make, turn off and delete Fastmail masked addresses from Hide My Email.
 
 ## 1.0.7 (2026-10-10)
 

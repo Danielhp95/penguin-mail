@@ -402,3 +402,51 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
         self.settle_hold(handle, message_id, send_at).await
     }
 }
+
+fn masked_of(said: mailrs_jmap::MaskedEmail) -> Option<crate::masked::MaskedAddress> {
+    let millis = |at: Option<&str>| at.and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok()).map(|at| at.timestamp_millis());
+    Some(crate::masked::MaskedAddress {
+        state: crate::masked::MaskedState::parse(&said.state)?,
+        created: millis(said.created_at.as_deref()),
+        last_mail: millis(said.last_message_at.as_deref()),
+        id: said.id,
+        email: said.email,
+        site: said.for_domain,
+        note: said.description,
+    })
+}
+
+impl<J: JmapApi> Jmap<J> {
+    /// The session offered Masked Email at sign-in.
+    pub fn masked_email(&self) -> bool {
+        self.settings.capabilities.iter().any(|c| c == mailrs_jmap::MASKED_EMAIL)
+    }
+
+    /// Every masked address but the deleted ones, newest first.
+    pub async fn masked_addresses(&self) -> Result<Vec<crate::masked::MaskedAddress>, BackendError> {
+        let listed = self.api.masked_emails().await.map_err(backend)?;
+        let mut kept: Vec<_> =
+            listed.into_iter().filter_map(masked_of).filter(|m| m.state != crate::masked::MaskedState::Deleted).collect();
+        kept.sort_by_key(|m| std::cmp::Reverse(m.created));
+        Ok(kept)
+    }
+
+    pub async fn make_masked(&self, site: &str, note: &str) -> Result<crate::masked::MaskedAddress, BackendError> {
+        let made = self.api.create_masked(site.trim(), note.trim()).await.map_err(backend)?;
+        masked_of(made).ok_or_else(|| {
+            BackendError::Refused(mailrs_domain::translate::gettext("The server made an address Penguin Mail cannot read."))
+        })
+    }
+
+    /// Turns an address on, off or away. Only the server sets `Pending`.
+    pub async fn set_masked(&self, id: &str, state: crate::masked::MaskedState) -> Result<(), BackendError> {
+        use crate::masked::MaskedState as State;
+        let wire = match state {
+            State::Enabled => mailrs_jmap::MaskedState::Enabled,
+            State::Disabled => mailrs_jmap::MaskedState::Disabled,
+            State::Deleted => mailrs_jmap::MaskedState::Deleted,
+            State::Pending => return Err(BackendError::Unsupported),
+        };
+        self.api.set_masked_state(id, wire).await.map_err(backend)
+    }
+}
