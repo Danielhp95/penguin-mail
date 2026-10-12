@@ -74,7 +74,13 @@ impl Desk for Ports {
                 message_id: o.only_message.clone(),
                 subject: o.subject.clone(),
             }),
-            selected: self.0.list.selected_rows(),
+            selected: self
+                .0
+                .list
+                .selected_rows()
+                .iter()
+                .map(|row| ThreadSummary::clone(row))
+                .collect(),
         }
     }
 

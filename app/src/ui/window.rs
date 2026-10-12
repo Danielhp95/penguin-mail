@@ -1512,7 +1512,7 @@ impl MainWindow {
         match picked {
             // A queued message has no Gmail thread; the thread run shows
             // it from what the outbox kept.
-            Picked::One(row) => self.open_thread(row),
+            Picked::One(row) => self.open_thread(Rc::unwrap_or_clone(row)),
             Picked::Many(rows) => {
                 self.conversation.show_many(
                     rows.len(),
