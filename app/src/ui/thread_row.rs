@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 
@@ -307,9 +308,9 @@ pub fn person(thread: &ThreadSummary) -> (&str, &str) {
 }
 
 /// The name an avatar draws its initials from.
-fn display_name(thread: &ThreadSummary) -> String {
+fn display_name(thread: &ThreadSummary) -> &str {
     let (name, email) = person(thread);
-    if name.trim().is_empty() { email } else { name }.to_string()
+    if name.trim().is_empty() { email } else { name }
 }
 
 fn flag_class(color: FlagColor) -> &'static str {
@@ -376,12 +377,12 @@ impl ThreadRow {
             Avatar::Hidden => face.set_visible(false),
             Avatar::Photo(photo) => {
                 face.set_visible(true);
-                face.set_text(Some(&display_name(thread)));
+                face.set_text(Some(display_name(thread)));
                 face.set_custom_image(Some(photo));
             }
             Avatar::Initials => {
                 face.set_visible(true);
-                face.set_text(Some(&display_name(thread)));
+                face.set_text(Some(display_name(thread)));
                 face.set_custom_image(gdk::Paintable::NONE);
             }
         }
@@ -398,10 +399,10 @@ impl ThreadRow {
         } else {
             self.remove_css_class("unread");
         }
-        let name = if thread.from.is_empty() {
-            gettext("Unknown sender")
+        let name: Cow<str> = if thread.from.is_empty() {
+            gettext("Unknown sender").into()
         } else {
-            thread.from.clone()
+            thread.from.as_str().into()
         };
         get(&imp.from).set_markup(&sender_markup(&name, &thread.from_email));
         get(&imp.from_name).set_text(&name);
@@ -416,11 +417,10 @@ impl ThreadRow {
         } else {
             date.remove_css_class("unread");
         }
-        get(&imp.subject).set_label(&if thread.subject.trim().is_empty() {
-            gettext("(no subject)")
-        } else {
-            thread.subject.clone()
-        });
+        match thread.subject.trim().is_empty() {
+            true => get(&imp.subject).set_label(&gettext("(no subject)")),
+            false => get(&imp.subject).set_label(&thread.subject),
+        }
         let count = get(&imp.count);
         count.set_visible(thread.message_count > 1);
         count.set_label(&thread.message_count.to_string());
