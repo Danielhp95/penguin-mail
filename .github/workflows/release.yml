@@ -144,18 +144,24 @@ jobs:
         run: scripts/ci-deps.sh
       - name: Put cargo on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # The apt repository's key signs the rpm too. A pushed release must
-      # go out signed, since the .repo file it installs turns on gpgcheck;
-      # a trial run without the secret builds an unsigned rpm and says so.
-      # The private key lives in a keyring of its own for this step only
-      # and is gone before the next step starts the app.
-      - name: Build, pack and sign
+      # The build sees the OAuth clients it compiles in and nothing else:
+      # no step that runs cargo, and so no build script or proc macro,
+      # ever has the signing key in its environment.
+      - name: Build and pack
         env:
-          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-          EVENT: ${{ github.event_name }}
           PENGUIN_MAIL_GOOGLE_CLIENT_ID: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_ID }}
           PENGUIN_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_SECRET }}
           PENGUIN_MAIL_MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+        run: scripts/package-rpm.sh "$VERSION" dist
+      # The apt repository's key signs the rpm too. A pushed release must
+      # go out signed, since the .repo file it installs turns on gpgcheck;
+      # a trial run without the secret keeps the rpm unsigned and says so.
+      # The private key lives in a keyring of its own for this step only
+      # and is gone before the next step starts the app.
+      - name: Sign
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          EVENT: ${{ github.event_name }}
         run: |
           if [ -z "$APT_SIGNING_KEY" ]; then
             if [ "$EVENT" = push ]; then
@@ -163,14 +169,15 @@ jobs:
               exit 1
             fi
             echo "::warning::APT_SIGNING_KEY is not set; the rpm is unsigned"
-            scripts/package-rpm.sh "$VERSION" dist
             exit 0
           fi
           signing=$(mktemp -d)
           trap 'gpgconf --homedir "$signing" --kill all; rm -rf "$signing"' EXIT
           printf '%s\n' "$APT_SIGNING_KEY" | GNUPGHOME=$signing gpg --batch --import
-          GNUPGHOME=$signing RPM_SIGN_KEY=FE3C3B6E699AF939DC4670DCF3A853035C3E2B8E \
-              scripts/package-rpm.sh "$VERSION" dist
+          GNUPGHOME=$signing rpmsign --addsign \
+              --define "_gpg_name FE3C3B6E699AF939DC4670DCF3A853035C3E2B8E" \
+              --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ''" \
+              "dist/penguin-mail-$VERSION-1.x86_64.rpm" >/dev/null
           echo "RPM_SIGNED=1" >> "$GITHUB_ENV"
       # Installs the rpm the way a person would and starts it on a virtual
       # display, which catches a library the rpm forgot to require.
