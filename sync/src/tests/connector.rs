@@ -478,3 +478,16 @@ fn the_sign_in_says_which_client_it_uses() {
     assert_eq!(google_sign_in(&both_clients()).unwrap().1, SignInClient::BuiltIn);
     assert!(matches!(google_sign_in(&Clients::default()), Err(BrowserSignInError::NoClient(Browser::Google))));
 }
+
+/// A switch to JMAP that crashed after saving its secret leaves it under
+/// the IMAP or POP3 account's id.
+#[tokio::test]
+async fn forgetting_an_imap_or_pop3_account_deletes_a_jmap_secret_too() {
+    let (db, _dir) = store().await;
+    for account in [imap_account(&db).await, pop3_account(&db).await] {
+        let reach = connector(&db, both_clients());
+        reach.secrets.jmap.save(account.id, "token").unwrap();
+        reach.forget(&account).await.unwrap();
+        assert_eq!(reach.secrets.jmap.load(account.id).unwrap(), None, "{:?}", account.provider);
+    }
+}
