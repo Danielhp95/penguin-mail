@@ -2758,7 +2758,26 @@ msgstr ""
 "Son courrier téléchargé et sa connexion enregistrée sont effacés de cet "
 "ordinateur. Rien ne change chez {provider}."
 
-#: app/src/offered.rs:621
+#: app/src/offered.rs:619
+msgid ""
+"{count} message waiting in Send Later on the server goes back to Drafts "
+"first."
+msgid_plural ""
+"{count} messages waiting in Send Later on the server go back to Drafts first."
+msgstr[0] "{count} message en attente dans Envoyer plus tard sur le serveur revient d’abord dans Brouillons."
+msgstr[1] "{count} messages en attente dans Envoyer plus tard sur le serveur reviennent d’abord dans Brouillons."
+
+#: app/src/offered.rs:631
+msgid ""
+"Penguin Mail could not call back {count} message waiting on the server. The "
+"server may still send it at its hour."
+msgid_plural ""
+"Penguin Mail could not call back {count} messages waiting on the server. The "
+"server may still send them at their hour."
+msgstr[0] "Penguin Mail n’a pas pu rappeler {count} message en attente sur le serveur. Le serveur peut encore l’envoyer à l’heure prévue."
+msgstr[1] "Penguin Mail n’a pas pu rappeler {count} messages en attente sur le serveur. Le serveur peut encore les envoyer à l’heure prévue."
+
+#: app/src/offered.rs:646
 msgid ""
 "Mail from {address} is kept only on this computer. To keep a copy, quit "
 "Penguin Mail, then back up this file."
@@ -2766,20 +2785,20 @@ msgstr ""
 "Le courrier de {address} n’est conservé que sur cet ordinateur. Pour en "
 "garder une copie, quittez Penguin Mail, puis sauvegardez ce fichier."
 
-#: app/src/offered.rs:665
+#: app/src/offered.rs:690
 msgid "New mail arrives as it is sent"
 msgstr "Le nouveau courrier arrive dès son envoi"
 
-#: app/src/offered.rs:666
+#: app/src/offered.rs:691
 msgid "{provider} pushes it over JMAP, and you can send from your aliases."
 msgstr ""
 "{provider} le distribue via JMAP, et vous pouvez envoyer depuis vos alias."
 
-#: app/src/offered.rs:670
+#: app/src/offered.rs:695
 msgid "Mail is matched over JMAP"
 msgstr "Le courrier est rapproché via JMAP"
 
-#: app/src/offered.rs:671
+#: app/src/offered.rs:696
 msgid ""
 "Penguin Mail keeps the mail on this computer and downloads again only the "
 "messages it cannot match."
@@ -2787,73 +2806,73 @@ msgstr ""
 "Penguin Mail garde le courrier sur cet ordinateur et ne télécharge à nouveau "
 "que les messages qu’il ne peut pas rapprocher."
 
-#: app/src/offered.rs:677
+#: app/src/offered.rs:702
 msgid "Name, color and place"
 msgstr "Nom, couleur et place"
 
-#: app/src/offered.rs:678
+#: app/src/offered.rs:703
 msgid "{address} keeps its spot in the sidebar."
 msgstr "{address} garde sa place dans la barre latérale."
 
-#: app/src/offered.rs:682
+#: app/src/offered.rs:707
 msgid "Your own data"
 msgstr "Vos propres données"
 
-#: app/src/offered.rs:683
+#: app/src/offered.rs:708
 msgid "Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."
 msgstr "Rappels, suivis, drapeaux, règles, VIP, signatures et brouillons."
 
-#: app/src/offered.rs:689
+#: app/src/offered.rs:714
 msgid "Calendar sign-in"
 msgstr "Connexion aux calendriers"
 
-#: app/src/offered.rs:690
+#: app/src/offered.rs:715
 msgid "The app password you use for calendars stays as it is."
 msgstr "Le mot de passe d’application de vos calendriers reste tel quel."
 
-#: app/src/offered.rs:714
+#: app/src/offered.rs:739
 msgid "This account uses JMAP already."
 msgstr "Ce compte utilise déjà JMAP."
 
-#: app/src/offered.rs:717
+#: app/src/offered.rs:742
 msgid "{provider} did not accept the token."
 msgstr "{provider} n’a pas accepté le jeton."
 
-#: app/src/offered.rs:718
+#: app/src/offered.rs:743
 msgid "{provider} did not accept the password."
 msgstr "{provider} n’a pas accepté le mot de passe."
 
-#: app/src/offered.rs:721
+#: app/src/offered.rs:746
 msgid "The token holds a character that cannot be sent."
 msgstr "Le jeton contient un caractère qui ne peut pas être envoyé."
 
-#: app/src/offered.rs:722
+#: app/src/offered.rs:747
 msgid "The password holds a character that cannot be sent."
 msgstr "Le mot de passe contient un caractère qui ne peut pas être envoyé."
 
-#: app/src/offered.rs:724
+#: app/src/offered.rs:749
 msgid "{provider} does not answer."
 msgstr "{provider} ne répond pas."
 
-#: app/src/offered.rs:730
+#: app/src/offered.rs:755
 msgid "The mail on {provider} kept changing while Penguin Mail matched it."
 msgstr ""
 "Le courrier de {provider} n’a cessé de changer pendant que Penguin Mail le "
 "rapprochait."
 
-#: app/src/offered.rs:742
+#: app/src/offered.rs:767
 msgid "Could not switch to JMAP: {reason}"
 msgstr "Impossible de passer à JMAP : {reason}"
 
-#: app/src/offered.rs:743
+#: app/src/offered.rs:768
 msgid "Your IMAP account is unchanged."
 msgstr "Votre compte IMAP reste inchangé."
 
-#: app/src/offered.rs:753
+#: app/src/offered.rs:778
 msgid "{address} now uses JMAP"
 msgstr "{address} utilise désormais JMAP"
 
-#: app/src/offered.rs:757
+#: app/src/offered.rs:782
 msgid ""
 "{address} now uses JMAP. {count} rule is off because its folder is not on "
 "the server."
@@ -3829,7 +3848,7 @@ msgstr "Abonnement Claude"
 #. The header in both spaces carries a button for this now (R12);
 #. the menu item stays too, so Ctrl+J shows here as well.
 #: app/src/settings/mod.rs:219 app/src/ui/assistant.rs:99
-#: app/src/ui/window.rs:3266
+#: app/src/ui/window.rs:3291
 msgid "Assistant"
 msgstr "Assistant"
 
@@ -4206,7 +4225,7 @@ msgstr "Ouvrir Penguin Mail"
 msgid "New Message"
 msgstr "Nouveau message"
 
-#: app/src/tray.rs:291 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3269
+#: app/src/tray.rs:291 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3294
 msgid "Check for Mail"
 msgstr "Relever le courrier"
 
@@ -4224,7 +4243,7 @@ msgstr "Nouveautés de la version {version}"
 msgid "Check for Updates"
 msgstr "Rechercher des mises à jour"
 
-#: app/src/tray.rs:307 app/src/ui/window.rs:3282
+#: app/src/tray.rs:307 app/src/ui/window.rs:3307
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "Quitter"
@@ -4246,7 +4265,7 @@ msgstr "Nouveautés"
 msgid "Website"
 msgstr "Site web"
 
-#: app/src/ui/about.rs:179 app/src/ui/window.rs:3281
+#: app/src/ui/about.rs:179 app/src/ui/window.rs:3306
 msgid "Donate"
 msgstr "Faire un don"
 
@@ -4254,7 +4273,7 @@ msgstr "Faire un don"
 msgid "License"
 msgstr "Licence"
 
-#: app/src/ui/about.rs:203 app/src/ui/window.rs:3280
+#: app/src/ui/about.rs:203 app/src/ui/window.rs:3305
 msgid "About Penguin Mail"
 msgstr "À propos de Penguin Mail"
 
@@ -4715,7 +4734,7 @@ msgstr ""
 "Ce serveur ne sait pas distinguer ses messages, Penguin Mail ne peut donc "
 "pas en télécharger en toute sécurité."
 
-#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3349
+#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3374
 msgid "Summarize this conversation"
 msgstr "Résumer cette conversation"
 
@@ -4860,7 +4879,7 @@ msgstr "Modifier {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1639
 #: app/src/ui/composer/mod.rs:1995 app/src/ui/composer/recipients.rs:315
-#: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3060
+#: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3067
 msgid "Remove"
 msgstr "Supprimer"
 
@@ -7703,7 +7722,7 @@ msgstr ""
 msgid "Allow Hide My Email"
 msgstr "Autoriser Masquer mon adresse"
 
-#: app/src/ui/hide_my_email.rs:626 app/src/ui/window.rs:3394
+#: app/src/ui/hide_my_email.rs:626 app/src/ui/window.rs:3419
 msgid "Add an account first"
 msgstr "Ajoutez d’abord un compte"
 
@@ -8045,7 +8064,7 @@ msgid "All Files"
 msgstr "Tous les fichiers"
 
 #: app/src/ui/key_import.rs:213 app/src/ui/key_import.rs:217
-#: app/src/ui/window.rs:3848
+#: app/src/ui/window.rs:3873
 msgid "Close"
 msgstr "Fermer"
 
@@ -8951,7 +8970,7 @@ msgstr "Signature…"
 msgid "Rules…"
 msgstr "Règles…"
 
-#: app/src/ui/sidebar.rs:1726 app/src/ui/window.rs:3272
+#: app/src/ui/sidebar.rs:1726 app/src/ui/window.rs:3297
 msgid "Hide My Email…"
 msgstr "Masquer mon adresse…"
 
@@ -9672,67 +9691,71 @@ msgstr "Cette version de Penguin Mail a été compilée sans la connexion Google
 msgid "Get a Release"
 msgstr "Obtenir une version publiée"
 
-#: app/src/ui/window.rs:3056
+#: app/src/ui/window.rs:3066
 msgid "Remove {account}?"
 msgstr "Supprimer {account} ?"
 
-#: app/src/ui/window.rs:3071
+#: app/src/ui/window.rs:3083
+msgid "Remove Anyway"
+msgstr "Supprimer quand même"
+
+#: app/src/ui/window.rs:3096
 msgid "Removed {account}"
 msgstr "{account} supprimé"
 
-#: app/src/ui/window.rs:3073
+#: app/src/ui/window.rs:3098
 msgid "Could not remove {account}: {reason}"
 msgstr "Impossible de supprimer {account} : {reason}"
 
-#: app/src/ui/window.rs:3253
+#: app/src/ui/window.rs:3278
 msgid "Refresh"
 msgstr "Actualiser"
 
-#: app/src/ui/window.rs:3257
+#: app/src/ui/window.rs:3282
 msgid "Show Declined Events"
 msgstr "Afficher les événements refusés"
 
-#: app/src/ui/window.rs:3270
+#: app/src/ui/window.rs:3295
 msgid "Add Account…"
 msgstr "Ajouter un compte…"
 
-#: app/src/ui/window.rs:3271
+#: app/src/ui/window.rs:3296
 msgid "New Smart Mailbox…"
 msgstr "Nouvelle boîte intelligente…"
 
-#: app/src/ui/window.rs:3278 app/src/ui/window/shortcuts.rs:606
+#: app/src/ui/window.rs:3303 app/src/ui/window/shortcuts.rs:606
 msgid "Preferences"
 msgstr "Préférences"
 
-#: app/src/ui/window.rs:3279
+#: app/src/ui/window.rs:3304
 msgid "Keyboard Shortcuts"
 msgstr "Raccourcis clavier"
 
-#: app/src/ui/window.rs:3288 app/src/ui/window.rs:3290
+#: app/src/ui/window.rs:3313 app/src/ui/window.rs:3315
 msgid "Main Menu"
 msgstr "Menu principal"
 
-#: app/src/ui/window.rs:3669
+#: app/src/ui/window.rs:3694
 msgid "Open a message from the person first"
 msgstr "Ouvrez d’abord un message de cette personne"
 
-#: app/src/ui/window.rs:3750
+#: app/src/ui/window.rs:3775
 msgid "Penguin Mail shows the new language after a restart"
 msgstr "Penguin Mail affiche la nouvelle langue après un redémarrage"
 
-#: app/src/ui/window.rs:3752 app/src/update/mod.rs:130
+#: app/src/ui/window.rs:3777 app/src/update/mod.rs:130
 msgid "Restart"
 msgstr "Redémarrer"
 
-#: app/src/ui/window.rs:3803
+#: app/src/ui/window.rs:3828
 msgid "Show Rules"
 msgstr "Afficher les règles"
 
-#: app/src/ui/window.rs:3823
+#: app/src/ui/window.rs:3848
 msgid "Messages That Will Not Download"
 msgstr "Messages qui ne se téléchargent pas"
 
-#: app/src/ui/window.rs:3825
+#: app/src/ui/window.rs:3850
 msgid ""
 "Penguin Mail could not download these from {address}'s server. It tries "
 "again at each check, except for a message too large to download."
@@ -11232,11 +11255,11 @@ msgstr ""
 "Le serveur retient encore ce message et n’a pas pu être prié de le libérer. "
 "Réessayez plus tard."
 
-#: sync/src/outbox.rs:709
+#: sync/src/outbox.rs:742
 msgid "Waiting for the account to switch to JMAP"
 msgstr "En attente du passage du compte à JMAP"
 
-#: sync/src/outbox.rs:1312
+#: sync/src/outbox.rs:1345
 msgid "The server could not be asked to let go of the message."
 msgstr "Impossible de demander au serveur de libérer le message."
 

@@ -645,6 +645,39 @@ impl<A: Accounts> Outbox<A> {
         Ok(cancelled)
     }
 
+    /// How many messages of `account_id` the server holds for Send Later,
+    /// which removing the account would leave the server to send.
+    pub async fn held_count(&self, account_id: AccountId) -> Result<usize, SyncError> {
+        Ok(self.db.read(move |c| Ok(outbox::list(c)?.iter().filter(|m| m.account_id == account_id && m.held.is_some()).count())).await?)
+    }
+
+    /// Calls back every message the server holds for `account_id`, before
+    /// the account goes: each returns to the server's Drafts, Bcc and all,
+    /// and nothing sends it. Answers how many could not be called back,
+    /// which the server may still send at their hour. A message the server
+    /// never took goes to Drafts too, since its bytes here go with the
+    /// account; one that cannot is counted with the rest.
+    pub async fn call_back_account(&self, account_id: AccountId) -> Result<usize, SyncError> {
+        let held: Vec<Queued> =
+            self.db.read(move |c| Ok(outbox::list(c)?.into_iter().filter(|m| m.account_id == account_id && m.held.is_some()).collect())).await?;
+        let mut cancelled = Cancelled::default();
+        let mut failed = 0;
+        for item in held {
+            if past_knowing(&item) {
+                failed += 1;
+                continue;
+            }
+            let Some(here) = self.cancel_held(item, &mut cancelled).await? else {
+                continue;
+            };
+            if let Err(err) = self.save_draft(&here).await {
+                tracing::info!(error = %err, "could not put a message the server never held in Drafts");
+                failed += 1;
+            }
+        }
+        Ok(failed + cancelled.still_held + cancelled.unconfirmed + cancelled.unsaved.len())
+    }
+
     /// The waiting messages, in Send Later and the Outbox alike, that the
     /// list rows `targets` stand for, soonest first. A row names one the
     /// way [`Outbox::cancel_scheduled`] describes.

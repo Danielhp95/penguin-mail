@@ -610,6 +610,31 @@ pub fn remove_account_body(account: &Account, remove: RemoveSetting) -> String {
     }
 }
 
+/// What Remove Account's confirmation adds when the account's server
+/// holds `count` Send Later messages: they are called back first. `None`
+/// when it holds none.
+pub fn held_back_line(count: usize) -> Option<String> {
+    (count > 0).then(|| {
+        fill_plural(
+            "{count} message waiting in Send Later on the server goes back to Drafts first.",
+            "{count} messages waiting in Send Later on the server go back to Drafts first.",
+            count,
+            &[("count", &count.to_string())],
+        )
+    })
+}
+
+/// What Remove Account asks before it goes ahead when `count` held
+/// messages would not come back.
+pub fn still_held_line(count: usize) -> String {
+    fill_plural(
+        "Penguin Mail could not call back {count} message waiting on the server. The server may still send it at its hour.",
+        "Penguin Mail could not call back {count} messages waiting on the server. The server may still send them at their hour.",
+        count,
+        &[("count", &count.to_string())],
+    )
+}
+
 /// About's line for each account whose mail lives only in the store.
 pub fn kept_here_lines(accounts: &[Account]) -> Vec<String> {
     accounts
@@ -769,8 +794,8 @@ mod tests {
     use mailrs_sync::{Missing, Offers};
 
     use super::{
-        failing_lines, hides_addresses, kept_here_lines, offers_for, reason, remove_account_body,
-        shows_space_switch,
+        failing_lines, held_back_line, hides_addresses, kept_here_lines, offers_for, reason, remove_account_body,
+        shows_space_switch, still_held_line,
         withheld_for,
     };
     use crate::settings::Space;
@@ -844,6 +869,31 @@ mod tests {
         assert_eq!(remove_account_body(&account, RemoveSetting::Never), kept);
         assert_eq!(remove_account_body(&account, RemoveSetting::Downloaded), only_here);
         assert_eq!(remove_account_body(&account, RemoveSetting::Days(30)), only_here);
+    }
+
+    #[test]
+    fn removing_an_account_says_how_many_messages_the_server_holds() {
+        assert_eq!(held_back_line(0), None);
+        assert_eq!(
+            held_back_line(1).as_deref(),
+            Some("1 message waiting in Send Later on the server goes back to Drafts first.")
+        );
+        assert_eq!(
+            held_back_line(3).as_deref(),
+            Some("3 messages waiting in Send Later on the server go back to Drafts first.")
+        );
+    }
+
+    #[test]
+    fn removing_an_account_warns_of_holds_that_would_not_come_back() {
+        assert_eq!(
+            still_held_line(1),
+            "Penguin Mail could not call back 1 message waiting on the server. The server may still send it at its hour."
+        );
+        assert_eq!(
+            still_held_line(2),
+            "Penguin Mail could not call back 2 messages waiting on the server. The server may still send them at their hour."
+        );
     }
 
     #[test]

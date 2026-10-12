@@ -3051,17 +3051,42 @@ impl MainWindow {
             } else {
                 RemoveSetting::Never
             };
-            let question = confirm(
-                &fill(
-                    &gettext("Remove {account}?"),
-                    &[("account", &account.email)],
-                ),
-                &crate::offered::remove_account_body(&account, remove),
-                &gettext("Remove"),
-                Tone::Destructive,
-            );
+            // The server sends what it holds whether or not the account is
+            // here, so those messages are called back first.
+            let (outbox, account_id) = (this.core.outbox(), account.id);
+            let held = this
+                .core
+                .call(async move { outbox.held_count(account_id).await })
+                .await
+                .unwrap_or_default();
+            let mut body = crate::offered::remove_account_body(&account, remove);
+            if let Some(line) = crate::offered::held_back_line(held) {
+                body = format!("{body}\n\n{line}");
+            }
+            let title = fill(&gettext("Remove {account}?"), &[("account", &account.email)]);
+            let question = confirm(&title, &body, &gettext("Remove"), Tone::Destructive);
             if !question.ask(&this.window).await {
                 return;
+            }
+            if held > 0 {
+                let outbox = this.core.outbox();
+                let left = this
+                    .core
+                    .call(async move { outbox.call_back_account(account_id).await })
+                    .await
+                    .unwrap_or(held);
+                this.scheduled_changed();
+                if left > 0 {
+                    let question = confirm(
+                        &title,
+                        &crate::offered::still_held_line(left),
+                        &gettext("Remove Anyway"),
+                        Tone::Destructive,
+                    );
+                    if !question.ask(&this.window).await {
+                        return;
+                    }
+                }
             }
             if this.conversation.read(|o| o.account_id) == Some(account.id) {
                 this.conversation.leave();

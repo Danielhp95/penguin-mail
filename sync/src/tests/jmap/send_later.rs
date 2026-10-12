@@ -770,3 +770,30 @@ async fn the_install_that_held_it_does_not_take_its_own_copy_twice() {
     queue(&h).send_due(now_millis()).await.unwrap();
     assert_eq!(h.db.read(outbox::scheduled).await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn removing_an_account_calls_its_holds_back_to_drafts() {
+    let h = holding().await;
+    put(&h, blind(&h, now_millis() + HOUR)).await;
+    scheduled(&h, now_millis() + 2 * HOUR).await;
+    let outbox = queue(&h);
+    assert_eq!(outbox.held_count(h.account_id).await.unwrap(), 2, "the dialog can say how many");
+    assert_eq!(outbox.call_back_account(h.account_id).await.unwrap(), 0, "every hold came back");
+    assert_eq!(pending(&h), 0);
+    h.fake.release_due(i64::MAX);
+    assert_eq!(sent(&h), 0, "nothing goes out once the account is gone");
+    let drafts = h.fake.with(|s| {
+        let box_id = s.role_id("drafts").unwrap();
+        s.emails.values().filter(|e| e.mailbox_ids.contains(&box_id) && !e.keywords.contains(mailrs_jmap::HELD)).count()
+    });
+    assert_eq!(drafts, 2, "both messages are drafts on the server again");
+}
+
+#[tokio::test]
+async fn removing_an_account_whose_server_cannot_hear_counts_what_may_still_go() {
+    let h = holding().await;
+    scheduled(&h, now_millis() + HOUR).await;
+    h.fake.with(|s| s.submission_get = false);
+    assert_eq!(queue(&h).call_back_account(h.account_id).await.unwrap(), 1, "the server may still send it");
+    assert_eq!(pending(&h), 1);
+}
