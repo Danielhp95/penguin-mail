@@ -1563,7 +1563,12 @@ pub fn waiting_line(message: &outbox::Queued, now: DateTime<Local>) -> String {
         && message.held.is_some()
         && now.timestamp_millis() >= message.send_at.saturating_add(LATE)
     {
-        return gettext("The server has not sent this message yet.");
+        // A hold whose answer was lost may never have reached the server,
+        // so the row says only what is known.
+        return match crate::outbox::server_holds(message) {
+            true => gettext("The server has not sent this message yet."),
+            false => gettext("Penguin Mail has not confirmed that the server took this message."),
+        };
     }
     let Some(problem) = message.problem.as_deref() else {
         let when = sending_date(message.send_at, now);

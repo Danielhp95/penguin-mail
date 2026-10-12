@@ -304,6 +304,20 @@ fn a_hold_whose_answer_was_lost_does_not_promise_the_server_sends_it() {
 }
 
 #[test]
+fn a_lost_hold_past_its_hour_does_not_say_the_server_has_it() {
+    let now = chrono::Local::now();
+    let lost = Queued {
+        held: Some("unconfirmed:1700000000000:m1@example.com".into()),
+        send_at: now.timestamp_millis() - 20 * 60_000,
+        ..Queued::default()
+    };
+    assert_eq!(
+        crate::mailbox::waiting_line(&lost, now),
+        "Penguin Mail has not confirmed that the server took this message."
+    );
+}
+
+#[test]
 fn a_late_hold_says_so_on_one_line() {
     let now = chrono::Local::now();
     let late = Queued {

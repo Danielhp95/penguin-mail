@@ -10569,39 +10569,43 @@ msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] ""
 msgstr[1] ""
 
-#: sync/src/mailbox.rs:1566
+#: sync/src/mailbox.rs:1569
 msgid "The server has not sent this message yet."
 msgstr ""
 
-#: sync/src/mailbox.rs:1575
+#: sync/src/mailbox.rs:1570
+msgid "Penguin Mail has not confirmed that the server took this message."
+msgstr ""
+
+#: sync/src/mailbox.rs:1580
 msgid "Sends {when}."
 msgstr ""
 
-#: sync/src/mailbox.rs:1576
+#: sync/src/mailbox.rs:1581
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr ""
 
-#: sync/src/mailbox.rs:1578
+#: sync/src/mailbox.rs:1583
 msgid "Sends {when}"
 msgstr ""
 
-#: sync/src/mailbox.rs:1585
+#: sync/src/mailbox.rs:1590
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr ""
 
-#: sync/src/mailbox.rs:1588
+#: sync/src/mailbox.rs:1593
 msgid "Canceled in another app."
 msgstr ""
 
-#: sync/src/mailbox.rs:1590
+#: sync/src/mailbox.rs:1595
 msgid "Not sent"
 msgstr ""
 
-#: sync/src/mailbox.rs:1597
+#: sync/src/mailbox.rs:1602
 msgid "{problem}. Trying again {when}"
 msgstr ""
 
-#: sync/src/mailbox.rs:1604
+#: sync/src/mailbox.rs:1609
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr ""
 
