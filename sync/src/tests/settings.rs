@@ -461,3 +461,17 @@ async fn a_gmail_account_lists_its_rules_as_run_by_the_server() {
     assert!(list.elsewhere.is_empty());
     assert!(!list.waiting);
 }
+
+/// The day the clocks go back has 25 hours where it happens, so the reply
+/// ends at the next local midnight, not 24 hours after the last one.
+#[tokio::test]
+async fn a_reply_ending_on_a_long_day_stops_at_the_next_midnight() {
+    let h = harness().await;
+    let settings = settings(&h);
+    for (last, after) in [((2026, 10, 25), (2026, 10, 26)), ((2026, 3, 29), (2026, 3, 30))] {
+        let reply = away(day(2026, 3, 1), day(last.0, last.1, last.2));
+        settings.set_automatic_reply(h.account_id, &reply).await.unwrap();
+        let gmail = h.fake.with(|s| s.vacation.clone());
+        assert_eq!(gmail.end, Some(day(after.0, after.1, after.2)), "{last:?}");
+    }
+}

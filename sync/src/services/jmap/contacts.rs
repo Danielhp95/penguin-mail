@@ -1,7 +1,8 @@
 //! The account's address book over JMAP for Contacts (RFC 9610): cards in
 //! JSContact, read a page at a time and then by their changes. A new card
-//! goes into the default address book; an edit sends only the fields it
-//! changes, so the rest of a card the server holds stays as it was.
+//! goes into the default address book; an edit reads the card and sends
+//! only the fields and entries it changes, so the rest of a card the
+//! server holds stays as it was.
 
 use std::collections::HashSet;
 
@@ -42,30 +43,135 @@ pub(crate) fn person_of(card: &Value) -> Person {
     }
 }
 
-/// The JSContact fields `fields` sets, each map keyed `e1`, `p1`, `o1`.
-fn patch_of(fields: &ContactFields) -> Map<String, Value> {
+/// The JSContact fields `fields` sets on a new card, each map keyed `e1`,
+/// `p1`, `o1`.
+fn fields_of(fields: &ContactFields) -> Map<String, Value> {
     let keyed = |prefix: &str, items: &[String], key: &str| -> Value {
         let map: Map<String, Value> = items.iter().enumerate().map(|(i, v)| (format!("{prefix}{}", i + 1), json!({ key: v }))).collect();
         Value::Object(map)
     };
-    let mut patch = Map::new();
+    let mut card = Map::new();
     if let Some(name) = &fields.name {
-        patch.insert("name".into(), json!({ "full": name }));
+        card.insert("name".into(), json!({ "full": name }));
     }
     if let Some(emails) = &fields.emails {
-        patch.insert("emails".into(), keyed("e", emails, "address"));
+        card.insert("emails".into(), keyed("e", emails, "address"));
     }
     if let Some(phones) = &fields.phones {
-        patch.insert("phones".into(), keyed("p", phones, "number"));
+        card.insert("phones".into(), keyed("p", phones, "number"));
     }
     if let Some(organization) = &fields.organization {
-        patch.insert("organizations".into(), json!({ "o1": { "name": organization } }));
+        card.insert("organizations".into(), json!({ "o1": { "name": organization } }));
+    }
+    card
+}
+
+/// The entries of one map on `card`, `emails` say, as key and the value
+/// under `key`, in the order `person_of` reads them.
+fn entries<'a>(card: &'a Value, field: &str, key: &str) -> Vec<(&'a str, &'a str)> {
+    card.get(field)
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|m| m.iter())
+        .filter_map(|(k, v)| v[key].as_str().map(|value| (k.as_str(), value)))
+        .collect()
+}
+
+/// A key `prefix` + number that `card`'s `field` map does not hold yet.
+fn free_key(card: &Value, field: &str, prefix: &str, taken: &[String]) -> String {
+    let used = |k: &str| card[field].get(k).is_some() || taken.iter().any(|t| t == k);
+    (1..).map(|n| format!("{prefix}{n}")).find(|k| !used(k)).unwrap_or_default()
+}
+
+/// The patch that brings one map of `card` in line with `wanted`, a list
+/// of values under `key`. `seen` holds the keys of the entries the person
+/// was shown: one of those missing from `wanted` goes, and every other
+/// entry stays with its tags. A value not on the card yet is added.
+fn patch_entries(
+    patch: &mut Map<String, Value>,
+    card: &Value,
+    (field, key, prefix): (&str, &str, &str),
+    wanted: &[String],
+    seen: &[&str],
+) {
+    let held = entries(card, field, key);
+    let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+    if card.get(field).and_then(Value::as_object).is_none() {
+        if !wanted.is_empty() {
+            let map: Map<String, Value> =
+                wanted.iter().enumerate().map(|(i, v)| (format!("{prefix}{}", i + 1), json!({ key: v }))).collect();
+            patch.insert(field.into(), Value::Object(map));
+        }
+        return;
+    }
+    for (k, value) in &held {
+        if seen.contains(k) && !wanted.iter().any(|w| same(w, value)) {
+            patch.insert(format!("{field}/{k}"), Value::Null);
+        }
+    }
+    let mut taken: Vec<String> = Vec::new();
+    let mut added: Vec<&String> = Vec::new();
+    for value in wanted {
+        if held.iter().any(|(_, v)| same(v, value)) || added.iter().any(|v| same(v, value)) {
+            continue;
+        }
+        let k = free_key(card, field, prefix, &taken);
+        patch.insert(format!("{field}/{k}"), json!({ key: value }));
+        taken.push(k);
+        added.push(value);
+    }
+}
+
+/// What turns `card` into the card `fields` asks for, touching only the
+/// fields and entries the person changed. The editor shows every address
+/// but only the first phone and organization, so the phones and
+/// organizations it never showed stay, and a renamed organization keeps
+/// its departments.
+fn patch_of(card: &Value, fields: &ContactFields) -> Map<String, Value> {
+    let shown = person_of(card);
+    let mut patch = Map::new();
+    if let Some(name) = &fields.name
+        && Some(name.trim()) != shown.name.as_deref().map(str::trim)
+    {
+        let value = match name.trim() {
+            "" => Value::Null,
+            name => json!({ "full": name }),
+        };
+        patch.insert("name".into(), value);
+    }
+    if let Some(emails) = &fields.emails {
+        let seen: Vec<&str> = entries(card, "emails", "address").into_iter().map(|(k, _)| k).collect();
+        patch_entries(&mut patch, card, ("emails", "address", "e"), emails, &seen);
+    }
+    if let Some(phones) = &fields.phones {
+        let seen: Vec<&str> = entries(card, "phones", "number").into_iter().take(1).map(|(k, _)| k).collect();
+        patch_entries(&mut patch, card, ("phones", "number", "p"), phones, &seen);
+    }
+    if let Some(organization) = &fields.organization {
+        let wanted = organization.trim();
+        match entries(card, "organizations", "name").first() {
+            Some((k, _)) if wanted.is_empty() => {
+                patch.insert(format!("organizations/{k}"), Value::Null);
+            }
+            Some((k, held)) if *held != wanted => {
+                patch.insert(format!("organizations/{k}/name"), json!(wanted));
+            }
+            Some(_) => {}
+            None if wanted.is_empty() => {}
+            None if card.get("organizations").and_then(Value::as_object).is_some() => {
+                let k = free_key(card, "organizations", "o", &[]);
+                patch.insert(format!("organizations/{k}"), json!({ "name": wanted }));
+            }
+            None => {
+                patch.insert("organizations".into(), json!({ "o1": { "name": wanted } }));
+            }
+        }
     }
     patch
 }
 
 pub(crate) fn card_of(fields: &ContactFields, book: Option<&str>) -> Map<String, Value> {
-    let mut card = patch_of(fields);
+    let mut card = fields_of(fields);
     card.insert("@type".into(), json!("Card"));
     card.insert("version".into(), json!("1.0"));
     if let Some(book) = book {
@@ -129,8 +235,14 @@ impl<J: JmapApi> ContactsService for Jmap<J> {
         Ok(person_of(&card))
     }
 
+    /// Reads the card first, so the edit patches only what changed.
     async fn update_contact(&self, resource: &str, fields: &ContactFields) -> Result<Person, BackendError> {
-        let write = CardWrite::Update { id: resource.to_string(), patch: patch_of(fields) };
+        let card = self.api().card(resource).await.map_err(backend)?.ok_or(BackendError::NotFound)?;
+        let patch = patch_of(&card, fields);
+        if patch.is_empty() {
+            return Ok(person_of(&card));
+        }
+        let write = CardWrite::Update { id: resource.to_string(), patch };
         let card = self.api().set_card(&write).await.map_err(backend)?;
         Ok(person_of(&card))
     }

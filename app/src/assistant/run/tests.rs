@@ -1405,6 +1405,34 @@ async fn hidden_addresses_are_refused_on_a_folder_account_with_the_reason() {
     .await;
     assert_eq!(
         h.run("create_hidden_address", json!({"account": ME, "note": "shop"})).await,
-        Ok(json!({"unavailable": "Hide My Email works with Gmail accounts."}))
+        Ok(json!({"unavailable": "Hide My Email needs masked addresses or labels, and Gmail offers neither on this account."}))
     );
+}
+
+/// On an account whose server makes masked addresses, the hidden-address
+/// tool makes one there, never a plus address.
+#[tokio::test]
+async fn a_masked_email_account_gets_a_masked_address() {
+    use mailrs_sync::AccountServices;
+    use mailrs_sync::fake::FakeJmap;
+    use std::sync::Arc;
+
+    let fake = Arc::new(FakeJmap::new().with_capability(mailrs_jmap::MASKED_EMAIL));
+    let server = Arc::clone(&fake);
+    let h = Harness::with_services(move |_, services| {
+        *services = AccountServices::fake_jmap(server);
+    })
+    .await;
+    let made = h
+        .ok("create_hidden_address", json!({"account": ME, "note": "kite shop", "site": "kites.example"}))
+        .await;
+    let address = made["address"].as_str().expect("an address");
+    assert!(!address.contains('+'), "{made}");
+    let held = fake.with(|s| s.masked.values().cloned().collect::<Vec<_>>());
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].email, address);
+    assert_eq!(held[0].for_domain, "kites.example");
+    assert_eq!(held[0].description, "kite shop");
+    assert_eq!(h.asked().copied, [address]);
+    assert!(h.asked().changes.is_empty(), "no plus address is kept in the settings");
 }

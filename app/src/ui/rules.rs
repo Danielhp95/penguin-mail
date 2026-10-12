@@ -228,9 +228,9 @@ impl Rules {
                 continue;
             }
             if filter.off {
-                // The switch to JMAP turned it off: the server lacks a
-                // folder it names. Saving it with a folder the server has
-                // turns it back on.
+                // The switch to JMAP, or the folder's deletion, turned it
+                // off: the server lacks a folder it names. Saving it with
+                // a folder the server has turns it back on.
                 row.set_subtitle(&glib::markup_escape_text(&format!(
                     "{}\n{}",
                     describe_action(&filter.action, |id| self.label_name(id)),

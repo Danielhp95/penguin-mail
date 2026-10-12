@@ -430,8 +430,9 @@ impl<A: Accounts> Tools<A> {
                 .await?;
             let parent = found.iter().rev().find(|m| !m.in_role(Role::Drafts));
             if let Some(parent) = parent {
-                let mine =
-                    compose::reply_addresses(&self.desk.settings().senders(&account.email), parent);
+                let mail = self.modules.accounts.services(account.id).map(|s| s.mail);
+                let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+                let mine = compose::reply_addresses(&self.desk.settings().senders(&account.email), parent, masked);
                 if let Some(from) = compose::reply_from(&mine, parent) {
                     draft.from = from.clone();
                 }

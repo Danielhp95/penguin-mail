@@ -99,6 +99,15 @@ impl JmapClient {
         Ok(CardChanges { changes, cards })
     }
 
+    /// The card with `id` as the server holds it, or `None` when it has
+    /// none.
+    pub async fn card(&self, id: &str) -> Result<Option<Value>, JmapError> {
+        let (account, _) = self.contacts_account(1).await?;
+        let mut request = Request::new();
+        let get = request.call(CONTACTS, "ContactCard/get", json!({ "accountId": account, "ids": [id] }));
+        Ok(self.send(&request).await?.take::<Got<Value>>(&get, "ContactCard/get")?.list.into_iter().next())
+    }
+
     /// Makes or changes a card, and answers it as the server now holds it.
     pub async fn set_card(&self, write: &CardWrite) -> Result<Value, JmapError> {
         let (account, _) = self.contacts_account(1).await?;

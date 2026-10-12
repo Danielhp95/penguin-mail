@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::mail::{Got, SetResponse};
+use crate::mail::SetResponse;
 use crate::session::MASKED_EMAIL;
 use crate::{JmapClient, JmapError, Request};
 
@@ -45,17 +45,54 @@ impl MaskedState {
     }
 }
 
+/// The most masked addresses a listing keeps, at a few hundred bytes each.
+/// Addresses past this many are left out of the list.
+pub const MOST_MASKED: usize = 10_000;
+
+/// A `MaskedEmail/get` answer with only the addresses not deleted.
+#[derive(Deserialize)]
+struct LiveMasked {
+    #[serde(deserialize_with = "live_only")]
+    list: Vec<MaskedEmail>,
+}
+
+fn live_only<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<MaskedEmail>, D::Error> {
+    struct Live;
+    impl<'de> serde::de::Visitor<'de> for Live {
+        type Value = Vec<MaskedEmail>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a list of masked addresses")
+        }
+
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut kept = Vec::new();
+            while let Some(masked) = seq.next_element::<MaskedEmail>()? {
+                if masked.state != "deleted" && kept.len() < MOST_MASKED {
+                    kept.push(masked);
+                }
+            }
+            Ok(kept)
+        }
+    }
+    deserializer.deserialize_seq(Live)
+}
+
 impl JmapClient {
     async fn masked_account(&self) -> Result<String, JmapError> {
         let session = self.session().await?;
         session.account_for(MASKED_EMAIL).map(str::to_string).ok_or_else(|| JmapError::UnknownCapability(MASKED_EMAIL.into()))
     }
 
+    /// The account's addresses but the deleted ones, at most
+    /// [`MOST_MASKED`]. MaskedEmail has no `/query` to page with, so the
+    /// one `/get` answers every address the account ever made; the deleted
+    /// ones, which can be most of them, are dropped as the list is read.
     pub async fn masked_emails(&self) -> Result<Vec<MaskedEmail>, JmapError> {
         let account = self.masked_account().await?;
         let mut request = Request::new();
         let id = request.call(MASKED_EMAIL, "MaskedEmail/get", json!({ "accountId": account, "ids": null }));
-        Ok(self.send(&request).await?.take::<Got<MaskedEmail>>(&id, "MaskedEmail/get")?.list)
+        Ok(self.send(&request).await?.take::<LiveMasked>(&id, "MaskedEmail/get")?.list)
     }
 
     /// Makes an enabled address for `for_domain`, the site it is for.

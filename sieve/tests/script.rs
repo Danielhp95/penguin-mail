@@ -210,3 +210,19 @@ fn a_dated_reply_whose_lines_hold_braces_and_hashes_comes_back() {
     assert_eq!(back.rules, rules);
     assert!(back.foreign.is_empty(), "{:?}", back.foreign);
 }
+
+#[test]
+fn a_rule_that_is_off_is_kept_and_files_nothing() {
+    let gone = |set: &MailSet| match set {
+        MailSet::Mailbox(_) => None,
+        other => folder(other),
+    };
+    let rules = every_rule_the_app_makes();
+    let off = Filter { off: true, ..rules[3].clone() };
+    let script = Script { rules: vec![rules[0].clone(), off.clone(), rules[1].clone()], ..Script::default() };
+    let text = write(&script, "me@example.com", &gone, &ext()).unwrap();
+    assert!(!text.contains("fileinto \"Folders/Travel\""), "{text}");
+    let back = read(&text);
+    assert_eq!(back.rules, vec![rules[0].clone(), off, rules[1].clone()], "{text}");
+    assert!(back.foreign.is_empty(), "{text}");
+}

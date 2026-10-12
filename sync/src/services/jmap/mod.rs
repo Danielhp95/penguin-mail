@@ -36,7 +36,7 @@ use mailrs_jmap::{Identity, Mailbox};
 use mailrs_mime::Parts;
 
 pub use api::JmapApi;
-pub use sieve::JmapSieve;
+pub use sieve::{JmapSieve, SERVER_REPLY_SCRIPT};
 pub(crate) use errors::backend;
 pub(crate) use fetch::received_millis;
 pub(crate) use outgoing::{bare_message_id, has_message_id};
@@ -123,6 +123,10 @@ pub(super) struct Known {
     /// The last read of the account's event changes, shared by every
     /// calendar that asks from the same state. Replaced by the next.
     pub calendar_changes: Option<Arc<calendar::EventChanges>>,
+    /// The account's masked addresses not deleted, by id, lowercased, as
+    /// the last listing and the changes made here since leave them; `None`
+    /// until a listing.
+    pub masked: Option<HashMap<String, String>>,
 }
 
 /// The blob ids of the parts of the last structures fetched, by part path.
@@ -422,20 +426,37 @@ impl<J: JmapApi> Jmap<J> {
         self.settings.capabilities.iter().any(|c| c == mailrs_jmap::MASKED_EMAIL)
     }
 
-    /// Every masked address but the deleted ones, newest first.
+    /// Every masked address but the deleted ones, newest first. The
+    /// adapter keeps their addresses, for `is_masked`.
     pub async fn masked_addresses(&self) -> Result<Vec<crate::masked::MaskedAddress>, BackendError> {
         let listed = self.api.masked_emails().await.map_err(backend)?;
         let mut kept: Vec<_> =
             listed.into_iter().filter_map(masked_of).filter(|m| m.state != crate::masked::MaskedState::Deleted).collect();
         kept.sort_by_key(|m| std::cmp::Reverse(m.created));
+        self.known().masked = Some(kept.iter().map(|m| (m.id.clone(), m.email.to_lowercase())).collect());
         Ok(kept)
+    }
+
+    /// Whether `address` is one of the account's masked addresses: `None`
+    /// until the adapter has listed them, and `Some(false)` on an account
+    /// that makes none.
+    pub fn is_masked(&self, address: &str) -> Option<bool> {
+        if !self.masked_email() {
+            return Some(false);
+        }
+        let wanted = address.trim().to_lowercase();
+        self.known().masked.as_ref().map(|masked| masked.values().any(|held| *held == wanted))
     }
 
     pub async fn make_masked(&self, site: &str, note: &str) -> Result<crate::masked::MaskedAddress, BackendError> {
         let made = self.api.create_masked(site.trim(), note.trim()).await.map_err(backend)?;
-        masked_of(made).ok_or_else(|| {
+        let made = masked_of(made).ok_or_else(|| {
             BackendError::Refused(mailrs_domain::translate::gettext("The server made an address Penguin Mail cannot read."))
-        })
+        })?;
+        if let Some(masked) = self.known().masked.as_mut() {
+            masked.insert(made.id.clone(), made.email.to_lowercase());
+        }
+        Ok(made)
     }
 
     /// Turns an address on, off or away. Only the server sets `Pending`.
@@ -447,6 +468,12 @@ impl<J: JmapApi> Jmap<J> {
             State::Deleted => mailrs_jmap::MaskedState::Deleted,
             State::Pending => return Err(BackendError::Unsupported),
         };
-        self.api.set_masked_state(id, wire).await.map_err(backend)
+        self.api.set_masked_state(id, wire).await.map_err(backend)?;
+        if state == State::Deleted
+            && let Some(masked) = self.known().masked.as_mut()
+        {
+            masked.remove(id);
+        }
+        Ok(())
     }
 }

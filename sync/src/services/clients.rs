@@ -349,10 +349,11 @@ either_client! {
         fn submit(submission: &Submission) -> Jmapped<Imported>;
         fn identities() -> Jmapped<Vec<Identity>>;
         fn vacation() -> Jmapped<mailrs_jmap::VacationResponse>;
-        fn set_vacation(reply: &mailrs_jmap::VacationResponse) -> Jmapped<()>;
+        fn set_vacation(reply: &mailrs_jmap::VacationPatch) -> Jmapped<()>;
         fn address_books() -> Jmapped<Vec<mailrs_jmap::AddressBook>>;
         fn cards_page(position: u64, limit: usize) -> Jmapped<mailrs_jmap::CardsPage>;
         fn card_changes(since: &str, max: usize) -> Jmapped<mailrs_jmap::CardChanges>;
+        fn card(id: &str) -> Jmapped<Option<Value>>;
         fn set_card(write: &mailrs_jmap::CardWrite) -> Jmapped<Value>;
         fn sieve_scripts() -> Jmapped<Vec<mailrs_jmap::SieveScript>>;
         fn sieve_text(blob_id: &str) -> Jmapped<String>;

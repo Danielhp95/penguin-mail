@@ -11,6 +11,11 @@ use mailrs_sieve::script::Extensions;
 
 use super::JmapApi;
 
+/// The script Stalwart keeps JMAP's own automatic reply in. The app
+/// writes the reply into its rules script instead, so it never includes
+/// this one.
+pub const SERVER_REPLY_SCRIPT: &str = "vacation";
+
 pub struct JmapSieve<J> {
     api: Arc<J>,
 }

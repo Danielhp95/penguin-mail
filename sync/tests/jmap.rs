@@ -86,7 +86,7 @@ async fn services(server: &JmapServer, password: &str, db: &Db, account_id: Acco
     let mail = services.mail.clone();
     let offers = |capability: &str| capabilities.iter().any(|c| c == capability);
     if let AnyMail::Jmap(adapter) = &mail {
-        if offers(mailrs_jmap::VACATION) {
+        if offers(mailrs_jmap::VACATION) && !offers(mailrs_jmap::SIEVE) {
             services = services.with_auto_reply(AnyAutoReply::Jmap(adapter.clone()));
         }
         if offers(mailrs_jmap::CONTACTS) {
@@ -97,8 +97,9 @@ async fn services(server: &JmapServer, password: &str, db: &Db, account_id: Acco
         }
     }
     if offers(mailrs_jmap::SIEVE) {
-        let rules = SieveRules::new(Arc::new(JmapSieve::new(jmap)), mail, server.address.clone(), format!("{:?}", server.kind));
-        services.with_rules(AnyRules::JmapSieve(rules))
+        let rules = SieveRules::new(Arc::new(JmapSieve::new(jmap)), mail, server.address.clone(), format!("{:?}", server.kind))
+            .beside_server_reply(offers(mailrs_jmap::VACATION).then_some(mailrs_sync::SERVER_REPLY_SCRIPT));
+        services.with_rules(AnyRules::JmapSieve(rules.clone())).with_auto_reply(AnyAutoReply::JmapSieve(rules))
     } else {
         services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), account_id)))
     }
@@ -203,6 +204,7 @@ impl<'a> Run<'a> {
         self.the_reply_round_trips_where_offered().await;
         self.a_contact_round_trips_where_offered().await;
         self.a_rule_lands_in_sieve_where_offered().await;
+        self.the_reply_and_a_rule_run_together_where_sieve_is_offered().await;
         self.masked_email_is_hidden_where_not_offered().await;
         self.the_calendar_round_trips().await;
         self.send_later_waits_on_the_server().await;
@@ -489,6 +491,19 @@ impl<'a> Run<'a> {
         let made = contacts.create_contact(&fields).await.expect("a contact");
         let page = contacts.connections(None, None).await.expect("the contacts");
         assert!(page.people.iter().any(|p| p.resource == made.resource), "{:?}", self.kind());
+        // An edit patches entries by key, which each server must take.
+        let more = mailrs_gmail::ContactFields {
+            emails: Some(vec!["ada@example.test".into(), "ada@engines.example".into()]),
+            organization: Some("Analytical Engines".into()),
+            ..Default::default()
+        };
+        let edited = contacts.update_contact(&made.resource, &more).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
+        assert_eq!(edited.name.as_deref(), Some("Ada Lovelace"), "{:?}", self.kind());
+        let renamed = mailrs_gmail::ContactFields { organization: Some("Difference Engines".into()), ..Default::default() };
+        let edited = contacts.update_contact(&made.resource, &renamed).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.organization.as_deref(), Some("Difference Engines"), "{:?}", self.kind());
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
     }
 
     async fn a_rule_lands_in_sieve_where_offered(&self) {
@@ -501,6 +516,58 @@ impl<'a> Run<'a> {
         assert_eq!(rules.filters().await.expect("the rules").len(), 1, "{:?}", self.kind());
         rules.delete_filter(made.id.as_deref().expect("the rule's id")).await.expect("a delete");
         assert!(rules.filters().await.expect("the rules").is_empty(), "{:?}", self.kind());
+    }
+
+    /// On a Sieve server the reply lives in the rules script, so adding a
+    /// rule leaves it on, and mail that arrives while it is on still
+    /// meets the rule. Stalwart once kept the reply in a script of its own,
+    /// which the rules script switched off.
+    async fn the_reply_and_a_rule_run_together_where_sieve_is_offered(&self) {
+        let services = self.sync.services();
+        let (Some(rules), Some(reply)) = (services.rules.clone(), services.auto_reply.clone()) else { return };
+        if rules.place() != mailrs_sync::RulesPlace::Server {
+            return;
+        }
+        let away = mailrs_domain::Vacation { enabled: true, subject: "Away".into(), body: "Back on Monday".into(), ..Default::default() };
+        reply.set_vacation(&away).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let pests = self.mail().create_mailbox("Pests").await.expect("a folder");
+        let filter = mailrs_domain::Filter {
+            criteria: mailrs_domain::FilterCriteria { from: Some("pest@example.test".into()), ..Default::default() },
+            action: mailrs_domain::FilterAction { add: vec![mailrs_domain::MailSet::Mailbox(pests.id.clone())], ..Default::default() },
+            ..Default::default()
+        };
+        let made = rules.create_filter(&filter).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let back = reply.vacation().await.expect("the reply back");
+        assert!(back.enabled && back.body.contains("Back on Monday"), "{:?}: the reply is still on: {back:?}", self.kind());
+        let raw = format!(
+            "From: Pest <pest@example.test>\r\nTo: {0}\r\nSubject: Buy now\r\nMessage-ID: <{1}>\r\nDate: {2}\r\n\r\nBuy now\r\n",
+            self.server.address,
+            self.id("pest"),
+            chrono::Utc::now().to_rfc2822()
+        );
+        self.server.deliver_through_rules(&raw).await;
+        let account = self.server.mail_account(self.password).await;
+        let mut filed = false;
+        for _ in 0..40 {
+            let found = self
+                .server
+                .call(
+                    self.password,
+                    &MAIL,
+                    json!([["Email/query", {"accountId": account, "filter": {"inMailbox": pests.id, "subject": "Buy now"}}, "0"]]),
+                )
+                .await;
+            if found["methodResponses"][0][1]["ids"].as_array().is_some_and(|ids| !ids.is_empty()) {
+                filed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        assert!(filed, "{:?}: the rule filed the mail while the reply was on", self.kind());
+        rules.delete_filter(made.id.as_deref().expect("the rule's id")).await.expect("a delete");
+        reply.set_vacation(&mailrs_domain::Vacation::default()).await.expect("the reply off");
+        assert!(!reply.vacation().await.expect("the reply back").enabled, "{:?}", self.kind());
+        eprintln!("{:?}: the reply and a rule run in one script", self.kind());
     }
 
     /// Only Fastmail offers Masked Email; the three test servers do not,

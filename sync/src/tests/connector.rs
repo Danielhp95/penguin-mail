@@ -424,7 +424,31 @@ async fn jmap_contacts_win_over_a_found_carddav_server() {
     assert!(matches!(services.contacts, Some(crate::AnyContacts::Jmap(_))));
     assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "the calendar comes from CalDAV, with the account password");
     assert!(matches!(services.rules, Some(crate::AnyRules::JmapSieve(_))));
+    assert!(matches!(services.auto_reply, Some(crate::AnyAutoReply::JmapSieve(_))), "the reply lives in the rules script");
+}
+
+#[tokio::test]
+async fn jmaps_own_reply_serves_a_session_without_sieve() {
+    use mailrs_jmap::{MAIL, VACATION};
+    use mailrs_store::jmap::JmapAuth;
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL, VACATION], JmapAuth::Basic), None).await;
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
     assert!(matches!(services.auto_reply, Some(crate::AnyAutoReply::Jmap(_))));
+}
+
+#[tokio::test]
+async fn a_sieve_session_without_jmaps_reply_still_offers_one() {
+    use mailrs_jmap::{MAIL, SIEVE};
+    use mailrs_store::jmap::JmapAuth;
+
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let account = jmap_signed_in_with(&db, &secrets, session_row(&[MAIL, SIEVE], JmapAuth::Basic), None).await;
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.auto_reply, Some(crate::AnyAutoReply::JmapSieve(_))));
 }
 
 #[tokio::test]

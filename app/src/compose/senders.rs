@@ -86,9 +86,11 @@ pub fn sender_for<'a>(senders: &'a [SendAsAddress], email: &str) -> Option<&'a S
         })
 }
 
-/// Include the message's permitted suffix addresses when choosing From and
-/// removing our own addresses from Reply All. Names come from preferences.
-pub fn reply_addresses(senders: &[SendAsAddress], original: &MessageMeta) -> Vec<Address> {
+/// Include the message's permitted suffix addresses, and the masked ones
+/// `masked` names, when choosing From and removing our own addresses from
+/// Reply All. Names come from preferences; a masked address takes the
+/// default sender's.
+pub fn reply_addresses(senders: &[SendAsAddress], original: &MessageMeta, masked: impl Fn(&str) -> bool) -> Vec<Address> {
     let mut mine: Vec<Address> = senders
         .iter()
         .map(|s| Address {
@@ -106,6 +108,12 @@ pub fn reply_addresses(senders: &[SendAsAddress], original: &MessageMeta) -> Vec
                 name: base.name.clone(),
                 email: address.email.clone(),
             });
+        }
+    }
+    let name = senders.iter().find(|s| s.default).or(senders.first()).and_then(|s| s.name.clone());
+    for address in original.to.iter().chain(&original.cc) {
+        if !mine.iter().any(|a| a.email.eq_ignore_ascii_case(&address.email)) && masked(&address.email) {
+            mine.push(Address { name: name.clone(), email: address.email.clone() });
         }
     }
     mine

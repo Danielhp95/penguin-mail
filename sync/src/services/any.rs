@@ -54,14 +54,15 @@ macro_rules! forward_rules {
     };
 }
 
-/// As `forward_dav!`, for the automatic reply: Gmail, Graph or
-/// ManageSieve.
+/// As `forward_dav!`, for the automatic reply: Gmail, Graph, a Sieve
+/// script over ManageSieve or JMAP, or JMAP's own reply.
 macro_rules! forward_reply {
     ($self:ident, $method:ident($($arg:expr),*)) => {
         match $self {
             AnyAutoReply::Google(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Microsoft(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Sieve(adapter) => adapter.$method($($arg),*).await,
+            AnyAutoReply::JmapSieve(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Jmap(adapter) => adapter.$method($($arg),*).await,
         }
     };
@@ -145,6 +146,9 @@ pub enum AnyAutoReply {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Sieve(SieveRules<AnySieve>),
+    /// The reply inside the rules script on a server that runs Sieve over
+    /// JMAP, which then never uses JMAP's own reply.
+    JmapSieve(SieveRules<JmapSieve<AnyJmap>>),
     Jmap(JmapAdapter),
 }
 
@@ -164,6 +168,16 @@ impl AnyMail {
         match self {
             AnyMail::Jmap(adapter) => adapter.masked_email(),
             _ => false,
+        }
+    }
+
+    /// Whether `address` is one of the account's masked addresses: `None`
+    /// until a JMAP account has listed them, `Some(false)` on an account
+    /// that makes none.
+    pub fn is_masked(&self, address: &str) -> Option<bool> {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.is_masked(address),
+            _ => Some(false),
         }
     }
 
@@ -575,6 +589,17 @@ impl RulesService for AnyRules {
 }
 
 impl AnyRules {
+    /// Brings a Sieve script in line with folders renamed, moved or
+    /// deleted; `moved` pairs old ids with new ones. Other rules name their
+    /// folders by an id that a rename keeps, or run on this computer.
+    pub async fn follow_folders(&self, moved: &[(String, String)]) -> Result<(), BackendError> {
+        match self {
+            AnyRules::Sieve(rules) => rules.follow_folders(moved).await,
+            AnyRules::JmapSieve(rules) => rules.follow_folders(moved).await,
+            _ => Ok(()),
+        }
+    }
+
     /// Where the rules run, for the line under the Rules dialog's list.
     pub fn place(&self) -> RulesPlace {
         match self {
@@ -628,6 +653,7 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Microsoft(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Sieve(adapter) => adapter.keeps_subject(),
+            AnyAutoReply::JmapSieve(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Jmap(adapter) => adapter.keeps_subject(),
         }
     }
@@ -637,6 +663,7 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Microsoft(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Sieve(adapter) => adapter.limits_to_contacts(),
+            AnyAutoReply::JmapSieve(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Jmap(adapter) => adapter.limits_to_contacts(),
         }
     }
