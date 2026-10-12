@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use base64::Engine;
@@ -438,6 +439,8 @@ impl Held {
 /// at a time, and holds the newest one until a save of it succeeds.
 struct Keeper {
     keep: Keep,
+    /// The session's retired mark: once set, nothing is saved.
+    retired: Arc<AtomicBool>,
     /// The newest refresh token no save has kept yet. Its lock orders the
     /// saves, so an older token never lands after a newer one. It is taken
     /// with `held` locked or alone, never the other way round.
@@ -451,8 +454,14 @@ impl Keeper {
         self.flush(&mut unsaved, wait).await;
     }
 
-    /// Saves the token in `unsaved`, if any, and clears it once saved.
+    /// Saves the token in `unsaved`, if any, and clears it once saved. A
+    /// retired keeper drops it instead: its token would land over the new
+    /// grant's, or under an account that is gone.
     async fn flush(&self, unsaved: &mut Option<String>, wait: Duration) {
+        if self.retired.load(Ordering::SeqCst) {
+            *unsaved = None;
+            return;
+        }
         let Some(token) = unsaved.clone() else { return };
         // The callback's words stay out of the log: they are the caller's.
         match tokio::time::timeout(wait, (self.keep)(token)).await {
@@ -474,6 +483,9 @@ pub struct OAuthSession {
     keeper: Option<Arc<Keeper>>,
     keep_wait: Duration,
     transport: Transport,
+    /// Set once the session is retired: a new sign-in replaced its grant,
+    /// or its account went.
+    retired: Arc<AtomicBool>,
 }
 
 // By hand, so neither token nor the client id reaches a log line.
@@ -502,6 +514,7 @@ impl OAuthSession {
             keeper: None,
             keep_wait: KEEP_WAIT,
             transport: Transport::HttpsOnly,
+            retired: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -514,7 +527,7 @@ impl OAuthSession {
         mut self,
         keep: impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static,
     ) -> OAuthSession {
-        let keeper = Keeper { keep: Box::new(keep), unsaved: Arc::new(tokio::sync::Mutex::new(None)) };
+        let keeper = Keeper { keep: Box::new(keep), retired: Arc::clone(&self.retired), unsaved: Arc::new(tokio::sync::Mutex::new(None)) };
         self.keeper = Some(Arc::new(keeper));
         self
     }
@@ -558,10 +571,35 @@ impl OAuthSession {
         self.renewed(held).await
     }
 
+    /// Stops the session from saving any refresh token from now on, and
+    /// answers the newest one it holds, once a refresh or a save already
+    /// running has ended. A new sign-in retires the session it replaces
+    /// before it keeps its own token, and removing the account retires it
+    /// before the token is revoked and deleted.
+    pub async fn retire(&self) -> String {
+        self.retired.store(true, Ordering::SeqCst);
+        // A refresh holds `held` until its save ends, and a save run again
+        // holds `unsaved`: both are over once these locks are taken.
+        let held = self.held.lock().await;
+        if let Some(keeper) = &self.keeper {
+            keeper.unsaved.lock().await.take();
+        }
+        held.refresh_token.clone()
+    }
+
+    /// Whether [`OAuthSession::retire`] ran.
+    pub fn retired(&self) -> bool {
+        self.retired.load(Ordering::SeqCst)
+    }
+
     /// Runs `keep` again in the background for a rotated refresh token an
-    /// earlier save failed to keep, unless a save is running already.
+    /// earlier save failed to keep, unless a save is running already or the
+    /// session is retired.
     fn save_again(&self) {
         let Some(keeper) = &self.keeper else { return };
+        if self.retired() {
+            return;
+        }
         let Ok(mut unsaved) = Arc::clone(&keeper.unsaved).try_lock_owned() else { return };
         if unsaved.is_none() {
             return;
@@ -1387,5 +1425,45 @@ mod tests {
         let err = jmap_with(&server, "stale").session().await.unwrap_err();
         assert_eq!(err, JmapError::Unauthorized);
         assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_session_retired_mid_refresh_keeps_nothing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                bearer_answer(json!({"access_token": "a2", "expires_in": 3600, "refresh_token": "r2"}))
+                    .set_delay(Duration::from_millis(300)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = Arc::new(OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL));
+        let refreshing = tokio::spawn({
+            let session = Arc::clone(&session);
+            async move { session.bearer(false).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // A new sign-in or a removal retires the session while its refresh
+        // waits on the server.
+        let last = session.retire().await;
+        assert_eq!(refreshing.await.unwrap().unwrap(), "a2");
+        assert!(saved.lock().unwrap().is_empty(), "a retired session wrote the keyring");
+        assert_eq!(last, "r2", "retiring hands back the newest refresh token");
+    }
+
+    #[tokio::test]
+    async fn a_retired_session_stops_saving_a_rotation_the_keyring_refused() {
+        let server = MockServer::start().await;
+        rotating_once(&server, 3600).await;
+        let (saved, keep) = refusing_first(1);
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        session.retire().await;
+        session.bearer(false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(saved.lock().unwrap().is_empty(), "save_again ran for a retired session");
     }
 }

@@ -927,6 +927,22 @@ async fn a_restart_reuses_the_accounts_oauth_session() {
     assert!(Arc::ptr_eq(&first, &again), "a second session would race the first to rotate");
     secrets.forget(&account).await.unwrap();
     assert!(secrets.jmap_sessions.held(account.id).is_none(), "a removed account leaves no session");
+    assert!(first.retired(), "a task still holding the session would save under a removed account");
+}
+
+#[tokio::test]
+async fn signing_in_again_retires_the_session_it_replaces() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    let old = secrets.jmap_sessions.held(account.id).unwrap();
+    let mut again = new_oauth(saved);
+    again.secret = "refresh-2".into();
+    crate::sign_in::jmap_signed_in(&db, &secrets, again, 1).await.unwrap();
+    assert!(old.retired(), "the old session could write its token over the new grant's");
+    assert_eq!(secrets.jmap.load(account.id).unwrap().as_deref(), Some("refresh-2"));
 }
 
 /// What the account keeps for `kind`, if anything.

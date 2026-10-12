@@ -276,9 +276,9 @@ pub(crate) async fn signing_in<S: SignInServer>(
     let Connector { db, config, secrets, .. } = connector;
     // The keyring takes the refresh token as the account is kept; when it
     // refuses, a new account goes again and the sign-in fails.
+    // The new refresh token, and maybe a new client, need a new session:
+    // `jmap_signed_in` retires the old one before it keeps the token.
     let account = jmap_signed_in(db, secrets, new, now_millis()).await?;
-    // The new refresh token, and maybe a new client, need a new session.
-    secrets.jmap_sessions.forget(account.id);
     // A new grant may carry what a calendar server refused before.
     crate::connect::try_the_token_again(db, account.id).await?;
     let window_days = config.engine_config().window_days;

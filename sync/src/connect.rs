@@ -534,12 +534,20 @@ impl JmapSessions {
         self.held_state().sessions.get(&id).map(|kept| Arc::clone(&kept.session))
     }
 
-    /// Drops the account's session, after a new sign-in brought a new
-    /// refresh token or the account went.
-    pub fn forget(&self, id: AccountId) {
-        let mut held = self.held_state();
-        held.sessions.remove(&id);
-        held.unanswered.remove(&id);
+    /// Drops the account's session before a new sign-in keeps its refresh
+    /// token, or as the account goes, and retires it: a task still holding
+    /// it saves nothing more over the new token or under a gone account.
+    /// Answers the newest refresh token the session held.
+    pub async fn forget(&self, id: AccountId) -> Option<String> {
+        let kept = {
+            let mut held = self.held_state();
+            held.unanswered.remove(&id);
+            held.sessions.remove(&id)
+        };
+        match kept {
+            Some(kept) => Some(kept.session.retire().await),
+            None => None,
+        }
     }
 
     /// Records that a sign-in with the account's kept client ran out or
