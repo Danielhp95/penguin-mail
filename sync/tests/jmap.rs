@@ -12,7 +12,7 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_jmap::{Auth, JmapClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, AnyAutoReply, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService,
+    AccountServices, AccountSync, AnyAutoReply, AnyCalendar, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService, CalendarService,
     ContactsService, DEFAULT_BODY_CACHE_BYTES, IdentityService, JmapSettings, JmapSieve, LocalRules, MailBackend, RulesService,
     SearchQuery, SieveRules, TriageAction,
 };
@@ -117,6 +117,19 @@ server_finding!(
     a_rule_lands_in_sieve_where_offered
 );
 
+// Cyrus 3.13 test image: `CalendarEvent/set` create without `version`
+// answers `notCreated: {"e": {"type": "invalidProperties", "properties":
+// ["version"]}}` (with or without the jscalendarbis capability in
+// `using`). Adding `"version": "2.0"` makes the same create succeed;
+// `"1.0"` is refused the same way. The adapter's JSCalendar object has
+// no `version`.
+server_finding!(
+    cyrus_calendar_round_trips,
+    Cyrus,
+    "Cyrus refuses a created event without version 2.0 (invalidProperties: version); the adapter sends none",
+    the_calendar_round_trips
+);
+
 struct Run<'a> {
     server: &'a JmapServer,
     password: &'a str,
@@ -152,6 +165,9 @@ async fn services(server: &JmapServer, password: &str, db: &Db, account_id: Acco
         }
         if offers(mailrs_jmap::CONTACTS) {
             services = services.with_contacts(AnyContacts::Jmap(adapter.clone()));
+        }
+        if offers(mailrs_jmap::CALENDARS) {
+            services = services.with_calendar(AnyCalendar::Jmap(adapter.clone()));
         }
     }
     if offers(mailrs_jmap::SIEVE) {
@@ -270,6 +286,12 @@ impl<'a> Run<'a> {
             self.a_rule_lands_in_sieve_where_offered().await;
         }
         self.masked_email_is_hidden_where_not_offered().await;
+        if self.kind() == JmapKind::Cyrus {
+            eprintln!("Cyrus: the calendar write skipped, see cyrus_calendar_round_trips (ignored)");
+            self.the_calendar_is_offered_as_the_gate_reads_it().await;
+        } else {
+            self.the_calendar_round_trips().await;
+        }
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;
@@ -499,5 +521,60 @@ impl<'a> Run<'a> {
     async fn masked_email_is_hidden_where_not_offered(&self) {
         let AnyMail::Jmap(adapter) = self.mail() else { panic!("a JMAP account") };
         assert!(!adapter.masked_email(), "{:?} does not offer Masked Email", self.kind());
+    }
+
+    /// Cyrus and Stalwart offer JMAP Calendars; James does not. A server
+    /// whose shape the gate refuses is reported, so the gate's reading of
+    /// a real session is checked as well as its tests.
+    /// Whether the server's session offers calendars in the shape the gate
+    /// accepts, with the account's calendar attached exactly then.
+    async fn the_calendar_is_offered_as_the_gate_reads_it(&self) -> bool {
+        let session = self.server.session(self.password).await;
+        let offers = mailrs_jmap::Session::parse(&serde_json::to_vec(&session).expect("json"))
+            .map(|s| s.offers(mailrs_jmap::CALENDARS))
+            .unwrap_or(false);
+        let listed = session["capabilities"].get(mailrs_jmap::CALENDARS).is_some();
+        eprintln!("{:?}: calendars listed {listed}, offered in draft 32's shape {offers}", self.kind());
+        let attached = self.sync.services().calendar.is_some();
+        assert_eq!(attached, offers, "{:?}: the calendar follows the gate", self.kind());
+        if !offers {
+            assert!(!listed || self.kind() == JmapKind::James, "{:?} lists calendars in a shape the gate refuses", self.kind());
+        }
+        offers
+    }
+
+    async fn the_calendar_round_trips(&self) {
+        if !self.the_calendar_is_offered_as_the_gate_reads_it().await {
+            return;
+        }
+        let calendar = self.sync.services().calendar.clone().expect("a calendar");
+        let calendars = calendar.calendars().await.expect("the calendars");
+        let Some(home) = calendars.iter().find(|c| c.access.can_write()) else {
+            eprintln!("{:?}: no calendar to write to for this user; skipping the round trip", self.kind());
+            return;
+        };
+        let start = mailrs_sync::now_millis() + 86_400_000;
+        let new = mailrs_domain::calendar::Event {
+            calendar: home.id.clone(),
+            uid: self.id("event"),
+            title: "Seed fair".into(),
+            start,
+            end: start + 3_600_000,
+            zone: "Europe/Lisbon".into(),
+            busy: true,
+            ..Default::default()
+        };
+        let made = calendar
+            .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
+            .await
+            .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let first = calendar.event_changes(&home.id, None, None, start - 86_400_000).await.expect("a read");
+        assert!(first.events.iter().any(|e| e.id == made.id && e.title == "Seed fair"), "{:?}", self.kind());
+        let mut changed = made.clone();
+        changed.title = "Seed fair, moved".into();
+        calendar.put_event(&changed, Some(&made.etag), false, mailrs_domain::calendar::Notify::Nobody).await.expect("a change");
+        let next = calendar.event_changes(&home.id, first.next_sync.as_deref(), None, 0).await.expect("the changes since");
+        assert!(next.events.iter().any(|e| e.id == made.id && e.title == "Seed fair, moved"), "{:?}", self.kind());
+        calendar.remove_event(&home.id, &made.id, None, mailrs_domain::calendar::Notify::Nobody).await.expect("a delete");
     }
 }
