@@ -408,10 +408,13 @@ impl JmapClient {
 
     async fn query_from(&self, query: &EmailQuery, anchor: Option<&str>) -> Result<Queried, JmapError> {
         let account = self.mail_account().await?;
+        // The page's ids feed one Email/get, which the server refuses whole
+        // past maxObjectsInGet. A shorter page only means one more call.
+        let most = self.session().await?.limits().max_objects_in_get.clamp(1, 500);
         let mut args = json!({
             "accountId": account,
             "sort": [{ "property": "receivedAt", "isAscending": false }],
-            "limit": query.limit,
+            "limit": query.limit.min(most),
             "calculateTotal": query.total,
         });
         match anchor {
@@ -462,24 +465,34 @@ impl JmapClient {
         Ok(all)
     }
 
-    /// The threads `ids` and every message in them, with `META`, a
-    /// request per `maxObjectsInGet` threads.
+    /// The threads `ids` and every message in them, with `META`: a
+    /// request per `maxObjectsInGet` threads, then their messages in
+    /// Email/get calls of at most as many ids. A back-reference would put
+    /// every message of a long thread in one call.
     pub async fn threads(&self, ids: &[String]) -> Result<Threads, JmapError> {
         let session = self.session().await?;
         let account = account(&session)?;
-        let step = session.limits().max_objects_in_get.clamp(1, 500);
+        let limits = session.limits();
+        let step = limits.max_objects_in_get.clamp(1, 500);
+        let calls = limits.max_calls_in_request.clamp(1, 4);
         let mut all = Threads::default();
         for chunk in ids.chunks(step) {
             let mut request = Request::new();
             let threads = request.call(MAIL, "Thread/get", json!({ "accountId": account, "ids": chunk }));
-            let emails = request.call(MAIL, "Email/get", json!({
-                "accountId": account, "#ids": threads.result_of("Thread/get", "/list/*/emailIds"), "properties": META
-            }));
-            let mut answer = self.send(&request).await?;
-            let listed: Got<Thread> = answer.take(&threads, "Thread/get")?;
-            let got: Got<Email> = answer.take(&emails, "Email/get")?;
+            let listed: Got<Thread> = self.send(&request).await?.take(&threads, "Thread/get")?;
+            let email_ids: Vec<&String> = listed.list.iter().flat_map(|t| &t.email_ids).collect();
+            for batch in email_ids.chunks(step * calls) {
+                let mut request = Request::new();
+                let gets: Vec<_> = batch
+                    .chunks(step)
+                    .map(|part| request.call(MAIL, "Email/get", json!({ "accountId": account, "ids": part, "properties": META })))
+                    .collect();
+                let mut answer = self.send(&request).await?;
+                for get in &gets {
+                    all.emails.extend(answer.take::<Got<Email>>(get, "Email/get")?.list);
+                }
+            }
             all.threads.extend(listed.list);
-            all.emails.extend(got.list);
             all.not_found.extend(listed.not_found);
         }
         Ok(all)

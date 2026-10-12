@@ -292,3 +292,32 @@ async fn a_server_without_anchors_still_lists_a_window_whole() {
     expected.sort();
     assert_eq!(listed, expected);
 }
+
+#[tokio::test]
+async fn a_refusal_that_is_not_about_the_anchor_leaves_anchors_on() {
+    let h = over(FakeJmap::new().clamping_queries(2)).await;
+    for n in 0..5 {
+        h.fake.deliver("inbox", &raw(&format!("a{n}@x"), "Listed"), days_ago(1) + n);
+    }
+    h.mail().mailboxes().await.unwrap();
+    // The page with the anchor and the page without it are both refused.
+    h.fake.with(|s| s.refuse_from_anchor = Some((2, "the filter is not valid".into())));
+    assert!(h.mail().window_ids(30, None).await.is_err());
+    h.fake.with(|s| s.anchored_queries = 0);
+    assert_eq!(h.mail().window_ids(30, None).await.unwrap().len(), 5);
+    assert!(h.fake.with(|s| s.anchored_queries) > 0, "anchors were turned off");
+}
+
+#[tokio::test]
+async fn a_refusal_that_only_the_page_without_an_anchor_gets_past_turns_anchors_off() {
+    let h = over(FakeJmap::new().clamping_queries(2)).await;
+    for n in 0..5 {
+        h.fake.deliver("inbox", &raw(&format!("b{n}@x"), "Listed"), days_ago(1) + n);
+    }
+    h.mail().mailboxes().await.unwrap();
+    h.fake.with(|s| s.refuse_from_anchor = Some((1, "something was not valid".into())));
+    assert_eq!(h.mail().window_ids(30, None).await.unwrap().len(), 5);
+    h.fake.with(|s| s.anchored_queries = 0);
+    assert_eq!(h.mail().window_ids(30, None).await.unwrap().len(), 5);
+    assert_eq!(h.fake.with(|s| s.anchored_queries), 0);
+}

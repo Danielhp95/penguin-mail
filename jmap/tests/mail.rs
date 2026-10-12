@@ -302,32 +302,67 @@ async fn emails_are_fetched_in_chunks_of_the_servers_get_limit() {
     assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
 }
 
-#[tokio::test]
-async fn threads_are_fetched_in_chunks_of_the_servers_get_limit() {
+/// A server whose `maxObjectsInGet` is `limit`, holding `threads`, each
+/// a thread id and its messages. It answers a back-referenced Email/get
+/// with every message.
+async fn holding_threads(limit: u64, threads: &'static [(&'static str, &'static [&'static str])]) -> MockServer {
     let server = MockServer::start().await;
-    let page = |ids: &[&str]| {
-        let threads: Vec<Value> = ids.iter().map(|t| json!({"id": t, "emailIds": [format!("m{t}")]})).collect();
-        let emails: Vec<Value> = ids.iter().map(|t| json!({"id": format!("m{t}"), "threadId": t})).collect();
-        json!({"sessionState": "s1", "methodResponses": [
-            ["Thread/get", {"accountId": "A1", "state": "t", "notFound": [], "list": threads}, "c0"],
-            ["Email/get", {"accountId": "A1", "state": "e", "notFound": [], "list": emails}, "c1"]]})
-    };
     Mock::given(method("GET"))
         .and(path("/jmap/session"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxObjectsInGet": 2}))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_on(&server.uri(), json!({"maxObjectsInGet": limit}))))
         .mount(&server)
         .await;
-    for answer in [page(&["a", "b"]), page(&["c"])] {
-        Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(200).set_body_json(answer))
-            .up_to_n_times(1).mount(&server).await;
-    }
+    let thread_of = |email: &str| threads.iter().find(|(_, emails)| emails.contains(&email)).map(|(t, _)| *t);
+    let answer = move |request: &wiremock::Request| {
+        let asked: Value = serde_json::from_slice(&request.body).unwrap();
+        let answers: Vec<Value> = asked["methodCalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|call| {
+                let (name, args, tag) = (&call[0], &call[1], &call[2]);
+                let every: Vec<&str> = threads.iter().flat_map(|(_, emails)| emails.iter().copied()).collect();
+                let asked: Vec<&str> = match args["ids"].as_array() {
+                    Some(ids) => ids.iter().filter_map(Value::as_str).collect(),
+                    None => every,
+                };
+                let list: Vec<Value> = match name.as_str().unwrap() {
+                    "Thread/get" => threads.iter().filter(|(t, _)| asked.contains(t)).map(|(t, e)| json!({"id": t, "emailIds": e})).collect(),
+                    _ => asked.iter().map(|id| json!({"id": id, "threadId": thread_of(id)})).collect(),
+                };
+                json!([name, {"accountId": "A1", "state": "s", "notFound": [], "list": list}, tag])
+            })
+            .collect();
+        ResponseTemplate::new(200).set_body_json(json!({"sessionState": "s1", "methodResponses": answers}))
+    };
+    Mock::given(method("POST")).and(path("/api/")).respond_with(answer).mount(&server).await;
+    server
+}
+
+/// The calls named `name` in every request the server took.
+async fn calls_named(server: &MockServer, name: &str) -> Vec<Value> {
+    let calls = posts(server).await.into_iter().flat_map(|r| r["methodCalls"].as_array().unwrap().clone());
+    calls.filter(|c| c[0] == name).map(|c| c[1].clone()).collect()
+}
+
+#[tokio::test]
+async fn threads_are_fetched_in_chunks_of_the_servers_get_limit() {
+    let server = holding_threads(2, &[("a", &["ma"]), ("b", &["mb"]), ("c", &["mc"])]).await;
     let ids: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
     let got = client(&server).threads(&ids).await.unwrap();
     assert_eq!((got.threads.len(), got.emails.len()), (3, 3));
-    let sent = posts(&server).await;
-    assert_eq!(sent.len(), 2);
-    assert_eq!(sent[0]["methodCalls"][0][1]["ids"], json!(["a", "b"]));
-    assert_eq!(sent[1]["methodCalls"][0][1]["ids"], json!(["c"]));
+    let asked: Vec<Value> = calls_named(&server, "Thread/get").await.into_iter().map(|args| args["ids"].clone()).collect();
+    assert_eq!(asked, [json!(["a", "b"]), json!(["c"])]);
+}
+
+#[tokio::test]
+async fn the_messages_of_long_threads_are_fetched_in_chunks_of_the_servers_get_limit() {
+    let server = holding_threads(2, &[("a", &["m1", "m2", "m3"])]).await;
+    let got = client(&server).threads(&["a".to_string()]).await.unwrap();
+    assert_eq!(got.emails.len(), 3);
+    for args in calls_named(&server, "Email/get").await {
+        assert!(args["ids"].as_array().is_some_and(|ids| ids.len() <= 2), "an Email/get past the limit: {args}");
+    }
 }
 
 /// Cyrus, as Fastmail, keeps one copy of a message per account: importing
@@ -511,4 +546,15 @@ async fn saving_bytes_another_message_holds_is_refused_and_leaves_it_alone() {
     assert!(matches!(&refused, mailrs_jmap::JmapError::Method { kind, .. } if kind == "alreadyExists"), "{refused:?}");
     let sent = posts(&server).await;
     assert_eq!(sent.len(), 2, "no patch and no destroy");
+}
+
+#[tokio::test]
+async fn a_query_page_stays_within_the_servers_get_limit() {
+    // The query's ids feed a back-referenced Email/get, so a page longer
+    // than maxObjectsInGet would be refused whole.
+    let server = holding_threads(2, &[("a", &["ma", "mb", "mc"])]).await;
+    let query = EmailQuery { filter: None, position: 0, limit: 1000, total: false };
+    let _ = client(&server).query(&query).await;
+    let asked = calls_named(&server, "Email/query").await;
+    assert_eq!(asked[0]["limit"], json!(2));
 }

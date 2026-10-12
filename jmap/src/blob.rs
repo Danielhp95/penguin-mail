@@ -86,7 +86,7 @@ impl JmapClient {
         // `endpoint` repeats a refused URL, and this one holds the account
         // id, so the refusal names the kind of URL instead.
         let url = self.endpoint(url).map_err(|_| JmapError::BadUrl("the download URL".into()))?;
-        let response = self.sent(self.authorized(reqwest::Method::GET, url).await?.timeout(BLOB_TIMEOUT)).await?;
+        let response = self.authorized(reqwest::Method::GET, url).await?.timeout(BLOB_TIMEOUT).send().await.map_err(network)?;
         match response.status().is_success() {
             true => Ok(response),
             false => Err(failure(response).await),
