@@ -210,9 +210,11 @@ pub fn present(
     });
     // Cancel does what Escape does: it closes the dialog, which the
     // switch keeps open while it runs.
-    let closer = dialog.clone();
+    let closer = dialog.downgrade();
     cancel.connect_clicked(move |_| {
-        closer.close();
+        if let Some(dialog) = closer.upgrade() {
+            dialog.close();
+        }
     });
     let ready = switch.clone();
     secret.connect_changed(move |row| ready.set_sensitive(!row.text().is_empty()));
