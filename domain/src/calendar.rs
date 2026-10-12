@@ -416,6 +416,12 @@ pub struct Event {
     /// The series' `RRULE`, `EXDATE` and `RDATE` lines, whole. Empty for
     /// an event that does not repeat.
     pub rules: Vec<String>,
+    /// The provider's event repeats by a rule the copy cannot write as an
+    /// `RRULE`, such as one in another calendar scale. `rules` is then
+    /// empty, so the event shows as its first occurrence, and a change to
+    /// its repeat is refused. The store does not keep it.
+    #[serde(default)]
+    pub unread_rule: bool,
     /// For a changed occurrence: the id of the series it belongs to.
     pub series: Option<String>,
     /// For a changed occurrence: the start of the occurrence it replaces.
@@ -718,6 +724,12 @@ pub fn series_end(event: &Event) -> Option<EpochMillis> {
         return None;
     }
     result.dates.last().map(|start| start.timestamp_millis() + length)
+}
+
+/// The zone `name` names: an IANA name, or a Windows name such as
+/// Outlook's "W. Europe Standard Time".
+pub fn named_zone(name: &str) -> Option<chrono_tz::Tz> {
+    crate::invitation::zone::named(name)
 }
 
 /// Whether `line` is an `RRULE` line, as opposed to an `EXDATE` or

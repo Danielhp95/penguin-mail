@@ -942,6 +942,7 @@ fn read_event(row: &Row) -> rusqlite::Result<Event> {
             .filter(|l| !l.is_empty())
             .map(str::to_string)
             .collect(),
+        unread_rule: false,
         series: row.get(21)?,
         original_start: row.get(22)?,
         pending: row.get(23)?,

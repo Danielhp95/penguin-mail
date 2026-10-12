@@ -10,7 +10,7 @@ mod cadence;
 mod contacts;
 mod errors;
 mod feed;
-#[expect(dead_code, reason = "Q5 and Q6 call it")]
+#[cfg_attr(not(test), expect(dead_code, reason = "Q5 and Q6 call it"))]
 pub(crate) mod jscal;
 mod fetch;
 mod identities;
