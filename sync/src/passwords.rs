@@ -190,21 +190,46 @@ fn keyring_error(err: keyring::Error) -> PasswordError {
 #[derive(Default)]
 pub struct MemoryPasswords {
     passwords: Mutex<HashMap<String, String>>,
+    /// Tests: every delete fails, as a locked keyring answers.
+    #[cfg(test)]
+    refuse_deletes: std::sync::atomic::AtomicBool,
+    /// Tests: every save fails, as a keyring that refuses to unlock.
+    #[cfg(test)]
+    refuse_saves: std::sync::atomic::AtomicBool,
 }
 
 impl MemoryPasswords {
+    /// Tests: from now on every delete fails.
+    #[cfg(test)]
+    pub(crate) fn refuse_deletes(&self) {
+        self.refuse_deletes.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Tests: from now on every save fails.
+    #[cfg(test)]
+    pub(crate) fn refuse_saves(&self) {
+        self.refuse_saves.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     fn load_as(&self, user: String) -> Result<Option<String>, PasswordError> {
         let passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(passwords.get(&user).cloned())
     }
 
     fn save_as(&self, user: String, password: &str) -> Result<(), PasswordError> {
+        #[cfg(test)]
+        if self.refuse_saves.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(PasswordError::Keyring("the keyring is locked".into()));
+        }
         let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
         passwords.insert(user, password.to_string());
         Ok(())
     }
 
     fn delete_as(&self, user: String) -> Result<(), PasswordError> {
+        #[cfg(test)]
+        if self.refuse_deletes.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(PasswordError::Keyring("the keyring is locked".into()));
+        }
         let mut passwords = self.passwords.lock().unwrap_or_else(PoisonError::into_inner);
         passwords.remove(&user);
         Ok(())
@@ -300,6 +325,9 @@ pub struct Secrets {
     pub passwords: Arc<Passwords>,
     pub microsoft: Arc<Passwords>,
     pub jmap: Arc<Passwords>,
+    /// The OAuth sessions JMAP accounts hold this run, beside the refresh
+    /// tokens in `jmap`.
+    pub jmap_sessions: crate::connect::JmapSessions,
 }
 
 impl Secrets {
@@ -312,6 +340,7 @@ impl Secrets {
             passwords: Arc::new(Passwords::Keyring(KeyringPasswords::new())),
             microsoft: Arc::new(Passwords::Keyring(KeyringPasswords::microsoft())),
             jmap: Arc::new(Passwords::Keyring(KeyringPasswords::jmap())),
+            jmap_sessions: crate::connect::JmapSessions::default(),
         }
     }
 
@@ -324,6 +353,7 @@ impl Secrets {
             passwords: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             microsoft: Arc::new(Passwords::Memory(MemoryPasswords::default())),
             jmap: Arc::new(Passwords::Memory(MemoryPasswords::default())),
+            jmap_sessions: crate::connect::JmapSessions::default(),
         }
     }
 
@@ -345,14 +375,17 @@ impl Secrets {
                 })
             }
             Provider::Imap | Provider::Pop3 => {
-                let passwords = Arc::clone(&self.passwords);
-                Box::new(move || first_error([passwords.delete_outgoing(id), passwords.delete(id)]))
+                // A switch to JMAP that stopped between saving its secret
+                // and the swap leaves that secret under this id.
+                let (passwords, jmap) = (Arc::clone(&self.passwords), Arc::clone(&self.jmap));
+                Box::new(move || first_error([passwords.delete_outgoing(id), passwords.delete(id), jmap.delete(id)]))
             }
             Provider::Microsoft => {
                 let tokens = Arc::clone(&self.microsoft);
                 Box::new(move || tokens.delete(id))
             }
             Provider::Jmap => {
+                self.jmap_sessions.forget(id).await;
                 let (jmap, passwords) = (Arc::clone(&self.jmap), Arc::clone(&self.passwords));
                 // The token or password, and the CalDAV app password kept
                 // beside it in part 3. Nothing may stay under the id: ids

@@ -2619,10 +2619,14 @@ name = "mailrs-jmap"
 version = "1.0.7"
 dependencies = [
  "base64 0.23.1",
+ "futures",
+ "mailrs-domain",
  "mailrs-testmail",
+ "rand 0.10.2",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

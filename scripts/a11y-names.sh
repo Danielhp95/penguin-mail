@@ -13,7 +13,8 @@
 # menu is in the accessible tree only while it is open, opens a
 # conversation to read its message view and invitation card, opens a
 # reply and a forward in the composer with their history shown, opens Add
-# Account on its tiles and its Other page, and walks the calendar.
+# Account on its tiles and its Other page, opens Switch to JMAP from the
+# Fastmail account's menu, and walks the calendar.
 #
 # The hidden display needs Xvfb, dbus-run-session, at-spi2-core, python3
 # with the GObject bindings, and the XTest library to click and type:
@@ -1017,9 +1018,75 @@ def walk_add_account(keys):
     return len(unnamed) + missing
 
 
-calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = 0
+def walk_switch_jmap(keys):
+    """Opens Switch to JMAP from the demo's Fastmail account menu and walks
+    the dialog into a list of its own, then closes it with Escape.
+
+    Reports the dialog's own line and gives back how many of its controls
+    came back with no name, counting as one a dialog that did not open."""
+
+    def named(role, name):
+        for app in penguins()[0]:
+            for node in nodes(app):
+                try:
+                    if node.get_role_name() == role and (node.get_name() or "").strip() == name:
+                        return node
+                except Exception:
+                    continue
+        return None
+
+    def dialog_of(node):
+        while node is not None and node.get_role_name() != "dialog":
+            node = node.get_parent()
+        return node
+
+    # The menu opens only from a button the sidebar has in view, and the
+    # Fastmail account sits below the fold.
+    for app in penguins()[0]:
+        for pane in nodes(app):
+            if pane.get_role_name() == "scroll pane":
+                box = pane.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+                if box.width > 0 and box.height > 0:
+                    for _ in range(PAGES):
+                        keys.scroll_down(box.x + box.width // 2, box.y + box.height // 2)
+    time.sleep(0.5)
+    options = named("toggle button", "Options for dana@fastmail.example")
+    if options is None or not options.get_action_iface().do_action(0):
+        print("The Fastmail account menu would not open for Switch to JMAP.", file=sys.stderr)
+        return 1
+    # The walk of every menu above can leave this toggle pressed, and then
+    # the press closes the menu rather than opening it.
+    if not wait_until(lambda: named("menu item", "Switch to JMAP…") is not None, 2.0):
+        options.get_action_iface().do_action(0)
+        wait_until(lambda: named("menu item", "Switch to JMAP…") is not None, 3.0)
+    item = named("menu item", "Switch to JMAP…")
+    if item is None:
+        print("The Fastmail account menu has no Switch to JMAP item.", file=sys.stderr)
+        close(keys)
+        return 1
+    item.get_action_iface().do_action(0)
+    if not wait_until(lambda: named("password text", "API Token") is not None, 10.0):
+        print("Switch to JMAP showed no API Token field by name.", file=sys.stderr)
+        return 1
+    time.sleep(1.0)
+    switch_found = []
+    walk(dialog_of(named("password text", "API Token")), ["Switch to JMAP"], switch_found)
+    for _ in range(3):
+        keys.escape()
+        time.sleep(0.4)
+        if named("password text", "API Token") is None:
+            break
+    unnamed = [row for row in switch_found if not row[1]]
+    print("switch to jmap: %d controls, %d unnamed" % (len(switch_found), len(unnamed)))
+    for role, _, path in unnamed:
+        print("  %s" % path)
+    return len(unnamed)
+
+
+calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = switch_unnamed = 0
 if sys.argv[1:] == ["--menus"]:
     open_menus()
+    switch_unnamed = walk_switch_jmap(Input())
     conversation_unnamed = walk_conversation(Input())
     composer_unnamed = walk_composer()
     added_unnamed = walk_add_account(Input())
@@ -1029,7 +1096,8 @@ unnamed = [row for row in found if not row[1]]
 print("%d controls, %d named, %d unnamed" % (len(found), len(found) - len(unnamed), len(unnamed)))
 for role, _, path in unnamed:
     print("  %s" % path)
-sys.exit(1 if (unnamed or calendar_unnamed or conversation_unnamed or composer_unnamed or added_unnamed) else 0)
+sys.exit(1 if (unnamed or calendar_unnamed or conversation_unnamed or composer_unnamed or added_unnamed
+             or switch_unnamed) else 0)
 PYTHON
 
 if [ "$here" = --here ]; then

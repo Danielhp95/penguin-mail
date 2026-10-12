@@ -1,6 +1,8 @@
-//! What signs a JMAP account in: the account password over Basic, or a
-//! token over Bearer, as the server takes them. Part 5 adds OAuth, whose
-//! header needs a refresh now and then, which is why `header` is async.
+//! What signs a JMAP account in: the account password over Basic, a
+//! token over Bearer, as the server takes them, or OAuth, whose header
+//! needs a refresh now and then, which is why `header` is async.
+
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -15,6 +17,9 @@ pub enum Auth {
     /// A token the person made on the provider's site, as Fastmail's API
     /// tokens are.
     Bearer(String),
+    /// OAuth tokens, refreshed as they expire or when the server refuses
+    /// one.
+    OAuth(Arc<crate::oauth::OAuthSession>),
 }
 
 /// How an account signs in, as the store keeps it.
@@ -22,6 +27,7 @@ pub enum Auth {
 pub enum AuthKind {
     Basic,
     Bearer,
+    OAuth,
 }
 
 impl AuthKind {
@@ -29,11 +35,12 @@ impl AuthKind {
         match self {
             AuthKind::Basic => "basic",
             AuthKind::Bearer => "bearer",
+            AuthKind::OAuth => "oauth",
         }
     }
 
     pub fn parse(stored: &str) -> Option<AuthKind> {
-        [AuthKind::Basic, AuthKind::Bearer].into_iter().find(|k| k.as_str() == stored)
+        [AuthKind::Basic, AuthKind::Bearer, AuthKind::OAuth].into_iter().find(|k| k.as_str() == stored)
     }
 }
 
@@ -43,6 +50,7 @@ impl std::fmt::Debug for Auth {
         match self {
             Auth::Basic { user, .. } => f.debug_struct("Basic").field("user", user).finish_non_exhaustive(),
             Auth::Bearer(_) => f.write_str("Bearer(..)"),
+            Auth::OAuth(_) => f.write_str("OAuth(..)"),
         }
     }
 }
@@ -52,16 +60,28 @@ impl Auth {
         match self {
             Auth::Basic { .. } => AuthKind::Basic,
             Auth::Bearer(_) => AuthKind::Bearer,
+            Auth::OAuth(_) => AuthKind::OAuth,
         }
     }
 
-    /// The `Authorization` header. `force` asks a refreshing credential
-    /// for a new one; a password or a fixed token ignores it.
-    pub(crate) async fn header(&self, force: bool) -> Result<HeaderValue, JmapError> {
-        let _ = force;
+    /// The `Authorization` header. `refused` is a header the server just
+    /// answered with a 401: OAuth then hands out another token, refreshing
+    /// unless another call already did. A password or a fixed token has no
+    /// other to give and ignores it.
+    pub(crate) async fn header(&self, refused: Option<&HeaderValue>) -> Result<HeaderValue, JmapError> {
         let text = match self {
             Auth::Basic { user, password } => format!("Basic {}", STANDARD.encode(format!("{user}:{password}"))),
             Auth::Bearer(token) => format!("Bearer {token}"),
+            Auth::OAuth(session) => {
+                let token = match refused {
+                    Some(refused) => {
+                        let refused = refused.to_str().ok().and_then(|h| h.strip_prefix("Bearer ")).unwrap_or_default();
+                        session.bearer_instead_of(refused).await?
+                    }
+                    None => session.bearer(false).await?,
+                };
+                format!("Bearer {token}")
+            }
         };
         let mut value = HeaderValue::from_str(&text).map_err(|_| JmapError::BadCredential)?;
         value.set_sensitive(true);
@@ -76,20 +96,20 @@ mod tests {
     #[tokio::test]
     async fn basic_sends_the_user_and_password_in_base64() {
         let auth = Auth::Basic { user: "me@example.org".into(), password: "pw".into() };
-        let header = auth.header(false).await.unwrap();
+        let header = auth.header(None).await.unwrap();
         assert_eq!(header.to_str().unwrap(), "Basic bWVAZXhhbXBsZS5vcmc6cHc=");
         assert!(header.is_sensitive());
     }
 
     #[tokio::test]
     async fn bearer_sends_the_token() {
-        let header = Auth::Bearer("fmu1-abc".into()).header(false).await.unwrap();
+        let header = Auth::Bearer("fmu1-abc".into()).header(None).await.unwrap();
         assert_eq!(header.to_str().unwrap(), "Bearer fmu1-abc");
     }
 
     #[tokio::test]
     async fn a_token_a_header_cannot_carry_is_refused_not_a_panic() {
-        let refused = Auth::Bearer("fmu1-abc\n".into()).header(false).await;
+        let refused = Auth::Bearer("fmu1-abc\n".into()).header(None).await;
         assert_eq!(refused, Err(JmapError::BadCredential));
     }
 
@@ -103,7 +123,7 @@ mod tests {
 
     #[test]
     fn the_kind_round_trips_through_its_stored_form() {
-        for kind in [AuthKind::Basic, AuthKind::Bearer] {
+        for kind in [AuthKind::Basic, AuthKind::Bearer, AuthKind::OAuth] {
             assert_eq!(AuthKind::parse(kind.as_str()), Some(kind));
         }
         assert_eq!(AuthKind::parse("digest"), None);

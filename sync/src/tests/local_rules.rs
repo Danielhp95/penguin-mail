@@ -236,3 +236,56 @@ async fn a_new_rule_gets_a_local_id_and_a_deleted_one_is_gone() {
     assert!(rules.filters().await.unwrap().is_empty());
     assert!(matches!(rules.delete_filter(&id).await, Err(BackendError::NotFound)));
 }
+
+#[tokio::test]
+async fn a_rule_that_is_off_does_not_run() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (engine, rules) = engine_for(&h).await;
+    rules.create_filter(&Filter { off: true, ..archive_from("news@example.com") }).await.unwrap();
+    h.imap.deliver("INBOX", letter(1, "news@example.com"), crate::now_millis() + 1_000);
+    h.sync.incremental().await.unwrap();
+    assert!(engine.run_due(h.account_id).await.unwrap().acted_on.is_empty());
+    assert!(h.imap.messages_in("INBOX").iter().any(|m| m.contains("Note 1")));
+}
+
+#[tokio::test]
+async fn saving_a_rule_that_is_off_turns_it_on() {
+    let h = imap_harness().await;
+    let (_, rules) = engine_for(&h).await;
+    let off = rules.create_filter(&Filter { off: true, ..archive_from("a@example.com") }).await.unwrap();
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &off).await.unwrap();
+    assert!(!edited.off);
+}
+
+fn file_into(address: &str, mailbox: &str) -> Filter {
+    Filter {
+        action: FilterAction { add: vec![MailSet::Mailbox(mailbox.into())], ..FilterAction::default() },
+        ..archive_from(address)
+    }
+}
+
+#[tokio::test]
+async fn saving_a_rule_whose_folder_is_still_missing_keeps_it_off() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (_, rules) = engine_for(&h).await;
+    let off = rules.create_filter(&Filter { off: true, ..file_into("a@example.com", "Gone/Projects") }).await.unwrap();
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &off).await.unwrap();
+    assert!(edited.off, "the server still lacks the folder");
+    assert!(rules.filters().await.unwrap()[0].off);
+}
+
+#[tokio::test]
+async fn saving_a_rule_with_a_folder_the_server_has_turns_it_on() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    let (_, rules) = engine_for(&h).await;
+    let account_id = h.account_id;
+    let listed = h.db.read(move |c| mailrs_store::mailboxes::listed(c, account_id)).await.unwrap();
+    let there = &listed.first().expect("the bootstrap lists the server's folders").id;
+    let off = rules.create_filter(&Filter { off: true, ..file_into("a@example.com", "Gone/Projects") }).await.unwrap();
+    let fixed = file_into("a@example.com", there);
+    let edited = rules.replace_filter(off.id.as_deref().unwrap(), &fixed).await.unwrap();
+    assert!(!edited.off);
+}

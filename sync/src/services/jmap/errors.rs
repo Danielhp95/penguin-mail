@@ -10,7 +10,7 @@ use crate::BackendError;
 
 pub(crate) fn backend(err: JmapError) -> BackendError {
     match err {
-        JmapError::Unauthorized | JmapError::BadCredential => BackendError::NeedsReauth,
+        JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient => BackendError::NeedsReauth,
         JmapError::Network(detail) => BackendError::Offline(detail),
         JmapError::RateLimited { retry_after } => BackendError::RateLimited(retry_after),
         JmapError::NotFound => BackendError::NotFound,
@@ -21,6 +21,8 @@ pub(crate) fn backend(err: JmapError) -> BackendError {
         JmapError::Forbidden(_) => BackendError::Refused(gettext("The server does not allow this.")),
         JmapError::Method { .. } => BackendError::Refused(gettext("The server refused this request.")),
         JmapError::Problem { .. } => BackendError::Refused(gettext("The server could not take this request.")),
+        // What would not parse can quote the answer, addresses and all.
+        JmapError::Decode(_) => BackendError::Refused(gettext("Penguin Mail could not read the server's answer.")),
         other => BackendError::Refused(other.to_string()),
     }
 }
@@ -41,6 +43,7 @@ mod tests {
             JmapError::Problem { status: 400, kind: "notRequest".into(), detail: SAID.into() },
             JmapError::Forbidden(SAID.into()),
             JmapError::Forbidden(String::new()),
+            JmapError::Decode(SAID.into()),
         ];
         for error in errors {
             let mapped = backend(error);

@@ -53,6 +53,13 @@ impl Request {
         CallId(id)
     }
 
+    /// Names `capability` in `using` without a call of its own, for a call
+    /// whose answer reaches into another capability's data, as
+    /// `MDN/send`'s `onSuccessUpdateEmail` reaches mail.
+    pub fn also_using(&mut self, capability: &'static str) {
+        self.using.insert(capability);
+    }
+
     pub fn len(&self) -> usize {
         self.calls.len()
     }
@@ -92,6 +99,12 @@ impl Response {
     pub fn parse(bytes: &[u8]) -> Result<Response, JmapError> {
         let wire: Wire = serde_json::from_slice(bytes).map_err(|e| decode("the answer", &e))?;
         Ok(Response { session_state: wire.session_state, answers: wire.method_responses })
+    }
+
+    /// Whether an answer to call `id` named `name`, or an error in its
+    /// place, is still there to take.
+    pub fn answered(&self, id: &CallId, name: &str) -> bool {
+        self.answers.iter().any(|(n, _, i)| *i == id.0 && (n == name || n == "error"))
     }
 
     /// The `name` answer to call `id`, or the error the server put in its
@@ -170,5 +183,13 @@ mod tests {
         assert!(set["updated"].get("M1").is_some());
         let submission: serde_json::Value = response.take(&CallId("c1".into()), "EmailSubmission/set").unwrap();
         assert_eq!(submission["created"]["s"]["id"], "S1");
+    }
+
+    #[test]
+    fn a_capability_can_join_using_without_a_call() {
+        let mut request = Request::new();
+        request.also_using(MAIL);
+        assert_eq!(request.using().collect::<Vec<_>>(), [CORE, MAIL]);
+        assert!(request.is_empty());
     }
 }

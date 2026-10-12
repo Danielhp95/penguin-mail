@@ -1,12 +1,23 @@
 //! The JMAP adapter over `FakeJmap`, through the same engine a real
 //! account runs.
 
+mod beside;
 mod bodies;
+mod calendar;
+mod contacts;
 mod feed;
 mod fetch;
+mod held;
+mod identities;
 mod mailboxes;
+mod masked;
 mod outgoing;
+mod receipts;
+mod rules;
 mod search;
+mod storage;
+mod send_later;
+mod vacation;
 mod watch;
 mod writes;
 
@@ -36,6 +47,18 @@ pub(crate) async fn over(fake: FakeJmap) -> Harness {
     let db = Db::open(&dir.path().join("mail.db")).unwrap();
     let account_id = db.write(|c| accounts::insert_account(c, "me@example.com", 0)).await.unwrap();
     let fake = Arc::new(fake);
+    let (sender, events) = async_channel::unbounded();
+    let sync = Arc::new(AccountSync::new(account_id, AccountServices::fake_jmap(Arc::clone(&fake)), db.clone(), sender));
+    Harness { fake, sync, db, events, account_id, _dir: dir }
+}
+
+/// A second install of the app on the same account: its own store, the
+/// same server.
+pub(crate) async fn beside(first: &Harness) -> Harness {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(&dir.path().join("mail.db")).unwrap();
+    let account_id = db.write(|c| accounts::insert_account(c, "me@example.com", 0)).await.unwrap();
+    let fake = Arc::clone(&first.fake);
     let (sender, events) = async_channel::unbounded();
     let sync = Arc::new(AccountSync::new(account_id, AccountServices::fake_jmap(Arc::clone(&fake)), db.clone(), sender));
     Harness { fake, sync, db, events, account_id, _dir: dir }

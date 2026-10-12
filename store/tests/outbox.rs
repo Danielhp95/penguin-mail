@@ -44,7 +44,7 @@ fn scheduled_sends_come_due_in_order_and_can_move() {
     assert_eq!(due, ["a"]);
 
     outbox::put(&conn, &scheduled(id, "a", 300)).unwrap();
-    outbox::set_message(&conn, id, "a", "a-m2", "a-t").unwrap();
+    outbox::set_message(&conn, id, "a", "a", "a-m2", "a-t").unwrap();
     let a = outbox::find_draft(&conn, id, "a").unwrap().unwrap();
     assert_eq!((a.send_at, a.message_id.as_deref()), (300, Some("a-m2")));
     assert!(outbox::by_message(&conn, id, "a-m2").unwrap().is_some());
@@ -298,4 +298,44 @@ fn the_sidebar_counts_waiting_and_stuck_messages_without_reading_them() {
     outbox::put(&conn, &scheduled(id, "b", 200)).unwrap();
     outbox::put(&conn, &held(id, "Stuck", 300)).unwrap();
     assert_eq!(outbox::counts(&conn).unwrap(), (2, 1));
+}
+
+#[test]
+fn a_held_message_keeps_its_hold() {
+    let conn = mailrs_store::open_in_memory().unwrap();
+    let account = mailrs_store::accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    let message = Queued { held: Some("S1".into()), ..scheduled(account, "M9", 100) };
+    let id = outbox::put(&conn, &message).unwrap();
+    assert_eq!(outbox::find(&conn, id).unwrap().unwrap().held.as_deref(), Some("S1"));
+    assert_eq!(outbox::find_held(&conn, account, "S1").unwrap().map(|m| m.id), Some(id));
+}
+
+#[test]
+fn putting_a_hold_again_updates_the_row_that_has_it() {
+    let conn = mailrs_store::open_in_memory().unwrap();
+    let account = mailrs_store::accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    let first = Queued { held: Some("S1".into()), draft_id: None, ..scheduled(account, "M9", 100) };
+    let id = outbox::put(&conn, &first).unwrap();
+    let again = Queued { send_at: 200, ..first.clone() };
+    assert_eq!(outbox::put(&conn, &again).unwrap(), id, "a retried put reuses the row");
+    assert_eq!(outbox::find_held(&conn, account, "S1").unwrap().unwrap().send_at, 200);
+    let rows: i64 = conn.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0)).unwrap();
+    assert_eq!(rows, 1);
+}
+
+#[test]
+fn a_message_naming_a_held_draft_cannot_take_its_row() {
+    let conn = mailrs_store::open_in_memory().unwrap();
+    let account = mailrs_store::accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    let id = outbox::put(&conn, &Queued { held: Some("S1".into()), ..scheduled(account, "M9", 100) }).unwrap();
+    // A composer that opened the held copy as a draft sends or schedules
+    // it under the copy's id, with no hold of its own.
+    for held in [None, Some("unconfirmed:1:x@example.com".to_string())] {
+        let fresh = Queued { held, send_at: 500, ..scheduled(account, "M9", 100) };
+        assert!(outbox::put(&conn, &fresh).is_err(), "the server's hold is not overwritten");
+    }
+    let kept = outbox::find(&conn, id).unwrap().unwrap();
+    assert_eq!((kept.held.as_deref(), kept.send_at), (Some("S1"), 100));
+    let mine = Queued { id, held: None, ..kept.clone() };
+    assert_eq!(outbox::put(&conn, &mine).unwrap(), id, "the row's own caller, by id, may let the hold go");
 }

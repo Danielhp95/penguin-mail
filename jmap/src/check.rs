@@ -40,6 +40,9 @@ pub struct Checked {
     /// The address the account sends as, in lower case, when the server
     /// says one.
     pub address: Option<String>,
+    /// Every address the account's identities name, in lower case: the
+    /// addresses Identity/get says it may send as.
+    pub addresses: Vec<String>,
     pub offered: Offered,
 }
 
@@ -54,16 +57,48 @@ pub async fn check(client: &JmapClient) -> Result<Checked, JmapError> {
     let offered = Offered::of(&session);
     // Cyrus answers an identity whose email is empty, so the first identity
     // that holds an address counts.
-    let from_identity = match offered.submission {
-        true => identities(client).await?.into_iter().map(|i| i.email).find(|e| is_address(e)),
-        false => None,
+    let addresses: Vec<String> = match offered.submission {
+        true => identities(client)
+            .await?
+            .into_iter()
+            .map(|i| i.email.trim().to_ascii_lowercase())
+            .filter(|e| is_address(e))
+            .collect(),
+        false => Vec::new(),
     };
-    let address = from_identity
-        .or_else(|| is_address(&session.username).then(|| session.username.clone()))
-        .map(|a| a.trim().to_ascii_lowercase());
-    Ok(Checked { session, address, offered })
+    let address = addresses
+        .first()
+        .cloned()
+        .or_else(|| is_address(&session.username).then(|| session.username.trim().to_ascii_lowercase()));
+    Ok(Checked { session, address, addresses, offered })
+}
+
+/// Whether two session URLs name the same server: one scheme, host and
+/// port. A URL that does not parse names no server.
+pub fn same_server(a: &str, b: &str) -> bool {
+    match (url::Url::parse(a), url::Url::parse(b)) {
+        (Ok(a), Ok(b)) => {
+            a.scheme() == b.scheme()
+                && a.host_str().map(str::to_ascii_lowercase) == b.host_str().map(str::to_ascii_lowercase)
+                && a.port_or_known_default() == b.port_or_known_default()
+        }
+        _ => false,
+    }
 }
 
 fn is_address(text: &str) -> bool {
     text.contains('@')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_server;
+
+    #[test]
+    fn a_session_url_on_another_host_or_port_is_another_server() {
+        assert!(same_server("https://api.fastmail.com/jmap/session", "https://API.fastmail.com:443/other"));
+        assert!(!same_server("https://api.fastmail.com/jmap/session", "https://jmap.example.org/jmap/session"));
+        assert!(!same_server("https://mail.example.org/jmap", "https://mail.example.org:8443/jmap"));
+        assert!(!same_server("https://mail.example.org/jmap", "not a url"));
+    }
 }

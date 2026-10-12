@@ -9,6 +9,7 @@ mod calendar_copy;
 mod calendar_read;
 mod calendar_list;
 mod calendar_series;
+mod calendar_switch;
 mod carddav;
 mod connect;
 mod connector;
@@ -44,6 +45,7 @@ mod senders;
 mod settings;
 mod sieve;
 mod stored_listing;
+mod switch;
 mod structure;
 mod thread_open;
 mod triage;
@@ -395,6 +397,11 @@ pub(crate) async fn imap_harness_on(imap: FakeImap, settings: ImapSettings) -> I
 }
 
 impl ImapHarness {
+    /// The store's database file.
+    pub fn db_path(&self) -> std::path::PathBuf {
+        self._dir.path().join("mail.db")
+    }
+
     pub fn drain(&self) -> Vec<ChangeEvent> {
         let mut events = Vec::new();
         while let Ok(event) = self.events.try_recv() {

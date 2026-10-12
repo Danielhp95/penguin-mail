@@ -8,9 +8,9 @@ use adw::prelude::*;
 use gtk::glib;
 
 use mailrs_domain::EpochMillis;
-use mailrs_domain::translate::gettext;
+use mailrs_domain::translate::{fill_plural, gettext};
 use mailrs_store::outbox::Queued;
-use mailrs_sync::now_millis;
+use mailrs_sync::{Cancelled, Reheld, now_millis};
 
 use super::undo_send::{self, Surface, Waiting};
 use super::{MainWindow, Target};
@@ -204,8 +204,26 @@ impl MainWindow {
             }
             this.left_queue(&view);
             this.scheduled_changed();
-            let kept = cancelled.unsaved.len() - reopened;
-            this.toast(&cancelled_line(cancelled.in_drafts, reopened, kept));
+            for line in cancel_lines(&cancelled, reopened) {
+                this.toast(&line);
+            }
+        });
+    }
+
+    /// Hands a Send Later message the person opened and closed unchanged
+    /// back to the server for its hour. When the server will not take it,
+    /// it stays in Send Later here, and the person hears so once.
+    pub(super) fn hold_unchanged(self: &Rc<Self>, id: i64) {
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let outbox = this.core.outbox();
+            let reheld = this.core.call(async move { outbox.hold_unchanged(id).await }).await;
+            if !matches!(reheld, Ok(Reheld::Held)) {
+                this.toast(&gettext(
+                    "The server would not take this message back, so Penguin Mail sends it at its hour while it runs.",
+                ));
+            }
+            this.scheduled_changed();
         });
     }
 
@@ -244,6 +262,64 @@ impl MainWindow {
         composer.mark_unsaved();
         true
     }
+}
+
+/// The toasts after Cancel Send, one per kind of outcome, in the order
+/// the person most needs them. `reopened` counts the unsaved messages the
+/// app opened in a composer.
+fn cancel_lines(cancelled: &Cancelled, reopened: usize) -> Vec<String> {
+    let kept = cancelled.unsaved.len() - reopened;
+    let mut lines = Vec::new();
+    if cancelled.in_drafts + reopened + kept > 0 {
+        lines.push(cancelled_line(cancelled.in_drafts, reopened, kept));
+    }
+    if cancelled.already_sent > 0 {
+        lines.push(already_sent_line(cancelled.already_sent));
+    }
+    match cancelled.cancelled_elsewhere {
+        0 => {}
+        1 => lines.push(gettext("This message was canceled in another app.")),
+        count => lines.push(fill_plural(
+            "{count} message was canceled in another app.",
+            "{count} messages were canceled in another app.",
+            count,
+            &[("count", &count.to_string())],
+        )),
+    }
+    match cancelled.unconfirmed {
+        0 => {}
+        1 => lines.push(gettext(
+            "Penguin Mail could not confirm whether this message went out. Check Sent.",
+        )),
+        count => lines.push(fill_plural(
+            "Penguin Mail could not confirm whether {count} message went out. Check Sent.",
+            "Penguin Mail could not confirm whether {count} messages went out. Check Sent.",
+            count,
+            &[("count", &count.to_string())],
+        )),
+    }
+    // A hold the server did not let go of still goes at its hour, which
+    // is what the person has to know.
+    if cancelled.still_held > 0 {
+        lines.push(fill_plural(
+            "The server did not answer, so {count} message still goes out at its hour.",
+            "The server did not answer, so {count} messages still go out at their hour.",
+            cancelled.still_held,
+            &[("count", &cancelled.still_held.to_string())],
+        ));
+    }
+    lines
+}
+
+/// What the toast adds when the server had sent a held message before the
+/// cancel reached it. That message is in Sent.
+fn already_sent_line(count: usize) -> String {
+    fill_plural(
+        "{count} message had already gone out.",
+        "{count} messages had already gone out.",
+        count,
+        &[("count", &count.to_string())],
+    )
 }
 
 /// What the toast says after Cancel Send: where the messages went. One
@@ -286,5 +362,64 @@ mod tests {
         assert!(cancelled_line(0, 2, 0).contains("messages are open"));
         assert!(cancelled_line(1, 1, 0).contains("Some are in Drafts"));
         assert!(cancelled_line(0, 0, 1).contains("stays in Send Later"));
+    }
+
+    #[test]
+    fn a_message_that_already_went_is_counted() {
+        assert_eq!(already_sent_line(1), "1 message had already gone out.");
+        assert_eq!(already_sent_line(2), "2 messages had already gone out.");
+    }
+
+    #[test]
+    fn a_cancel_that_came_too_late_says_only_that() {
+        let cancelled = Cancelled { already_sent: 1, ..Cancelled::default() };
+        assert_eq!(cancel_lines(&cancelled, 0), ["1 message had already gone out."]);
+    }
+
+    #[test]
+    fn every_outcome_of_a_cancel_gets_its_own_line() {
+        let cancelled = Cancelled {
+            in_drafts: 1,
+            already_sent: 1,
+            cancelled_elsewhere: 1,
+            unconfirmed: 1,
+            still_held: 1,
+            ..Cancelled::default()
+        };
+        assert_eq!(
+            cancel_lines(&cancelled, 0),
+            [
+                "Won't be sent. The message is in Drafts.",
+                "1 message had already gone out.",
+                "This message was canceled in another app.",
+                "Penguin Mail could not confirm whether this message went out. Check Sent.",
+                "The server did not answer, so 1 message still goes out at its hour.",
+            ]
+        );
+    }
+
+    #[test]
+    fn several_messages_of_each_kind_are_counted() {
+        let cancelled = Cancelled {
+            cancelled_elsewhere: 2,
+            unconfirmed: 3,
+            still_held: 2,
+            ..Cancelled::default()
+        };
+        assert_eq!(
+            cancel_lines(&cancelled, 0),
+            [
+                "2 messages were canceled in another app.",
+                "Penguin Mail could not confirm whether 3 messages went out. Check Sent.",
+                "The server did not answer, so 2 messages still go out at their hour.",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_held_message_the_server_did_not_answer_for_does_not_blame_gmail() {
+        let cancelled = Cancelled { still_held: 1, ..Cancelled::default() };
+        let lines = cancel_lines(&cancelled, 0);
+        assert!(lines.iter().all(|line| !line.contains("Gmail")), "{lines:?}");
     }
 }

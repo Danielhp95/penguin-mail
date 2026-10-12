@@ -208,6 +208,26 @@ async fn every_mailbox_takes_mail(http: &reqwest::Client, session_url: &str, use
     list.iter().any(|m| m["role"] == "inbox") && list.iter().all(|m| m["myRights"]["mayAddItems"] == true)
 }
 
+/// One message over SMTP or LMTP to 127.0.0.1 inside a container, in Perl
+/// with core modules only. The recipient is the first argument, the
+/// message comes on stdin, and any refusal ends it with a non-zero status.
+const DELIVER_SCRIPT: &str = r#"
+use IO::Socket::INET;
+my ($rcpt) = @ARGV;
+my $msg = do { local $/; <STDIN> };
+my $s = IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => {port}) or die "no connection";
+$s->autoflush(1);
+sub said { my $l; do { $l = <$s>; } while (defined $l && $l =~ /^\d{3}-/); die "refused: $l" unless defined $l && $l =~ /^[23]/; }
+said();
+print $s "{greeting} client.example.test\r\n"; said();
+print $s "MAIL FROM:<pest\@example.test>\r\n"; said();
+print $s "RCPT TO:<$rcpt>\r\n"; said();
+print $s "DATA\r\n"; said();
+$msg =~ s/^\./../mg;
+print $s $msg, "\r\n.\r\n"; said();
+print $s "QUIT\r\n";
+"#;
+
 impl JmapServer {
     pub async fn start(kind: JmapKind, password: &str) -> Option<JmapServer> {
         match kind {
@@ -455,6 +475,34 @@ impl JmapServer {
             .as_str()
             .expect("a mail account")
             .to_string()
+    }
+
+    /// Hands `raw` to the server's own delivery, so the account's active
+    /// Sieve script runs on it, as it would on mail from outside. An import
+    /// skips Sieve. Cyrus takes it over LMTP and Stalwart over SMTP, both
+    /// spoken from inside the container by the Perl each image carries,
+    /// so no further port is published. Stalwart queues it and delivers a
+    /// moment later.
+    pub async fn deliver_through_rules(&self, raw: &str) {
+        let (port, greeting) = match self.kind {
+            JmapKind::Cyrus => ("8024", "LHLO"),
+            JmapKind::Stalwart => ("25", "EHLO"),
+            JmapKind::James => panic!("James runs no Sieve over JMAP"),
+        };
+        let script = DELIVER_SCRIPT.replace("{port}", port).replace("{greeting}", greeting);
+        let mut child = Command::new("docker")
+            .args(["exec", "-i", self.id(), "perl", "-e", &script, &self.address])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("docker runs");
+        {
+            use std::io::Write;
+            child.stdin.take().expect("a stdin").write_all(raw.as_bytes()).expect("the message goes in");
+        }
+        let done = child.wait_with_output().expect("docker answers");
+        assert!(done.status.success(), "{:?} refused the delivery: {}", self.kind, String::from_utf8_lossy(&done.stderr));
     }
 
     /// Imports `raw` into the Inbox as another client would, and answers

@@ -4,6 +4,7 @@
 //! One test, as every Docker file here has.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_domain::query::{Query, Term};
@@ -11,7 +12,9 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_jmap::{Auth, JmapClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, JmapSettings, MailBackend, SearchQuery, TriageAction,
+    AccountServices, AccountSync, AnyAutoReply, AnyCalendar, AnyContacts, AnyJmap, AnyMail, AnyRules, AutoReplyService, BackendError, CalendarService,
+    ContactsService, DEFAULT_BODY_CACHE_BYTES, IdentityService, JmapSettings, JmapSieve, LocalRules, MailBackend, RulesService,
+    SearchQuery, Settled, SieveRules, TriageAction, Unheld,
 };
 use mailrs_testmail::{JmapKind, JmapServer};
 use rusqlite::OptionalExtension;
@@ -63,16 +66,43 @@ struct Run<'a> {
     _dir: tempfile::TempDir,
 }
 
-fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId) -> AccountServices {
+/// The services the app would attach for this server: what its session
+/// offers, as `connect_jmap` reads it from the saved capabilities.
+async fn services(server: &JmapServer, password: &str, db: &Db, account_id: AccountId) -> AccountServices {
     let client = JmapClient::new(&server.session_url, Auth::Basic { user: server.user.clone(), password: password.to_string() })
         .expect("a client for the server");
+    let session = client.refresh_session().await.expect("the session");
+    let capabilities: Vec<String> = session.capabilities.keys().filter(|c| session.offers(c)).cloned().collect();
     let settings = JmapSettings {
         address: server.address.clone(),
         provider_name: format!("{:?}", server.kind),
         window_days: WINDOW_DAYS,
         labels: true,
+        capabilities: capabilities.clone(),
+        auto_reply_needs_sign_in: false,
     };
-    AccountServices::jmap(db.clone(), account_id, client, settings)
+    let jmap = Arc::new(AnyJmap::from(client.clone()));
+    let mut services = AccountServices::jmap(client, settings);
+    let mail = services.mail.clone();
+    let offers = |capability: &str| capabilities.iter().any(|c| c == capability);
+    if let AnyMail::Jmap(adapter) = &mail {
+        if offers(mailrs_jmap::VACATION) && !offers(mailrs_jmap::SIEVE) {
+            services = services.with_auto_reply(AnyAutoReply::Jmap(adapter.clone()));
+        }
+        if offers(mailrs_jmap::CONTACTS) {
+            services = services.with_contacts(AnyContacts::Jmap(adapter.clone()));
+        }
+        if offers(mailrs_jmap::CALENDARS) {
+            services = services.with_calendar(AnyCalendar::Jmap(adapter.clone()));
+        }
+    }
+    if offers(mailrs_jmap::SIEVE) {
+        let rules = SieveRules::new(Arc::new(JmapSieve::new(jmap)), mail, server.address.clone(), format!("{:?}", server.kind))
+            .beside_server_reply(offers(mailrs_jmap::VACATION).then_some(mailrs_sync::SERVER_REPLY_SCRIPT));
+        services.with_rules(AnyRules::JmapSieve(rules.clone())).with_auto_reply(AnyAutoReply::JmapSieve(rules))
+    } else {
+        services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), account_id)))
+    }
 }
 
 fn incoming(message_id: &str, subject: &str, to: &str) -> Vec<u8> {
@@ -93,7 +123,7 @@ impl<'a> Run<'a> {
             .await
             .expect("the account row");
         let (events, receiver) = async_channel::unbounded();
-        let sync = AccountSync::new(account_id, services(server, password, &db, account_id), db.clone(), events)
+        let sync = AccountSync::new(account_id, services(server, password, &db, account_id).await, db.clone(), events)
             .with_limits(WINDOW_DAYS, DEFAULT_BODY_CACHE_BYTES);
         Run { server, password, db, account_id, sync, _events: receiver, _dir: dir }
     }
@@ -170,9 +200,88 @@ impl<'a> Run<'a> {
         self.a_body_opens().await;
         self.a_send_lands_in_sent().await;
         self.a_draft_saves_replaces_and_sends().await;
+        self.identities_name_the_account().await;
+        self.the_reply_round_trips_where_offered().await;
+        self.a_contact_round_trips_where_offered().await;
+        self.a_rule_lands_in_sieve_where_offered().await;
+        self.the_reply_and_a_rule_run_together_where_sieve_is_offered().await;
+        self.masked_email_is_hidden_where_not_offered().await;
+        self.the_calendar_round_trips().await;
+        self.send_later_waits_on_the_server().await;
+        self.storage_answers().await;
+        self.a_receipt_goes_out().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;
+    }
+
+    /// Cyrus and Stalwart hold and call back; James lists a hold it cannot
+    /// call back, so the app keeps the message in its own queue.
+    async fn send_later_waits_on_the_server(&self) {
+        let raw = format!(
+            "From: {0}\r\nTo: {0}\r\nSubject: Later\r\nMessage-ID: <{1}>\r\n\r\nLater\r\n",
+            self.server.address,
+            self.id("later-held")
+        );
+        let mail = self.mail();
+        let at = mailrs_sync::now_millis() + 3_600_000;
+        match mail.schedule(raw.as_bytes(), at).await {
+            Ok(held) => {
+                let (_, waiting) = self.on_server(&held.message_id).await.expect("the held copy");
+                assert_eq!(waiting.get(mailrs_jmap::HELD), Some(&true), "{:?}: the copy is marked held", self.kind());
+                let settled = mail.settle(&held.handle, &held.message_id, at).await.expect("a settle");
+                assert!(matches!(settled, Settled::Waiting(_)), "{:?}: {settled:?}", self.kind());
+                let unheld = mail.unschedule(&held.handle, &held.message_id, at).await.expect("a cancel");
+                assert_eq!(unheld, Unheld::InDrafts, "{:?}", self.kind());
+                let (_, keywords) = self.on_server(&held.message_id).await.expect("the copy stays as a draft");
+                assert!(!keywords.contains_key(mailrs_jmap::HELD), "{:?}: a cancelled hold is a plain draft", self.kind());
+                mail.delete_draft(&held.message_id).await.expect("the draft goes");
+                eprintln!("{:?}: the server held the message and gave it back", self.kind());
+            }
+            Err(BackendError::Unsupported) => {
+                eprintln!("{:?}: no hold the server can call back; the app keeps the message", self.kind());
+            }
+            Err(err) => panic!("{:?}: {err}", self.kind()),
+        }
+    }
+
+    /// James reports a quota once one is set; Cyrus and Stalwart test
+    /// users have none, which reads as nothing to show.
+    async fn storage_answers(&self) {
+        if self.kind() == JmapKind::James {
+            let root = format!("#private&{}", self.server.address);
+            let status = std::process::Command::new("docker")
+                .args(["exec", self.server.id(), "james-cli", "SetMaxStorageQuota", &root, "1G"])
+                .status()
+                .expect("docker runs");
+            assert!(status.success(), "james-cli sets the quota");
+        }
+        let storage = self.sync.storage().await.expect("a storage answer");
+        eprintln!("{:?}: storage {storage:?}", self.kind());
+        match self.kind() {
+            JmapKind::James => assert_eq!(storage.map(|s| s.limit), Some(1 << 30)),
+            _ => assert!(storage.is_none_or(|s| s.limit > 0), "{:?}", self.kind()),
+        }
+    }
+
+    /// MDN/send where the session offers it; a report sent as mail where
+    /// not. Either way `$mdnsent` lands on the server's copy.
+    async fn a_receipt_goes_out(&self) {
+        let raw = format!(
+            "From: {0}\r\nTo: {0}\r\nSubject: Asks\r\nMessage-ID: <{1}>\r\nDisposition-Notification-To: {0}\r\nDate: {2}\r\n\r\nAsks\r\n",
+            self.server.address,
+            self.id("asks"),
+            chrono::Utc::now().to_rfc2822()
+        );
+        self.server.deliver(self.password, raw.as_bytes()).await;
+        self.sync.incremental().await.expect("a look");
+        let (id, _) = self.stored(&self.id("asks")).await.expect("stored");
+        self.sync.body(&id).await.expect("the body");
+        assert!(!self.sync.receipt_answered(&id).await.expect("the record"));
+        self.sync.answer_receipt(&id, true).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert!(self.sync.receipt_answered(&id).await.expect("the record"));
+        let (_, keywords) = self.on_server(&id).await.expect("still there");
+        assert_eq!(keywords.get("$mdnsent"), Some(&true), "{:?}", self.kind());
     }
 
     async fn mail_arrives_and_lands_in_the_store(&self) {
@@ -292,7 +401,7 @@ impl<'a> Run<'a> {
     /// an EventSource stream is open, so there the delivery waits until the
     /// adapter's probe finds the server holding calls and drops the stream.
     async fn a_delivery_during_a_watch_reaches_the_store(&self) {
-        let watcher = services(self.server, self.password, &self.db, self.account_id).mail;
+        let watcher = services(self.server, self.password, &self.db, self.account_id).await.mail;
         let mut watching = tokio::spawn({
             let watcher = watcher.clone();
             async move { watcher.watch().await }
@@ -340,5 +449,239 @@ impl<'a> Run<'a> {
         watching.abort();
         eprintln!("{:?}: a write during a watch took {:?}", self.kind(), started.elapsed());
         written.unwrap_or_else(|_| panic!("{:?}: the write waited past {WRITE_WAIT:?}", self.kind())).expect("an unstar");
+    }
+
+    /// Cyrus answers `user1`'s identity with an empty email; the adapter
+    /// fills it with the address the user name stands for.
+    async fn identities_name_the_account(&self) {
+        let listed = self.sync.services().identities.identities().await.expect("identities");
+        assert!(listed.iter().any(|a| a.email == self.server.address), "{:?}: {listed:?}", self.kind());
+    }
+
+    async fn the_reply_round_trips_where_offered(&self) {
+        let Some(reply) = self.sync.services().auto_reply.clone() else {
+            eprintln!("{:?} offers no automatic reply", self.kind());
+            return;
+        };
+        let wanted = mailrs_domain::Vacation {
+            enabled: true,
+            subject: "Away".into(),
+            body: "Back soon".into(),
+            contacts_only: false,
+            domain_only: false,
+            start: None,
+            end: None,
+        };
+        reply.set_vacation(&wanted).await.expect("a reply");
+        let back = reply.vacation().await.expect("the reply back");
+        assert!(back.enabled && back.body.contains("Back soon"), "{:?}", self.kind());
+    }
+
+    async fn a_contact_round_trips_where_offered(&self) {
+        let Some(contacts) = self.sync.services().contacts.clone() else {
+            eprintln!("{:?} offers no contacts over JMAP", self.kind());
+            return;
+        };
+        let fields = mailrs_gmail::ContactFields {
+            name: Some("Ada Lovelace".into()),
+            emails: Some(vec!["ada@example.test".into()]),
+            phones: None,
+            organization: None,
+        };
+        let made = contacts.create_contact(&fields).await.expect("a contact");
+        let page = contacts.connections(None, None).await.expect("the contacts");
+        assert!(page.people.iter().any(|p| p.resource == made.resource), "{:?}", self.kind());
+        // An edit patches entries by key, which each server must take.
+        let more = mailrs_gmail::ContactFields {
+            emails: Some(vec!["ada@example.test".into(), "ada@engines.example".into()]),
+            organization: Some("Analytical Engines".into()),
+            ..Default::default()
+        };
+        let edited = contacts.update_contact(&made.resource, &more).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
+        assert_eq!(edited.name.as_deref(), Some("Ada Lovelace"), "{:?}", self.kind());
+        let renamed = mailrs_gmail::ContactFields { organization: Some("Difference Engines".into()), ..Default::default() };
+        let edited = contacts.update_contact(&made.resource, &renamed).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(edited.organization.as_deref(), Some("Difference Engines"), "{:?}", self.kind());
+        assert_eq!(edited.emails.len(), 2, "{:?}: {edited:?}", self.kind());
+    }
+
+    async fn a_rule_lands_in_sieve_where_offered(&self) {
+        let Some(rules) = self.sync.services().rules.clone() else { return };
+        if rules.place() != mailrs_sync::RulesPlace::Server {
+            eprintln!("{:?} offers no Sieve over JMAP", self.kind());
+            return;
+        }
+        let made = rules.create_filter(&mailrs_domain::Filter::block("pest@example.test")).await.expect("a rule");
+        assert_eq!(rules.filters().await.expect("the rules").len(), 1, "{:?}", self.kind());
+        rules.delete_filter(made.id.as_deref().expect("the rule's id")).await.expect("a delete");
+        assert!(rules.filters().await.expect("the rules").is_empty(), "{:?}", self.kind());
+    }
+
+    /// On a Sieve server the reply lives in the rules script, so adding a
+    /// rule leaves it on, and mail that arrives while it is on still
+    /// meets the rule. Stalwart once kept the reply in a script of its own,
+    /// which the rules script switched off.
+    async fn the_reply_and_a_rule_run_together_where_sieve_is_offered(&self) {
+        let services = self.sync.services();
+        let (Some(rules), Some(reply)) = (services.rules.clone(), services.auto_reply.clone()) else { return };
+        if rules.place() != mailrs_sync::RulesPlace::Server {
+            return;
+        }
+        let away = mailrs_domain::Vacation { enabled: true, subject: "Away".into(), body: "Back on Monday".into(), ..Default::default() };
+        reply.set_vacation(&away).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let pests = self.mail().create_mailbox("Pests").await.expect("a folder");
+        let filter = mailrs_domain::Filter {
+            criteria: mailrs_domain::FilterCriteria { from: Some("pest@example.test".into()), ..Default::default() },
+            action: mailrs_domain::FilterAction { add: vec![mailrs_domain::MailSet::Mailbox(pests.id.clone())], ..Default::default() },
+            ..Default::default()
+        };
+        let made = rules.create_filter(&filter).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let back = reply.vacation().await.expect("the reply back");
+        assert!(back.enabled && back.body.contains("Back on Monday"), "{:?}: the reply is still on: {back:?}", self.kind());
+        let raw = format!(
+            "From: Pest <pest@example.test>\r\nTo: {0}\r\nSubject: Buy now\r\nMessage-ID: <{1}>\r\nDate: {2}\r\n\r\nBuy now\r\n",
+            self.server.address,
+            self.id("pest"),
+            chrono::Utc::now().to_rfc2822()
+        );
+        self.server.deliver_through_rules(&raw).await;
+        let account = self.server.mail_account(self.password).await;
+        let mut filed = false;
+        for _ in 0..40 {
+            let found = self
+                .server
+                .call(
+                    self.password,
+                    &MAIL,
+                    json!([["Email/query", {"accountId": account, "filter": {"inMailbox": pests.id, "subject": "Buy now"}}, "0"]]),
+                )
+                .await;
+            if found["methodResponses"][0][1]["ids"].as_array().is_some_and(|ids| !ids.is_empty()) {
+                filed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        assert!(filed, "{:?}: the rule filed the mail while the reply was on", self.kind());
+        rules.delete_filter(made.id.as_deref().expect("the rule's id")).await.expect("a delete");
+        reply.set_vacation(&mailrs_domain::Vacation::default()).await.expect("the reply off");
+        assert!(!reply.vacation().await.expect("the reply back").enabled, "{:?}", self.kind());
+        eprintln!("{:?}: the reply and a rule run in one script", self.kind());
+    }
+
+    /// Only Fastmail offers Masked Email; the three test servers do not,
+    /// so the adapter must say so and the app hides the feature.
+    async fn masked_email_is_hidden_where_not_offered(&self) {
+        let AnyMail::Jmap(adapter) = self.mail() else { panic!("a JMAP account") };
+        assert!(!adapter.masked_email(), "{:?} does not offer Masked Email", self.kind());
+    }
+
+    /// Cyrus and Stalwart offer JMAP Calendars; James does not. A server
+    /// whose shape the gate refuses is reported, so the gate's reading of
+    /// a real session is checked as well as its tests.
+    /// Whether the server's session offers calendars in the shape the gate
+    /// accepts, with the account's calendar attached exactly then.
+    async fn the_calendar_is_offered_as_the_gate_reads_it(&self) -> bool {
+        let session = self.server.session(self.password).await;
+        let offers = mailrs_jmap::Session::parse(&serde_json::to_vec(&session).expect("json"))
+            .map(|s| s.offers(mailrs_jmap::CALENDARS))
+            .unwrap_or(false);
+        let listed = session["capabilities"].get(mailrs_jmap::CALENDARS).is_some();
+        eprintln!("{:?}: calendars listed {listed}, offered in draft 32's shape {offers}", self.kind());
+        let attached = self.sync.services().calendar.is_some();
+        assert_eq!(attached, offers, "{:?}: the calendar follows the gate", self.kind());
+        if !offers {
+            assert!(!listed || self.kind() == JmapKind::James, "{:?} lists calendars in a shape the gate refuses", self.kind());
+        }
+        offers
+    }
+
+    async fn the_calendar_round_trips(&self) {
+        if !self.the_calendar_is_offered_as_the_gate_reads_it().await {
+            return;
+        }
+        let calendar = self.sync.services().calendar.clone().expect("a calendar");
+        let calendars = calendar.calendars().await.expect("the calendars");
+        let Some(home) = calendars.iter().find(|c| c.access.can_write()) else {
+            eprintln!("{:?}: no calendar to write to for this user; skipping the round trip", self.kind());
+            return;
+        };
+        let start = mailrs_sync::now_millis() + 86_400_000;
+        let new = mailrs_domain::calendar::Event {
+            calendar: home.id.clone(),
+            uid: self.id("event"),
+            title: "Seed fair".into(),
+            start,
+            end: start + 3_600_000,
+            zone: "Europe/Lisbon".into(),
+            busy: true,
+            ..Default::default()
+        };
+        let made = calendar
+            .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
+            .await
+            .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        // A create tried again, as after a lost answer, finds the first.
+        let again = calendar
+            .put_event(&new, None, true, mailrs_domain::calendar::Notify::Nobody)
+            .await
+            .unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        assert_eq!(again.id, made.id, "{:?}: a create tried again makes no second event", self.kind());
+        let first = calendar.event_changes(&home.id, None, None, start - 86_400_000).await.expect("a read");
+        assert!(first.events.iter().any(|e| e.id == made.id && e.title == "Seed fair"), "{:?}", self.kind());
+        assert_eq!(first.events.iter().filter(|e| e.uid == new.uid).count(), 1, "{:?}", self.kind());
+        let mut changed = made.clone();
+        changed.title = "Seed fair, moved".into();
+        calendar.put_event(&changed, Some(&made.etag), false, mailrs_domain::calendar::Notify::Nobody).await.expect("a change");
+        let next = calendar.event_changes(&home.id, first.next_sync.as_deref(), None, 0).await.expect("the changes since");
+        assert!(next.events.iter().any(|e| e.id == made.id && e.title == "Seed fair, moved"), "{:?}", self.kind());
+        calendar.remove_event(&home.id, &made.id, None, mailrs_domain::calendar::Notify::Nobody).await.expect("a delete");
+        self.a_moved_series_takes_its_changed_occurrence(&calendar, &home.id, start).await;
+    }
+
+    /// A weekly series with one changed occurrence, moved an hour later
+    /// whole: the changed occurrence moves with it, and no occurrence
+    /// stays at the old time.
+    async fn a_moved_series_takes_its_changed_occurrence(&self, calendar: &AnyCalendar, home: &str, start: i64) {
+        use mailrs_domain::calendar::{Event, Notify, occurrence_id};
+        const HOUR: i64 = 3_600_000;
+        const WEEK: i64 = 7 * 86_400_000;
+        let start = start - start % HOUR;
+        let series = Event {
+            calendar: home.to_string(),
+            uid: self.id("weekly"),
+            title: "Watering".into(),
+            start,
+            end: start + HOUR,
+            zone: "Europe/Lisbon".into(),
+            busy: true,
+            rules: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
+            ..Default::default()
+        };
+        let made = calendar.put_event(&series, None, true, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let original = start + WEEK;
+        let late = Event {
+            id: occurrence_id(&made, original),
+            series: Some(made.id.clone()),
+            original_start: Some(original),
+            etag: String::new(),
+            rules: Vec::new(),
+            title: "Watering, late".into(),
+            ..made.clone()
+        };
+        calendar.put_event(&late, None, false, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let read = calendar.event_changes(home, None, None, start - 86_400_000).await.expect("a read");
+        let now = read.events.iter().find(|e| e.id == made.id).expect("the series").clone();
+        let moved = Event { start: now.start + HOUR, end: now.end + HOUR, ..now.clone() };
+        calendar.put_event(&moved, Some(&now.etag), false, Notify::Nobody).await.unwrap_or_else(|err| panic!("{:?}: {err}", self.kind()));
+        let read = calendar.event_changes(home, None, None, start - 86_400_000).await.expect("a read");
+        let changed: Vec<_> = read.events.iter().filter(|e| e.series.as_deref() == Some(made.id.as_str())).collect();
+        assert_eq!(changed.len(), 1, "{:?}: {changed:?}", self.kind());
+        assert_eq!((changed[0].title.as_str(), changed[0].original_start), ("Watering, late", Some(original + HOUR)), "{:?}", self.kind());
+        let series = read.events.iter().find(|e| e.id == made.id).expect("the series");
+        let shown = mailrs_domain::calendar::expand(series, original - HOUR, original + 2 * HOUR);
+        assert_eq!(shown.iter().map(|(at, _)| *at).collect::<Vec<_>>(), [original + HOUR], "{:?}: no occurrence stays at the old time", self.kind());
+        calendar.remove_event(home, &made.id, None, Notify::Nobody).await.expect("a delete");
     }
 }

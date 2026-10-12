@@ -17,12 +17,13 @@ use mailrs_gmail::{ConnectionsPage, ContactFields, LabelColor, Person};
 use mailrs_mime::Parts;
 
 use super::clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp};
+use super::beside::RulesBeside;
 use super::local::LocalRules;
 use super::{
     AutoReplyService, Backfill, CalDav, CalendarService, CardDav, Changes, ContactsService, Found, Google,
-    IdentityService, Imap, Jmap, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, Refused,
-    Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, SieveRules, SyncState, Unapplied,
-    Want, Withheld,
+    Claimed, Held, IdentityService, Imap, Jmap, JmapSieve, KeywordsPage, MailBackend, MailCapabilities, Microsoft, Pop3, RawMessage, ReceiptOut, Refused,
+    Relocated, RemoteRef, RulesPlace, RulesService, SearchQuery, SendAsAddress, Settled, SieveRules, Storage, SyncState, Unapplied,
+    Unheld, Want, Withheld,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -35,6 +36,7 @@ macro_rules! forward_dav {
             $enum::Google(adapter) => adapter.$method($($arg),*).await,
             $enum::Microsoft(adapter) => adapter.$method($($arg),*).await,
             $enum::Dav(adapter) => adapter.$method($($arg),*).await,
+            $enum::Jmap(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -47,19 +49,23 @@ macro_rules! forward_rules {
             AnyRules::Google(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Microsoft(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Sieve(adapter) => adapter.$method($($arg),*).await,
+            AnyRules::JmapSieve(adapter) => adapter.$method($($arg),*).await,
             AnyRules::Local(adapter) => adapter.$method($($arg),*).await,
+            AnyRules::Beside(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
 
-/// As `forward_dav!`, for the automatic reply: Gmail, Graph or
-/// ManageSieve.
+/// As `forward_dav!`, for the automatic reply: Gmail, Graph, a Sieve
+/// script over ManageSieve or JMAP, or JMAP's own reply.
 macro_rules! forward_reply {
     ($self:ident, $method:ident($($arg:expr),*)) => {
         match $self {
             AnyAutoReply::Google(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Microsoft(adapter) => adapter.$method($($arg),*).await,
             AnyAutoReply::Sieve(adapter) => adapter.$method($($arg),*).await,
+            AnyAutoReply::JmapSieve(adapter) => adapter.$method($($arg),*).await,
+            AnyAutoReply::Jmap(adapter) => adapter.$method($($arg),*).await,
         }
     };
 }
@@ -113,6 +119,8 @@ pub enum AnyCalendar {
     Microsoft(MicrosoftAdapter),
     /// A CalDAV server, whose replies go out through the account's mail.
     Dav(CalDav<AnyDav>),
+    /// A JMAP server's own calendars.
+    Jmap(JmapAdapter),
 }
 
 /// An account's address book.
@@ -121,6 +129,7 @@ pub enum AnyContacts {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Dav(CardDav<AnyDav>),
+    Jmap(JmapAdapter),
 }
 
 /// The rules an account's server runs, or this computer does.
@@ -129,7 +138,11 @@ pub enum AnyRules {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Sieve(SieveRules<AnySieve>),
+    JmapSieve(SieveRules<JmapSieve<AnyJmap>>),
     Local(LocalRules),
+    /// A JMAP server's Sieve script beside local rules a switch from IMAP
+    /// could not move into it.
+    Beside(RulesBeside),
 }
 
 /// An account's automatic reply.
@@ -138,6 +151,10 @@ pub enum AnyAutoReply {
     Google(GoogleAdapter),
     Microsoft(MicrosoftAdapter),
     Sieve(SieveRules<AnySieve>),
+    /// The reply inside the rules script on a server that runs Sieve over
+    /// JMAP, which then never uses JMAP's own reply.
+    JmapSieve(SieveRules<JmapSieve<AnyJmap>>),
+    Jmap(JmapAdapter),
 }
 
 /// The addresses an account sends as.
@@ -151,6 +168,33 @@ pub enum AnyIdentities {
 }
 
 impl AnyMail {
+    /// The account's session offers Masked Email.
+    pub fn masked_email(&self) -> bool {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.masked_email(),
+            _ => false,
+        }
+    }
+
+    /// Whether `address` is one of the account's masked addresses: `None`
+    /// until a JMAP account has listed them, `Some(false)` on an account
+    /// that makes none.
+    pub fn is_masked(&self, address: &str) -> Option<bool> {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.is_masked(address),
+            _ => Some(false),
+        }
+    }
+
+    /// The server keeps an automatic reply this account's sign-in cannot
+    /// reach. Only a JMAP account signed in with a token can say so.
+    pub fn auto_reply_needs_sign_in(&self) -> bool {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.auto_reply_needs_sign_in(),
+            _ => false,
+        }
+    }
+
     /// What Google's account withholds, read from the scopes it granted.
     /// An IMAP account withholds nothing: it grants Google nothing to
     /// begin with.
@@ -282,6 +326,34 @@ impl MailBackend for AnyMail {
 
     async fn list_drafts(&self) -> Result<Vec<DraftRef>, BackendError> {
         forward_all!(AnyMail, self, list_drafts())
+    }
+
+    async fn schedule(&self, raw: &[u8], at: EpochMillis) -> Result<Held, BackendError> {
+        forward_all!(AnyMail, self, schedule(raw, at))
+    }
+
+    async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
+        forward_all!(AnyMail, self, find_hold(message_id))
+    }
+
+    async fn hold_of_copy(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        forward_all!(AnyMail, self, hold_of_copy(email_id))
+    }
+
+    async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
+        forward_all!(AnyMail, self, unschedule(handle, message_id, send_at))
+    }
+
+    async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
+        forward_all!(AnyMail, self, settle(handle, message_id, send_at))
+    }
+
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        forward_all!(AnyMail, self, storage())
+    }
+
+    async fn send_receipt(&self, receipt: &ReceiptOut) -> Result<(), BackendError> {
+        forward_all!(AnyMail, self, send_receipt(receipt))
     }
 
     fn made_by_person(&self, id: &str) -> bool {
@@ -457,21 +529,33 @@ impl CalendarService for AnyCalendar {
     }
 }
 
+/// As `forward_dav!`, for an address book, which a JMAP server can hold too.
+macro_rules! forward_contacts {
+    ($self:ident, $method:ident($($arg:expr),*)) => {
+        match $self {
+            AnyContacts::Google(adapter) => adapter.$method($($arg),*).await,
+            AnyContacts::Microsoft(adapter) => adapter.$method($($arg),*).await,
+            AnyContacts::Dav(adapter) => adapter.$method($($arg),*).await,
+            AnyContacts::Jmap(adapter) => adapter.$method($($arg),*).await,
+        }
+    };
+}
+
 impl ContactsService for AnyContacts {
     async fn connections(
         &self,
         page_token: Option<&str>,
         sync_token: Option<&str>,
     ) -> Result<ConnectionsPage, BackendError> {
-        forward_dav!(AnyContacts, self, connections(page_token, sync_token))
+        forward_contacts!(self, connections(page_token, sync_token))
     }
 
     async fn contact_photo(&self, url: &str) -> Result<Vec<u8>, BackendError> {
-        forward_dav!(AnyContacts, self, contact_photo(url))
+        forward_contacts!(self, contact_photo(url))
     }
 
     async fn create_contact(&self, fields: &ContactFields) -> Result<Person, BackendError> {
-        forward_dav!(AnyContacts, self, create_contact(fields))
+        forward_contacts!(self, create_contact(fields))
     }
 
     async fn update_contact(
@@ -479,7 +563,7 @@ impl ContactsService for AnyContacts {
         resource: &str,
         fields: &ContactFields,
     ) -> Result<Person, BackendError> {
-        forward_dav!(AnyContacts, self, update_contact(resource, fields))
+        forward_contacts!(self, update_contact(resource, fields))
     }
 }
 
@@ -507,12 +591,26 @@ impl RulesService for AnyRules {
     fn queues_offline(&self) -> bool {
         match self {
             AnyRules::Sieve(adapter) => adapter.queues_offline(),
+            AnyRules::JmapSieve(adapter) => adapter.queues_offline(),
+            AnyRules::Beside(adapter) => adapter.queues_offline(),
             _ => false,
         }
     }
 }
 
 impl AnyRules {
+    /// Brings a Sieve script in line with folders renamed, moved or
+    /// deleted; `moved` pairs old ids with new ones. Other rules name their
+    /// folders by an id that a rename keeps, or run on this computer.
+    pub async fn follow_folders(&self, moved: &[(String, String)]) -> Result<(), BackendError> {
+        match self {
+            AnyRules::Sieve(rules) => rules.follow_folders(moved).await,
+            AnyRules::JmapSieve(rules) => rules.follow_folders(moved).await,
+            AnyRules::Beside(rules) => rules.server().follow_folders(moved).await,
+            _ => Ok(()),
+        }
+    }
+
     /// Where the rules run, for the line under the Rules dialog's list.
     pub fn place(&self) -> RulesPlace {
         match self {
@@ -526,7 +624,22 @@ impl AnyRules {
     pub async fn listing(&self) -> Result<(Vec<Filter>, Vec<String>), BackendError> {
         match self {
             AnyRules::Sieve(adapter) => adapter.listing().await,
+            AnyRules::JmapSieve(adapter) => adapter.listing().await,
+            AnyRules::Beside(adapter) => adapter.listing().await,
             other => Ok((other.filters().await?, Vec::new())),
+        }
+    }
+
+    /// Whether some of the rules run on this computer.
+    pub fn runs_here(&self) -> bool {
+        matches!(self, AnyRules::Local(_) | AnyRules::Beside(_))
+    }
+
+    /// The ids of the rules that run on this computer beside a server's.
+    pub async fn kept_here(&self) -> Result<Vec<String>, BackendError> {
+        match self {
+            AnyRules::Beside(adapter) => adapter.kept_here().await,
+            _ => Ok(Vec::new()),
         }
     }
 }
@@ -565,6 +678,8 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Microsoft(adapter) => adapter.keeps_subject(),
             AnyAutoReply::Sieve(adapter) => adapter.keeps_subject(),
+            AnyAutoReply::JmapSieve(adapter) => adapter.keeps_subject(),
+            AnyAutoReply::Jmap(adapter) => adapter.keeps_subject(),
         }
     }
 
@@ -573,6 +688,8 @@ impl AutoReplyService for AnyAutoReply {
             AnyAutoReply::Google(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Microsoft(adapter) => adapter.limits_to_contacts(),
             AnyAutoReply::Sieve(adapter) => adapter.limits_to_contacts(),
+            AnyAutoReply::JmapSieve(adapter) => adapter.limits_to_contacts(),
+            AnyAutoReply::Jmap(adapter) => adapter.limits_to_contacts(),
         }
     }
 }

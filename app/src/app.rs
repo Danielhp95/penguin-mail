@@ -2,7 +2,7 @@
 //! content filter, identities, and the engine event loop.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -41,6 +41,7 @@ mod hidden;
 mod photos;
 mod reminders;
 mod sending;
+mod storage;
 
 pub use composing::Signature;
 mod updates;
@@ -65,6 +66,9 @@ pub struct App {
     /// Each account's consent, read in the same pass as `accounts` so the
     /// Grant Access banner never waits on a round trip of its own.
     consent: RefCell<HashMap<AccountId, accounts::Consent>>,
+    /// The JMAP accounts that signed in through the browser, as
+    /// `reload_accounts` last read them, so signing in again says where.
+    through_browser: RefCell<HashSet<AccountId>>,
     names: RefCell<HashMap<AccountId, String>>,
     tray: Arc<Mutex<Option<ksni::Handle<MailTray>>>>,
     /// What somebody picked on a new-mail notification.
@@ -113,6 +117,8 @@ pub struct App {
     /// Which languages a dictionary is installed for, read once.
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
+    /// How full each account's server said it was, read hourly.
+    storage: RefCell<HashMap<AccountId, mailrs_sync::Storage>>,
     /// The timer for the next event reminder check. Each check replaces
     /// it with one set for the next reminder due, at most a minute away.
     reminder_wake: RefCell<Option<glib::SourceId>>,
@@ -154,6 +160,7 @@ impl App {
             labels: RefCell::new(HashMap::new()),
             label_order: RefCell::new(HashMap::new()),
             consent: RefCell::new(HashMap::new()),
+            through_browser: RefCell::default(),
             names: RefCell::new(HashMap::new()),
             tray: Arc::new(Mutex::new(None)),
             chosen,
@@ -184,6 +191,7 @@ impl App {
             dictionaries: RefCell::new(HashMap::new()),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
+            storage: RefCell::new(HashMap::new()),
             reminder_wake: RefCell::new(None),
             reminders_running: Cell::new(false),
             updater: crate::update::Updater::for_this_copy(core_demo).map(Rc::new),
@@ -237,6 +245,7 @@ impl App {
         });
         app.load_accounts();
         app.start_scheduler();
+        app.start_storage_checks();
         app.start_event_reminders();
         app.watch_contacts();
         app.watch_calendars();
@@ -557,6 +566,10 @@ impl App {
                         email: sender.email.clone(),
                     },
                     default: sender.default,
+                    masks: self
+                        .core
+                        .account(account.id)
+                        .is_some_and(|sync| sync.services().offers().masked_email),
                 });
             }
         }
@@ -576,7 +589,9 @@ impl App {
                 sender.name = self.names.borrow().get(&account_id).cloned();
             }
         }
-        crate::compose::reply_addresses(&senders, original)
+        let mail = self.core.account(account_id).map(|sync| sync.services().mail.clone());
+        let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+        crate::compose::reply_addresses(&senders, original, masked)
     }
 
     /// The dictionaries a composer for `account_id` should check against.
@@ -741,21 +756,29 @@ impl App {
     /// shown up as a stray unnamed control to a screen reader already
     /// walking the page.
     pub async fn reload_accounts(self: &Rc<Self>) -> anyhow::Result<Vec<(Account, Vec<Label>)>> {
-        let (loaded, order, consent) = self
+        let (loaded, order, consent, through_browser) = self
             .core
             .read(|c| {
                 let mut out: Vec<(Account, Vec<Label>)> = Vec::new();
                 let mut order = HashMap::new();
+                let mut through_browser = HashSet::new();
                 for account in accounts::list_accounts(c)? {
                     let account_labels = labels::list_labels(c, account.id)?;
                     order.insert(account.id, labels::positions(c, account.id)?);
+                    if account.provider == Provider::Jmap
+                        && mailrs_store::jmap::load(c, account.id)?
+                            .is_some_and(|saved| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)
+                    {
+                        through_browser.insert(account.id);
+                    }
                     out.push((account, account_labels));
                 }
                 let consent = accounts::all_consent(c)?;
-                Ok((out, order, consent))
+                Ok((out, order, consent, through_browser))
             })
             .await?;
         *self.label_order.borrow_mut() = order;
+        *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
         self.accounts_read.set(true);
@@ -770,6 +793,12 @@ impl App {
             .collect();
         self.remember_accounts(&arrived);
         Ok(loaded)
+    }
+
+    /// Whether `account_id` is a JMAP account that signed in through the
+    /// browser, as `reload_accounts` last read it.
+    pub fn signs_in_through_browser(&self, account_id: AccountId) -> bool {
+        self.through_browser.borrow().contains(&account_id)
     }
 
     /// Every account's consent, as `reload_accounts` last read it: whether
@@ -807,8 +836,30 @@ impl App {
             });
         }
         self.refresh_send_as(arrived);
+        self.list_masked(arrived);
         self.dock_badge.recount();
         self.update_tray();
+    }
+
+    /// Lists the masked addresses of each account in `arrived` whose server
+    /// makes them, so a reply to mail sent to one goes out from it. The
+    /// account's adapter keeps the list. Until it has one, or when the
+    /// listing fails, a reply comes from the account's own address.
+    fn list_masked(self: &Rc<Self>, arrived: &[Account]) {
+        for account in arrived {
+            let Some(sync) = self.core.account(account.id) else {
+                continue;
+            };
+            if !sync.services().offers().masked_email {
+                continue;
+            }
+            let (core, settings, id) = (Rc::clone(&self.core), self.core.gmail_settings(), account.id);
+            glib::spawn_future_local(async move {
+                if core.call(async move { settings.masked_addresses(id).await }).await.is_err() {
+                    tracing::warn!(account = id, "could not list the masked addresses");
+                }
+            });
+        }
     }
 
     fn load_accounts(self: &Rc<Self>) {

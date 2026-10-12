@@ -7,9 +7,52 @@
 
 use mailrs_store::outbox::Queued;
 use mailrs_store::reminders::{self, Reminder};
-use mailrs_sync::{Outbox, Posted};
+use mailrs_sync::{Cancelled, Outbox, Posted};
 
 use super::*;
+
+/// What `cancel_send` tells the model: where each message went.
+/// `reopened` counts the unsaved messages opened in a composer.
+pub(super) fn cancel_result(cancelled: &Cancelled, reopened: usize) -> Value {
+    let kept = cancelled.unsaved.len() - reopened;
+    let mut result = json!({"in_drafts": cancelled.in_drafts});
+    if reopened > 0 {
+        result["opened_in_composer"] = json!(reopened);
+        result["note"] = json!(
+            "Gmail was out of reach, so those messages are open in a composer for the user to save."
+        );
+    }
+    if kept > 0 {
+        result["note"] = json!(
+            "Gmail is out of reach and some messages could not be reopened, so they stay in Send Later."
+        );
+    }
+    if kept + cancelled.still_held > 0 {
+        result["still_scheduled"] = json!(kept + cancelled.still_held);
+    }
+    if cancelled.still_held > 0 {
+        result["note_held"] = json!(
+            "The server holding those messages did not answer, so they stay in Send Later and it still sends them at their hour."
+        );
+    }
+    if cancelled.already_sent > 0 {
+        result["already_sent"] = json!(cancelled.already_sent);
+        result["note_sent"] = json!("The server had already sent those messages; they are in Sent.");
+    }
+    if cancelled.cancelled_elsewhere > 0 {
+        result["canceled_elsewhere"] = json!(cancelled.cancelled_elsewhere);
+        result["note_elsewhere"] = json!(
+            "Another app had already canceled those messages. Nothing was sent and no draft is left."
+        );
+    }
+    if cancelled.unconfirmed > 0 {
+        result["unconfirmed"] = json!(cancelled.unconfirmed);
+        result["note_unconfirmed"] = json!(
+            "The server could not say whether those messages went out. They wait in the Outbox; ask the user to check Sent."
+        );
+    }
+    result
+}
 
 /// The subject a question quotes, or a stand-in for a message with none.
 fn subject_of(subject: &str) -> String {
@@ -168,21 +211,7 @@ impl<A: Accounts> Tools<A> {
                 }
             }
             self.effects.queue_changed();
-            let kept = cancelled.unsaved.len() - reopened;
-            let mut result = json!({"in_drafts": cancelled.in_drafts});
-            if reopened > 0 {
-                result["opened_in_composer"] = json!(reopened);
-                result["note"] = json!(
-                    "Gmail was out of reach, so those messages are open in a composer for the user to save."
-                );
-            }
-            if kept > 0 {
-                result["still_scheduled"] = json!(kept);
-                result["note"] = json!(
-                    "Gmail is out of reach and some messages could not be reopened, so they stay in Send Later."
-                );
-            }
-            Ok(result)
+            Ok(cancel_result(&cancelled, reopened))
         }))
     }
 

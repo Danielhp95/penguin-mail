@@ -36,7 +36,9 @@
 #   says how to make an API token; token_plan_above names the plan a token
 #   needs more than; token_access lists the access to tick when making one,
 #   in the provider's own words; token_lacks lists the capabilities a token
-#   can never carry, so the caller can say why rather than fail. Features
+#   can never carry, so the caller can say why rather than fail.
+#   oauth_scopes lists the scopes a sign-in in the browser asks for, taken
+#   from the scopes_supported of the provider's own OAuth metadata. Features
 #   still follow the session's capabilities, never this entry.
 # - caldav, carddav: the CalDAV and CardDAV context URL; the principal is asked
 #   there, and at the host's /.well-known/ URL when the context URL has none.
@@ -103,7 +105,7 @@ files_sent_mail = false
 # "not available to users on Basic subscription plans", names the access a
 # token can have, and lists no vacation access (fastmail.help article
 # 5254602856719).
-jmap = { session = "https://api.fastmail.com/jmap/session", token_url = "https://www.fastmail.help/hc/en-us/articles/5254602856719-API-tokens", token_plan_above = "Basic", token_access = ["Email", "Email submission", "Contacts", "Masked Email"], token_lacks = ["urn:ietf:params:jmap:vacationresponse"] }
+jmap = { session = "https://api.fastmail.com/jmap/session", token_url = "https://www.fastmail.help/hc/en-us/articles/5254602856719-API-tokens", token_plan_above = "Basic", token_access = ["Email", "Email submission", "Contacts", "Masked Email"], token_lacks = ["urn:ietf:params:jmap:vacationresponse"], oauth_scopes = ["urn:ietf:params:oauth:scope:mail", "urn:ietf:params:oauth:scope:contacts", "urn:ietf:params:oauth:scope:calendars", "offline_access"] }
 
 [[provider]]
 id = "icloud"

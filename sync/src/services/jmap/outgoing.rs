@@ -19,13 +19,24 @@ use crate::services::imap::{envelope_of, without_bcc};
 /// The most drafts one listing names.
 const MOST_DRAFTS: usize = 500;
 
+/// A Message-ID without its angle brackets or the spaces around them, the
+/// form two spellings of one id compare equal in.
+pub(crate) fn bare_message_id(message_id: &str) -> &str {
+    message_id.trim().trim_matches(['<', '>'])
+}
+
+/// The filter condition for messages that carry `message_id`, with or
+/// without its angle brackets.
+pub(crate) fn has_message_id(message_id: &str) -> Value {
+    json!({ "header": ["Message-ID", format!("<{}>", bare_message_id(message_id))] })
+}
+
 /// The filter for the sent copies of the message `message_id`, with or
 /// without its angle brackets, in `within` when given. A draft carries the
 /// same Message-ID, so drafts are left out: taking one for the sent copy
 /// would leave the message unsent and the draft deleted.
 pub(super) fn sent_copies(message_id: &str, within: Option<&str>) -> Value {
-    let wanted = format!("<{}>", message_id.trim().trim_matches(['<', '>']));
-    let mut conditions = vec![json!({ "header": ["Message-ID", wanted] }), json!({ "notKeyword": "$draft" })];
+    let mut conditions = vec![has_message_id(message_id), json!({ "notKeyword": "$draft" })];
     if let Some(mailbox) = within {
         conditions.push(json!({ "inMailbox": mailbox }));
     }
@@ -45,6 +56,14 @@ pub(super) fn identity_for<'a>(identities: &'a [Identity], from: &str) -> Option
         .find(|i| i.email.eq_ignore_ascii_case(from))
         .or_else(|| identities.iter().find(whole_domain))
         .or_else(|| identities.first())
+}
+
+/// Whether `identity` sends as `from` itself: the same address, or a
+/// `*@domain` identity for its domain.
+pub(super) fn sends_as(identity: &Identity, from: &str) -> bool {
+    let domain = from.rsplit_once('@').map(|(_, d)| d);
+    identity.email.eq_ignore_ascii_case(from)
+        || identity.email.strip_prefix("*@").is_some_and(|d| domain.is_some_and(|domain| d.eq_ignore_ascii_case(domain)))
 }
 
 /// Why the server refused a submission, in words a person reads.
@@ -68,7 +87,7 @@ fn refused_send(err: JmapError, from: &str) -> BackendError {
 
 impl<J: JmapApi> Jmap<J> {
     /// Refuses in words when the sign-in carries no access to sending.
-    async fn sending(&self) -> Result<(), BackendError> {
+    pub(super) async fn sending(&self) -> Result<(), BackendError> {
         let session = self.api().session().await.map_err(backend)?;
         match session.offers(SUBMISSION) {
             true => Ok(()),
@@ -80,15 +99,13 @@ impl<J: JmapApi> Jmap<J> {
 
     /// The identity for `from`, read again from the server when the ones
     /// kept have no exact match.
-    async fn identity(&self, from: &str) -> Result<Identity, BackendError> {
+    pub(super) async fn identity(&self, from: &str) -> Result<Identity, BackendError> {
         let kept = identity_for(&self.known().identities, from).filter(|i| i.email.eq_ignore_ascii_case(from)).cloned();
         if let Some(identity) = kept {
             return Ok(identity);
         }
-        let fresh = self.api().identities().await.map_err(backend)?;
-        let found = identity_for(&fresh, from).cloned();
-        self.known().identities = fresh;
-        found.ok_or_else(|| BackendError::Refused(gettext("This account has no address the server lets it send from.")))
+        let fresh = self.server_identities().await?;
+        identity_for(&fresh, from).cloned().ok_or_else(|| BackendError::Refused(gettext("This account has no address the server lets it send from.")))
     }
 
     pub(super) async fn send_raw(&self, raw: &[u8]) -> Result<String, BackendError> {

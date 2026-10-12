@@ -49,6 +49,15 @@ const CHUNK: u64 = 8 * 1024 * 1024;
 /// error or a dropped connection before it gives up.
 const MOST_RETRIES: u32 = 5;
 
+/// The Google account's storage as Drive reports it: Gmail, Drive and
+/// Photos share it, and mail bounces once it is full. `limit` is `None`
+/// for an account with no limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DriveStorage {
+    pub usage: u64,
+    pub limit: Option<u64>,
+}
+
 impl GmailClient {
     /// Points the Drive upload at another server. Tests use this.
     pub fn with_drive_upload_base_url(mut self, base_url: impl Into<String>) -> Self {
@@ -100,6 +109,21 @@ impl GmailClient {
             })
             .await?;
         Ok(())
+    }
+
+    /// `about.get` for `storageQuota`, which the `drive.file` scope
+    /// reaches. Drive writes its 64-bit numbers as strings.
+    pub async fn drive_storage(&self) -> Result<DriveStorage, GmailError> {
+        let url = format!("{}/about", self.drive_base_url);
+        let answer: Value = self
+            .call_at(&url, |url| self.http().get(url).query(&[("fields", "storageQuota")]))
+            .await?;
+        let quota = &answer["storageQuota"];
+        let number = |key: &str| {
+            let value = quota.get(key)?;
+            value.as_str().and_then(|s| s.parse().ok()).or_else(|| value.as_u64())
+        };
+        Ok(DriveStorage { usage: number("usage").unwrap_or(0), limit: number("limit") })
     }
 
     async fn upload_multipart(

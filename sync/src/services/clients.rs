@@ -30,8 +30,8 @@ use mailrs_imap::{
     SmtpClient, UidSet, Woke,
 };
 use mailrs_jmap::{
-    Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed as JmapListed, MailChanges, Mailbox, MailboxWrite, Pushed,
-    Queried, Saved, Session, SetResponse, Submission, Threads,
+    CalendarEvents, Canceled, ChangesResponse, Email, EmailQuery, EventWrite, EventsPage, Got, HeldSubmission, Hold, Identity, Imported, JmapCalendar, JmapClient, JmapError, Listed as JmapListed, MailChanges,
+    Mailbox, MailboxWrite, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, Submission, SubmissionState, Threads,
 };
 use mailrs_pop3::{ListItem, Pop3Api, Pop3Client, Pop3Error, Stat, UidlListing};
 use mailrs_sieve::client::{ManageSieveApi, ManageSieveClient, SieveError};
@@ -160,6 +160,7 @@ either_client! {
         fn import_event(event: &calendar::Event) -> Gmail<calendar::Event>;
         fn upload_to_drive(path: &std::path::Path, name: &str, mime_type: &str, sent: std::sync::Arc<std::sync::atomic::AtomicU64>) -> Gmail<calendar::Attachment>;
         fn share_file(file_id: &str, email: &str) -> Gmail<()>;
+        fn drive_storage() -> Gmail<mailrs_gmail::DriveStorage>;
         fn move_event(event: &calendar::Event, destination: &str, notify: calendar::Notify) -> Gmail<calendar::Event>;
         fn answer_event(calendar: &str, id: &str, me: &str, answer: Answer, note: Option<&str>) -> Gmail<calendar::Event>;
         fn edit_calendar_list(id: &str, edit: &calendar::list::ListEdit) -> Gmail<Option<calendar::Calendar>>;
@@ -238,6 +239,7 @@ either_client! {
     now {}
     later {
         fn unread(mailbox: &str) -> Result<u32, ImapError>;
+        fn quota_root(mailbox: &str) -> Imapped<Vec<mailrs_imap::QuotaUse>>;
         fn capabilities() -> Imapped<Capabilities>;
         fn list() -> Imapped<Vec<Listed>>;
         fn select(mailbox: &str, since: Option<Since>) -> Imapped<Selected>;
@@ -327,6 +329,11 @@ either_client! {
     }
     later {
         fn session() -> Jmapped<std::sync::Arc<Session>>;
+        fn calendars() -> Jmapped<Vec<JmapCalendar>>;
+        fn calendar_event_changes(since: &str, max: usize) -> Jmapped<ChangesResponse>;
+        fn calendar_events(ids: &[String]) -> Jmapped<CalendarEvents>;
+        fn calendar_events_page(filter: &Value, position: u64, limit: usize) -> Jmapped<EventsPage>;
+        fn set_calendar_event(write: &EventWrite, send: bool, state: Option<&str>) -> Jmapped<Option<Value>>;
         fn mailboxes() -> Jmapped<JmapListed<Mailbox>>;
         fn mail_changes(email: &str, mailbox: &str, max: usize) -> Jmapped<MailChanges>;
         fn email_state() -> Jmapped<String>;
@@ -341,6 +348,30 @@ either_client! {
         fn import(blob_id: &str, mailbox_ids: &[String], keywords: &[&str], destroy: Option<&str>) -> Jmapped<Saved>;
         fn submit(submission: &Submission) -> Jmapped<Imported>;
         fn identities() -> Jmapped<Vec<Identity>>;
+        fn vacation() -> Jmapped<mailrs_jmap::VacationResponse>;
+        fn set_vacation(reply: &mailrs_jmap::VacationPatch) -> Jmapped<()>;
+        fn address_books() -> Jmapped<Vec<mailrs_jmap::AddressBook>>;
+        fn cards_page(position: u64, limit: usize) -> Jmapped<mailrs_jmap::CardsPage>;
+        fn card_changes(since: &str, max: usize) -> Jmapped<mailrs_jmap::CardChanges>;
+        fn card(id: &str) -> Jmapped<Option<Value>>;
+        fn set_card(write: &mailrs_jmap::CardWrite) -> Jmapped<Value>;
+        fn sieve_scripts() -> Jmapped<Vec<mailrs_jmap::SieveScript>>;
+        fn sieve_text(blob_id: &str) -> Jmapped<String>;
+        fn put_sieve(name: &str, existing: Option<&str>, text: &str) -> Jmapped<String>;
+        fn activate_sieve(id: &str) -> Jmapped<()>;
+        fn sieve_extensions() -> Jmapped<Vec<String>>;
+        fn masked_emails() -> Jmapped<Vec<mailrs_jmap::MaskedEmail>>;
+        fn create_masked(for_domain: &str, description: &str) -> Jmapped<mailrs_jmap::MaskedEmail>;
+        fn set_masked_state(id: &str, state: mailrs_jmap::MaskedState) -> Jmapped<()>;
+        fn hold(hold: &Hold) -> Jmapped<HeldSubmission>;
+        fn submissions(ids: &[String]) -> Jmapped<Vec<SubmissionState>>;
+        fn answers_submission_get() -> Jmapped<bool>;
+        fn submissions_for(email_id: &str) -> Jmapped<Vec<String>>;
+        fn cancel_submission(id: &str) -> Jmapped<Canceled>;
+        fn file_held(email_id: &str, drafts: &str, sent: &str) -> Jmapped<()>;
+        fn unhold(email_id: &str) -> Jmapped<()>;
+        fn quotas() -> Jmapped<Vec<Quota>>;
+        fn send_mdn(mdn: &MdnOut) -> Jmapped<()>;
         fn push() -> Jmapped<Pushed>;
     }
 }

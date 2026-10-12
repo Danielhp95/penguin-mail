@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use super::mcp::McpServer;
 
 use super::{
-    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, RemoteImages, Settings, TextSize,
+    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, ReadReceipts, RemoteImages, Settings, TextSize,
     UndoSend, Use, WebSearch,
 };
 
@@ -61,6 +61,8 @@ pub enum Change {
     ComposeFormat(ComposeFormat),
     /// Ask before a message that promises a file goes without one.
     CheckAttachments(bool),
+    /// Offer the read receipts senders ask for, or never ask.
+    ReadReceipts(ReadReceipts),
     /// Open the composer with Sign on.
     SignByDefault(bool),
     /// Turn Encrypt on whenever gpg holds a key for every recipient.
@@ -164,6 +166,12 @@ pub enum Change {
     LastSender {
         account: String,
         email: String,
+    },
+    /// The person took an account's storage banner down while it was full
+    /// (`Some(true)`) or nearly full, or its level changed (`None`).
+    StorageDismissed {
+        account: String,
+        full: Option<bool>,
     },
     /// The dictionaries to check an account's mail against. Empty follows
     /// the desktop's locale.
@@ -276,6 +284,7 @@ impl Change {
             Change::UpdateAnnounced(version) => settings.announced_update = Some(version),
             Change::ComposeFormat(format) => settings.compose_format = format,
             Change::CheckAttachments(on) => settings.check_attachments = on,
+            Change::ReadReceipts(when) => settings.read_receipts = when,
             Change::SignByDefault(on) => settings.sign_by_default = on,
             Change::EncryptWhenPossible(on) => settings.encrypt_when_possible = on,
             Change::AccountContacts { email, on } => {
@@ -392,6 +401,14 @@ impl Change {
             Change::LastSender { account, email } => {
                 settings.last_sender.insert(account.to_lowercase(), email);
             }
+            Change::StorageDismissed { account, full } => match full {
+                Some(full) => {
+                    settings.storage_dismissed.insert(account.to_lowercase(), full);
+                }
+                None => {
+                    settings.storage_dismissed.remove(&account.to_lowercase());
+                }
+            },
             Change::SpellLanguages { account, languages } => {
                 let key = account.to_lowercase();
                 if languages.is_empty() {
@@ -588,6 +605,9 @@ settable! {
         // The composer reads this as a message goes out, so the assistant
         // has no business turning the warning off.
         check_attachments,
+        // Telling a sender their mail was read is the person's call, so
+        // the assistant does not turn the question on or off.
+        read_receipts,
         // Whether the app asks GitHub for new releases is the person's
         // call, made in Preferences.
         check_for_updates,
@@ -610,6 +630,8 @@ settable! {
         // preference with nothing to show.
         language,
         last_sender,
+        // Which storage banners the person took down is their own click.
+        storage_dismissed,
         last_update_check,
         // Each server runs commands or reaches a service of the person's
         // choosing, so only Preferences adds one.
@@ -811,10 +833,12 @@ impl Effects {
             spell_languages,
             spell_words,
             last_sender,
+            storage_dismissed,
             send_as,
             send_as_checked,
             compose_format,
             check_attachments,
+            read_receipts,
             sign_by_default,
             encrypt_when_possible,
             contacts,
@@ -853,10 +877,14 @@ impl Effects {
             spell_languages,
             spell_words,
             last_sender,
+            // The window rebuilds its banners itself after a dismissal.
+            storage_dismissed,
             send_as,
             send_as_checked,
             compose_format,
             check_attachments,
+            // The run reads this as each message opens.
+            read_receipts,
             sign_by_default,
             encrypt_when_possible,
             // The pane reads this as it adds a row, and rows already in the
@@ -1025,6 +1053,27 @@ mod tests {
                 value: "ann".into(),
             }],
         }
+    }
+
+    #[test]
+    fn read_receipts_are_asked_about_until_turned_off() {
+        let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
+        assert_eq!(settings.read_receipts, ReadReceipts::Ask, "an older file asks");
+        let effects = Change::ReadReceipts(ReadReceipts::Never).apply(&mut settings);
+        assert_eq!(settings.read_receipts, ReadReceipts::Never);
+        assert!(effects.is_empty(), "the next message opened reads it");
+    }
+
+    #[test]
+    fn a_storage_banner_taken_down_stays_down_across_runs() {
+        let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
+        assert!(settings.storage_dismissed.is_empty(), "an older file has none");
+        Change::StorageDismissed { account: "Dana@Home.example".into(), full: Some(false) }.apply(&mut settings);
+        let saved = toml::to_string(&settings).unwrap();
+        let read: Settings = toml::from_str(&saved).unwrap();
+        assert_eq!(read.storage_dismissed.get("dana@home.example"), Some(&false));
+        Change::StorageDismissed { account: "dana@home.example".into(), full: None }.apply(&mut settings);
+        assert!(settings.storage_dismissed.is_empty());
     }
 
     #[test]

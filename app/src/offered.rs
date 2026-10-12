@@ -1,11 +1,11 @@
 //! What the window and the assistant offer for each account, read from
 //! the account's services, and the words for what an account lacks.
 
-use mailrs_domain::translate::{fill, gettext};
+use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
 use mailrs_domain::{Account, AccountId, Category, Provider, RemoveSetting};
 use mailrs_store::pop3::{FailReason, Failing};
 use mailrs_store::services::Miss;
-use mailrs_sync::{AccountServices, Mailbox, Missing, Offers, Withheld};
+use mailrs_sync::{AccountServices, BackendError, Mailbox, Missing, Offers, SyncError, Withheld};
 
 /// What an account offers. An account that is not running yet has no
 /// services to ask, and the window assumes it offers everything until it
@@ -144,8 +144,8 @@ pub fn account_actions(offers: &[Offers]) -> [(&'static str, bool); 4] {
 /// `offers`. An account's menu reaches these through its own actions
 /// ([`account_menu_actions`]), which are off where the account lacks what
 /// they open, but the demo's script activates the `win.` action with any
-/// account's id. Hide My Email needs rules and labels
-/// ([`hides_addresses`]).
+/// account's id. Hide My Email needs masked addresses, or rules and
+/// labels ([`hides_addresses`]).
 pub fn account_action_on(name: &str, offers: Offers) -> bool {
     match name {
         "account-rules" => offers.rules,
@@ -159,8 +159,8 @@ pub fn account_action_on(name: &str, offers: Offers) -> bool {
 /// and whether each is on for an account that offers `offers`. A
 /// parameterized `win.` action serves every account, so it cannot be off
 /// for one; these belong to one account's row, so each is off where that
-/// account lacks what it opens. Hide My Email writes a rule for each
-/// address, so it needs rules.
+/// account lacks what it opens. Hide My Email needs masked addresses or
+/// a rule for each address ([`hides_addresses`]).
 pub fn account_menu_actions(offers: Offers) -> [(&'static str, bool); 3] {
     [
         ("vacation", offers.auto_reply),
@@ -169,11 +169,11 @@ pub fn account_menu_actions(offers: Offers) -> [(&'static str, bool); 3] {
     ]
 }
 
-/// Whether Hide My Email works for an account: each hidden address is a
-/// plus address with a rule behind it, and only Gmail keeps both a label
-/// for it and plus addressing everywhere.
+/// Whether Hide My Email works for an account: a server that makes
+/// masked addresses, or a plus address with a rule behind it on an
+/// account that keeps rules and labels.
 pub fn hides_addresses(offers: Offers) -> bool {
-    offers.rules && offers.labels
+    offers.masked_email || (offers.rules && offers.labels)
 }
 
 /// How the accounts on screen file mail: with labels, several at once, or
@@ -465,6 +465,14 @@ pub fn reason(account: &Account, missing: Missing, missed: Option<Miss>) -> Stri
         (Provider::Imap, Missing::AutoReply) => {
             gettext("{provider} cannot send automatic replies.")
         }
+        // A calendar or contacts server beside a browser sign-in that
+        // refused its token waits for an app password.
+        (Provider::Jmap, Missing::Calendar) if missed == Some(Miss::Refused) => gettext(
+            "{provider}'s calendar server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar.",
+        ),
+        (Provider::Jmap, Missing::Contacts) if missed == Some(Miss::Refused) => gettext(
+            "{provider}'s contacts server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar.",
+        ),
         // Penguin Mail reads mail over JMAP and nothing else yet, so what
         // the server may well offer is not set up on the account.
         (Provider::Jmap, Missing::Calendar) => {
@@ -512,12 +520,24 @@ pub fn missing_lines(
                 .missing()
                 .into_iter()
                 .filter(|m| *m != Missing::Categories)
-                .map(|m| reason(account, m, missed(account.id, m)))
+                .map(|m| match (m, offers.auto_reply_needs_sign_in) {
+                    (Missing::AutoReply, true) => sign_in_reason(account),
+                    _ => reason(account, m, missed(account.id, m)),
+                })
                 .collect();
             reasons.dedup();
             (!reasons.is_empty()).then(|| (account.email.clone(), reasons))
         })
         .collect()
+}
+
+/// Why a JMAP account signed in with a token has no automatic reply.
+pub fn sign_in_reason(account: &Account) -> String {
+    let provider = mailrs_discover::resolved_provider_name(account.provider_name());
+    fill(
+        &gettext("{provider} does not let an API token change the automatic reply. Sign in again through the browser to change it here."),
+        &[("provider", &provider)],
+    )
 }
 
 /// What a screen reader calls a Not Available row: the account's address
@@ -598,6 +618,31 @@ pub fn remove_account_body(account: &Account, remove: RemoveSetting) -> String {
     }
 }
 
+/// What Remove Account's confirmation adds when the account's server
+/// holds `count` Send Later messages: they are called back first. `None`
+/// when it holds none.
+pub fn held_back_line(count: usize) -> Option<String> {
+    (count > 0).then(|| {
+        fill_plural(
+            "{count} message waiting in Send Later on the server goes back to Drafts first.",
+            "{count} messages waiting in Send Later on the server go back to Drafts first.",
+            count,
+            &[("count", &count.to_string())],
+        )
+    })
+}
+
+/// What Remove Account asks before it goes ahead when `count` held
+/// messages would not come back.
+pub fn still_held_line(count: usize) -> String {
+    fill_plural(
+        "Penguin Mail could not call back {count} message waiting on the server. The server may still send it at its hour.",
+        "Penguin Mail could not call back {count} messages waiting on the server. The server may still send them at their hour.",
+        count,
+        &[("count", &count.to_string())],
+    )
+}
+
 /// About's line for each account whose mail lives only in the store.
 pub fn kept_here_lines(accounts: &[Account]) -> Vec<String> {
     accounts
@@ -615,11 +660,206 @@ pub fn kept_here_lines(accounts: &[Account]) -> Vec<String> {
 }
 
 /// Whether the app asks the server which addresses `account` sends as.
-/// Gmail keeps send-as addresses with their names. An IMAP server keeps
-/// neither, and asking it would replace the name the person typed when
-/// adding the account with none.
+/// Gmail keeps send-as addresses with their names, and a JMAP server its
+/// identities. An IMAP server keeps neither, and asking it would replace
+/// the name the person typed when adding the account with none.
 pub fn reads_send_as(account: &Account) -> bool {
-    account.provider == Provider::Gmail
+    matches!(account.provider, Provider::Gmail | Provider::Jmap)
+}
+
+/// One row of the Switch to JMAP dialog: an icon, what it is, and a line
+/// on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchRow {
+    pub icon: &'static str,
+    pub title: String,
+    pub subtitle: String,
+}
+
+/// What Switch to JMAP changes and what it keeps, as the dialog's rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchRows {
+    pub changes: Vec<SwitchRow>,
+    pub stays: Vec<SwitchRow>,
+}
+
+fn switch_row(icon: &'static str, title: String, subtitle: String) -> SwitchRow {
+    SwitchRow { icon, title, subtitle }
+}
+
+/// The dialog's rows for `account`. `calendars` says the account reads
+/// calendars from a CalDAV server. Where the JMAP sign-in takes a `token`,
+/// a line says the app password those calendars sign in with stays, as at
+/// Fastmail, whose JMAP serves no calendar. Where it takes the password,
+/// the server may serve calendars over JMAP, and a line says the switch
+/// then reads them again from there.
+pub fn switch_rows(account: &Account, calendars: bool, token: bool) -> SwitchRows {
+    let provider = mailrs_discover::resolved_provider_name(account.provider_name());
+    let mut changes = vec![
+        switch_row(
+            "penguin-mail-inbox-symbolic",
+            gettext("New mail arrives as it is sent"),
+            fill(&gettext("{provider} pushes it over JMAP, and you can send from your aliases."), &[("provider", &provider)]),
+        ),
+        switch_row(
+            "weather-overcast-symbolic",
+            gettext("Mail is matched over JMAP"),
+            gettext("Penguin Mail keeps the mail on this computer and downloads again only the messages it cannot match."),
+        ),
+    ];
+    let mut stays = vec![
+        switch_row(
+            "penguin-mail-person-symbolic",
+            gettext("Name, color and place"),
+            fill(&gettext("{address} keeps its spot in the sidebar."), &[("address", &account.email)]),
+        ),
+        switch_row(
+            "penguin-mail-flag-outline-symbolic",
+            gettext("Your own data"),
+            gettext("Reminders, follow-ups, flags, rules, VIPs, signatures and drafts."),
+        ),
+    ];
+    if calendars && !token {
+        changes.push(switch_row(
+            "penguin-mail-calendar-symbolic",
+            gettext("Calendars are read again where JMAP serves them"),
+            fill(&gettext("If {provider} offers calendars over JMAP, Penguin Mail reads them from there."), &[("provider", &provider)]),
+        ));
+    }
+    if calendars && token {
+        stays.push(switch_row(
+            "penguin-mail-calendar-symbolic",
+            gettext("Calendar sign-in"),
+            gettext("The app password you use for calendars stays as it is."),
+        ));
+    }
+    SwitchRows { changes, stays }
+}
+
+/// What the switch dialog says when the switch did not go through, and
+/// whether it offers Try Again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchFailure {
+    pub line: String,
+    /// The server's mail kept changing while the switch matched it, and
+    /// another try may find it still.
+    pub again: bool,
+}
+
+/// What the switch dialog asked for, which a failure's words name.
+#[derive(Debug, Clone, Copy)]
+pub struct SwitchAsked<'a> {
+    pub provider: &'a str,
+    pub address: &'a str,
+    /// The field takes a token rather than a password.
+    pub token: bool,
+    /// The server also offers a sign-in in the browser.
+    pub browser: bool,
+}
+
+/// The failure toast's line for `reason`, a whole sentence.
+fn switch_line(reason: &str) -> String {
+    format!(
+        "{} {}",
+        with_reason(&gettext("Could not switch to JMAP: {reason}"), &reason, &[]),
+        gettext("Your IMAP account is unchanged.")
+    )
+}
+
+/// The failure toast's words for `err` from `Core::switch_to_jmap`.
+pub fn switch_failure(err: &anyhow::Error, asked: &SwitchAsked) -> SwitchFailure {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::switch::SwitchError;
+    let (provider, token) = (asked.provider, asked.token);
+    let named = [("provider", provider)];
+    let mut again = false;
+    let reason = match err.downcast_ref::<SwitchError>() {
+        Some(SwitchError::NotImap) => {
+            return SwitchFailure { line: gettext("This account uses JMAP already."), again };
+        }
+        Some(SwitchError::SignIn(JmapError::Unauthorized)) => {
+            let refused = match token {
+                true => fill(&gettext("{provider} did not accept the token."), &named),
+                false => fill(&gettext("{provider} did not accept the password."), &named),
+            };
+            match asked.browser {
+                true => format!("{refused} {}", gettext("You can choose Sign In With Browser instead.")),
+                false => refused,
+            }
+        }
+        Some(SwitchError::OtherAccount) => fill(
+            &gettext("{provider} signed in to another account, not {address}."),
+            &[("provider", provider), ("address", asked.address)],
+        ),
+        Some(SwitchError::SignIn(JmapError::BadCredential)) => match token {
+            true => gettext("The token holds a character that cannot be sent."),
+            false => gettext("The password holds a character that cannot be sent."),
+        },
+        Some(SwitchError::SignIn(JmapError::Network(_))) => fill(&gettext("{provider} does not answer."), &named),
+        Some(SwitchError::SignIn(_)) => {
+            fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
+        }
+        Some(SwitchError::Drafts(_)) => {
+            fill(&gettext("{provider} did not give the draft of a message waiting in Send Later."), &named)
+        }
+        Some(SwitchError::Sync(SyncError::Backend(BackendError::Changed))) => {
+            again = true;
+            fill(&gettext("The mail on {provider} kept changing while Penguin Mail matched it."), &named)
+        }
+        _ => {
+            let said = err.to_string();
+            match said.ends_with(['.', '!', '?']) {
+                true => said,
+                false => format!("{said}."),
+            }
+        }
+    };
+    SwitchFailure { line: switch_line(&reason), again }
+}
+
+/// The failure toast's words when Sign In With Browser did not end in a
+/// grant, or None when the person canceled it.
+pub fn switch_browser_failure(err: &anyhow::Error, provider: &str) -> Option<SwitchFailure> {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::sign_in::BrowserSignInError;
+    let named = [("provider", provider)];
+    let reason = match err.downcast_ref::<BrowserSignInError>() {
+        Some(BrowserSignInError::Canceled) => return None,
+        Some(BrowserSignInError::Jmap(
+            JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient | JmapError::Forbidden(_),
+        )) => fill(&gettext("{provider} refused the sign-in in the browser."), &named),
+        Some(BrowserSignInError::Jmap(JmapError::Declined)) => {
+            fill(&gettext("You did not allow Penguin Mail on {provider}'s page."), &named)
+        }
+        Some(BrowserSignInError::Jmap(JmapError::Network(_))) => fill(&gettext("{provider} does not answer."), &named),
+        Some(BrowserSignInError::Jmap(_)) => {
+            fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named)
+        }
+        _ => {
+            let said = err.to_string();
+            match said.ends_with(['.', '!', '?']) {
+                true => said,
+                false => format!("{said}."),
+            }
+        }
+    };
+    Some(SwitchFailure { line: switch_line(&reason), again: false })
+}
+
+/// The window's toast once `address` has switched, with the local rules
+/// the switch turned off because the server lacks their folders.
+pub fn switched_line(address: &str, rules_off: usize) -> String {
+    let named = [("address", address)];
+    if rules_off == 0 {
+        return fill(&gettext("{address} now uses JMAP"), &named);
+    }
+    let count = rules_off.to_string();
+    fill_plural(
+        "{address} now uses JMAP. {count} rule is off because its folder is not on the server.",
+        "{address} now uses JMAP. {count} rules are off because their folders are not on the server.",
+        rules_off,
+        &[("address", address), ("count", &count)],
+    )
 }
 
 #[cfg(test)]
@@ -630,8 +870,8 @@ mod tests {
     use mailrs_sync::{Missing, Offers};
 
     use super::{
-        failing_lines, hides_addresses, kept_here_lines, offers_for, reason, remove_account_body,
-        shows_space_switch,
+        failing_lines, held_back_line, hides_addresses, kept_here_lines, offers_for, reason, remove_account_body,
+        shows_space_switch, still_held_line,
         withheld_for,
     };
     use crate::settings::Space;
@@ -708,6 +948,31 @@ mod tests {
     }
 
     #[test]
+    fn removing_an_account_says_how_many_messages_the_server_holds() {
+        assert_eq!(held_back_line(0), None);
+        assert_eq!(
+            held_back_line(1).as_deref(),
+            Some("1 message waiting in Send Later on the server goes back to Drafts first.")
+        );
+        assert_eq!(
+            held_back_line(3).as_deref(),
+            Some("3 messages waiting in Send Later on the server go back to Drafts first.")
+        );
+    }
+
+    #[test]
+    fn removing_an_account_warns_of_holds_that_would_not_come_back() {
+        assert_eq!(
+            still_held_line(1),
+            "Penguin Mail could not call back 1 message waiting on the server. The server may still send it at its hour."
+        );
+        assert_eq!(
+            still_held_line(2),
+            "Penguin Mail could not call back 2 messages waiting on the server. The server may still send them at their hour."
+        );
+    }
+
+    #[test]
     fn removing_another_account_names_its_own_service() {
         let named = |provider, name: Option<&str>| Account {
             provider,
@@ -777,6 +1042,124 @@ mod tests {
             provider: Provider::Imap,
             provider_name: Some("Fastmail".into()),
         }
+    }
+
+    #[test]
+    fn the_switch_says_what_moves_and_what_stays() {
+        let rows = super::switch_rows(&fastmail(), true, true);
+        let said: Vec<String> = rows.changes.iter().chain(&rows.stays).map(|r| format!("{} {}", r.title, r.subtitle)).collect();
+        let said = said.join("\n");
+        assert!(said.contains("Fastmail"), "{said}");
+        assert!(said.contains("Reminders"), "{said}");
+        assert!(said.contains("dana@fastmail.com"), "{said}");
+    }
+
+    #[test]
+    fn a_jmap_calendar_that_refused_the_browser_sign_in_asks_for_an_app_password() {
+        let account = Account { provider: Provider::Jmap, ..fastmail() };
+        assert_eq!(
+            super::reason(&account, Missing::Calendar, Some(Miss::Refused)),
+            "Fastmail's calendar server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar."
+        );
+        assert_eq!(
+            super::reason(&account, Missing::Contacts, Some(Miss::Refused)),
+            "Fastmail's contacts server refused the browser sign-in. Choose Sign In Again and give an app password for the calendar."
+        );
+    }
+
+    #[test]
+    fn only_a_token_sign_in_names_the_calendar_password_that_stays() {
+        assert_eq!(super::switch_rows(&fastmail(), true, true).stays.len(), 3);
+        assert_eq!(super::switch_rows(&fastmail(), false, true).stays.len(), 2);
+    }
+
+    #[test]
+    fn a_password_server_says_its_calendars_may_come_over_jmap() {
+        let rows = super::switch_rows(&fastmail(), true, false);
+        assert_eq!(rows.stays.len(), 2, "no app password stays for the calendar");
+        let last = rows.changes.last().expect("rows");
+        assert_eq!(last.title, "Calendars are read again where JMAP serves them");
+        assert_eq!(last.subtitle, "If Fastmail offers calendars over JMAP, Penguin Mail reads them from there.");
+    }
+
+    const TOKEN: super::SwitchAsked<'static> =
+        super::SwitchAsked { provider: "Fastmail", address: "dana@fastmail.com", token: true, browser: false };
+
+    #[test]
+    fn a_refused_password_names_the_browser_when_the_server_offers_it() {
+        let refused = anyhow::Error::new(mailrs_sync::switch::SwitchError::SignIn(mailrs_jmap::JmapError::Unauthorized));
+        let asked = super::SwitchAsked { token: false, browser: true, ..TOKEN };
+        assert_eq!(
+            super::switch_failure(&refused, &asked).line,
+            "Could not switch to JMAP: Fastmail did not accept the password. You can choose Sign In With Browser instead. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_sign_in_to_another_account_names_the_one_that_switches() {
+        let other = anyhow::Error::new(mailrs_sync::switch::SwitchError::OtherAccount);
+        assert_eq!(
+            super::switch_failure(&other, &TOKEN).line,
+            "Could not switch to JMAP: Fastmail signed in to another account, not dana@fastmail.com. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_the_server_refused_says_so() {
+        let refused = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::Jmap(mailrs_jmap::JmapError::Unauthorized));
+        let failed = super::switch_browser_failure(&refused, "Fastmail").expect("words");
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail refused the sign-in in the browser. Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn a_canceled_browser_sign_in_says_nothing() {
+        let canceled = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::Canceled);
+        assert_eq!(super::switch_browser_failure(&canceled, "Fastmail"), None);
+    }
+
+    #[test]
+    fn a_refused_token_says_the_imap_account_is_unchanged() {
+        let refused = anyhow::Error::new(mailrs_sync::switch::SwitchError::SignIn(mailrs_jmap::JmapError::Unauthorized));
+        let failed = super::switch_failure(&refused, &TOKEN);
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail did not accept the token. Your IMAP account is unchanged."
+        );
+        assert!(!failed.again);
+    }
+
+    #[test]
+    fn a_send_later_draft_the_server_kept_back_says_so() {
+        let kept = anyhow::Error::new(mailrs_sync::switch::SwitchError::Drafts(mailrs_sync::SyncError::Backend(
+            mailrs_sync::BackendError::NotFound,
+        )));
+        let failed = super::switch_failure(&kept, &TOKEN);
+        assert_eq!(
+            failed.line,
+            "Could not switch to JMAP: Fastmail did not give the draft of a message waiting in Send Later. \
+             Your IMAP account is unchanged."
+        );
+    }
+
+    #[test]
+    fn mail_that_kept_changing_offers_another_try() {
+        let changed = anyhow::Error::new(mailrs_sync::switch::SwitchError::Sync(mailrs_sync::SyncError::Backend(
+            mailrs_sync::BackendError::Changed,
+        )));
+        let failed = super::switch_failure(&changed, &TOKEN);
+        assert!(failed.again);
+        assert!(failed.line.ends_with("Your IMAP account is unchanged."), "{}", failed.line);
+    }
+
+    #[test]
+    fn the_done_toast_counts_the_rules_the_switch_turned_off() {
+        assert_eq!(super::switched_line("dana@fastmail.com", 0), "dana@fastmail.com now uses JMAP");
+        assert!(super::switched_line("dana@fastmail.com", 2).contains("2 rules"));
     }
 
     #[test]
@@ -898,6 +1281,12 @@ mod tests {
             reason(&fastmail(), Missing::AutoReply, None),
             "Fastmail cannot send automatic replies."
         );
+    }
+
+    #[test]
+    fn masked_email_alone_lets_hide_my_email_in() {
+        let masked = Offers { masked_email: true, rules: false, labels: false, ..Offers::EVERYTHING };
+        assert!(hides_addresses(masked));
     }
 
     #[test]
@@ -1291,6 +1680,8 @@ mod tests {
     fn only_gmail_is_asked_which_addresses_it_sends_as() {
         assert!(reads_send_as(&gmail()));
         assert!(!reads_send_as(&fastmail()));
+        let jmap = Account { provider: Provider::Jmap, ..fastmail() };
+        assert!(reads_send_as(&jmap));
     }
 
     #[test]
@@ -1349,5 +1740,13 @@ mod tests {
         assert_eq!(categorize_choices(Offers::EVERYTHING), [Category::Primary, Category::Updates, Category::Promotions, Category::Social]);
         let on = sender_actions(microsoft());
         assert!(on.contains(&("categorize-sender", true)));
+    }
+
+    #[test]
+    fn a_reply_a_token_cannot_reach_names_the_browser_sign_in() {
+        let jmap = Account { provider: Provider::Jmap, provider_name: Some("Fastmail".into()), ..fastmail() };
+        let lacking = Offers { auto_reply: false, auto_reply_needs_sign_in: true, ..Offers::EVERYTHING };
+        let lines = missing_lines(&[(jmap, lacking)], |_, _| None);
+        assert_eq!(lines[0].1, ["Fastmail does not let an API token change the automatic reply. Sign in again through the browser to change it here."]);
     }
 }

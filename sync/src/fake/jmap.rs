@@ -8,14 +8,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mailrs_jmap::{
-    BodyPart, CORE, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header, Hit, Identity, Imported, JmapError, Listed, MAIL,
-    MailChanges, Mailbox, MailboxWrite, Pushed, Queried, SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse,
-    Submission, Thread, Threads,
+    AddressBook, BodyPart, CALENDARS, CORE, CalendarEvents, CalendarRights, Canceled, EventWrite, EventsPage, JmapCalendar, HELD, HeldSubmission, Hold, MDN, MdnOut, QUOTA, Quota, SubmissionState, max_delayed_send, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
+    Hit, Identity, Imported, JmapError, Listed, MAIL, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried,
+    SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse, SieveScript, Submission, Thread, Threads, VacationResponse,
 };
 use serde_json::{Map, Value, json};
 use tokio::sync::Notify;
 
 use crate::services::jmap::JmapApi;
+use crate::services::jmap::jscal::set_path;
 
 type Answer<T> = Result<T, JmapError>;
 
@@ -58,6 +59,17 @@ pub struct FakeEmail {
     pub keywords: BTreeSet<String>,
     /// Milliseconds since 1970.
     pub received_at: i64,
+}
+
+/// A message the fake holds to send later, by its submission id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FakeHold {
+    pub email_id: String,
+    /// When it goes, in milliseconds.
+    pub send_at: i64,
+    /// `pending`, `final` or `canceled`.
+    pub status: String,
+    pub rcpt_to: Vec<String>,
 }
 
 /// One submission the server took.
@@ -124,6 +136,47 @@ pub struct JmapState {
     pub refuse_mailbox_roles: bool,
     /// Refuses every new mailbox, as `forbidden`.
     pub refuse_mailbox_creates: bool,
+    /// The automatic reply the server holds.
+    pub vacation: VacationResponse,
+    /// Contact cards by id, as JSContact JSON.
+    pub cards: BTreeMap<String, Value>,
+    pub books: Vec<AddressBook>,
+    /// Sieve scripts by id: name, text, whether active.
+    pub scripts: BTreeMap<String, (String, String, bool)>,
+    pub masked: BTreeMap<String, MaskedEmail>,
+    /// Holds by submission id.
+    pub holds: BTreeMap<String, FakeHold>,
+    pub quotas: Vec<Quota>,
+    /// Receipts sent with `MDN/send`.
+    pub mdns: Vec<MdnOut>,
+    /// Whether `EmailSubmission/get` answers; Apache James's does not.
+    pub submission_get: bool,
+    /// The answer the next hold gets in place of a hold, once. A refusal
+    /// leaves nothing behind. [`JmapError::HoldUnknown`] is the lost
+    /// answer: the server keeps the hold and the client never hears.
+    pub hold_failure: Option<JmapError>,
+    /// The next cancel arrives just after the server sent the hold and
+    /// forgot it, so it answers `notFound`.
+    pub cancel_races_send: bool,
+    pub calendars: Vec<JmapCalendar>,
+    /// Events by id, as JSCalendar.
+    pub events: BTreeMap<String, Value>,
+    /// Whether the server mails guests itself (`sendSchedulingMessages`).
+    pub schedules: bool,
+    /// Events written with `sendSchedulingMessages`, in order.
+    pub scheduled: Vec<String>,
+    /// How many event writes still answer `stateMismatch`, as when another
+    /// client changed the calendar since the `ifInState` the write named.
+    pub state_mismatches: u32,
+    /// The next `CalendarEvent/set` lands, and then its answer is lost on
+    /// the way back, as a dropped connection or a gateway timeout does.
+    pub lose_event_answer: bool,
+    /// How many `CalendarEvent/get` calls still fail, as the network does.
+    pub failing_event_gets: u32,
+    /// The answer the next `EmailSubmission/query` gets, once.
+    pub submission_query_failure: Option<JmapError>,
+    /// How long an upload takes.
+    pub upload_delay: std::time::Duration,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -404,6 +457,26 @@ impl FakeJmap {
             anchored_queries: 0,
             refuse_mailbox_roles: false,
             refuse_mailbox_creates: false,
+            vacation: VacationResponse::default(),
+            cards: BTreeMap::new(),
+            books: vec![AddressBook { id: "AB1".into(), name: "Personal".into(), is_default: true }],
+            scripts: BTreeMap::new(),
+            masked: BTreeMap::new(),
+            holds: BTreeMap::new(),
+            quotas: Vec::new(),
+            mdns: Vec::new(),
+            submission_get: true,
+            hold_failure: None,
+            submission_query_failure: None,
+            cancel_races_send: false,
+            upload_delay: std::time::Duration::ZERO,
+            calendars: Vec::new(),
+            events: BTreeMap::new(),
+            schedules: true,
+            scheduled: Vec::new(),
+            state_mismatches: 0,
+            lose_event_answer: false,
+            failing_event_gets: 0,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -500,12 +573,90 @@ impl FakeJmap {
         self.with(|s| s.calls.iter().filter(|c| *c == "push").count())
     }
 
+    /// A server that holds mail for up to `seconds`, as its submission
+    /// capability's `maxDelayedSend` says.
+    pub fn with_delayed_send(self, seconds: u64) -> FakeJmap {
+        self.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(SUBMISSION.into(), json!({ "maxDelayedSend": seconds }));
+            }
+        });
+        self
+    }
+
+    /// A server whose `EmailSubmission/get` answers `unknownMethod`.
+    pub fn without_submission_get(self) -> FakeJmap {
+        self.with(|s| s.submission_get = false);
+        self
+    }
+
+    /// Sends every pending hold due by `now`, as the server would at its
+    /// hour, and answers how many went. The copy stays where it waited.
+    pub fn release_due(&self, now: i64) -> usize {
+        self.with(|s| {
+            let due: Vec<String> =
+                s.holds.iter().filter(|(_, h)| h.status == "pending" && h.send_at <= now).map(|(id, _)| id.clone()).collect();
+            for id in &due {
+                let Some(hold) = s.holds.get_mut(id) else { continue };
+                hold.status = "final".into();
+                let (email_id, rcpt_to) = (hold.email_id.clone(), hold.rcpt_to.clone());
+                let raw = s.emails.get(&email_id).map(|e| e.raw.clone()).unwrap_or_default();
+                s.sent.push(Sent { identity_id: "I1".into(), mail_from: "me@example.com".into(), rcpt_to, raw });
+            }
+            due.len()
+        })
+    }
+
     pub fn without_push(self) -> FakeJmap {
         self.with(|s| {
             s.push = false;
             s.session.event_source_url = None;
         });
         self
+    }
+
+    /// A server offering JMAP Calendars in draft 32's shape, with one
+    /// calendar, `cal-1`, the account's default.
+    pub fn with_calendars(self) -> FakeJmap {
+        let fake = self.with_capability(CALENDARS);
+        fake.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(CALENDARS.into(), json!({
+                    "maxCalendarsPerEvent": null, "minDateTime": "1900-01-01T00:00:00Z", "maxDateTime": "2200-01-01T00:00:00Z",
+                    "maxExpandedQueryDuration": "P366D", "maxParticipantsPerEvent": null, "mayCreateCalendar": true
+                }));
+            }
+            let rights = CalendarRights { may_read_items: true, may_write_all: true, may_write_own: true, may_rsvp: true, may_admin: true, may_delete: true };
+            s.calendars.push(JmapCalendar {
+                id: "cal-1".into(),
+                name: "Personal".into(),
+                color: Some("#e66100".into()),
+                is_default: true,
+                is_visible: true,
+                time_zone: Some("Europe/Lisbon".into()),
+                my_rights: rights,
+                default_alerts_with_time: None,
+                default_alerts_without_time: None,
+            });
+        });
+        fake
+    }
+
+    /// Stores `object` as a new event under a fresh id, as another client
+    /// would, and answers the id.
+    pub fn add_event(&self, mut object: Value) -> String {
+        self.with(|s| {
+            let id = s.id("ev-");
+            object["id"] = json!(id);
+            object["updated"] = json!(format!("rev-{}", s.state + 1));
+            s.events.insert(id.clone(), object);
+            s.record("CalendarEvent", &id, Op::Created);
+            id
+        })
+    }
+
+    pub fn event(&self, id: &str) -> Option<Value> {
+        self.with(|s| s.events.get(id).cloned())
     }
 
     pub fn with_capability(self, capability: &str) -> FakeJmap {
@@ -517,6 +668,33 @@ impl FakeJmap {
             }
         });
         self
+    }
+
+    /// Offers Sieve over JMAP with `extensions`.
+    pub fn with_sieve(self, extensions: &[&str]) -> FakeJmap {
+        let fake = self.with_capability(mailrs_jmap::SIEVE);
+        fake.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(mailrs_jmap::SIEVE.into(), json!({ "sieveExtensions": extensions }));
+            }
+        });
+        fake
+    }
+
+    /// A card another client made.
+    pub fn add_card(&self, name: &str, email: &str) -> String {
+        self.with(|s| {
+            let id = s.id("K");
+            s.cards.insert(
+                id.clone(),
+                json!({
+                    "id": id, "@type": "Card", "addressBookIds": { "AB1": true },
+                    "name": { "full": name }, "emails": { "e1": { "address": email } }
+                }),
+            );
+            s.record("ContactCard", &id, Op::Created);
+            id
+        })
     }
 
     pub fn without_capability(self, capability: &str) -> FakeJmap {
@@ -664,7 +842,8 @@ impl FakeJmap {
                 .take(s.query_clamp.map_or(query.limit, |clamp| clamp.min(query.limit)))
                 .map(|(id, e)| Hit { id: id.clone(), thread_id: e.thread_id.clone() })
                 .collect();
-            Ok(Queried { hits, position: start as u64, total: query.total.then_some(total) })
+            // Any change moves the state, as on Cyrus.
+            Ok(Queried { hits, position: start as u64, total: query.total.then_some(total), query_state: s.state.to_string() })
         })
     }
 
@@ -969,6 +1148,10 @@ impl JmapApi for FakeJmap {
 
     async fn upload(&self, bytes: Vec<u8>) -> Answer<String> {
         self.called("upload");
+        let delay = self.with(|s| s.upload_delay);
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
         Ok(self.with(|s| {
             let id = s.id("G");
             s.blobs.insert(id.clone(), bytes);
@@ -1085,8 +1268,377 @@ impl JmapApi for FakeJmap {
         })
     }
 
+    async fn calendars(&self) -> Answer<Vec<JmapCalendar>> {
+        self.called("Calendar/get");
+        self.with(|s| match s.session.offers(CALENDARS) {
+            true => Ok(s.calendars.clone()),
+            false => Err(JmapError::UnknownCapability(CALENDARS.into())),
+        })
+    }
+
+    async fn calendar_event_changes(&self, since: &str, max: usize) -> Answer<ChangesResponse> {
+        self.called("CalendarEvent/changes");
+        self.with(|s| s.changes("CalendarEvent", since, max))
+    }
+
+    async fn calendar_events(&self, ids: &[String]) -> Answer<CalendarEvents> {
+        self.called("CalendarEvent/get");
+        self.with(|s| {
+            if s.failing_event_gets > 0 {
+                s.failing_event_gets -= 1;
+                return Err(JmapError::Network("the read failed".into()));
+            }
+            let (found, missing): (Vec<&String>, Vec<&String>) = ids.iter().partition(|id| s.events.contains_key(*id));
+            Ok(CalendarEvents {
+                state: s.state.to_string(),
+                list: found.into_iter().filter_map(|id| s.events.get(id).cloned()).collect(),
+                not_found: missing.into_iter().cloned().collect(),
+            })
+        })
+    }
+
+    /// Filters on `inCalendar` and `uid`; `after` and `before` match
+    /// everything here, which the adapter's tests do not lean on. Both must
+    /// be LocalDateTime, as the drafts define them and Cyrus checks: a UTC
+    /// time with `Z` is `invalidArguments`.
+    async fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> Answer<EventsPage> {
+        self.called("CalendarEvent/query");
+        let local = |key: &str| {
+            filter.get(key).and_then(Value::as_str).is_none_or(|t| chrono::NaiveDateTime::parse_from_str(t, "%Y-%m-%dT%H:%M:%S").is_ok())
+        };
+        if !local("after") || !local("before") {
+            return Err(JmapError::Method { kind: "invalidArguments".into(), description: String::new() });
+        }
+        self.with(|s| {
+            let calendar = filter.get("inCalendar").and_then(Value::as_str);
+            let uid = filter.get("uid").and_then(Value::as_str);
+            let matching: Vec<Value> = s
+                .events
+                .values()
+                .filter(|e| calendar.is_none_or(|c| e["calendarIds"][c] == json!(true)))
+                .filter(|e| uid.is_none_or(|u| e["uid"] == json!(u)))
+                .cloned()
+                .collect();
+            let total = matching.len() as u64;
+            let events = matching.into_iter().skip(usize::try_from(position).unwrap_or(usize::MAX)).take(limit).collect();
+            Ok(EventsPage { state: s.state.to_string(), events, total: Some(total) })
+        })
+    }
+
+    async fn set_calendar_event(&self, write: &EventWrite, send: bool, state: Option<&str>) -> Answer<Option<Value>> {
+        self.called("CalendarEvent/set");
+        self.with(|s| {
+            if state.is_some_and(|state| state != s.state.to_string()) {
+                return Err(JmapError::StateMismatch);
+            }
+            if s.state_mismatches > 0 {
+                s.state_mismatches -= 1;
+                return Err(JmapError::StateMismatch);
+            }
+            let has_guests = |o: &Value| o.get("participants").and_then(Value::as_object).is_some_and(|p| !p.is_empty());
+            let touched = match write {
+                EventWrite::Create(object) => Some(Value::Object(object.clone())),
+                EventWrite::Update { id, .. } | EventWrite::Destroy(id) => s.events.get(id).cloned(),
+            };
+            if send && !s.schedules && touched.as_ref().is_some_and(has_guests) {
+                return Err(JmapError::Method { kind: "noSupportedScheduleMethods".into(), description: String::new() });
+            }
+            let stamp = format!("rev-{}", s.state + 1);
+            let (id, answer) = match write {
+                EventWrite::Create(object) => {
+                    let id = s.id("ev-");
+                    let mut object = Value::Object(object.clone());
+                    object["id"] = json!(id);
+                    object["updated"] = json!(stamp);
+                    s.events.insert(id.clone(), object);
+                    s.record("CalendarEvent", &id, Op::Created);
+                    (id.clone(), Some(json!({ "id": id })))
+                }
+                EventWrite::Update { id, patch } => {
+                    let event = s.events.get_mut(id).ok_or(JmapError::NotFound)?;
+                    for (path, value) in patch {
+                        set_path(event, path, value.clone());
+                    }
+                    event["updated"] = json!(stamp);
+                    s.record("CalendarEvent", id, Op::Updated);
+                    (id.clone(), None)
+                }
+                EventWrite::Destroy(id) => {
+                    s.events.remove(id).ok_or(JmapError::NotFound)?;
+                    s.record("CalendarEvent", id, Op::Destroyed);
+                    (id.clone(), None)
+                }
+            };
+            if send {
+                s.scheduled.push(id);
+            }
+            if std::mem::take(&mut s.lose_event_answer) {
+                return Err(JmapError::Network("the answer was lost".into()));
+            }
+            Ok(answer)
+        })
+    }
+
     async fn identities(&self) -> Answer<Vec<Identity>> {
         Ok(self.with(|s| s.identities.clone()))
+    }
+
+    async fn vacation(&self) -> Answer<VacationResponse> {
+        Ok(self.with(|s| s.vacation.clone()))
+    }
+
+    async fn set_vacation(&self, reply: &mailrs_jmap::VacationPatch) -> Answer<()> {
+        self.called("VacationResponse/set");
+        self.with(|s| s.vacation = reply.applied_to(&s.vacation));
+        Ok(())
+    }
+
+    async fn address_books(&self) -> Answer<Vec<AddressBook>> {
+        Ok(self.with(|s| s.books.clone()))
+    }
+
+    async fn cards_page(&self, position: u64, limit: usize) -> Answer<CardsPage> {
+        self.called("ContactCard/query");
+        Ok(self.with(|s| CardsPage {
+            state: s.state.to_string(),
+            cards: s.cards.values().skip(position as usize).take(limit).cloned().collect(),
+            position,
+            total: Some(s.cards.len() as u64),
+        }))
+    }
+
+    async fn card_changes(&self, since: &str, max: usize) -> Answer<CardChanges> {
+        self.called("ContactCard/changes");
+        self.with(|s| {
+            let changes = s.changes("ContactCard", since, max)?;
+            let cards = changes.created.iter().chain(&changes.updated).filter_map(|id| s.cards.get(id).cloned()).collect();
+            Ok(CardChanges { changes, cards })
+        })
+    }
+
+    async fn card(&self, id: &str) -> Answer<Option<Value>> {
+        Ok(self.with(|s| s.cards.get(id).cloned()))
+    }
+
+    async fn set_card(&self, write: &CardWrite) -> Answer<Value> {
+        self.called("ContactCard/set");
+        self.with(|s| match write {
+            CardWrite::Create(card) => {
+                let id = s.id("K");
+                let mut card = card.clone();
+                card.insert("id".into(), json!(id));
+                s.cards.insert(id.clone(), Value::Object(card));
+                s.record("ContactCard", &id, Op::Created);
+                Ok(s.cards[&id].clone())
+            }
+            CardWrite::Update { id, patch } => {
+                let card = s.cards.get_mut(id).ok_or(JmapError::NotFound)?;
+                for (path, value) in patch {
+                    patch_at(card, path, value)?;
+                }
+                let card = card.clone();
+                s.record("ContactCard", id, Op::Updated);
+                Ok(card)
+            }
+        })
+    }
+
+    async fn sieve_scripts(&self) -> Answer<Vec<SieveScript>> {
+        Ok(self.with(|s| {
+            s.scripts
+                .iter()
+                .map(|(id, (name, _, active))| SieveScript { id: id.clone(), name: Some(name.clone()), blob_id: format!("blob-{id}"), is_active: *active })
+                .collect()
+        }))
+    }
+
+    async fn sieve_text(&self, blob_id: &str) -> Answer<String> {
+        let id = blob_id.strip_prefix("blob-").ok_or(JmapError::NotFound)?;
+        self.with(|s| s.scripts.get(id).map(|(_, text, _)| text.clone())).ok_or(JmapError::NotFound)
+    }
+
+    async fn put_sieve(&self, name: &str, existing: Option<&str>, text: &str) -> Answer<String> {
+        self.called("SieveScript/set");
+        Ok(self.with(|s| {
+            let id = existing.map(str::to_string).unwrap_or_else(|| s.id("S"));
+            let active = s.scripts.get(&id).is_some_and(|(_, _, a)| *a);
+            s.scripts.insert(id.clone(), (name.to_string(), text.to_string(), active));
+            id
+        }))
+    }
+
+    async fn activate_sieve(&self, id: &str) -> Answer<()> {
+        self.with(|s| {
+            for (script, (_, _, active)) in s.scripts.iter_mut() {
+                *active = script == id;
+            }
+        });
+        Ok(())
+    }
+
+    async fn sieve_extensions(&self) -> Answer<Vec<String>> {
+        Ok(self.with(|s| {
+            let listed = s.session.account_capability(mailrs_jmap::SIEVE).and_then(|c| c.get("sieveExtensions")).and_then(Value::as_array);
+            listed.into_iter().flatten().filter_map(|e| e.as_str().map(str::to_string)).collect()
+        }))
+    }
+
+    async fn hold(&self, hold: &Hold) -> Answer<HeldSubmission> {
+        self.called("EmailSubmission/set");
+        self.with(|s| {
+            let failure = s.hold_failure.take();
+            if let Some(err) = failure.clone().filter(|e| *e != JmapError::HoldUnknown) {
+                return Err(err);
+            }
+            if hold.hold_for > max_delayed_send(&s.session) {
+                return Err(JmapError::Method { kind: "invalidArguments".into(), description: "HOLDFOR".into() });
+            }
+            if !s.identities.iter().any(|i| i.id == hold.identity_id) {
+                return Err(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() });
+            }
+            let made = FakeJmap::import_now(s, &hold.blob_id, std::slice::from_ref(&hold.drafts), &["$draft", "$seen", HELD])?;
+            let id = s.id("S");
+            let wait = i64::try_from(hold.hold_for.saturating_mul(1000)).unwrap_or(i64::MAX / 2);
+            let send_at = chrono::Utc::now().timestamp_millis().saturating_add(wait);
+            s.holds.insert(
+                id.clone(),
+                FakeHold { email_id: made.id.clone(), send_at, status: "pending".into(), rcpt_to: hold.rcpt_to.clone() },
+            );
+            match failure {
+                Some(lost) => Err(lost),
+                None => Ok(HeldSubmission { id, email_id: made.id, thread_id: made.thread_id }),
+            }
+        })
+    }
+
+    async fn submissions(&self, ids: &[String]) -> Answer<Vec<SubmissionState>> {
+        self.called("EmailSubmission/get");
+        self.with(|s| {
+            if !s.submission_get {
+                return Err(JmapError::UnknownCapability("unknownMethod".into()));
+            }
+            Ok(ids
+                .iter()
+                .filter_map(|id| {
+                    let hold = s.holds.get(id)?;
+                    let send_at = chrono::DateTime::from_timestamp_millis(hold.send_at)
+                        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+                    let envelope = Some(mailrs_jmap::Envelope {
+                        rcpt_to: hold.rcpt_to.iter().map(|email| mailrs_jmap::EnvelopeAddress { email: email.clone() }).collect(),
+                    });
+                    Some(SubmissionState { id: id.clone(), email_id: hold.email_id.clone(), undo_status: hold.status.clone(), send_at, envelope })
+                })
+                .collect())
+        })
+    }
+
+    async fn answers_submission_get(&self) -> Answer<bool> {
+        self.called("EmailSubmission/get ids=[]");
+        Ok(self.with(|s| s.submission_get))
+    }
+
+    async fn submissions_for(&self, email_id: &str) -> Answer<Vec<String>> {
+        self.called("EmailSubmission/query");
+        self.with(|s| match s.submission_query_failure.take() {
+            Some(err) => Err(err),
+            None => Ok(s.holds.iter().filter(|(_, hold)| hold.email_id == email_id).map(|(id, _)| id.clone()).collect()),
+        })
+    }
+
+    async fn cancel_submission(&self, id: &str) -> Answer<Canceled> {
+        self.called("EmailSubmission/set");
+        self.with(|s| {
+            if std::mem::take(&mut s.cancel_races_send)
+                && let Some(hold) = s.holds.remove(id)
+            {
+                let raw = s.emails.get(&hold.email_id).map(|e| e.raw.clone()).unwrap_or_default();
+                s.sent.push(Sent { identity_id: "I1".into(), mail_from: "me@example.com".into(), rcpt_to: hold.rcpt_to, raw });
+                return Ok(Canceled::Gone);
+            }
+            // The client reads `notFound` as gone.
+            let Some(hold) = s.holds.get_mut(id) else { return Ok(Canceled::Gone) };
+            match hold.status.as_str() {
+                "final" => Ok(Canceled::TooLate),
+                _ => {
+                    hold.status = "canceled".into();
+                    Ok(Canceled::Canceled)
+                }
+            }
+        })
+    }
+
+    async fn file_held(&self, email_id: &str, drafts: &str, sent: &str) -> Answer<()> {
+        self.called("Email/set");
+        self.with(|s| {
+            let email = s.emails.get_mut(email_id).ok_or(JmapError::NotFound)?;
+            email.mailbox_ids.remove(drafts);
+            email.mailbox_ids.insert(sent.to_string());
+            email.keywords.remove("$draft");
+            email.keywords.remove(HELD);
+            s.record("Email", email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
+    async fn unhold(&self, email_id: &str) -> Answer<()> {
+        self.called("Email/set");
+        self.with(|s| {
+            let email = s.emails.get_mut(email_id).ok_or(JmapError::NotFound)?;
+            email.keywords.remove(HELD);
+            s.record("Email", email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
+    async fn quotas(&self) -> Answer<Vec<Quota>> {
+        self.called("Quota/get");
+        self.with(|s| match s.session.offers(QUOTA) {
+            true => Ok(s.quotas.clone()),
+            false => Err(JmapError::UnknownCapability(QUOTA.into())),
+        })
+    }
+
+    async fn send_mdn(&self, mdn: &MdnOut) -> Answer<()> {
+        self.called("MDN/send");
+        self.with(|s| {
+            if !s.session.offers(MDN) {
+                return Err(JmapError::UnknownCapability(MDN.into()));
+            }
+            let email = s.emails.get_mut(&mdn.for_email_id).ok_or(JmapError::NotFound)?;
+            email.keywords.insert("$mdnsent".into());
+            s.mdns.push(mdn.clone());
+            s.record("Email", &mdn.for_email_id, Op::Updated);
+            Ok(())
+        })
+    }
+
+    async fn masked_emails(&self) -> Answer<Vec<MaskedEmail>> {
+        Ok(self.with(|s| s.masked.values().cloned().collect()))
+    }
+
+    async fn create_masked(&self, for_domain: &str, description: &str) -> Answer<MaskedEmail> {
+        self.called("MaskedEmail/set");
+        Ok(self.with(|s| {
+            let id = s.id("ME");
+            let made = MaskedEmail {
+                id: id.clone(),
+                email: format!("masked.{id}@example.com").to_lowercase(),
+                state: "enabled".into(),
+                for_domain: for_domain.into(),
+                description: description.into(),
+                created_at: Some("2026-10-11T10:00:00Z".into()),
+                last_message_at: None,
+            };
+            s.masked.insert(id, made.clone());
+            made
+        }))
+    }
+
+    async fn set_masked_state(&self, id: &str, state: MaskedState) -> Answer<()> {
+        self.with(|s| {
+            s.masked.get_mut(id).ok_or(JmapError::NotFound)?.state = state.as_str().to_string();
+            Ok(())
+        })
     }
 
     async fn push(&self) -> Answer<Pushed> {
@@ -1112,6 +1664,29 @@ impl JmapApi for FakeJmap {
     fn push_paused(&self) -> Option<tokio::time::Instant> {
         self.with(|s| s.push_paused_until.filter(|until| *until > tokio::time::Instant::now()))
     }
+}
+
+/// Applies one PatchObject entry (RFC 8620 section 5.3): `path` is a JSON
+/// pointer without its leading slash, and `null` removes what it names. A
+/// path through a property the object lacks is an `invalidPatch`.
+fn patch_at(object: &mut Value, path: &str, value: &Value) -> Result<(), JmapError> {
+    let invalid = || JmapError::Method { kind: "invalidPatch".into(), description: String::new() };
+    let mut parts: Vec<&str> = path.split('/').collect();
+    let last = parts.pop().ok_or_else(invalid)?;
+    let mut at = object;
+    for part in parts {
+        at = at.get_mut(part).filter(|v| v.is_object()).ok_or_else(invalid)?;
+    }
+    let map = at.as_object_mut().ok_or_else(invalid)?;
+    match value {
+        Value::Null => {
+            map.remove(last);
+        }
+        _ => {
+            map.insert(last.to_string(), value.clone());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1330,6 +1905,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cards_change_and_the_changes_name_them() {
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::CONTACTS);
+        let first = fake.cards_page(0, 10).await.unwrap();
+        let id = fake.add_card("Ada", "ada@example.com");
+        let changed = fake.card_changes(&first.state, 100).await.unwrap();
+        assert_eq!(changed.changes.created, [id]);
+        assert_eq!(changed.cards[0]["name"]["full"], "Ada");
+    }
+
+    #[tokio::test]
+    async fn a_sieve_script_is_kept_and_activated() {
+        let fake = FakeJmap::new().with_sieve(&["fileinto", "vacation"]);
+        let id = fake.put_sieve("penguin-mail", None, "keep;").await.unwrap();
+        fake.activate_sieve(&id).await.unwrap();
+        let scripts = fake.sieve_scripts().await.unwrap();
+        assert!(scripts.iter().any(|s| s.id == id && s.is_active));
+        assert_eq!(fake.sieve_text(&scripts[0].blob_id).await.unwrap(), "keep;");
+        assert_eq!(fake.sieve_extensions().await.unwrap(), ["fileinto", "vacation"]);
+    }
+
+    #[tokio::test]
+    async fn a_masked_address_turns_off_and_comes_back() {
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::MASKED_EMAIL);
+        let made = fake.create_masked("https://shop.example", "Shop").await.unwrap();
+        fake.set_masked_state(&made.id, MaskedState::Disabled).await.unwrap();
+        assert_eq!(fake.masked_emails().await.unwrap()[0].state, "disabled");
+        fake.set_masked_state(&made.id, MaskedState::Enabled).await.unwrap();
+        assert_eq!(fake.masked_emails().await.unwrap()[0].state, "enabled");
+    }
+
+    #[tokio::test]
     async fn changes_page_by_max_and_say_there_is_more() {
         let fake = FakeJmap::new();
         let since = fake.email_state().await.unwrap();
@@ -1340,5 +1946,159 @@ mod tests {
         let rest = fake.with(|s| s.changes("Email", &first.new_state, 2)).unwrap();
         assert!(!rest.has_more_changes);
         assert_eq!(rest.created, ids[2..]);
+    }
+
+    fn hold_for(seconds: u64, blob: &str) -> mailrs_jmap::Hold {
+        mailrs_jmap::Hold {
+            blob_id: blob.into(),
+            identity_id: "I1".into(),
+            mail_from: "me@example.com".into(),
+            rcpt_to: vec!["ada@example.com".into()],
+            drafts: "mb-drafts".into(),
+            hold_for: seconds,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hold_waits_until_released_and_then_cannot_be_called_back() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let held = fake.hold(&hold_for(3600, &blob)).await.unwrap();
+        assert_eq!(fake.submissions(std::slice::from_ref(&held.id)).await.unwrap()[0].undo_status, "pending");
+        assert_eq!(fake.release_due(i64::MAX), 1);
+        assert_eq!(fake.with(|s| s.sent.len()), 1, "released mail goes out once");
+        assert_eq!(fake.cancel_submission(&held.id).await.unwrap(), mailrs_jmap::Canceled::TooLate);
+    }
+
+    #[tokio::test]
+    async fn a_hold_past_the_servers_reach_is_refused() {
+        let fake = FakeJmap::new().with_delayed_send(60);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        assert!(matches!(fake.hold(&hold_for(3600, &blob)).await, Err(JmapError::Method { .. })));
+    }
+
+    #[tokio::test]
+    async fn a_server_without_submission_get_answers_unknown_method() {
+        let fake = FakeJmap::new().with_delayed_send(86_400).without_submission_get();
+        assert!(!fake.answers_submission_get().await.unwrap());
+        assert!(matches!(fake.submissions(&[]).await, Err(JmapError::UnknownCapability(_))));
+    }
+
+    #[tokio::test]
+    async fn a_receipt_needs_the_capability_and_marks_the_message() {
+        let fake = FakeJmap::new();
+        let id = fake.deliver("inbox", RAW, 1);
+        let mdn = mailrs_jmap::MdnOut { for_email_id: id, identity_id: "I1".into(), subject: "s".into(), text_body: "t".into() };
+        assert!(matches!(fake.send_mdn(&mdn).await, Err(JmapError::UnknownCapability(_))));
+        let fake = FakeJmap::new().with_capability(mailrs_jmap::MDN);
+        let id = fake.deliver("inbox", RAW, 1);
+        let mdn = mailrs_jmap::MdnOut { for_email_id: id.clone(), ..mdn };
+        fake.send_mdn(&mdn).await.unwrap();
+        assert!(fake.with(|s| s.emails[&id].keywords.contains("$mdnsent")));
+    }
+
+    #[tokio::test]
+    async fn a_refused_hold_leaves_nothing_in_drafts() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let before = fake.with(|s| s.emails.len());
+        fake.with(|s| s.hold_failure = Some(JmapError::Method { kind: "forbiddenFrom".into(), description: String::new() }));
+        assert!(matches!(fake.hold(&hold_for(3600, &blob)).await, Err(JmapError::Method { .. })));
+        assert_eq!(fake.with(|s| (s.emails.len(), s.holds.len())), (before, 0));
+        assert!(fake.hold(&hold_for(3600, &blob)).await.is_ok(), "the failure is once");
+    }
+
+    #[tokio::test]
+    async fn a_hold_whose_answer_is_lost_is_still_kept_and_findable_in_drafts() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        let blob = fake.upload(RAW.to_vec()).await.unwrap();
+        let drafts = "mb-drafts".to_string();
+        fake.with(|s| s.hold_failure = Some(JmapError::HoldUnknown));
+        let hold = hold_for(3600, &blob);
+        assert_eq!(fake.hold(&hold).await, Err(JmapError::HoldUnknown));
+        assert_eq!(fake.with(|s| s.holds.len()), 1, "the server holds it");
+        let found = fake
+            .with(|s| s.emails.values().filter(|e| e.mailbox_ids.contains(&drafts) && e.keywords.contains(mailrs_jmap::HELD)).count());
+        assert_eq!(found, 1);
+        let query = EmailQuery { filter: Some(json!({ "inMailbox": drafts, "hasKeyword": mailrs_jmap::HELD, "header": ["Message-ID", "<a1@example.com>"] })), position: 0, limit: 10, total: false };
+        assert_eq!(fake.query(&query).await.unwrap().hits.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn canceling_a_hold_that_is_gone_says_so() {
+        let fake = FakeJmap::new().with_delayed_send(86_400);
+        assert_eq!(fake.cancel_submission("S404").await.unwrap(), mailrs_jmap::Canceled::Gone);
+    }
+
+    #[tokio::test]
+    async fn a_clamped_server_answers_at_most_its_limit_to_query_and_query_after() {
+        let fake = FakeJmap::new().clamping_queries(2);
+        let ids: Vec<String> = (1..=5).map(|n| fake.deliver("inbox", RAW, n)).collect();
+        let query = EmailQuery { filter: None, position: 0, limit: 10, total: false };
+        let first = fake.query(&query).await.unwrap();
+        assert_eq!(first.hits.len(), 2);
+        let next = fake.query_after(&query, &first.hits[1].id).await.unwrap();
+        assert_eq!(next.hits.len(), 2);
+        assert!(ids.contains(&next.hits[0].id));
+    }
+    #[tokio::test]
+    async fn calendars_need_the_capability_in_its_shape() {
+        assert!(!FakeJmap::new().with(|s| s.session.offers(mailrs_jmap::CALENDARS)));
+        let fake = FakeJmap::new().with_calendars();
+        assert!(fake.with(|s| s.session.offers(mailrs_jmap::CALENDARS)));
+        assert_eq!(fake.calendars().await.unwrap()[0].id, "cal-1");
+    }
+
+    #[tokio::test]
+    async fn an_event_write_patches_and_logs_a_change() {
+        let fake = FakeJmap::new().with_calendars();
+        let state = fake.with(|s| s.state.to_string());
+        let id = fake.add_event(json!({"title": "Rota", "calendarIds": {"cal-1": true}, "start": "2026-10-06T09:00:00"}));
+        let mut patch = Map::new();
+        patch.insert("participants/p1/participationStatus".into(), json!("accepted"));
+        fake.set_calendar_event(&mailrs_jmap::EventWrite::Update { id: id.clone(), patch }, false, None).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["participants"]["p1"]["participationStatus"], "accepted");
+        let changes = fake.calendar_event_changes(&state, 50).await.unwrap();
+        assert_eq!(changes.created, [id]);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_cannot_schedule_refuses_to_mail_guests() {
+        let fake = FakeJmap::new().with_calendars();
+        fake.with(|s| s.schedules = false);
+        let id = fake.add_event(json!({"title": "Rota", "participants": {"p1": {"calendarAddress": "mailto:a@x.example"}}}));
+        let write = mailrs_jmap::EventWrite::Update { id, patch: Map::new() };
+        assert!(matches!(fake.set_calendar_event(&write, true, None).await, Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods"));
+        assert!(fake.set_calendar_event(&write, false, None).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_stale_state_answers_state_mismatch_and_changes_nothing() {
+        let fake = FakeJmap::new().with_calendars();
+        let id = fake.add_event(json!({"title": "Rota"}));
+        fake.with(|s| s.state_mismatches = 1);
+        let mut patch = Map::new();
+        patch.insert("title".into(), json!("Changed"));
+        let write = mailrs_jmap::EventWrite::Update { id: id.clone(), patch };
+        assert_eq!(fake.set_calendar_event(&write, false, None).await, Err(JmapError::StateMismatch));
+        assert_eq!(fake.event(&id).unwrap()["title"], "Rota");
+        fake.set_calendar_event(&write, false, None).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["title"], "Changed");
+    }
+
+    #[tokio::test]
+    async fn a_write_from_an_older_state_answers_state_mismatch() {
+        let fake = FakeJmap::new().with_calendars();
+        let id = fake.add_event(json!({"title": "Rota"}));
+        let old = fake.calendar_events(&[]).await.unwrap().state;
+        fake.add_event(json!({"title": "Another"}));
+        let mut patch = Map::new();
+        patch.insert("title".into(), json!("Changed"));
+        let write = mailrs_jmap::EventWrite::Update { id: id.clone(), patch };
+        assert_eq!(fake.set_calendar_event(&write, false, Some(&old)).await, Err(JmapError::StateMismatch));
+        assert_eq!(fake.event(&id).unwrap()["title"], "Rota");
+        let now = fake.calendar_events(&[]).await.unwrap().state;
+        fake.set_calendar_event(&write, false, Some(&now)).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["title"], "Changed");
     }
 }

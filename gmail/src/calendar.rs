@@ -396,6 +396,7 @@ pub(crate) fn google_calendar(item: &Value) -> calendar::Calendar {
         // Google sends `hidden` only when it is true.
         hidden: item.get("hidden").and_then(Value::as_bool) == Some(true),
         reminders: reminders(item.get("defaultReminders")),
+        all_day_reminders: None,
     }
 }
 
@@ -486,6 +487,9 @@ pub fn google_event(calendar: &str, item: &Value, me: Option<&str>, calendar_zon
             .filter_map(Value::as_str)
             .map(str::to_string)
             .collect(),
+        unread_rule: false,
+        kept_theirs: Vec::new(),
+        series_etag: String::new(),
         series: item.get("recurringEventId").and_then(Value::as_str).map(str::to_string),
         original_start: item.get("originalStartTime").map(|t| when(Some(t), calendar_zone).0),
         pending: false,

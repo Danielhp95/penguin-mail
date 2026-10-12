@@ -53,10 +53,42 @@ pub enum JmapError {
     Problem { status: u16, kind: String, detail: String },
     #[error("could not read the server's answer: {0}")]
     Decode(String),
+    /// A hold went out and no answer came back, so the server may have
+    /// taken it. Not a refusal: look in Drafts before sending again.
+    #[error("the server may have taken the hold; no answer came back")]
+    HoldUnknown,
     /// A local file could not be written. Only the io error kind is kept,
     /// never the path. A retry would hit the same full disk.
     #[error("local file: {0}")]
     LocalFile(String),
+    /// The server refuses the sign-in for now and may take it later, as
+    /// Fastmail's `invalid_grant` with `temporary: true` says.
+    #[error("the server holds the sign-in for now")]
+    SignInLocked,
+    /// The person, or the server's administrator, said no on the consent
+    /// page.
+    #[error("the sign-in was declined")]
+    Declined,
+    /// A sign-in server, or an address its metadata names, is not on
+    /// https, or is not an address at all.
+    #[error("the sign-in server must be reached over https")]
+    NotHttps,
+    /// The server's OAuth metadata names an issuer other than the one it
+    /// was fetched for (RFC 8414 section 3.3).
+    #[error("the sign-in server's metadata names another issuer")]
+    IssuerMismatch,
+    /// A redirect address other than the app's own loopback on 127.0.0.1.
+    #[error("the sign-in must hand back to the app on 127.0.0.1")]
+    BadRedirect,
+    /// The token endpoint handed out a token of a type other than Bearer
+    /// (RFC 6750), which the client cannot present.
+    #[error("the sign-in server handed out a token that is not a Bearer token")]
+    NotBearer,
+    /// The sign-in server does not know the app's registered client, or
+    /// no longer lets it sign in (`invalid_client`, `unauthorized_client`).
+    /// A new registration helps; for a kept account, so does a new sign-in.
+    #[error("the sign-in server does not know this app's client")]
+    UnknownClient,
 }
 
 /// A decode failure for `what`, keeping the error's category and position
@@ -68,7 +100,7 @@ pub(crate) fn decode(what: &str, err: &serde_json::Error) -> JmapError {
 
 impl JmapError {
     pub fn is_transient(&self) -> bool {
-        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. })
+        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. } | JmapError::SignInLocked)
     }
 }
 

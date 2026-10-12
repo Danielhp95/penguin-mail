@@ -1408,6 +1408,25 @@ pub fn again_line(account: &Account) -> String {
     )
 }
 
+/// What step 2 says above the fields for a JMAP account that signed in
+/// through the browser and needs to again. It has no password to give.
+pub fn again_browser_line(account: &Account) -> String {
+    fill(
+        &gettext("Choose Sign In With Browser to sign in to {address} again."),
+        &[("address", &account.email)],
+    )
+}
+
+/// The banner over the mail list for an account that needs to sign in
+/// again. One that signed in through the browser does so there again.
+pub fn sign_in_again_banner(address: &str, through_browser: bool) -> String {
+    let template = match through_browser {
+        true => gettext("Sign in again through the browser to keep {account} syncing"),
+        false => gettext("Sign in again to keep {account} syncing"),
+    };
+    fill(&template, &[("account", address)])
+}
+
 /// Which question the dialog asked last. Continue and Sign In each take
 /// a ticket, and an answer that comes back counts only while its ticket
 /// is the last one handed out and the dialog is open. Editing the
@@ -1488,7 +1507,7 @@ pub fn jmap_at(index: u32) -> bool {
     index == JMAP_INDEX
 }
 
-fn host_of(url: &str) -> String {
+pub(crate) fn host_of(url: &str) -> String {
     url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
@@ -1728,9 +1747,17 @@ pub struct JmapAttempt {
     /// The user name Basic sends.
     pub user: String,
     pub secret: String,
+    /// The app password for the calendar, when the person typed one.
+    pub dav_password: Option<String>,
 }
 
-pub fn jmap_attempt(address: &Address, proposal: &JmapProposal, secret: &str, token: bool) -> JmapAttempt {
+pub fn jmap_attempt(
+    address: &Address,
+    proposal: &JmapProposal,
+    secret: &str,
+    dav_password: &str,
+    token: bool,
+) -> JmapAttempt {
     JmapAttempt {
         address: address.full(),
         provider_name: proposal.provider_name.clone(),
@@ -1738,6 +1765,120 @@ pub fn jmap_attempt(address: &Address, proposal: &JmapProposal, secret: &str, to
         token,
         user: proposal.user.clone().unwrap_or_else(|| address.full()),
         secret: secret.to_string(),
+        dav_password: (!dav_password.is_empty()).then(|| dav_password.to_string()),
+    }
+}
+
+/// Whether the JMAP sign-in offers an app password for the calendar: a
+/// token signs in to JMAP alone, and the provider's table entry names a
+/// CalDAV server.
+pub fn asks_dav_password(proposal: &JmapProposal, token: bool) -> bool {
+    token
+        && proposal
+            .provider
+            .as_ref()
+            .and_then(|p| p.imap_host.as_deref())
+            .is_some_and(|host| mailrs_discover::services_of(host).caldav.is_some())
+}
+
+/// Whether the password page asks for the calendar's app password when
+/// an account signs in again: it signed in through the browser, and its
+/// calendar or contacts server, in `refused`, refused that sign-in. A
+/// token account asks by [`asks_dav_password`].
+pub fn asks_dav_password_again(saved: &mailrs_store::jmap::JmapSaved, refused: &[mailrs_store::services::ServiceKind]) -> bool {
+    use mailrs_store::services::ServiceKind;
+
+    saved.auth == mailrs_store::jmap::JmapAuth::OAuth
+        && refused.iter().any(|kind| matches!(kind, ServiceKind::CalDav | ServiceKind::CardDav))
+}
+
+/// The session a browser sign-in for `proposal` goes to.
+pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowser {
+    mailrs_sync::sign_in::JmapBrowser {
+        session_url: proposal.session_url.clone(),
+        provider: proposal.provider.clone(),
+    }
+}
+
+/// The line under Sign In With Browser. Where the table's token card
+/// lists Masked Email, it says that only a token gives it: Fastmail grants
+/// no Masked Email scope to an app that signs in through the browser.
+pub fn browser_line(proposal: &JmapProposal) -> String {
+    let line = fill(
+        &gettext("Sign in on {provider}'s own page instead of making a token."),
+        &[("provider", &post::short_name(&proposal.provider_name))],
+    );
+    let masked = proposal
+        .provider
+        .as_ref()
+        .is_some_and(|p| p.token_access.iter().any(|access| access == "Masked Email"));
+    match masked {
+        true => format!("{line} {}", gettext("Masked Email needs an API token.")),
+        false => line,
+    }
+}
+
+/// Whether Sign In With Browser can start: nothing else is signing in, and
+/// the person said yes to a session outside their domain, since the
+/// account's sign-in goes there as it would with a token.
+pub fn can_sign_in_jmap_browser(proposal: &JmapProposal, confirmed: bool, running: bool) -> bool {
+    !running && (confirmed || !proposal.confirm)
+}
+
+/// The numbered steps the waiting page lists for a JMAP server's own
+/// sign-in page, which may name its buttons in any way.
+pub fn jmap_browser_steps(provider: &str) -> Vec<String> {
+    vec![
+        fill(&gettext("Sign in to {provider} if it asks."), &[("provider", provider)]),
+        gettext("Read what Penguin Mail asks for and allow it."),
+    ]
+}
+
+/// What the password page says after Sign In With Browser failed. The
+/// server's errors get the dialog's own words; the rest say their own
+/// sentence, as the Google and Microsoft sign-ins do.
+pub fn jmap_browser_failure(err: &anyhow::Error, proposal: &JmapProposal) -> Failure {
+    use mailrs_jmap::JmapError;
+    use mailrs_sync::sign_in::BrowserSignInError;
+    let Some(BrowserSignInError::Jmap(jmap)) = err.downcast_ref::<BrowserSignInError>() else {
+        return Failure::plain(err.to_string(), gettext("Could not sign in"), err.to_string());
+    };
+    let provider = post::short_name(&proposal.provider_name);
+    let named = [("provider", provider.as_str())];
+    let mut said = None;
+    let (title, body) = match jmap {
+        JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient | JmapError::Forbidden(_) => (
+            fill(&gettext("{provider} refused the sign-in"), &named),
+            gettext("Choose Sign In With Browser to try again."),
+        ),
+        JmapError::Declined => (
+            gettext("The sign-in was declined"),
+            fill(&gettext("Choose Sign In With Browser and allow access on {provider}'s page."), &named),
+        ),
+        JmapError::Network(_) => (
+            fill(&gettext("{provider} does not answer"), &named),
+            gettext("Check your connection, then choose Sign In With Browser."),
+        ),
+        JmapError::RateLimited { .. } | JmapError::SignInLocked => (
+            fill(&gettext("{provider} asked Penguin Mail to wait"), &named),
+            gettext("Wait a minute, then choose Sign In With Browser."),
+        ),
+        other => {
+            said = Some(other.to_string());
+            (
+                gettext("Could not sign in"),
+                fill(&gettext("{provider} gave an answer Penguin Mail cannot use. Try again later."), &named),
+            )
+        }
+    };
+    Failure {
+        line: format!("{title}. {body}"),
+        title,
+        body,
+        said,
+        links: Vec::new(),
+        copy: None,
+        kind: FailureKind::Refused,
     }
 }
 
@@ -1860,7 +2001,15 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             JmapError::Method { .. } => "method",
             JmapError::Problem { .. } => "problem",
             JmapError::Decode(_) => "decode",
+            JmapError::HoldUnknown => "hold unknown",
             JmapError::LocalFile(_) => "local file",
+            JmapError::SignInLocked => "sign-in locked",
+            JmapError::Declined => "declined",
+            JmapError::NotHttps => "not https",
+            JmapError::IssuerMismatch => "issuer mismatch",
+            JmapError::BadRedirect => "bad redirect",
+            JmapError::NotBearer => "not bearer",
+            JmapError::UnknownClient => "unknown client",
         };
     }
     if let Some(browser) = err.downcast_ref::<BrowserSignInError>() {
@@ -1869,9 +2018,17 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
             BrowserSignInError::OtherAddress { .. } => "other address",
             BrowserSignInError::Google(_) => "google",
             BrowserSignInError::Microsoft(_) => "microsoft",
-            BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) => "keeping the account",
+            BrowserSignInError::KeptJmap(JmapSignInError::DifferentAccount { .. }) => "different account",
+            BrowserSignInError::Kept(_) | BrowserSignInError::KeptMicrosoft(_) | BrowserSignInError::KeptJmap(_) => {
+                "keeping the account"
+            }
             BrowserSignInError::Connect(_) => "connect",
             BrowserSignInError::OwnClient(_) => "own client",
+            BrowserSignInError::Jmap(_) => "jmap",
+            BrowserSignInError::NotOffered => "not offered",
+            BrowserSignInError::NoRefreshToken => "no refresh token",
+            BrowserSignInError::GaveUp => "gave up",
+            BrowserSignInError::Canceled => "canceled",
         };
     }
     if let Some(check) = err.downcast_ref::<CheckError>() {
@@ -1882,6 +2039,7 @@ pub fn failure_kind(err: &anyhow::Error) -> &'static str {
     }
     match (err.downcast_ref::<JmapSignInError>(), err.downcast_ref::<ImapSignInError>()) {
         (Some(JmapSignInError::Taken { .. }), _) | (_, Some(ImapSignInError::Taken { .. })) => "address taken",
+        (Some(JmapSignInError::DifferentAccount { .. }), _) => "different account",
         (Some(JmapSignInError::Store(_)), _) | (_, Some(ImapSignInError::Store(_))) => "store",
         (Some(JmapSignInError::Password(_)), _) | (_, Some(ImapSignInError::Password(_))) => "keyring",
         _ => "other",
@@ -2440,6 +2598,22 @@ mod tests {
             provider: Provider::Imap,
             provider_name: Some("iCloud Mail".into()),
         }
+    }
+
+    #[test]
+    fn an_account_signed_in_through_the_browser_is_asked_to_sign_in_there_again() {
+        let account = Account {
+            email: "dana@fastmail.com".into(),
+            provider: Provider::Jmap,
+            provider_name: Some("Fastmail".into()),
+            ..icloud_account()
+        };
+        assert_eq!(again_browser_line(&account), "Choose Sign In With Browser to sign in to dana@fastmail.com again.");
+        assert_eq!(
+            sign_in_again_banner("dana@fastmail.com", true),
+            "Sign in again through the browser to keep dana@fastmail.com syncing"
+        );
+        assert_eq!(sign_in_again_banner("dana@fastmail.com", false), "Sign in again to keep dana@fastmail.com syncing");
     }
 
     #[test]
@@ -3289,6 +3463,109 @@ mod tests {
     }
 
     #[test]
+    fn fastmail_s_token_sign_in_offers_the_calendar_password() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert!(asks_dav_password(&proposal, true));
+        assert!(!asks_dav_password(&proposal, false), "a password signs in to the calendar as it is");
+    }
+
+    #[test]
+    fn the_browser_button_names_the_provider() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert!(browser_line(&proposal).starts_with("Sign in on Fastmail's own page instead of making a token."));
+    }
+
+    #[test]
+    fn the_browser_line_says_masked_email_needs_a_token() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(
+            browser_line(&proposal),
+            "Sign in on Fastmail's own page instead of making a token. Masked Email needs an API token."
+        );
+        let elsewhere = jmap_proposal(hoster_jmap(), None, &Address::parse("me@example.org").unwrap());
+        assert!(!browser_line(&elsewhere).contains("Masked Email"), "only a provider whose tokens give Masked Email says so");
+    }
+
+    #[test]
+    fn the_browser_sign_in_goes_to_the_proposal_s_session() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let offer = jmap_browser(&proposal);
+        assert_eq!(offer.session_url, "https://api.fastmail.com/jmap/session");
+        assert_eq!(offer.provider.map(|p| p.name), Some("Fastmail".to_string()));
+    }
+
+    #[test]
+    fn the_browser_sign_in_waits_for_a_yes_to_a_host_outside_the_domain() {
+        let address = Address::parse("me@example.org").unwrap();
+        let proposal = jmap_proposal(hoster_jmap(), None, &address);
+        assert!(!can_sign_in_jmap_browser(&proposal, false, false));
+        assert!(can_sign_in_jmap_browser(&proposal, true, false));
+        assert!(!can_sign_in_jmap_browser(&proposal, true, true), "a sign-in already runs");
+    }
+
+    #[test]
+    fn a_grant_the_server_refuses_asks_for_the_browser_again() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let err = anyhow::Error::new(BrowserSignInError::Jmap(mailrs_jmap::JmapError::Unauthorized));
+        let failure = jmap_browser_failure(&err, &proposal);
+        assert_eq!(
+            (failure.title.as_str(), failure.body.as_str()),
+            ("Fastmail refused the sign-in", "Choose Sign In With Browser to try again.")
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_that_cannot_reach_the_server_says_so() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let err = anyhow::Error::new(BrowserSignInError::Jmap(mailrs_jmap::JmapError::Network("reset".into())));
+        let failure = jmap_browser_failure(&err, &proposal);
+        assert_eq!(
+            (failure.title.as_str(), failure.body.as_str()),
+            ("Fastmail does not answer", "Check your connection, then choose Sign In With Browser.")
+        );
+    }
+
+    #[test]
+    fn a_browser_sign_in_nobody_finished_says_how_long_it_waited() {
+        use mailrs_sync::sign_in::BrowserSignInError;
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        let failure = jmap_browser_failure(&anyhow::Error::new(BrowserSignInError::GaveUp), &proposal);
+        assert_eq!(failure.body, "Gave up waiting for the browser after ten minutes.");
+    }
+
+    #[test]
+    fn the_waiting_page_lists_the_jmap_server_s_steps() {
+        assert_eq!(
+            jmap_browser_steps("Fastmail"),
+            ["Sign in to Fastmail if it asks.", "Read what Penguin Mail asks for and allow it."]
+        );
+    }
+
+    #[test]
+    fn a_server_the_table_does_not_know_asks_for_no_calendar_password() {
+        let address = Address::parse("me@example.org").unwrap();
+        let proposal = jmap_proposal(hoster_jmap(), None, &address);
+        assert!(!asks_dav_password(&proposal, true));
+    }
+
+    #[test]
+    fn an_empty_calendar_password_is_left_out_of_the_attempt() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(jmap_attempt(&address, &proposal, "token", "", true).dav_password, None);
+        assert_eq!(jmap_attempt(&address, &proposal, "token", "app", true).dav_password.as_deref(), Some("app"));
+    }
+
+    #[test]
     fn jmap_is_offered_before_imap_when_both_are_found() {
         let address = Address::parse("me@fastmail.com").unwrap();
         let found = mailrs_discover::table_only("fastmail.com");
@@ -3400,9 +3677,9 @@ mod tests {
     fn the_attempt_logs_in_with_the_address_unless_a_user_name_was_typed() {
         let address = Address::parse("me@example.org").unwrap();
         let bare = typed_jmap("mail.example.org", "", &address, None).unwrap();
-        assert_eq!(jmap_attempt(&address, &bare, "pw", false).user, "me@example.org");
+        assert_eq!(jmap_attempt(&address, &bare, "pw", "", false).user, "me@example.org");
         let named = typed_jmap("mail.example.org", "me", &address, None).unwrap();
-        assert_eq!(jmap_attempt(&address, &named, "pw", false).user, "me");
+        assert_eq!(jmap_attempt(&address, &named, "pw", "", false).user, "me");
     }
 
     #[test]
@@ -3486,6 +3763,8 @@ mod tests {
             user_name: None,
             labels: true,
             capabilities: Vec::new(),
+            oauth: None,
+            owner: None,
         };
         let proposal = saved_jmap(&account, &saved);
         assert_eq!(proposal.session_url, saved.session_url);
@@ -3508,10 +3787,33 @@ mod tests {
             user_name: None,
             labels: true,
             capabilities: Vec::new(),
+            oauth: None,
+            owner: None,
         };
         assert!(saved_jmap(&account, &saved).token);
         let basic = mailrs_store::jmap::JmapSaved { auth: mailrs_store::jmap::JmapAuth::Basic, ..saved };
         assert!(!saved_jmap(&account, &basic).token);
+    }
+
+    #[test]
+    fn a_browser_account_whose_calendar_refused_the_sign_in_asks_for_its_app_password() {
+        use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
+        use mailrs_store::services::ServiceKind;
+
+        let saved = JmapSaved {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            auth: JmapAuth::OAuth,
+            user_name: None,
+            labels: true,
+            capabilities: Vec::new(),
+            oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+            owner: None,
+        };
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CalDav]));
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CardDav]));
+        assert!(!asks_dav_password_again(&saved, &[]), "a calendar that takes the token needs nothing more");
+        let token = JmapSaved { auth: JmapAuth::Bearer, oauth: None, ..saved };
+        assert!(!asks_dav_password_again(&token, &[ServiceKind::CalDav]), "a token account asks through its own rule");
     }
 
     #[test]
@@ -3622,6 +3924,20 @@ mod tests {
         assert!(!failure_kind(&taken).contains('@'));
         let refused = anyhow::Error::new(mailrs_jmap::JmapError::Unauthorized);
         assert_eq!(failure_kind(&refused), "unauthorized");
+    }
+
+    #[test]
+    fn a_sign_in_that_reached_another_account_says_so_and_logs_no_address() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = typed_jmap("api.fastmail.com", "", &address, None).unwrap();
+        let other = || anyhow::Error::new(mailrs_sync::sign_in::JmapSignInError::DifferentAccount { address: "me@fastmail.com".into() });
+        let said = "You signed in to a different account than me@fastmail.com, so nothing changed.";
+        assert_eq!(jmap_failure(&other(), &proposal, true).body, said);
+        let browser = anyhow::Error::new(mailrs_sync::sign_in::BrowserSignInError::KeptJmap(
+            mailrs_sync::sign_in::JmapSignInError::DifferentAccount { address: "me@fastmail.com".into() },
+        ));
+        assert_eq!(jmap_browser_failure(&browser, &proposal).body, said);
+        assert_eq!(failure_kind(&other()), "different account");
     }
 
     #[test]

@@ -873,6 +873,7 @@ impl Sidebar {
                 shown,
                 account_offers,
                 extras.not_downloading.contains(&account.id),
+                extras.switchable.contains(&account.id),
             );
             self.list.append(&row);
             self.headings.borrow_mut().push(Heading {
@@ -1443,6 +1444,8 @@ pub struct Extras {
     pub label_order: HashMap<AccountId, HashMap<String, i64>>,
     /// Accounts with a message their POP3 server refused three times.
     pub not_downloading: HashSet<AccountId>,
+    /// IMAP accounts whose server also speaks JMAP.
+    pub switchable: HashSet<AccountId>,
 }
 
 /// A small heading between sections. It cannot be selected.
@@ -1747,6 +1750,7 @@ fn heading(
     name: Option<&String>,
     offers: Offers,
     not_downloading: bool,
+    switchable: bool,
 ) -> (gtk::ListBoxRow, gtk::Label, gio::SimpleActionGroup) {
     let content = gtk::Box::builder()
         .spacing(6)
@@ -1831,6 +1835,7 @@ fn heading(
     menu.append_section(None, &look);
     let access = gio::Menu::new();
     access.append_item(&item(&gettext("Sign In Again…"), "win.account-reconnect"));
+    access.append_item(&item(&gettext("Switch to JMAP…"), "account.switch-jmap"));
     access.append_item(&item(
         &gettext("Messages That Will Not Download…"),
         "account.not-downloading",
@@ -1888,6 +1893,8 @@ fn heading(
     // On while the store holds a message the POP3 server refused three
     // times; the window rebuilds the row when one reaches three.
     add_own("not-downloading", not_downloading);
+    // On while a look found a JMAP session for this IMAP account.
+    add_own("switch-jmap", switchable);
     row.insert_action_group("account", Some(&own));
     describe(
         &row,

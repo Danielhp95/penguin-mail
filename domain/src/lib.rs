@@ -407,6 +407,14 @@ pub struct ThreadSummary {
     /// metadata does not say whether a message has a calendar part.
     #[serde(default)]
     pub invitation: bool,
+    /// A Send Later row: its preview says when it goes, so the row shows
+    /// no date of its own.
+    #[serde(default)]
+    pub scheduled: bool,
+    /// A Send Later row whose message the server holds and sends at its
+    /// hour, whether or not this app is running.
+    #[serde(default)]
+    pub held: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -447,6 +455,18 @@ impl Provenance {
     }
 }
 
+/// A read receipt that arrived (RFC 8098): who it came from, and whether
+/// their mail program showed the message or got rid of it unread.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadReport {
+    pub by: String,
+    pub displayed: bool,
+    /// The `Original-Message-ID` the report answers, without its angle
+    /// brackets: the message of the person's it says was read.
+    #[serde(default)]
+    pub original: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageBody {
     pub html: Option<String>,
@@ -473,6 +493,13 @@ pub struct MessageBody {
     /// the raw message instead.
     #[serde(default)]
     pub protection: Option<Protection>,
+    /// The address `Disposition-Notification-To` names: the sender asked
+    /// for a read receipt there.
+    #[serde(default)]
+    pub receipt_to: Option<String>,
+    /// The receipt this message is, when it is one.
+    #[serde(default)]
+    pub read_report: Option<ReadReport>,
 }
 
 /// What a message arrived wrapped in: a signature beside the message, or
@@ -551,6 +578,12 @@ pub struct Filter {
     /// The Rules dialog lists it and never rewrites or deletes it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
+    /// The rule is kept but does not run. A switch to JMAP turns off a
+    /// local rule that names a mailbox the server lacks, and deleting a
+    /// folder turns off the Sieve rules that file into it; saving the rule
+    /// again from the Rules dialog turns it back on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub off: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -612,6 +645,7 @@ impl Filter {
                 forward: None,
             },
             read_only: false,
+            off: false,
         }
     }
 }

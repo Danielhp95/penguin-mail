@@ -83,7 +83,7 @@ impl<A: Accounts> RulesEngine<A> {
     /// Runs every rule over one message; whether one changed it.
     async fn run_one(&self, sync: &AccountSync, rules: &[Filter], meta: &MessageMeta) -> Result<bool, SyncError> {
         // The body is read once, and only when some rule reads words.
-        let body = match rules.iter().any(|r| matching::needs_body(&r.criteria)) {
+        let body = match rules.iter().any(|r| !r.off && matching::needs_body(&r.criteria)) {
             true => sync.body(&meta.id).await.ok().and_then(|b| b.text),
             false => None,
         };
@@ -93,7 +93,7 @@ impl<A: Accounts> RulesEngine<A> {
             message_id: Some(meta.id.clone()),
         };
         let mut acted = false;
-        for rule in rules {
+        for rule in rules.iter().filter(|r| !r.off) {
             if !matching::matches(&rule.criteria, meta, body.as_deref()) || !self.in_inbox(meta).await? {
                 continue;
             }

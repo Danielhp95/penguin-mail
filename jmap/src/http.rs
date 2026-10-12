@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, LOCATION, RETRY_AFTER};
+use reqwest::StatusCode;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue, LOCATION, RETRY_AFTER};
 use serde_json::Value;
 use tokio::sync::{Semaphore, SemaphorePermit};
 use url::Url;
@@ -216,12 +217,11 @@ impl JmapClient {
         let mut url = self.inner.session_url.clone();
         for _ in 0..=MOST_REDIRECTS {
             let response = self
-                .authorized(reqwest::Method::GET, url.clone())
-                .await?
-                .timeout(CALL_TIMEOUT)
-                .send()
-                .await
-                .map_err(network)?;
+                .with_credentials(|header| {
+                    let request = self.inner.http.get(url.clone()).header(AUTHORIZATION, header).timeout(CALL_TIMEOUT);
+                    async move { request.send().await.map_err(network) }
+                })
+                .await?;
             match response.status().as_u16() {
                 200..=299 => {
                     let bytes = read_capped(response, JSON_LIMIT).await?;
@@ -283,8 +283,28 @@ impl JmapClient {
 
     /// A request with the account's credentials.
     pub(crate) async fn authorized(&self, method: reqwest::Method, url: Url) -> Result<reqwest::RequestBuilder, JmapError> {
-        let header = self.inner.auth.header(false).await?;
+        let header = self.inner.auth.header(None).await?;
         Ok(self.inner.http.request(method, url).header(AUTHORIZATION, header))
+    }
+
+    /// What `send` answers when it goes out with the account's credentials,
+    /// sent once more with another token when an OAuth server answered
+    /// 401. A 401 means the server acted on nothing, so even a write goes
+    /// again safely; any other answer, or none, comes back as it is, and
+    /// a second 401 too.
+    async fn with_credentials<F, Fut>(&self, send: F) -> Result<reqwest::Response, JmapError>
+    where
+        F: Fn(HeaderValue) -> Fut,
+        Fut: Future<Output = Result<reqwest::Response, JmapError>>,
+    {
+        let header = self.inner.auth.header(None).await?;
+        let response = send(header.clone()).await?;
+        if response.status() != StatusCode::UNAUTHORIZED || self.inner.auth.kind() != AuthKind::OAuth {
+            return Ok(response);
+        }
+        drop(response);
+        let fresh = self.inner.auth.header(Some(&header)).await?;
+        send(fresh).await
     }
 
     pub(crate) fn events(&self) -> &tokio::sync::Mutex<Option<crate::push::EventStream>> {
@@ -348,8 +368,8 @@ impl JmapClient {
     /// stream's probe has not passed yet. The wait goes on: the call may
     /// be a write, and giving up on it could let it run later unseen. Only
     /// the head is timed, so a slow body is never taken for a stall.
-    async fn sent(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, JmapError> {
-        let answer = request.send();
+    async fn sent(&self, request: reqwest::Request) -> Result<reqwest::Response, JmapError> {
+        let answer = self.inner.http.execute(request);
         tokio::pin!(answer);
         if self.inner.streaming.load(Ordering::SeqCst) && !self.push_off() {
             tokio::select! {
@@ -396,12 +416,26 @@ impl JmapClient {
         let url = self.endpoint(&session.api_url)?;
         let _permit = self.permit().await;
         let request = self
-            .authorized(reqwest::Method::POST, url)
-            .await?
+            .inner
+            .http
+            .post(url)
             .header(CONTENT_TYPE, "application/json")
             .timeout(CALL_TIMEOUT)
-            .body(body);
-        let response = self.sent(request).await?;
+            .body(body)
+            .build()
+            .map_err(network)?;
+        let response = self
+            .with_credentials(|header| {
+                // The body sits in memory, so it always clones, and the
+                // copy shares its buffer.
+                let copy = request.try_clone().ok_or_else(|| JmapError::Network("the request cannot be sent again".into()));
+                async move {
+                    let mut copy = copy?;
+                    copy.headers_mut().insert(AUTHORIZATION, header);
+                    self.sent(copy).await
+                }
+            })
+            .await?;
         if !response.status().is_success() {
             return Err(failure(response).await);
         }
@@ -464,7 +498,11 @@ mod tests {
 
     use super::*;
 
-    async fn client_with_concurrency(most: u64) -> JmapClient {
+    /// A client whose session allows `most` requests at once, with the
+    /// server that answers it. The caller keeps the server: once dropped,
+    /// its port can go to another test's server, which answers the session
+    /// read with a 404.
+    async fn client_with_concurrency(most: u64) -> (MockServer, JmapClient) {
         let server = MockServer::start().await;
         let base = server.uri();
         let session = json!({
@@ -477,7 +515,7 @@ mod tests {
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(200).set_body_json(session)).mount(&server).await;
         let client = JmapClient::new(&format!("{base}/jmap/session"), Auth::Bearer("t".into())).unwrap();
         client.session().await.unwrap();
-        client
+        (server, client)
     }
 
     #[test]
@@ -489,17 +527,17 @@ mod tests {
 
     #[tokio::test]
     async fn the_permits_shrink_to_the_sessions_limit() {
-        assert_eq!(client_with_concurrency(2).await.inner.permits.available_permits(), 2);
+        assert_eq!(client_with_concurrency(2).await.1.inner.permits.available_permits(), 2);
     }
 
     #[tokio::test]
     async fn a_server_allowing_one_request_leaves_one_permit() {
-        assert_eq!(client_with_concurrency(1).await.inner.permits.available_permits(), 1);
+        assert_eq!(client_with_concurrency(1).await.1.inner.permits.available_permits(), 1);
     }
 
     #[tokio::test]
     async fn the_session_read_waits_for_a_free_permit() {
-        let client = client_with_concurrency(50).await;
+        let (_server, client) = client_with_concurrency(50).await;
         let held: Vec<_> = every_permit(&client).await;
         let waited = tokio::time::timeout(Duration::from_millis(100), client.refresh_session()).await;
         assert!(waited.is_err(), "the session read went out with every permit taken");
@@ -534,7 +572,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_refused_fixed_token_goes_out_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(401)).expect(1).mount(&server).await;
+        let client = JmapClient::new(&format!("{}/jmap/session", server.uri()), Auth::Bearer("t".into())).unwrap();
+        assert_eq!(client.session().await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    #[tokio::test]
     async fn a_server_allowing_more_still_gets_the_clients_own_most() {
-        assert_eq!(client_with_concurrency(50).await.inner.permits.available_permits(), MOST_AT_ONCE);
+        assert_eq!(client_with_concurrency(50).await.1.inner.permits.available_permits(), MOST_AT_ONCE);
     }
 }

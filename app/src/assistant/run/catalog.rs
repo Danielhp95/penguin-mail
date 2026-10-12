@@ -777,11 +777,12 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
         MailTool {
             name: "create_hidden_address",
             label: || gettext("Making a hidden address"),
-            description: "Makes a new Hide My Email address for an account, labels its mail, and copies it for the user.",
+            description: "Makes a new Hide My Email address for an account and copies it for the user. On an account whose server makes masked addresses, such as Fastmail, it is a masked address kept on the server; otherwise a plus address whose mail gets a label.",
             input: || {
                 json!({
                     "account": account("The account it delivers to."),
-                    "note": {"type": "string", "description": "Where the user will give it out."}
+                    "note": {"type": "string", "description": "Where the user will give it out."},
+                    "site": {"type": "string", "description": "The website it is for, such as shop.example, when there is one."}
                 })
             },
             required: &["account", "note"],

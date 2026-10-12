@@ -229,6 +229,8 @@ pub mod keyword {
     pub const ANSWERED: &str = "$answered";
     pub const DRAFT: &str = "$draft";
     pub const MUTED: &str = "$muted";
+    /// RFC 3503: a read receipt for the message was sent or declined.
+    pub const MDN_SENT: &str = "$mdnsent";
 }
 
 /// One thing a message can be in or carry.

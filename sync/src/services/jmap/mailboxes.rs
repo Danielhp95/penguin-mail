@@ -89,6 +89,12 @@ impl<J: JmapApi> Jmap<J> {
         Ok(())
     }
 
+    /// Lists the mailboxes unless the adapter already has, for a caller
+    /// outside the adapter that needs their paths, as the Sieve rules do.
+    pub(crate) async fn ensure_listed(&self) -> Result<(), BackendError> {
+        self.listed().await
+    }
+
     /// The parent's id and the last name of `path`, `Parent/Child`.
     fn place_of(&self, path: &str) -> Result<(Option<String>, String), BackendError> {
         let (parent, name) = match path.rsplit_once('/') {

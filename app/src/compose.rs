@@ -57,6 +57,17 @@ pub struct Identity {
     pub signature: String,
     /// The account's default, used when nothing else points at an address.
     pub default: bool,
+    /// The account makes masked addresses, so the composer offers one.
+    pub masks: bool,
+}
+
+/// The identity a message goes out as: `identity`, from the masked
+/// address made for this message when there is one.
+pub fn sender_with_mask(identity: &Identity, masked: Option<&Address>) -> Identity {
+    match masked {
+        Some(address) => Identity { address: address.clone(), ..identity.clone() },
+        None => identity.clone(),
+    }
 }
 
 /// The address a reply to `original` comes from: whichever of `mine` the
@@ -75,6 +86,31 @@ pub fn reply_from<'a>(mine: &'a [Address], original: &MessageMeta) -> Option<&'a
                 .as_ref()
                 .and_then(|from| mine.iter().find(|a| same_address(a, from)))
         })
+}
+
+/// The site a masked address is made for: the first recipient's domain,
+/// since a person writes to the site they sign up with. Empty when no
+/// recipient is a whole address yet.
+pub fn masked_site(to: &[Address]) -> String {
+    to.iter()
+        .filter(|a| is_address(&a.email))
+        .find_map(|a| a.email.rsplit_once('@'))
+        .map(|(_, domain)| domain.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// The masked address a saved draft or a reply goes out from, so opening
+/// it does not put the account's own address back in its place: the
+/// draft's sender, when the chosen identity's account makes masked
+/// addresses, the sender is none of the addresses the From row lists, and
+/// `masked`, the account's own list, does not say it is someone else's.
+/// `masked` is `None` before the account has listed its masked addresses.
+pub fn kept_mask(identities: &[Identity], chosen: &Identity, from: &Address, masked: Option<bool>) -> Option<Address> {
+    let listed = identities.iter().any(|i| {
+        i.address.email.eq_ignore_ascii_case(&from.email)
+            || i.suffixes.suffix(&i.address.email, &from.email).is_some()
+    });
+    (chosen.masks && is_address(&from.email) && !listed && masked != Some(false)).then(|| from.clone())
 }
 
 /// Which row the From dropdown starts on. The draft's own address wins,
@@ -525,6 +561,10 @@ pub struct Draft {
     /// is the one that asked both engines what they hold; a draft that is
     /// neither signed nor encrypted never uses this.
     pub standard: Standard,
+    /// Ask the recipients' mail programs for a read receipt. Off unless
+    /// the writer turns it on for this message.
+    #[serde(default)]
+    pub receipt: bool,
 }
 
 /// When the composer hands a message over for sending.
@@ -558,6 +598,7 @@ impl Draft {
             sign: false,
             encrypt: false,
             standard: Standard::default(),
+            receipt: false,
         }
     }
 
@@ -1469,6 +1510,9 @@ fn envelope<'a>(draft: &'a Draft, date_secs: i64, message_id: &str) -> MessageBu
                 .collect::<Vec<_>>(),
         );
     }
+    if draft.receipt {
+        builder = builder.header("Disposition-Notification-To", mime_address(&draft.from));
+    }
     builder
 }
 
@@ -1563,6 +1607,29 @@ mod tests {
 
     fn me() -> Address {
         addr(Some("Dana Reyes"), "dana@example.com")
+    }
+
+    #[test]
+    fn a_draft_that_asks_for_a_receipt_names_its_sender() {
+        let mut draft = Draft::new(1, addr(Some("Dana"), "dana@fastmail.example"));
+        draft.to = parse_recipients("ines@allotment.example");
+        draft.subject = "Rota".into();
+        let plain = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        assert!(!plain.contains("Disposition-Notification-To"), "off unless asked");
+        draft.receipt = true;
+        let asked = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        assert!(
+            asked.contains("Disposition-Notification-To: \"Dana\" <dana@fastmail.example>"),
+            "{asked}"
+        );
+    }
+
+    #[test]
+    fn a_draft_saved_before_receipts_reads_back_without_one() {
+        let mut stored = serde_json::to_value(Draft::new(1, addr(None, "a@x.example"))).unwrap();
+        stored.as_object_mut().unwrap().remove("receipt");
+        let draft: Draft = serde_json::from_value(stored).unwrap();
+        assert!(!draft.receipt);
     }
 
     /// A forwarded newsletter as it might arrive: a tracking pixel, a
@@ -1724,7 +1791,91 @@ mod tests {
             address: addr(None, email),
             signature: signature.to_string(),
             default,
+            masks: false,
         }
+    }
+
+    #[test]
+    fn the_site_is_the_first_recipients_domain() {
+        let to = [addr(None, "hello@Allotment-Supplies.example"), addr(None, "x@other.example")];
+        assert_eq!(masked_site(&to), "allotment-supplies.example");
+    }
+
+    #[test]
+    fn no_recipient_gives_no_site() {
+        assert_eq!(masked_site(&[addr(None, "half typed")]), "");
+    }
+
+    #[test]
+    fn a_draft_from_a_masked_address_keeps_it() {
+        let mut fastmail = identity(1, "dana@fastmail.example", "", true);
+        fastmail.masks = true;
+        let from = addr(Some("Dana"), "tern.quill@fastmail.example");
+        let kept = kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, None);
+        assert_eq!(kept.map(|a| a.email), Some("tern.quill@fastmail.example".to_string()));
+    }
+
+    #[test]
+    fn a_draft_from_one_of_the_accounts_addresses_has_no_mask() {
+        let mut fastmail = identity(1, "dana@fastmail.example", "", true);
+        fastmail.masks = true;
+        let mut alias = identity(1, "dana@home.example", "", false);
+        alias.masks = true;
+        // The From row opened on the alias, the address this account last
+        // sent from, while the new draft still names the account's own.
+        let from = addr(None, "Dana@Fastmail.example");
+        assert_eq!(kept_mask(&[fastmail, alias.clone()], &alias, &from, None), None);
+    }
+
+    #[test]
+    fn an_account_without_masks_keeps_no_mask() {
+        let plain = identity(1, "dana@example.com", "", true);
+        let from = addr(None, "someone.else@example.com");
+        assert_eq!(kept_mask(std::slice::from_ref(&plain), &plain, &from, None), None);
+    }
+
+    #[test]
+    fn a_masked_address_becomes_the_sender() {
+        let mut identity = identity(1, "me@fastmail.com", "", true);
+        identity.masks = true;
+        let masked = Address { name: Some("Me".into()), email: "kite.fern@fastmail.com".into() };
+        let sending = sender_with_mask(&identity, Some(&masked));
+        assert_eq!(sending.address.email, "kite.fern@fastmail.com");
+        assert_eq!(sending.account_id, 1);
+        let plain = sender_with_mask(&identity, None);
+        assert_eq!(plain.address.email, "me@fastmail.com");
+    }
+
+    #[test]
+    fn a_reply_to_a_masked_address_comes_from_it() {
+        let senders = vec![SendAsAddress {
+            email: "dana@fastmail.example".into(),
+            name: Some("Dana".into()),
+            default: true,
+            ..Default::default()
+        }];
+        let original = message(
+            "m1",
+            addr(None, "orders@kites.example"),
+            vec![addr(None, "Tern.Quill@fastmail.example")],
+            vec![addr(None, "cy@example.com")],
+        );
+        let masked = |email: &str| email.eq_ignore_ascii_case("tern.quill@fastmail.example");
+        let mine = reply_addresses(&senders, &original, masked);
+        let draft = respond(ReplyKind::ReplyAll, 1, &mine, &original, "", None, &[]);
+        assert_eq!(draft.from, addr(Some("Dana"), "Tern.Quill@fastmail.example"));
+        assert_eq!(draft.to, vec![addr(None, "orders@kites.example")]);
+        assert_eq!(draft.cc, vec![addr(None, "cy@example.com")]);
+    }
+
+    #[test]
+    fn a_draft_from_an_address_the_masked_list_lacks_keeps_no_mask() {
+        let mut fastmail = identity(1, "dana@fastmail.example", "", true);
+        fastmail.masks = true;
+        let from = addr(None, "someone.else@example.com");
+        assert_eq!(kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, Some(false)), None);
+        let listed = kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, Some(true));
+        assert_eq!(listed.map(|a| a.email), Some("someone.else@example.com".to_string()));
     }
 
     #[test]
@@ -1806,7 +1957,7 @@ mod tests {
                     addr(None, "cy@example.com"),
                 ],
             );
-            let mine = reply_addresses(&senders, &original);
+            let mine = reply_addresses(&senders, &original, |_| false);
             let draft = respond(ReplyKind::ReplyAll, 1, &mine, &original, "hello", None, &[]);
             assert_eq!(draft.from, addr(Some("Our Name"), &email));
             assert_eq!(draft.to, vec![addr(None, "ann@example.com")]);
@@ -1854,7 +2005,7 @@ mod tests {
                 addr(None, "user.shop@example.com"),
             ],
         );
-        let mine = reply_addresses(&senders, &original);
+        let mine = reply_addresses(&senders, &original, |_| false);
         let draft = respond(ReplyKind::ReplyAll, 1, &mine, &original, "", None, &[]);
         assert_eq!(draft.from.email, "user+shop@example.com");
         assert!(

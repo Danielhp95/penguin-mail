@@ -9,9 +9,16 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+# BoxFuture, for the callback that keeps a rotated refresh token.
+futures.workspace = true
+# The page the browser shows when the sign-in hands back, shared with
+# Google's and Microsoft's loopbacks.
+mailrs-domain.workspace = true
+rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -23,4 +30,5 @@ mailrs-testmail.workspace = true
 tempfile.workspace = true
 # `start_paused` lets a test watch a wait without waiting.
 tokio = { workspace = true, features = ["test-util"] }
+url.workspace = true
 wiremock.workspace = true

@@ -6,11 +6,15 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::Range;
 
-use mailrs_domain::{Address, MessageBody, MessageMeta, Provenance};
+use mailrs_domain::{Address, MessageBody, MessageMeta, Provenance, ReadReport};
 
 use crate::format::{avatar_hue, full_date, header_date, human_size, initials};
 use crate::quoted;
 use mailrs_domain::translate::{fill, fill_plural, gettext};
+
+pub mod receipt;
+
+pub use receipt::Receipt;
 
 /// How long a message's fold takes to open or close.
 pub const FOLD_MS: u32 = 240;
@@ -69,6 +73,12 @@ pub struct MessageView<'a> {
     /// article then keeps an empty place between the header and the body,
     /// which the card, a widget of the window, is laid over.
     pub event_slot: bool,
+    /// What the message says about the read receipt its sender asked for,
+    /// or `None` when it asked for none the app would offer.
+    pub receipt: Option<Receipt<'a>>,
+    /// The receipt this message is, drawn as one line in place of its
+    /// body. Set only for a receipt about mail the person sent.
+    pub read_by: Option<&'a ReadReport>,
 }
 
 /// A body's cleaned HTML, and whether it chooses its own colours. Mail
@@ -217,8 +227,15 @@ fn render_message(
     let card = format!("mailrs:contact/{}", escape(&address));
     let _ = write!(
         html,
-        "<article class=\"message {state}{unread}\" id=\"m-{id}\"><div class=\"header\">\
-         <a class=\"toggle\" href=\"mailrs:toggle/{id}\" aria-label=\"{toggle}\"></a>",
+        "<article class=\"message {state}{unread}\" id=\"m-{id}\">",
+        id = escape(&meta.id),
+    );
+    if view.receipt.is_some() {
+        receipt::note(html);
+    }
+    let _ = write!(
+        html,
+        "<div class=\"header\"><a class=\"toggle\" href=\"mailrs:toggle/{id}\" aria-label=\"{toggle}\"></a>",
         id = escape(&meta.id),
         toggle = escape(&gettext("Show or hide this message")),
     );
@@ -289,11 +306,27 @@ fn render_message(
             escape(&gettext("Invitation"))
         );
     }
+    if let Some(Receipt::Asked { to, working }) = view.receipt {
+        receipt::card(html, &meta.id, to, working);
+    }
     render_body(html, view);
     html.push_str("</div></div></article>");
 }
 
 fn render_body(html: &mut String, view: &MessageView) {
+    if let (BodyState::Loaded(_), Some(report)) = (&view.body, view.read_by) {
+        let when = crate::format::local(view.meta.date).map_or_else(String::new, |at| {
+            fill(
+                &gettext("{date}, {time}"),
+                &[
+                    ("date", &crate::format::day_month(at.date_naive(), chrono::Local::now().date_naive())),
+                    ("time", &crate::clock_format::time_text(at.time())),
+                ],
+            )
+        });
+        receipt::report_line(html, report, &when);
+        return;
+    }
     match &view.body {
         BodyState::Loading => {
             let _ = write!(
@@ -311,9 +344,14 @@ fn render_body(html: &mut String, view: &MessageView) {
         }
         BodyState::Loaded(body) => {
             if let Some(clean) = &view.sanitized {
+                // Mail's styles reach its own shadow host (`:host`), and a
+                // host moved up the page would paint over the sender row
+                // or the receipt card and take the clicks meant for them.
+                // The frame is the page's, so mail cannot style it, and it
+                // clips whatever the host paints outside it.
                 let _ = write!(
                     html,
-                    "<div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
+                    "<div class=\"body-frame\"><div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
                      <div class=\"root\">",
                     plain = if clean.paints { "" } else { " plain" },
                 );
@@ -325,7 +363,7 @@ fn render_body(html: &mut String, view: &MessageView) {
                     }
                     None => html.push_str(clean.html),
                 }
-                html.push_str("</div></template></div>");
+                html.push_str("</div></template></div></div>");
             } else {
                 let text = body.text.as_deref().unwrap_or("");
                 html.push_str("<div class=\"body text\">");
@@ -863,10 +901,11 @@ opacity 180ms cubic-bezier(0.23,1,0.32,1)}}\
 .body.status,.html{{background:var(--surface);border-radius:12px;padding:14px;\
 border:1px solid var(--line);overflow:hidden;margin-left:0}}\
 .html{{background:#fff}}\
+.body-frame{{contain:paint;margin:14px 0 2px}}.body-frame>.html{{margin:0}}\
 .html.plain{{background:var(--surface)}}\
 .status{{color:var(--dim);font-style:italic}}\
 blockquote.quote{{margin:6px 0;padding:0 0 0 12px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,transparent);color:var(--dim)}}\
-.signature{{color:var(--dim)}}{trimmed}\
+.signature{{color:var(--dim)}}{trimmed}{receipts}\
 a{{color:var(--accent-text)}}\
 .attachments{{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0 52px}}\
 .body.text+.attachments{{margin-left:0}}\
@@ -887,6 +926,7 @@ color:inherit;text-decoration:none;min-width:0}}\
 .address{{display:none}}.message{{padding:14px 8px 16px;margin:0 -8px}}.chev{{display:none}}}}",
         fold = FOLD_MS,
         trimmed = TRIMMED_CSS,
+        receipts = receipt::css(theme.dark),
         scheme = if theme.dark { "dark" } else { "light" },
         accent = theme.accent,
         accent_text = theme.accent_text,
@@ -954,7 +994,7 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use mailrs_domain::{Address, Attachment, MessageBody, MessageMeta};
+    use mailrs_domain::{Address, Attachment, MessageBody, MessageMeta, ReadReport};
 
     use super::*;
 
@@ -1105,6 +1145,8 @@ mod tests {
                 expanded: false,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1126,6 +1168,8 @@ mod tests {
             thumbnails: &no_thumbs,
             // Both fixtures are already clean.
             event_slot: false,
+            receipt: None,
+            read_by: None,
             sanitized: body.html.as_deref().map(|html| Sanitized {
                 html,
                 paints,
@@ -1177,6 +1221,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1231,6 +1277,8 @@ mod tests {
             expanded: false,
             thumbnails: &no_thumbs,
             event_slot: false,
+            receipt: None,
+            read_by: None,
             sanitized: None,
         };
         let initials = page("Hi", vec![view()]);
@@ -1273,6 +1321,8 @@ mod tests {
                     expanded: false,
                     thumbnails: &no_thumbs,
                     event_slot: false,
+                    receipt: None,
+                    read_by: None,
                     sanitized: None,
                 },
                 MessageView {
@@ -1281,6 +1331,8 @@ mod tests {
                     expanded: true,
                     thumbnails: &no_thumbs,
                     event_slot: false,
+                    receipt: None,
+                    read_by: None,
                     sanitized: None,
                 },
             ],
@@ -1333,6 +1385,8 @@ mod tests {
             thumbnails: &no_thumbs,
             sanitized: None,
             event_slot,
+            receipt: None,
+            read_by: None,
         };
         let html = page("Hello", vec![view(&first, false), view(&second, true)]);
         assert_eq!(html.matches("class=\"event-slot\"").count(), 1);
@@ -1368,6 +1422,8 @@ mod tests {
                 thumbnails: &no_thumbs,
                 sanitized: None,
                 event_slot: true,
+                receipt: None,
+                read_by: None,
             }],
         );
         assert!(html.contains(
@@ -1391,6 +1447,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: Some(Sanitized {
                     html: "<p>Hi</p>",
                     paints: false,
@@ -1438,6 +1496,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1480,6 +1540,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1525,6 +1587,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1563,6 +1627,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1590,6 +1656,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1618,6 +1686,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1645,6 +1715,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1672,6 +1744,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1704,6 +1778,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1735,6 +1811,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1753,6 +1831,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1765,6 +1845,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1807,6 +1889,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1936,6 +2020,8 @@ mod tests {
                 thumbnails: &thumbs,
                 sanitized: None,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
             }],
         );
         assert!(
@@ -1945,5 +2031,128 @@ mod tests {
             ),
             "{html}"
         );
+    }
+
+    fn receipt_view<'a>(
+        meta: &'a MessageMeta,
+        body: &'a MessageBody,
+        no_thumbs: &'a HashMap<String, String>,
+    ) -> MessageView<'a> {
+        MessageView {
+            meta,
+            body: BodyState::Loaded(body),
+            expanded: true,
+            thumbnails: no_thumbs,
+            sanitized: None,
+            event_slot: false,
+            receipt: None,
+            read_by: body.read_report.as_ref(),
+        }
+    }
+
+    #[test]
+    fn a_receipt_is_one_line_and_not_its_text() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            text: Some("Your message was shown.".into()),
+            read_report: Some(ReadReport {
+                by: "tomas@allotment.example".into(),
+                displayed: true,
+                original: Some("rota@fastmail.example".into()),
+            }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read: Rota", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("Read by <strong>tomas@allotment.example</strong> on "), "{page}");
+        assert!(!page.contains("Your message was shown."));
+    }
+
+    #[test]
+    fn a_receipt_for_mail_deleted_unread_says_so() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            read_report: Some(ReadReport {
+                by: "tomas@allotment.example".into(),
+                displayed: false,
+                original: None,
+            }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read: Rota", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("Deleted by <strong>tomas@allotment.example</strong> without being read"), "{page}");
+    }
+
+    #[test]
+    fn an_address_in_a_receipt_line_is_escaped() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            read_report: Some(ReadReport { by: "<b>x</b>@y".into(), displayed: true, original: None }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("<strong>&lt;b&gt;x&lt;/b&gt;@y</strong>"), "{page}");
+    }
+
+    #[test]
+    fn the_receipt_card_names_who_would_hear_and_offers_both_answers() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: false });
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("Read receipt requested"), "{page}");
+        assert!(page.contains("Sending a receipt tells ann@example.com that you opened this message."), "{page}");
+        let send = page.find("href=\"mailrs:receipt/send/m1\"").expect("Send Receipt");
+        let decline = page.find("href=\"mailrs:receipt/decline/m1\"").expect("Don't Send");
+        assert!(send < decline, "Send Receipt comes first");
+    }
+
+    #[test]
+    fn a_receipt_card_at_work_has_nothing_to_press() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: true });
+        let page = page("Rota", vec![view]);
+        assert!(!page.contains("mailrs:receipt/"), "{page}");
+        assert!(page.contains("aria-disabled=\"true\""), "{page}");
+    }
+
+    /// Mail styles its own shadow host (`:host{position:relative;top:-110px}`)
+    /// and could paint over the receipt card or the sender row, with a
+    /// click landing on what it hides. A frame of the page's own around
+    /// every host clips what it paints.
+    #[test]
+    fn every_html_body_sits_in_a_frame_mail_cannot_style() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { html: Some("<p>Hi</p>".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.sanitized = Some(Sanitized { html: "<p>Hi</p>", paints: false, history: None });
+        let page = page("Hi", vec![view]);
+        let hosts = page.matches("<div class=\"body html").count();
+        assert_eq!(hosts, 1, "{page}");
+        assert_eq!(page.matches("<div class=\"body-frame\"><div class=\"body html").count(), hosts, "{page}");
+        assert!(page.contains(".body-frame{contain:paint"), "{page}");
+    }
+
+    #[test]
+    fn a_receipt_answer_names_its_message() {
+        let one = meta("m/1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: false });
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("href=\"mailrs:receipt/send/m/1\""), "{page}");
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/m/1"), Some(("m/1", true)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/decline/m1"), Some(("m1", false)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/"), None);
+        assert_eq!(receipt::answer_of("mailrs:receipt/send"), None);
     }
 }

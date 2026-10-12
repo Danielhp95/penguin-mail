@@ -7,12 +7,21 @@
 mod api;
 mod bodies;
 mod cadence;
+pub(crate) mod calendar;
+mod contacts;
 mod errors;
 mod feed;
+pub(crate) mod jscal;
 mod fetch;
+mod held;
+mod identities;
 mod mailboxes;
 mod outgoing;
+mod receipts;
 mod search;
+mod storage;
+mod sieve;
+mod vacation;
 mod writes;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -20,27 +29,30 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use mailrs_domain::mailbox::keyword::{ANSWERED, DRAFT, FLAGGED, MUTED, SEEN};
-use mailrs_domain::{MailSet, RemoteMailbox, Role};
+use mailrs_domain::mailbox::keyword::{ANSWERED, DRAFT, FLAGGED, MDN_SENT, MUTED, SEEN};
+use mailrs_domain::{EpochMillis, MailSet, RemoteMailbox, Role};
 use mailrs_gmail::LabelColor;
 use mailrs_jmap::{Identity, Mailbox};
 use mailrs_mime::Parts;
 
 pub use api::JmapApi;
+pub use sieve::{JmapSieve, SERVER_REPLY_SCRIPT};
 pub(crate) use errors::backend;
+pub(crate) use fetch::received_millis;
+pub(crate) use outgoing::{bare_message_id, has_message_id};
 #[cfg(test)]
 pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
-    Backfill, Changes, Found, IdentityService, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
-    RemoteRef, SearchQuery, SendAsAddress, SyncState, Unapplied, Want,
+    Backfill, Changes, Claimed, Found, Held, KeywordsPage, MailBackend, MailCapabilities, RawMessage, ReceiptOut, Relocated,
+    RemoteRef, SearchQuery, Settled, Storage, SyncState, Unapplied, Unheld, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
 
 /// The keywords the adapter reads and restates. A JMAP server stores any
 /// keyword; these are the ones the app acts on.
-pub(super) const KEYWORDS: &[&str] = &[SEEN, FLAGGED, ANSWERED, DRAFT, MUTED];
+pub(super) const KEYWORDS: &[&str] = &[SEEN, FLAGGED, ANSWERED, DRAFT, MUTED, MDN_SENT];
 
 /// What a JMAP account's mail service can do. `labels` follows the
 /// session's `maxMailboxesPerEmail`, read at sign-in.
@@ -73,6 +85,11 @@ pub struct JmapSettings {
     /// A message can sit in several mailboxes, from the session's
     /// `maxMailboxesPerEmail` at sign-in.
     pub labels: bool,
+    /// The capabilities the session offered at sign-in, by URN.
+    pub capabilities: Vec<String>,
+    /// The automatic reply exists on the server but this sign-in cannot
+    /// reach it, as with a Fastmail API token.
+    pub auto_reply_needs_sign_in: bool,
 }
 
 /// What the adapter learned from its last listing. Its size follows the
@@ -98,8 +115,18 @@ pub(super) struct Known {
     pub push: Option<bool>,
     pub push_failures: u32,
     pub push_pause: Option<Duration>,
+    /// Whether the server can call a hold back (`EmailSubmission/get`
+    /// answers), asked the first time a message would be held.
+    pub holds: Option<bool>,
     /// When the open push stream was opened; `None` while none is open.
     pub push_opened: Option<tokio::time::Instant>,
+    /// The last read of the account's event changes, shared by every
+    /// calendar that asks from the same state. Replaced by the next.
+    pub calendar_changes: Option<Arc<calendar::EventChanges>>,
+    /// The account's masked addresses not deleted, by id, lowercased, as
+    /// the last listing and the changes made here since leave them; `None`
+    /// until a listing.
+    pub masked: Option<HashMap<String, String>>,
 }
 
 /// The blob ids of the parts of the last structures fetched, by part path.
@@ -180,6 +207,10 @@ impl<J: JmapApi> Jmap<J> {
 impl<J: JmapApi> MailBackend for Jmap<J> {
     fn capabilities(&self) -> MailCapabilities {
         capabilities_of(self.settings.labels)
+    }
+
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        self.space().await
     }
 
     fn provider_name(&self) -> &str {
@@ -354,11 +385,99 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
     async fn list_drafts(&self) -> Result<Vec<DraftRef>, BackendError> {
         self.drafts().await
     }
+
+    async fn schedule(&self, raw: &[u8], at: EpochMillis) -> Result<Held, BackendError> {
+        self.hold_message(raw, at).await
+    }
+
+    async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, BackendError> {
+        self.held_copy(message_id).await
+    }
+
+    async fn hold_of_copy(&self, email_id: &str) -> Result<Option<Claimed>, BackendError> {
+        self.claimed(email_id).await
+    }
+
+    async fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Unheld, BackendError> {
+        self.release(handle, message_id, send_at).await
+    }
+
+    async fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> Result<Settled, BackendError> {
+        self.settle_hold(handle, message_id, send_at).await
+    }
+
+    async fn send_receipt(&self, receipt: &ReceiptOut) -> Result<(), BackendError> {
+        self.mdn(receipt).await
+    }
 }
 
-impl<J: JmapApi> IdentityService for Jmap<J> {
-    /// The account's own address. Part 3 reads the server's identities.
-    async fn identities(&self) -> Result<Vec<SendAsAddress>, BackendError> {
-        Ok(vec![SendAsAddress { email: self.settings.address.clone(), name: None, signature: String::new(), default: true }])
+fn masked_of(said: mailrs_jmap::MaskedEmail) -> Option<crate::masked::MaskedAddress> {
+    let millis = |at: Option<&str>| at.and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok()).map(|at| at.timestamp_millis());
+    Some(crate::masked::MaskedAddress {
+        state: crate::masked::MaskedState::parse(&said.state)?,
+        created: millis(said.created_at.as_deref()),
+        last_mail: millis(said.last_message_at.as_deref()),
+        id: said.id,
+        email: said.email,
+        site: said.for_domain,
+        note: said.description,
+    })
+}
+
+impl<J: JmapApi> Jmap<J> {
+    /// The session offered Masked Email at sign-in.
+    pub fn masked_email(&self) -> bool {
+        self.settings.capabilities.iter().any(|c| c == mailrs_jmap::MASKED_EMAIL)
+    }
+
+    /// Every masked address but the deleted ones, newest first. The
+    /// adapter keeps their addresses, for `is_masked`.
+    pub async fn masked_addresses(&self) -> Result<Vec<crate::masked::MaskedAddress>, BackendError> {
+        let listed = self.api.masked_emails().await.map_err(backend)?;
+        let mut kept: Vec<_> =
+            listed.into_iter().filter_map(masked_of).filter(|m| m.state != crate::masked::MaskedState::Deleted).collect();
+        kept.sort_by_key(|m| std::cmp::Reverse(m.created));
+        self.known().masked = Some(kept.iter().map(|m| (m.id.clone(), m.email.to_lowercase())).collect());
+        Ok(kept)
+    }
+
+    /// Whether `address` is one of the account's masked addresses: `None`
+    /// until the adapter has listed them, and `Some(false)` on an account
+    /// that makes none.
+    pub fn is_masked(&self, address: &str) -> Option<bool> {
+        if !self.masked_email() {
+            return Some(false);
+        }
+        let wanted = address.trim().to_lowercase();
+        self.known().masked.as_ref().map(|masked| masked.values().any(|held| *held == wanted))
+    }
+
+    pub async fn make_masked(&self, site: &str, note: &str) -> Result<crate::masked::MaskedAddress, BackendError> {
+        let made = self.api.create_masked(site.trim(), note.trim()).await.map_err(backend)?;
+        let made = masked_of(made).ok_or_else(|| {
+            BackendError::Refused(mailrs_domain::translate::gettext("The server made an address Penguin Mail cannot read."))
+        })?;
+        if let Some(masked) = self.known().masked.as_mut() {
+            masked.insert(made.id.clone(), made.email.to_lowercase());
+        }
+        Ok(made)
+    }
+
+    /// Turns an address on, off or away. Only the server sets `Pending`.
+    pub async fn set_masked(&self, id: &str, state: crate::masked::MaskedState) -> Result<(), BackendError> {
+        use crate::masked::MaskedState as State;
+        let wire = match state {
+            State::Enabled => mailrs_jmap::MaskedState::Enabled,
+            State::Disabled => mailrs_jmap::MaskedState::Disabled,
+            State::Deleted => mailrs_jmap::MaskedState::Deleted,
+            State::Pending => return Err(BackendError::Unsupported),
+        };
+        self.api.set_masked_state(id, wire).await.map_err(backend)?;
+        if state == State::Deleted
+            && let Some(masked) = self.known().masked.as_mut()
+        {
+            masked.remove(id);
+        }
+        Ok(())
     }
 }

@@ -765,7 +765,8 @@ async fn cancelling_send_later_stops_the_named_messages_and_keeps_their_drafts()
         outbox.cancel_scheduled(&targets).await.unwrap(),
         Cancelled {
             in_drafts: 2,
-            unsaved: vec![]
+            unsaved: vec![],
+            ..Cancelled::default()
         },
         "the one Gmail never saw goes to Drafts now that Gmail answers"
     );
@@ -788,7 +789,8 @@ async fn cancelling_send_later_stops_the_named_messages_and_keeps_their_drafts()
         outbox.cancel_scheduled(&[by_message]).await.unwrap(),
         Cancelled {
             in_drafts: 1,
-            unsaved: vec![]
+            unsaved: vec![],
+            ..Cancelled::default()
         }
     );
     assert!(h.db.read(outbox::scheduled).await.unwrap().is_empty());
@@ -855,13 +857,13 @@ async fn a_scheduled_draft_saved_again_keeps_its_hour_under_its_new_message() {
         .save_draft(
             b"Subject: Monday\r\n\r\nEdited".to_vec(),
             None,
-            Some(draft_id),
+            Some(draft_id.clone()),
         )
         .await
         .unwrap();
     assert_ne!(Some(&saved.message_id), before.message_id.as_ref());
     outbox
-        .draft_saved(h.account_id, saved.clone())
+        .draft_saved(h.account_id, Some(draft_id), saved.clone())
         .await
         .unwrap();
 
@@ -877,7 +879,7 @@ async fn a_scheduled_draft_saved_again_keeps_its_hour_under_its_new_message() {
         .save_draft(b"Subject: Other\r\n\r\nHi".to_vec(), None, None)
         .await
         .unwrap();
-    outbox.draft_saved(h.account_id, other).await.unwrap();
+    outbox.draft_saved(h.account_id, None, other).await.unwrap();
     assert_eq!(h.db.read(outbox::scheduled).await.unwrap(), after);
 }
 
@@ -1105,4 +1107,43 @@ async fn drafts_reach_the_store_through_history() {
     h.sync.delete_draft(&second.draft_id).await.unwrap();
     h.sync.incremental().await.unwrap();
     assert!(stored(second.message_id).await.is_empty(), "deleted");
+}
+
+#[tokio::test]
+async fn a_message_that_falls_due_during_a_switch_waits_for_it() {
+    let h = harness().await;
+    let outbox = queue(&h);
+    let waiting = message(h.account_id, "Report");
+    let id = h.db.write(move |c| outbox::put(c, &waiting)).await.unwrap();
+    let held = outbox.hold(h.account_id).await;
+
+    let drained = outbox.send_due(now_millis()).await.unwrap();
+    assert!(!drained.changed, "nothing happened to it");
+    assert!(h.fake.with(|s| s.sent.is_empty()), "nothing went out while the switch ran");
+    let row = h.db.read(move |c| outbox::find(c, id)).await.unwrap().unwrap();
+    assert_eq!((row.attempts, row.problem), (0, None), "no failed try is counted");
+
+    drop(held);
+    let drained = outbox.send_due(now_millis()).await.unwrap();
+    assert_eq!(drained.sent.len(), 1, "it goes once the switch is over");
+}
+
+#[tokio::test]
+async fn a_message_sent_during_a_switch_waits_for_the_switch_to_end() {
+    let h = harness().await;
+    let outbox = std::sync::Arc::new(queue(&h));
+    let held = outbox.hold(h.account_id).await;
+    let posting = tokio::spawn({
+        let (outbox, message) = (std::sync::Arc::clone(&outbox), message(h.account_id, "Report"));
+        async move { outbox.post(message).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(!posting.is_finished(), "Send Now waits for the switch");
+    // A row written now would keep the ids the switch is replacing.
+    assert!(h.db.read(outbox::list).await.unwrap().is_empty());
+
+    drop(held);
+    let posted = posting.await.unwrap().unwrap();
+    assert!(matches!(posted, Posted::Sent(_)), "{posted:?}");
+    assert_eq!(h.fake.with(|s| s.sent.len()), 1);
 }
