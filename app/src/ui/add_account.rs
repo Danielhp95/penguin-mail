@@ -884,6 +884,9 @@ struct PasswordPage {
     browser_offer: gtk::Box,
     browser: gtk::Button,
     browser_line: gtk::Label,
+    /// "Use an API Token Instead", which opens the token field and its
+    /// card while Sign In With Browser leads the page.
+    token_instead: gtk::ListBox,
     password_list: gtk::ListBox,
     password: adw::PasswordEntryRow,
     hint: Card,
@@ -956,6 +959,16 @@ fn password_page() -> PasswordPage {
         .build();
     browser_offer.append(&browser);
     browser_offer.append(&browser_line);
+    // Shaped like Use IMAP Instead: the other way in, one step deeper.
+    let token_row = adw::ActionRow::builder()
+        .activatable(true)
+        .title(gettext("Use an API Token Instead"))
+        .build();
+    token_row.add_prefix(&gtk::Image::from_icon_name("dialog-password-symbolic"));
+    token_row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    let token_instead = boxed_list();
+    token_instead.append(&token_row);
+    token_instead.set_visible(false);
     let use_token = adw::SwitchRow::builder()
         .title(gettext("Sign In With a Token"))
         .visible(false)
@@ -1050,6 +1063,7 @@ fn password_page() -> PasswordPage {
     for part in [
         name_list.upcast_ref::<gtk::Widget>(),
         browser_offer.upcast_ref(),
+        token_instead.upcast_ref(),
         password_list.upcast_ref(),
         hint.area.upcast_ref(),
         failed.area.upcast_ref(),
@@ -1077,6 +1091,7 @@ fn password_page() -> PasswordPage {
         browser_offer,
         browser,
         browser_line,
+        token_instead,
         password_list,
         password,
         hint,
@@ -1875,6 +1890,8 @@ impl Dialog {
             }
         });
         self.password.imap_instead.connect_activated(move |_| imap());
+        let token = on(|this| this.open_token());
+        self.password.token_instead.connect_row_activated(move |_, _| token());
         let follow = on(Dialog::follow_protocol);
         self.manual.protocol.connect_active_notify(move |_| follow());
         let sign_in = on(Dialog::sign_in);
@@ -2344,6 +2361,7 @@ impl Dialog {
         page.use_token.set_visible(false);
         page.dav_password.set_visible(false);
         page.browser_offer.set_visible(false);
+        self.open_token_quietly();
         page.agree.set_title(&gettext("Use these servers"));
         page.agree.set_subtitle(&gettext(
             "Penguin Mail guessed these servers. Your password goes to them only after you check the box.",
@@ -2483,6 +2501,7 @@ impl Dialog {
         };
         self.set_band("password", Step::Found, Some(stamp), Some(&provider));
         page.browser_offer.set_visible(false);
+        self.open_token_quietly();
         self.ask_browser_ready(&proposal);
         self.proposal.replace(None);
         self.jmap.replace(Some(proposal));
@@ -2520,6 +2539,41 @@ impl Dialog {
         page.browser
             .update_property(&[gtk::accessible::Property::Description(&line)]);
         page.browser_offer.set_visible(true);
+        // The browser is the easier way in, so it leads: the suggested
+        // button and the focus, with the token one row deeper. A token
+        // already typed keeps its field open.
+        if page.password.text().is_empty() {
+            page.browser.add_css_class("suggested-action");
+            page.password_list.set_visible(false);
+            page.hint.area.set_visible(false);
+            page.token_instead.set_visible(true);
+            page.sign_in.set_visible(false);
+            page.browser.grab_focus();
+        }
+    }
+
+    /// Puts the token field back as the page's way in, before the page
+    /// learns whether the server takes the browser sign-in.
+    fn open_token_quietly(&self) {
+        let page = &self.password;
+        page.browser.remove_css_class("suggested-action");
+        page.token_instead.set_visible(false);
+        page.password_list.set_visible(true);
+        page.sign_in.set_visible(true);
+    }
+
+    /// Opens the token field and its card under Sign In With Browser,
+    /// which then steps back to a plain button.
+    fn open_token(&self) {
+        let page = &self.password;
+        page.browser.remove_css_class("suggested-action");
+        page.token_instead.set_visible(false);
+        page.password_list.set_visible(true);
+        page.sign_in.set_visible(true);
+        if let Some(proposal) = self.jmap.borrow().clone() {
+            self.show_jmap_secret(&proposal);
+        }
+        page.password.grab_focus();
     }
 
     /// The session row in place of the two servers and their summary.
