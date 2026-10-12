@@ -2763,23 +2763,23 @@ msgid_plural ""
 msgstr[0] ""
 "{address} 現在使用 JMAP。有 {count} 條規則已停用，因為伺服器上沒有其資料夾。"
 
-#: app/src/open_thread/run/receipt.rs:112
+#: app/src/open_thread/run/receipt.rs:120
 msgid "Read receipt sent"
 msgstr "已傳送讀取回條"
 
-#: app/src/open_thread/run/receipt.rs:125
+#: app/src/open_thread/run/receipt.rs:133
 msgid "Could not send the receipt: {reason}"
 msgstr "無法傳送回條：{reason}"
 
-#: app/src/open_thread/run/receipt.rs:129
+#: app/src/open_thread/run/receipt.rs:137
 msgid "The receipt was not sent, and Penguin Mail will not try again: {reason}"
 msgstr "回條未傳送，Penguin Mail 不會再試：{reason}"
 
-#: app/src/open_thread/run/translation.rs:149
+#: app/src/open_thread/run/translation.rs:158
 msgid "The model sent nothing back to put in the message."
 msgstr "模型未回傳任何可加入郵件的內容。"
 
-#: app/src/open_thread/run/translation.rs:153
+#: app/src/open_thread/run/translation.rs:162
 msgid "The model could not translate this: {reason}"
 msgstr "模型無法翻譯此內容：{reason}"
 
@@ -3354,127 +3354,127 @@ msgstr[0] "{count} 封郵件"
 msgid "Summarize"
 msgstr "摘要"
 
-#: app/src/render.rs:261 app/src/ui/thread_row.rs:403
+#: app/src/render.rs:268 app/src/ui/thread_row.rs:403
 msgid "Unknown sender"
 msgstr "未知寄件者"
 
-#: app/src/render.rs:279
+#: app/src/render.rs:286
 msgid "Show or hide this message"
 msgstr "顯示或隱藏此郵件"
 
-#: app/src/render.rs:281 app/src/ui/contact_card.rs:43
+#: app/src/render.rs:288 app/src/ui/contact_card.rs:43
 msgid "Contact"
 msgstr "聯絡人"
 
-#: app/src/render.rs:286
+#: app/src/render.rs:293
 msgid "Contact card for {person}"
 msgstr "{person} 的聯絡人名片"
 
-#: app/src/render.rs:355 app/src/ui/thread_row.rs:165
+#: app/src/render.rs:362 app/src/ui/thread_row.rs:165
 msgid "Invitation"
 msgstr "邀請"
 
-#: app/src/render.rs:369
+#: app/src/render.rs:376
 msgid "{date}, {time}"
 msgstr "{date} {time}"
 
-#: app/src/render.rs:384
+#: app/src/render.rs:391
 msgid "Loading…"
 msgstr "正在載入…"
 
-#: app/src/render.rs:389
+#: app/src/render.rs:396
 msgid "This message could not be loaded: {reason}"
 msgstr "無法載入此郵件：{reason}"
 
-#: app/src/render.rs:444
+#: app/src/render.rs:451
 msgid "Details"
 msgstr "詳細資料"
 
-#: app/src/render.rs:465
+#: app/src/render.rs:472
 msgid "from"
 msgstr "寄件者"
 
-#: app/src/render.rs:476
+#: app/src/render.rs:483
 msgid "to"
 msgstr "收件者"
 
-#: app/src/render.rs:478
+#: app/src/render.rs:485
 msgid "cc"
 msgstr "副本"
 
-#: app/src/render.rs:480
+#: app/src/render.rs:487
 msgid "date"
 msgstr "日期"
 
-#: app/src/render.rs:481
+#: app/src/render.rs:488
 msgid "subject"
 msgstr "主旨"
 
-#: app/src/render.rs:483
+#: app/src/render.rs:490
 msgid "mailed-by"
 msgstr "郵寄網域"
 
-#: app/src/render.rs:486
+#: app/src/render.rs:493
 msgid "signed-by"
 msgstr "簽署網域"
 
-#: app/src/render.rs:490
+#: app/src/render.rs:497
 msgid "security"
 msgstr "安全性"
 
-#: app/src/render.rs:492
+#: app/src/render.rs:499
 msgid "Standard encryption (TLS)"
 msgstr "標準加密（TLS）"
 
-#: app/src/render.rs:497
+#: app/src/render.rs:504
 msgid "Not encrypted in transit"
 msgstr "傳輸過程未加密"
 
-#: app/src/render.rs:534 app/src/ui/composer/mod.rs:2015
+#: app/src/render.rs:541 app/src/ui/composer/mod.rs:2015
 msgid "{count} attachment"
 msgid_plural "{count} attachments"
 msgstr[0] "{count} 個附件"
 
-#: app/src/render.rs:566
+#: app/src/render.rs:573
 msgid "Quick Look"
 msgstr "快速查看"
 
-#: app/src/render.rs:567 app/src/ui/window/attachments.rs:329
+#: app/src/render.rs:574 app/src/ui/window/attachments.rs:329
 #: app/src/ui/window/attachments.rs:335
 msgid "Save to Downloads"
 msgstr "儲存至下載資料夾"
 
-#: app/src/render.rs:569
+#: app/src/render.rs:576
 msgid "Open {file}, {size}"
 msgstr "開啟 {file}，{size}"
 
-#: app/src/render.rs:576
+#: app/src/render.rs:583
 msgid "Save {file} to Downloads"
 msgstr "將 {file} 儲存至下載資料夾"
 
-#: app/src/render.rs:583
+#: app/src/render.rs:590
 msgid "Save All ({count})"
 msgid_plural "Save All ({count})"
 msgstr[0] "全部儲存（{count}）"
 
-#: app/src/render.rs:594
+#: app/src/render.rs:601
 msgid "Save every attachment to a folder"
 msgstr "將所有附件儲存至資料夾"
 
-#: app/src/render.rs:658
+#: app/src/render.rs:665
 msgid "undisclosed recipients"
 msgstr "未公開的收件者"
 
-#: app/src/render.rs:661
+#: app/src/render.rs:668
 msgid "{named}, and {count} other"
 msgid_plural "{named}, and {count} others"
 msgstr[0] "{named} 與其他 {count} 位"
 
-#: app/src/render.rs:674
+#: app/src/render.rs:681
 msgid "me"
 msgstr "我"
 
-#: app/src/render.rs:684 app/src/ui/composer/mod.rs:587
+#: app/src/render.rs:691 app/src/ui/composer/mod.rs:587
 #: app/src/ui/composer/mod.rs:591
 msgid "Show trimmed content"
 msgstr "顯示省略的內容"
@@ -6557,7 +6557,7 @@ msgstr "加密"
 msgid "Request Read Receipt"
 msgstr "要求讀取回條"
 
-#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1689
+#: app/src/ui/composer/mod.rs:345 app/src/ui/conversation.rs:1715
 msgid "Choose a Time…"
 msgstr "選擇時間…"
 
@@ -7112,7 +7112,7 @@ msgid "Mark as Unread (Ctrl+Shift+U)"
 msgstr "標示為未讀（Ctrl+Shift+U）"
 
 #: app/src/ui/conversation.rs:479 app/src/ui/conversation.rs:483
-#: app/src/ui/conversation.rs:1729
+#: app/src/ui/conversation.rs:1754
 msgid "Flag (Ctrl+Shift+L)"
 msgstr "旗標（Ctrl+Shift+L）"
 
@@ -7255,23 +7255,23 @@ msgid "{count} Message Selected"
 msgid_plural "{count} Messages Selected"
 msgstr[0] "已選取 {count} 封郵件"
 
-#: app/src/ui/conversation.rs:1728
+#: app/src/ui/conversation.rs:1753
 msgid "Unflag (Ctrl+Shift+L)"
 msgstr "移除旗標（Ctrl+Shift+L）"
 
-#: app/src/ui/conversation.rs:1741
+#: app/src/ui/conversation.rs:1766
 msgid "Mark as Read (U)"
 msgstr "標示為已讀（U）"
 
-#: app/src/ui/conversation.rs:1742
+#: app/src/ui/conversation.rs:1767
 msgid "Mark as Unread (U)"
 msgstr "標示為未讀（U）"
 
-#: app/src/ui/conversation.rs:1970
+#: app/src/ui/conversation.rs:2033
 msgid "{color} (Ctrl+Alt+{number})"
 msgstr "{color}（Ctrl+Alt+{number}）"
 
-#: app/src/ui/conversation.rs:1987 app/src/ui/window/message_menu.rs:258
+#: app/src/ui/conversation.rs:2050 app/src/ui/window/message_menu.rs:258
 msgid "Clear Flag"
 msgstr "清除旗標"
 
@@ -10176,7 +10176,7 @@ msgstr "檢視儲存空間"
 msgid "Hide Storage Warning Until Next Launch"
 msgstr "隱藏空間警告至下次啟動"
 
-#: app/src/ui/window/thread.rs:658
+#: app/src/ui/window/thread.rs:587
 msgid "The account is not connected yet."
 msgstr "帳號尚未連線。"
 

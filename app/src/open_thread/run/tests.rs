@@ -48,7 +48,7 @@ async fn opening_shows_the_stored_copy_then_the_bodies_gmail_sent() {
     assert!(at(Step::Ensure) < at(Step::Bodies));
     assert!(at(Step::Bodies) < at(Step::BodiesArrived));
     let text = window
-        .open(|open| open.bodies["m1"].clone().ok()?.text)
+        .open(|open| open.bodies["m1"].clone().ok()?.text.clone())
         .flatten();
     assert_eq!(text.as_deref(), Some("Hello"));
 }
@@ -960,6 +960,83 @@ async fn an_html_body_is_drawn_cleaned() {
     let drawn = page(&window);
     assert!(drawn.contains("<p>Hi Ann</p>"), "{drawn}");
     assert!(!drawn.contains("steal()"), "{drawn}");
+}
+
+/// Every cleaning goes through the port, which does it on another thread
+/// than the one that draws.
+fn cleaned_away(window: &FakeWindow) -> bool {
+    let here = std::thread::current().id();
+    let cleaners = window.0.borrow().cleaners.clone();
+    !cleaners.is_empty() && cleaners.iter().all(|worker| *worker != here)
+}
+
+#[tokio::test]
+async fn gmail_s_html_is_cleaned_through_the_port_before_it_is_drawn() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Bodies) < at(Step::Clean) && at(Step::Clean) < at(Step::BodiesArrived));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window), [["m1"]], "loading, then the body in one patch");
+    assert!(page(&window).contains("<p>Hi Ann</p>"));
+}
+
+/// The stored copy goes on screen whole, its HTML already cleaned.
+#[tokio::test]
+async fn the_stored_copy_is_cleaned_before_it_goes_on_screen() {
+    let window = FakeWindow::new();
+    window.with(|screen| {
+        screen.messages = vec![meta("m1", false)];
+        if let Some(stored) = screen.stored.get_mut(THREAD) {
+            stored.messages = vec![meta("m1", false)];
+            stored
+                .bodies
+                .insert("m1".to_string(), html_body("<p>Kites at ten</p>"));
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Clean) < at(Step::Show));
+    assert!(cleaned_away(&window));
+    let first = window.0.borrow().loads.first().cloned().unwrap_or_default();
+    assert!(first.contains("<p>Kites at ten</p>"), "{first}");
+}
+
+/// A body an engine opened says it is loading until the port has cleaned
+/// it, and nothing cleans it on the way to the page.
+#[tokio::test]
+async fn an_opened_html_body_is_cleaned_through_the_port() {
+    let window = FakeWindow::new();
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    let before_patches = patches(&window).len();
+    window
+        .run()
+        .engine_answered(target(None), "m1".to_string(), opened(html_body("<p>Under the mat</p>")))
+        .await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(window.took(Step::Cleaned));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window)[before_patches..], [["m1"], ["m1"]]);
+    assert!(page(&window).contains("<p>Under the mat</p>"));
+}
+
+/// A model's HTML is mail like any other: cleaned through the port.
+#[tokio::test]
+async fn a_translated_html_message_is_cleaned_through_the_port() {
+    let window = FakeWindow::with_body(html_body(
+        "<p>Olá Ana, a reunião de amanhã fica para as dez horas. Não te esqueças de \
+         trazer os documentos que eu te pedi, para podermos ver tudo com calma \
+         antes de falar com o banco. Um abraço e até amanhã.</p>",
+    ));
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    window.run().translate().await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(cleaned_away(&window));
+    assert!(page(&window).contains("Hello Ana"), "{}", page(&window));
 }
 
 #[tokio::test]

@@ -6,6 +6,7 @@
 use mailrs_domain::translate::{fill, gettext};
 
 use super::{ThreadRun, Want};
+use crate::open_thread::OpenThread;
 
 /// What the receipt card shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,15 +36,16 @@ impl ThreadRun {
     }
 
     async fn receipt_card(&self, wanted: &Want<'_>) {
-        if wanted.on_screen(|_| self.desk.offers_receipts()) != Some(true) {
+        if wanted.on_screen(|_| self.desk.preferences().offers_receipts) != Some(true) {
             return;
         }
         // A redraw while the answer goes out must not offer the buttons
         // again.
-        if self.desk.receipt_working() {
+        if self.receipt_working() {
             return;
         }
-        let Some(Some((message_id, to))) = wanted.on_screen(|_| self.desk.asks_receipt()) else {
+        let Some(Some((message_id, to))) = wanted.on_screen(|_| self.find(OpenThread::asks_receipt))
+        else {
             return;
         };
         let account_id = wanted.target().account_id;
@@ -57,7 +59,7 @@ impl ThreadRun {
         else {
             return;
         };
-        if !answered && !self.desk.receipt_working() {
+        if !answered && !self.receipt_working() {
             wanted.on_screen(|effects| effects.receipt_card(ReceiptCard::Asked { message_id, to }));
         }
     }
@@ -66,7 +68,8 @@ impl ThreadRun {
     /// Anyone can send a report naming anyone, so one that answers nothing
     /// the person sent stays the mail it is.
     async fn reports(&self, wanted: &Want<'_>) {
-        let Some(unchecked) = wanted.on_screen(|_| self.desk.unchecked_reports()) else {
+        let Some(Some(unchecked)) = wanted.on_screen(|_| self.thread(OpenThread::unchecked_reports))
+        else {
             return;
         };
         let account_id = wanted.target().account_id;
@@ -86,6 +89,11 @@ impl ThreadRun {
         }
     }
 
+    /// Whether the card's answer is on its way.
+    fn receipt_working(&self) -> bool {
+        self.thread(OpenThread::receipt_working).unwrap_or(false)
+    }
+
     /// The card's buttons: send the receipt, or decline it for good.
     pub async fn answer_receipt(&self, message_id: String, send: bool) {
         let Some(wanted) = self.on_screen() else {
@@ -93,7 +101,7 @@ impl ThreadRun {
         };
         // One answer at a time: a second press while the first goes out
         // could send a second receipt.
-        if self.desk.receipt_working() {
+        if self.receipt_working() {
             return;
         }
         let account_id = wanted.target().account_id;
@@ -119,7 +127,7 @@ impl ThreadRun {
                 let answered = wanted
                     .wait(|effects| effects.receipt_answered(account_id, message_id))
                     .await;
-                let (card, said) = match (answered, wanted.on_screen(|_| self.desk.asks_receipt())) {
+                let (card, said) = match (answered, wanted.on_screen(|_| self.find(OpenThread::asks_receipt))) {
                     (Some(Ok(false)), Some(Some((message_id, to)))) => (
                         ReceiptCard::Asked { message_id, to },
                         gettext("Could not send the receipt: {reason}"),
