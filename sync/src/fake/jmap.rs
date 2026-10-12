@@ -114,6 +114,12 @@ pub struct JmapState {
     /// Refuses `anchor` in a query, as Apache James 3.9 does
     /// (`invalidArguments`).
     pub refuse_anchors: bool,
+    /// From the next query with an anchor on, refuses this many queries,
+    /// with or without one, as `invalidArguments` with this description.
+    pub refuse_from_anchor: Option<(u32, String)>,
+    refusing: Option<(u32, String)>,
+    /// How many queries asked with an anchor.
+    pub anchored_queries: u32,
     /// Refuses a new mailbox that names a role, as `invalidProperties`.
     pub refuse_mailbox_roles: bool,
     /// Refuses every new mailbox, as `forbidden`.
@@ -391,6 +397,9 @@ impl FakeJmap {
             total_override: None,
             vanish_after_query: None,
             refuse_anchors: false,
+            refuse_from_anchor: None,
+            refusing: None,
+            anchored_queries: 0,
             refuse_mailbox_roles: false,
             refuse_mailbox_creates: false,
             log: Vec::new(),
@@ -651,6 +660,17 @@ impl FakeJmap {
         })
     }
 
+    /// Refuses the query while `refuse_from_anchor` has refusals left.
+    fn refuse_if_asked(&self) -> Answer<()> {
+        self.with(|s| match s.refusing.take() {
+            Some((left, description)) if left > 0 => {
+                s.refusing = Some((left - 1, description.clone()));
+                Err(JmapError::Method { kind: "invalidArguments".into(), description })
+            }
+            _ => Ok(()),
+        })
+    }
+
     fn vanish_if_asked(&self) {
         if let Some(id) = self.with(|s| s.vanish_after_query.take()) {
             self.destroy(&id);
@@ -757,6 +777,7 @@ impl JmapApi for FakeJmap {
 
     async fn query(&self, query: &EmailQuery) -> Answer<Queried> {
         self.called("Email/query");
+        self.refuse_if_asked()?;
         let answer = self.listing(query, None);
         self.vanish_if_asked();
         answer
@@ -767,6 +788,11 @@ impl JmapApi for FakeJmap {
         if self.with(|s| s.refuse_anchors) {
             return Err(JmapError::Method { kind: "invalidArguments".into(), description: "anchor is not supported".into() });
         }
+        self.with(|s| {
+            s.anchored_queries += 1;
+            s.refusing = s.refusing.take().or(s.refuse_from_anchor.take());
+        });
+        self.refuse_if_asked()?;
         let answer = self.listing(query, Some(anchor));
         self.vanish_if_asked();
         answer

@@ -141,26 +141,44 @@ impl<J: JmapApi> Jmap<J> {
     /// anchor (Apache James 3.9), the page starts `OVERLAP` hits before the
     /// mark's position and drops what came up to the last id, so it skips
     /// none and repeats a few only when the last id itself went.
+    ///
+    /// A refusal as `invalidArguments` turns anchors off for the session
+    /// when it names the anchor, or when the same page without one passes.
     pub(super) async fn page_after(&self, filter: &Option<Value>, mark: &Mark, limit: usize) -> Result<(Vec<Hit>, Mark), JmapError> {
         let query = EmailQuery { filter: filter.clone(), position: mark.position, limit, total: false };
         let Some(last) = &mark.last else {
             return Ok(marked(self.api().query(&query).await?, mark));
         };
-        if !self.known().no_anchor {
-            match self.api().query_after(&query, last).await {
-                Err(JmapError::Method { kind, .. }) if kind == "anchorNotFound" => {}
-                Err(JmapError::Method { kind, .. }) if kind == "invalidArguments" => self.known().no_anchor = true,
-                answer => return Ok(marked(answer?, mark)),
-            }
+        if self.known().no_anchor {
+            return self.page_near(&query, mark, last).await;
         }
+        match self.api().query_after(&query, last).await {
+            Err(JmapError::Method { kind, .. }) if kind == "anchorNotFound" => self.page_near(&query, mark, last).await,
+            Err(JmapError::Method { kind, description }) if kind == "invalidArguments" => {
+                if description.to_ascii_lowercase().contains("anchor") {
+                    self.known().no_anchor = true;
+                    return self.page_near(&query, mark, last).await;
+                }
+                let page = self.page_near(&query, mark, last).await?;
+                self.known().no_anchor = true;
+                Ok(page)
+            }
+            answer => Ok(marked(answer?, mark)),
+        }
+    }
+
+    /// The page after `mark` found without an anchor: from `OVERLAP` hits
+    /// before the mark's position, with what came up to `last` dropped.
+    async fn page_near(&self, query: &EmailQuery, mark: &Mark, last: &str) -> Result<(Vec<Hit>, Mark), JmapError> {
+        let limit = query.limit;
         let back = mark.position.saturating_sub(OVERLAP);
         let wider = limit.saturating_add(usize::try_from(mark.position - back).unwrap_or(usize::MAX));
         let found = self.api().query(&EmailQuery { position: back, limit: wider, ..query.clone() }).await?;
-        let Some(at) = found.hits.iter().position(|h| &h.id == last) else {
+        let Some(at) = found.hits.iter().position(|h| h.id == last) else {
             // A server that answers fewer hits than asked may stop short of
             // the mark; going on from there would never move forward.
             if found.position + (found.hits.len() as u64) < mark.position {
-                return Ok(marked(self.api().query(&query).await?, mark));
+                return Ok(marked(self.api().query(query).await?, mark));
             }
             return Ok(marked(found, mark));
         };
@@ -170,7 +188,7 @@ impl<J: JmapApi> Jmap<J> {
         if hits.is_empty() {
             // A server may answer fewer hits than asked, so a page that ends
             // at the last id does not end the listing.
-            return Ok(marked(self.api().query(&EmailQuery { position, ..query }).await?, mark));
+            return Ok(marked(self.api().query(&EmailQuery { position, ..query.clone() }).await?, mark));
         }
         Ok(marked(Queried { hits, position, total: None }, mark))
     }
