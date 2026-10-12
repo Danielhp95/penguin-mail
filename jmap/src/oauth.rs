@@ -398,13 +398,13 @@ impl Loopback {
         let mut reading = JoinSet::new();
         loop {
             tokio::select! {
-                accepted = self.listener.accept() => {
+                // At the cap the loop stops accepting, so a further
+                // connection waits in the backlog until a read ends (at most
+                // `REQUEST_WAIT`) rather than being dropped. Each read holds
+                // at most `REQUEST_LIMIT` bytes.
+                accepted = self.listener.accept(), if reading.len() < MOST_CONNECTIONS => {
                     let (stream, _) = accepted.map_err(io)?;
-                    // Past the cap a connection is dropped unread; each one
-                    // read holds at most `REQUEST_LIMIT` bytes.
-                    if reading.len() < MOST_CONNECTIONS {
-                        reading.spawn(read_request(stream));
-                    }
+                    reading.spawn(read_request(stream));
                 }
                 Some(read) = reading.join_next() => {
                     let Ok(Some((mut stream, request))) = read else { continue };
