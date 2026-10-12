@@ -111,6 +111,9 @@ pub struct JmapState {
     /// A message destroyed right after the next `Email/query` answers, as
     /// another client deletes it while a listing pages on.
     pub vanish_after_query: Option<String>,
+    /// Refuses `anchor` in a query, as Apache James 3.9 does
+    /// (`invalidArguments`).
+    pub refuse_anchors: bool,
     /// Refuses a new mailbox that names a role, as `invalidProperties`.
     pub refuse_mailbox_roles: bool,
     /// Refuses every new mailbox, as `forbidden`.
@@ -387,6 +390,7 @@ impl FakeJmap {
             one_copy: false,
             total_override: None,
             vanish_after_query: None,
+            refuse_anchors: false,
             refuse_mailbox_roles: false,
             refuse_mailbox_creates: false,
             log: Vec::new(),
@@ -415,6 +419,15 @@ impl FakeJmap {
     /// `OR` or `NOT`, as Apache James does.
     pub fn one_mailbox_per_filter(self) -> FakeJmap {
         self.with(|s| s.flat_mailbox_filters = true);
+        self
+    }
+
+    /// Apache James 3.9: one mailbox condition a filter, and no `anchor`.
+    pub fn like_james(self) -> FakeJmap {
+        self.with(|s| {
+            s.flat_mailbox_filters = true;
+            s.refuse_anchors = true;
+        });
         self
     }
 
@@ -751,6 +764,9 @@ impl JmapApi for FakeJmap {
 
     async fn query_after(&self, query: &EmailQuery, anchor: &str) -> Answer<Queried> {
         self.called("Email/query");
+        if self.with(|s| s.refuse_anchors) {
+            return Err(JmapError::Method { kind: "invalidArguments".into(), description: "anchor is not supported".into() });
+        }
         let answer = self.listing(query, Some(anchor));
         self.vanish_if_asked();
         answer

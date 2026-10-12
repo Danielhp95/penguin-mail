@@ -264,3 +264,31 @@ async fn a_server_that_refuses_two_mailboxes_a_filter_is_asked_once_a_session() 
     h.mail().window_ids(30, Some(&travel)).await.unwrap();
     assert_eq!(calls_of(&h, "Email/query"), 2, "recent mail, then the Inbox's older mail, and no filter it refused");
 }
+
+#[tokio::test]
+async fn a_server_without_anchors_still_pages_the_whole_backfill() {
+    let h = over(FakeJmap::new().like_james()).await;
+    for n in 0..205 {
+        h.fake.deliver("inbox", &raw(&format!("q{n}@x"), "Paged"), days_ago(1));
+    }
+    let mail = h.mail();
+    let first = mail.backfill(30, None).await.unwrap();
+    h.fake.destroy(&first.refs[3].id);
+    let second = mail.backfill(30, first.next.as_deref()).await.unwrap();
+    let firsts: std::collections::BTreeSet<String> = first.refs.iter().map(|r| r.id.clone()).collect();
+    assert_eq!(second.refs.iter().filter(|r| !firsts.contains(&r.id)).count(), 5);
+    assert!(second.next.is_none());
+}
+
+#[tokio::test]
+async fn a_server_without_anchors_still_lists_a_window_whole() {
+    let h = over(FakeJmap::new().like_james().clamping_queries(2)).await;
+    let ids: Vec<String> = (0..5).map(|n| h.fake.deliver("inbox", &raw(&format!("z{n}@x"), "Listed"), days_ago(1) + n)).collect();
+    h.mail().mailboxes().await.unwrap();
+    h.fake.with(|s| s.vanish_after_query = Some(ids[4].clone()));
+    let mut listed: Vec<String> = h.mail().window_ids(30, None).await.unwrap().into_iter().map(|r| r.id).collect();
+    listed.sort();
+    let mut expected = ids.clone();
+    expected.sort();
+    assert_eq!(listed, expected);
+}

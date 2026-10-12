@@ -9870,11 +9870,11 @@ msgstr "The server refused this request."
 msgid "The server could not take this request."
 msgstr "The server could not take this request."
 
-#: sync/src/services/jmap/mod.rs:233
+#: sync/src/services/jmap/mod.rs:236
 msgid "This server keeps no colors for its mailboxes."
 msgstr "This server keeps no colours for its mailboxes."
 
-#: sync/src/services/jmap/mod.rs:306
+#: sync/src/services/jmap/mod.rs:309
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
 

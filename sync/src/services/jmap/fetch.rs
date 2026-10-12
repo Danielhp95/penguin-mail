@@ -4,7 +4,7 @@
 //! removes meanwhile does not shift the rest past the listing.
 
 use mailrs_domain::{Address, Memberships, MessageMeta, Role};
-use mailrs_jmap::{Email, EmailAddress, EmailQuery, Hit, JmapError, META};
+use mailrs_jmap::{Email, EmailAddress, EmailQuery, Hit, JmapError, META, Queried};
 use serde_json::{Value, json};
 
 use super::{Jmap, JmapApi, backend};
@@ -20,8 +20,8 @@ const MOST_IDS: usize = 20_000;
 /// Ids one call of an id listing asks for.
 const IDS_PER_CALL: usize = 1000;
 
-/// How many hits a listing goes back when the message it went on from is
-/// gone: a few repeats beat a skipped message.
+/// How many hits a listing goes back when it cannot go on from the last id
+/// it named: a few repeats beat a skipped message.
 const OVERLAP: u64 = 50;
 
 /// The most messages of one thread a whole-thread fetch keeps.
@@ -65,6 +65,15 @@ fn window_start(days: i64) -> Option<String> {
 pub(super) struct Mark {
     pub position: u64,
     pub last: Option<String>,
+}
+
+/// The hits of `found` and the mark after them.
+fn marked(found: Queried, mark: &Mark) -> (Vec<Hit>, Mark) {
+    let next = Mark {
+        position: found.position + found.hits.len() as u64,
+        last: found.hits.last().map(|h| h.id.clone()).or_else(|| mark.last.clone()),
+    };
+    (found.hits, next)
 }
 
 /// A backfill cursor: which of the window's filters, and the mark in its
@@ -127,27 +136,43 @@ impl<J: JmapApi> Jmap<J> {
     }
 
     /// The next page of `filter`'s listing after `mark`, at most `limit`
-    /// hits, and the mark after it. When the message the mark names is
-    /// gone, the page starts `OVERLAP` hits before its position, so it may
-    /// repeat a few the last page named, but skips none.
+    /// hits, and the mark after it. The page goes on right after the last
+    /// id the mark names. When that message is gone, or the server takes no
+    /// anchor (Apache James 3.9), the page starts `OVERLAP` hits before the
+    /// mark's position and drops what came up to the last id, so it skips
+    /// none and repeats a few only when the last id itself went.
     pub(super) async fn page_after(&self, filter: &Option<Value>, mark: &Mark, limit: usize) -> Result<(Vec<Hit>, Mark), JmapError> {
         let query = EmailQuery { filter: filter.clone(), position: mark.position, limit, total: false };
-        let found = match &mark.last {
-            None => self.api().query(&query).await?,
-            Some(last) => match self.api().query_after(&query, last).await {
-                Err(JmapError::Method { kind, .. }) if kind == "anchorNotFound" => {
-                    let back = mark.position.saturating_sub(OVERLAP);
-                    let wider = limit.saturating_add(usize::try_from(mark.position - back).unwrap_or(usize::MAX));
-                    self.api().query(&EmailQuery { position: back, limit: wider, ..query }).await?
-                }
-                answer => answer?,
-            },
+        let Some(last) = &mark.last else {
+            return Ok(marked(self.api().query(&query).await?, mark));
         };
-        let next = Mark {
-            position: found.position + found.hits.len() as u64,
-            last: found.hits.last().map(|h| h.id.clone()).or_else(|| mark.last.clone()),
+        if !self.known().no_anchor {
+            match self.api().query_after(&query, last).await {
+                Err(JmapError::Method { kind, .. }) if kind == "anchorNotFound" => {}
+                Err(JmapError::Method { kind, .. }) if kind == "invalidArguments" => self.known().no_anchor = true,
+                answer => return Ok(marked(answer?, mark)),
+            }
+        }
+        let back = mark.position.saturating_sub(OVERLAP);
+        let wider = limit.saturating_add(usize::try_from(mark.position - back).unwrap_or(usize::MAX));
+        let found = self.api().query(&EmailQuery { position: back, limit: wider, ..query.clone() }).await?;
+        let Some(at) = found.hits.iter().position(|h| &h.id == last) else {
+            // A server that answers fewer hits than asked may stop short of
+            // the mark; going on from there would never move forward.
+            if found.position + (found.hits.len() as u64) < mark.position {
+                return Ok(marked(self.api().query(&query).await?, mark));
+            }
+            return Ok(marked(found, mark));
         };
-        Ok((found.hits, next))
+        let position = found.position + at as u64 + 1;
+        let mut hits = found.hits;
+        hits.drain(..=at);
+        if hits.is_empty() {
+            // A server may answer fewer hits than asked, so a page that ends
+            // at the last id does not end the listing.
+            return Ok(marked(self.api().query(&EmailQuery { position, ..query }).await?, mark));
+        }
+        Ok(marked(Queried { hits, position, total: None }, mark))
     }
 
     pub(super) async fn backfill_page(&self, days: i64, cursor: Option<&str>) -> Result<Backfill, BackendError> {
