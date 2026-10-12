@@ -111,6 +111,10 @@ pub struct JmapState {
     /// A message destroyed right after the next `Email/query` answers, as
     /// another client deletes it while a listing pages on.
     pub vanish_after_query: Option<String>,
+    /// Refuses a new mailbox that names a role, as `invalidProperties`.
+    pub refuse_mailbox_roles: bool,
+    /// Refuses every new mailbox, as `forbidden`.
+    pub refuse_mailbox_creates: bool,
     log: Vec<(u64, &'static str, String, Op)>,
     state: u64,
     forgotten: u64,
@@ -383,6 +387,8 @@ impl FakeJmap {
             one_copy: false,
             total_override: None,
             vanish_after_query: None,
+            refuse_mailbox_roles: false,
+            refuse_mailbox_creates: false,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -869,9 +875,18 @@ impl JmapApi for FakeJmap {
     async fn set_mailbox(&self, write: &MailboxWrite) -> Answer<String> {
         self.called("Mailbox/set");
         self.with(|s| match write {
-            MailboxWrite::Create { name, parent_id } => {
-                let id = s.id("mb-");
-                s.mailboxes.insert(id.clone(), FakeMailbox { name: name.clone(), parent_id: parent_id.clone(), role: None });
+            MailboxWrite::Create { name, parent_id, role } => {
+                if s.refuse_mailbox_creates {
+                    return Err(JmapError::Forbidden(String::new()));
+                }
+                if role.is_some() && s.refuse_mailbox_roles {
+                    return Err(JmapError::Method { kind: "invalidProperties".into(), description: "role".into() });
+                }
+                let id = match role {
+                    Some(role) => format!("mb-{role}"),
+                    None => s.id("mb-"),
+                };
+                s.mailboxes.insert(id.clone(), FakeMailbox { name: name.clone(), parent_id: parent_id.clone(), role: role.clone() });
                 s.record("Mailbox", &id, Op::Created);
                 Ok(id)
             }
@@ -1129,7 +1144,7 @@ mod tests {
         let fake = FakeJmap::new();
         let parent = fake.add_mailbox("Trips", None);
         let id = fake
-            .set_mailbox(&MailboxWrite::Create { name: "2026".into(), parent_id: Some(parent.clone()) })
+            .set_mailbox(&MailboxWrite::Create { name: "2026".into(), parent_id: Some(parent.clone()), role: None })
             .await
             .unwrap();
         let listed = fake.mailboxes().await.unwrap().list;

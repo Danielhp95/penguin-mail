@@ -248,7 +248,8 @@ impl SetResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailboxWrite {
-    Create { name: String, parent_id: Option<String> },
+    /// `role` is an IANA mailbox attribute, such as `archive`, or none.
+    Create { name: String, parent_id: Option<String>, role: Option<String> },
     Update { id: String, name: String, parent_id: Option<String> },
     Destroy { id: String },
 }
@@ -495,8 +496,11 @@ impl JmapClient {
         let account = self.mail_account().await?;
         let mut args = json!({ "accountId": account });
         let key = match write {
-            MailboxWrite::Create { name, parent_id } => {
+            MailboxWrite::Create { name, parent_id, role } => {
                 args["create"] = json!({ "b": { "name": name, "parentId": parent_id } });
+                if let Some(role) = role {
+                    args["create"]["b"]["role"] = json!(role);
+                }
                 "b".to_string()
             }
             MailboxWrite::Update { id, name, parent_id } => {

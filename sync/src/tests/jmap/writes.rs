@@ -63,18 +63,72 @@ async fn delete_forever_destroys_and_a_gone_message_counts_as_done() {
     assert!(h.fake.with(|s| !s.emails.contains_key(&id)));
 }
 
-#[tokio::test]
-async fn without_an_archive_the_last_mailbox_stays_and_says_why() {
-    let h = fastmail().await;
-    let id = h.fake.deliver("inbox", &raw("n1@x", "Stay"), now());
-    h.fake.with(|s| {
+/// A fake with no Archive mailbox, as a new Stalwart account has.
+fn without_archive(fake: FakeJmap) -> FakeJmap {
+    fake.with(|s| {
         let archive = s.role_id("archive").unwrap();
         s.mailboxes.remove(&archive);
     });
+    fake
+}
+
+/// The mailbox the message `id` sits in, by name and role.
+fn home_of(h: &super::Harness, id: &str) -> Vec<(String, Option<String>)> {
+    h.fake.with(|s| s.emails[id].mailbox_ids.iter().map(|m| (s.mailboxes[m].name.clone(), s.mailboxes[m].role.clone())).collect())
+}
+
+#[tokio::test]
+async fn without_an_archive_the_last_mailbox_makes_one() {
+    let h = over(without_archive(FakeJmap::new())).await;
+    let id = h.fake.deliver("inbox", &raw("n1@x", "Stay"), now());
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(std::slice::from_ref(&id), &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap();
+    assert_eq!(home_of(&h, &id), [("Archive".to_string(), Some("archive".to_string()))]);
+    assert_eq!(h.mail().mailbox_for(mailrs_domain::Role::Archive), Some(h.fake.mailbox("archive")));
+}
+
+#[tokio::test]
+async fn archive_without_an_archive_mailbox_makes_one() {
+    let h = over(without_archive(FakeJmap::new().mailboxes_per_email(Some(1)))).await;
+    let id = h.fake.deliver("inbox", &raw("n2@x", "File me"), now());
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(std::slice::from_ref(&id), &[MailOp::MoveToRole(mailrs_domain::Role::Archive)]).await.unwrap();
+    assert_eq!(home_of(&h, &id), [("Archive".to_string(), Some("archive".to_string()))]);
+}
+
+#[tokio::test]
+async fn a_server_that_refuses_the_role_gets_a_plain_archive_mailbox() {
+    let h = over(without_archive(FakeJmap::new())).await;
+    h.fake.with(|s| s.refuse_mailbox_roles = true);
+    let id = h.fake.deliver("inbox", &raw("n3@x", "File me"), now());
+    h.mail().mailboxes().await.unwrap();
+    h.mail().apply(std::slice::from_ref(&id), &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap();
+    assert_eq!(home_of(&h, &id), [("Archive".to_string(), None)]);
+}
+
+#[tokio::test]
+async fn a_top_level_archive_without_the_role_counts_as_archive() {
+    let h = over(without_archive(FakeJmap::new())).await;
+    let plain = h.fake.add_mailbox("Archive", None);
+    let id = h.fake.deliver("inbox", &raw("n4@x", "File me"), now());
+    let listed = h.mail().mailboxes().await.unwrap();
+    assert_eq!(listed.iter().find(|m| m.id == plain).and_then(|m| m.role), Some(mailrs_domain::Role::Archive));
+    h.fake.with(|s| s.calls.clear());
+    h.mail().apply(std::slice::from_ref(&id), &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.emails[&id].mailbox_ids.clone()), BTreeSet::from([plain]));
+    assert!(h.fake.with(|s| !s.calls.iter().any(|c| c == "Mailbox/set")), "the Archive there is used");
+}
+
+#[tokio::test]
+async fn when_no_archive_can_be_made_the_last_mailbox_stays_and_says_why() {
+    let h = over(without_archive(FakeJmap::new())).await;
+    h.fake.with(|s| s.refuse_mailbox_creates = true);
+    let id = h.fake.deliver("inbox", &raw("n5@x", "Stay"), now());
     h.mail().mailboxes().await.unwrap();
     let refused = h.mail().apply(std::slice::from_ref(&id), &[MailOp::RemoveFromMailbox(h.fake.mailbox("inbox"))]).await.unwrap_err();
     assert_eq!(refused.taken, 0);
-    assert!(matches!(refused.error, BackendError::Refused(_)));
+    let BackendError::Refused(why) = refused.error else { panic!("{:?}", refused.error) };
+    assert!(why.contains("no Archive"), "{why}");
     assert_eq!(h.fake.with(|s| s.emails[&id].mailbox_ids.len()), 1);
 }
 

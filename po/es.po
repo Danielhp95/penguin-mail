@@ -10772,7 +10772,7 @@ msgstr "El servidor no tiene ningún buzón para esto."
 msgid "This server does not sort mail into categories."
 msgstr "Este servidor no clasifica el correo en categorías."
 
-#: sync/src/services/jmap/writes.rs:147
+#: sync/src/services/jmap/writes.rs:150
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr ""

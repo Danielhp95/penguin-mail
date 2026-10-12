@@ -10292,7 +10292,7 @@ msgstr "伺服器沒有可用於此操作的信箱。"
 msgid "This server does not sort mail into categories."
 msgstr "此伺服器不會將郵件分成類別。"
 
-#: sync/src/services/jmap/writes.rs:147
+#: sync/src/services/jmap/writes.rs:150
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr "郵件必須至少留在一個信箱中，而此伺服器沒有 [封存] 信箱。"

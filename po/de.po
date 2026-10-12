@@ -10859,7 +10859,7 @@ msgstr "Der Server hat dafür kein Postfach."
 msgid "This server does not sort mail into categories."
 msgstr "Dieser Server sortiert E-Mails nicht in Kategorien."
 
-#: sync/src/services/jmap/writes.rs:147
+#: sync/src/services/jmap/writes.rs:150
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr ""

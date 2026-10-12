@@ -140,6 +140,18 @@ async fn a_refused_submission_says_why() {
 }
 
 #[tokio::test]
+async fn a_new_mailbox_names_its_role_only_when_given() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Mailbox/set", {"accountId": "A1", "created": {"b": {"id": "B9"}}}, "c0"]
+    ]})).await;
+    let made = MailboxWrite::Create { name: "Archive".into(), parent_id: None, role: Some("archive".into()) };
+    assert_eq!(client(&server).set_mailbox(&made).await.unwrap(), "B9");
+    let body = sent(&server).await;
+    assert_eq!(body["methodCalls"][0][1]["create"]["b"], json!({"name": "Archive", "parentId": null, "role": "archive"}));
+}
+
+#[tokio::test]
 async fn a_mailbox_rename_sends_its_new_parent() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [

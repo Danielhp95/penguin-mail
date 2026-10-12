@@ -10818,7 +10818,7 @@ msgstr "Le serveur n’a pas de boîte aux lettres pour cela."
 msgid "This server does not sort mail into categories."
 msgstr "Ce serveur ne trie pas le courrier en catégories."
 
-#: sync/src/services/jmap/writes.rs:147
+#: sync/src/services/jmap/writes.rs:150
 msgid ""
 "A message must stay in at least one mailbox, and this server has no Archive."
 msgstr ""
