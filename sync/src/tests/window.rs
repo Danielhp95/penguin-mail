@@ -249,6 +249,26 @@ async fn microsoft_a_longer_window_brings_older_mail_and_follows_its_changes() {
     assert!(h.held(&old).await.keywords.iter().any(|k| k == "$flagged"));
 }
 
+/// The look that finds the window changed starts each folder's delta
+/// again. Mail that arrives while it reads must reach the store all the
+/// same, through this look or the next.
+#[tokio::test]
+async fn microsoft_mail_arriving_as_the_window_changes_is_not_lost() {
+    let h = outlook().await;
+    let short = outlook_sync(&h.fake, &h.db, h.account_id, 30);
+    load(&short, &h.db).await;
+    short.incremental().await.unwrap();
+
+    let longer = outlook_sync(&h.fake, &h.db, h.account_id, 730);
+    let inbox = h.fake.folder_id("inbox");
+    let gap = FakeMail { at: now_millis(), subject: "In the gap", ..FakeMail::default() };
+    h.fake.with(|s| s.deliver_after_delta = Some((inbox, gap)));
+    longer.incremental().await.unwrap();
+    longer.incremental().await.unwrap();
+    let id = h.fake.with(|s| s.messages.iter().find(|(_, m)| m.message.subject.as_deref() == Some("In the gap")).map(|(id, _)| id.clone()));
+    assert!(h.stored(&id.expect("the fake delivered it")).await);
+}
+
 // ---- POP3 -------------------------------------------------------------------
 
 /// A POP3 account's store is the only copy of its mail, so no window,
