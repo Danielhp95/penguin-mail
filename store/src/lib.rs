@@ -26,6 +26,7 @@ pub mod newsletters;
 pub mod outbox;
 pub mod pop3;
 pub mod query;
+pub mod receipts;
 pub mod reminders;
 pub mod remote_refs;
 pub mod rule_changes;

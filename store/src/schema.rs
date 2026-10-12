@@ -888,6 +888,24 @@ CREATE TABLE jmap_accounts (
     capabilities TEXT NOT NULL DEFAULT '[]'
 );
 "#,
+    // A Send Later message the server holds names its hold, so the outbox
+    // asks the server about it instead of sending it. A cached body keeps
+    // the read receipt its sender asked for and the receipt it is. The
+    // person's answer to a receipt asked for is kept here, since Gmail and
+    // Outlook have no keyword for it.
+    r#"
+ALTER TABLE outbox ADD COLUMN held TEXT;
+CREATE UNIQUE INDEX outbox_by_hold ON outbox(account_id, held) WHERE held IS NOT NULL;
+ALTER TABLE bodies ADD COLUMN receipt_to TEXT;
+ALTER TABLE bodies ADD COLUMN read_report TEXT;
+CREATE TABLE receipts (
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    answered   TEXT NOT NULL CHECK (answered IN ('sent', 'declined')),
+    at         INTEGER NOT NULL,
+    PRIMARY KEY (account_id, message_id)
+);
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
