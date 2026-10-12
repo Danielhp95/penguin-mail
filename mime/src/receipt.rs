@@ -59,6 +59,7 @@ pub(crate) fn report(root: &Part) -> Option<ReadReport> {
     let data = part.data.as_deref()?;
     let text = String::from_utf8_lossy(&data[..data.len().min(MAX_REPORT_BYTES)]);
     let (mut final_recipient, mut original_recipient, mut displayed) = (None, None, None);
+    let mut original = None;
     for line in unfolded(&text).take(MAX_REPORT_LINES) {
         let Some((name, value)) = line.split_once(':') else {
             continue;
@@ -69,6 +70,7 @@ pub(crate) fn report(root: &Part) -> Option<ReadReport> {
         match name.trim().to_ascii_lowercase().as_str() {
             "final-recipient" => final_recipient = Some(address()),
             "original-recipient" => original_recipient = Some(address()),
+            "original-message-id" => original = one_message_id(value),
             // "manual-action/MDN-sent-manually; displayed", maybe with
             // "/error" after the type.
             "disposition" => {
@@ -79,7 +81,14 @@ pub(crate) fn report(root: &Part) -> Option<ReadReport> {
         }
     }
     let by = final_recipient.filter(|b| !b.is_empty()).or(original_recipient).filter(|b| !b.is_empty())?;
-    Some(ReadReport { by, displayed: displayed? })
+    Some(ReadReport { by, displayed: displayed?, original })
+}
+
+/// `<id@host>` as `id@host`, when the field holds one id and nothing else.
+fn one_message_id(value: &str) -> Option<String> {
+    let id = value.strip_prefix('<')?.strip_suffix('>')?;
+    let plain = !id.is_empty() && !id.chars().any(|c| c.is_whitespace() || c.is_control() || "<>".contains(c));
+    plain.then(|| id.to_string())
 }
 
 #[cfg(test)]
@@ -112,8 +121,33 @@ Original-Message-ID: <rota@fastmail.example>\r\nDisposition: manual-action/MDN-s
     #[test]
     fn a_receipt_says_who_read_it_and_lists_no_file() {
         let body = crate::read(&report("displayed"));
-        assert_eq!(body.read_report, Some(ReadReport { by: "tomas@allotment.example".into(), displayed: true }));
+        assert_eq!(
+            body.read_report,
+            Some(ReadReport {
+                by: "tomas@allotment.example".into(),
+                displayed: true,
+                original: Some("rota@fastmail.example".into()),
+            })
+        );
         assert!(body.attachments.is_empty());
+    }
+
+    #[test]
+    fn a_receipt_without_the_original_id_names_none() {
+        let body = crate::read(&report_with(
+            "Final-Recipient: rfc822; tomas@allotment.example\r\nDisposition: manual-action/MDN-sent-manually; displayed\r\n",
+        ));
+        assert_eq!(body.read_report.map(|r| r.original), Some(None));
+    }
+
+    #[test]
+    fn an_original_id_that_is_not_one_id_names_none() {
+        for bad in ["<a@x> <b@y>", "<>", "a b@x", "<a@x"] {
+            let body = crate::read(&report_with(&format!(
+                "Final-Recipient: rfc822; t@x.example\r\nOriginal-Message-ID: {bad}\r\nDisposition: manual-action/MDN-sent-manually; displayed\r\n"
+            )));
+            assert_eq!(body.read_report.map(|r| r.original), Some(None), "{bad}");
+        }
     }
 
     #[test]

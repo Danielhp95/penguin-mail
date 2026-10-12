@@ -766,6 +766,22 @@ fn message_meta(
     })
 }
 
+/// The messages in a Sent mailbox whose Message-ID is `msgid`, given
+/// without angle brackets. A store keeps the header as the server gave
+/// it, so both spellings are looked up at once.
+pub fn sent_copies(conn: &Connection, account_id: AccountId, msgid: &str) -> Result<Vec<MessageMeta>> {
+    let ids = conn
+        .prepare_cached(
+            "SELECT DISTINCT m.id FROM messages m \
+             JOIN message_mailboxes l ON l.account_id = m.account_id AND l.message_id = m.id \
+             JOIN mailboxes b ON b.key = l.mailbox AND b.role = 'sent' \
+             WHERE m.account_id = ?1 AND m.rfc822_msgid IN (?2, ?3) LIMIT 8",
+        )?
+        .query_map(params![account_id, msgid, format!("<{msgid}>")], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    by_ids(conn, account_id, &ids)
+}
+
 /// The stored metadata for `ids`, oldest first. Ids the store does not
 /// hold are simply missing, so a caller asks Gmail only for those.
 pub fn by_ids(

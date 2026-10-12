@@ -154,6 +154,13 @@ fn general_page(
     reading.add(&allowed_image_senders(app));
     reading.add(&combo(
         app,
+        &gettext("Read Receipts"),
+        Some(&gettext("When a sender asks to know you read their message")),
+        settings.read_receipts,
+        Change::ReadReceipts,
+    ));
+    reading.add(&combo(
+        app,
         &gettext("Text Size"),
         None,
         settings.text_size,

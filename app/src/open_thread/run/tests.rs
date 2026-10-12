@@ -9,7 +9,7 @@ use super::fake::{
     spot, strip,
     with_inline_picture, with_picture,
 };
-use super::{Card, Event, Stale};
+use super::{Card, Event, ReceiptCard, Stale};
 use crate::open_thread::Served;
 use crate::protection::{Mark, Read, Tone};
 
@@ -1135,4 +1135,252 @@ async fn returning_to_the_original_language_drops_the_in_flight_answer_and_error
         assert!(window.0.borrow().toasts.is_empty());
         assert_eq!(window.open(|open| open.translations.len()), Some(0));
     }
+}
+
+/// Ann's message, asking for a read receipt at her own address.
+fn asking() -> mailrs_domain::MessageBody {
+    mailrs_domain::MessageBody {
+        receipt_to: Some("ann@example.com".into()),
+        ..body("The rota is up.")
+    }
+}
+
+#[tokio::test]
+async fn a_message_that_asks_puts_the_card_up() {
+    let window = FakeWindow::with_body(asking());
+    window.run().open(row(THREAD)).await;
+    assert_eq!(
+        window.with(|s| s.receipt_cards.clone()),
+        [ReceiptCard::Asked {
+            message_id: "m1".into(),
+            to: "ann@example.com".into()
+        }]
+    );
+    assert!(window.page().contains("mailrs:receipt/send"), "{}", window.page());
+}
+
+#[tokio::test]
+async fn an_answered_receipt_is_not_asked_again() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answered = Ok(true));
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+}
+
+#[tokio::test]
+async fn a_message_marked_mdnsent_elsewhere_asks_nothing() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| {
+        for meta in s.messages.iter_mut().chain(s.stored.get_mut(THREAD).unwrap().messages.iter_mut()) {
+            meta.held.keywords.push(mailrs_domain::mailbox::keyword::MDN_SENT.to_string());
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(!window.took(Step::ReceiptAnswered));
+}
+
+#[tokio::test]
+async fn never_ask_puts_nothing_up() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.offers_receipts = false);
+    window.run().open(row(THREAD)).await;
+    assert!(!window.took(Step::ReceiptAnswered), "the store is not even asked");
+    assert!(window.page().contains("Read receipt requested"), "the message still says it asked");
+}
+
+#[tokio::test]
+async fn a_message_from_me_asks_nothing() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("me@example.com".into()),
+        ..body("Note to self")
+    });
+    window.with(|s| {
+        for meta in s.messages.iter_mut().chain(s.stored.get_mut(THREAD).unwrap().messages.iter_mut()) {
+            meta.from = Some(mailrs_domain::Address { name: None, email: "Me@Example.com".into() });
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    assert!(!window.page().contains("Read receipt requested"));
+}
+
+/// RFC 8098: a receipt to someone other than the sender tells a stranger
+/// the mail was opened, so the app does not offer one.
+#[tokio::test]
+async fn a_receipt_asked_for_another_address_is_not_offered() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("tracker@elsewhere.example".into()),
+        ..body("The rota is up.")
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    assert!(!window.took(Step::ReceiptAnswered));
+    assert!(!window.page().contains("Read receipt requested"));
+}
+
+#[tokio::test]
+async fn the_sender_s_address_matches_in_any_case() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("ANN@example.com".into()),
+        ..body("The rota is up.")
+    });
+    window.run().open(row(THREAD)).await;
+    assert_eq!(window.with(|s| s.receipt_cards.len()), 1);
+}
+
+#[tokio::test]
+async fn sending_takes_the_card_down_and_says_so() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    assert_eq!(window.with(|s| s.receipt_answers.clone()), [("m1".to_string(), true)]);
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Read receipt sent")));
+    assert!(!window.page().contains("mailrs:receipt/send"));
+    assert!(window.page().contains("Read receipt requested"));
+}
+
+#[tokio::test]
+async fn declining_takes_the_card_down_quietly() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), false).await;
+    assert_eq!(window.with(|s| s.receipt_answers.clone()), [("m1".to_string(), false)]);
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(window.with(|s| s.toasts.is_empty()));
+}
+
+#[tokio::test]
+async fn the_buttons_wait_while_the_answer_goes_out() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    let cards = window.with(|s| s.receipt_cards.clone());
+    assert_eq!(cards[cards.len() - 2], ReceiptCard::Working);
+}
+
+#[tokio::test]
+async fn a_failed_send_puts_the_question_back() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answer = Err("offline".into()));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    assert!(matches!(
+        window.with(|s| s.receipt_cards.last().cloned()),
+        Some(ReceiptCard::Asked { .. })
+    ));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Could not send the receipt: offline")));
+}
+
+/// The answer is kept before the receipt goes, so a send that failed
+/// after that is not tried again, and the card does not offer it.
+#[tokio::test]
+async fn a_failed_send_already_recorded_takes_the_card_down() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answer = Err("offline".into()));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.with(|s| s.receipt_answered = Ok(true));
+    run.answer_receipt("m1".into(), true).await;
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(
+        window.with(|s| s
+            .toasts
+            .iter()
+            .any(|t| t == "The receipt was not sent, and Penguin Mail will not try again: offline")),
+        "{:?}",
+        window.with(|s| s.toasts.clone())
+    );
+}
+
+/// A read report for mail the person sent: Original-Message-ID names a
+/// message in their Sent mail.
+fn report(original: &str) -> mailrs_domain::MessageBody {
+    mailrs_domain::MessageBody {
+        read_report: Some(mailrs_domain::ReadReport {
+            by: "ann@example.com".into(),
+            displayed: true,
+            original: Some(original.into()),
+        }),
+        ..body("Your message was shown.")
+    }
+}
+
+#[tokio::test]
+async fn a_report_for_mail_i_sent_shows_as_one_line() {
+    let window = FakeWindow::with_body(report("kites@example.com"));
+    window.with(|s| s.sent.push(("kites@example.com".into(), vec!["Ann@Example.com".into()])));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(page.contains("ann@example.com</strong>"), "{page}");
+    assert!(!page.contains("Your message was shown."), "{page}");
+}
+
+/// Anyone can send a report naming anyone. One that names no message the
+/// person sent says nothing about who read what.
+#[tokio::test]
+async fn a_forged_report_shows_no_read_line() {
+    let window = FakeWindow::with_body(report("made-up@example.com"));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(window.took(Step::SentCopy));
+    assert!(!page.contains("Read by"), "{page}");
+    assert!(page.contains("Your message was shown."), "{page}");
+}
+
+/// A real Message-ID from Sent, in a report from someone the message never
+/// went to: the report says nothing about who read it.
+#[tokio::test]
+async fn a_report_from_someone_the_message_did_not_go_to_shows_no_line() {
+    let window = FakeWindow::with_body(report("kites@example.com"));
+    window.with(|s| s.sent.push(("kites@example.com".into(), vec!["bob@example.com".into()])));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(!page.contains("Read by"), "{page}");
+    assert!(page.contains("Your message was shown."), "{page}");
+}
+
+#[tokio::test]
+async fn a_press_while_the_answer_goes_out_does_nothing() {
+    use super::Effects;
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.receipt_card(ReceiptCard::Working);
+    run.answer_receipt("m1".into(), true).await;
+    assert!(!window.took(Step::AnswerReceipt));
+}
+
+/// The engine opening a body redraws the receipt card. One whose answer is
+/// on its way keeps its buttons waiting.
+#[tokio::test]
+async fn a_redraw_while_the_answer_goes_out_keeps_the_buttons_waiting() {
+    use super::Effects;
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.receipt_card(ReceiptCard::Working);
+    run.engine_answered(target(None), "m1".into(), opened(asking())).await;
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Working));
+    assert!(!window.page().contains("mailrs:receipt/"), "{}", window.page());
+}
+
+/// An account still connecting cannot say whether the receipt was
+/// answered, so the card waits for it and comes up once it can.
+#[tokio::test]
+async fn the_card_comes_up_once_the_account_connects() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answered = Ok(true));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    window.with(|s| s.receipt_answered = Ok(false));
+    run.account_ready(ACCOUNT + 1).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()), "another account changes nothing");
+    run.account_ready(ACCOUNT).await;
+    assert_eq!(window.with(|s| s.receipt_cards.len()), 1);
 }

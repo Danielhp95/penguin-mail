@@ -461,6 +461,10 @@ impl Provenance {
 pub struct ReadReport {
     pub by: String,
     pub displayed: bool,
+    /// The `Original-Message-ID` the report answers, without its angle
+    /// brackets: the message of the person's it says was read.
+    #[serde(default)]
+    pub original: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -44,8 +44,10 @@ use crate::wanted::{Screen, Wanted};
 mod fake;
 #[cfg(test)]
 mod tests;
+mod receipt;
 mod translation;
 
+pub use receipt::ReceiptCard;
 pub use translation::Card;
 
 /// What the store holds for a thread: its messages, oldest first, and the
@@ -129,6 +131,17 @@ pub trait Desk: Screen {
     /// The languages, by code, the person reads as they are, whose
     /// messages get no card.
     fn never_translate(&self) -> Vec<String>;
+    /// The message on screen that asks for a read receipt nobody answered
+    /// in the thread, with the address it asks at.
+    fn asks_receipt(&self) -> Option<(String, String)>;
+    /// Whether the person wants to be asked at all.
+    fn offers_receipts(&self) -> bool;
+    /// Whether the receipt card's answer is on its way.
+    fn receipt_working(&self) -> bool;
+    /// The read receipts on screen not yet checked against Sent: each
+    /// one's message id, the Message-ID it says it answers, and who it says
+    /// read it.
+    fn unchecked_reports(&self) -> Vec<(String, String, String)>;
 }
 
 /// What the run asks of the store, Gmail and the view. A test answers with
@@ -226,6 +239,23 @@ pub trait Effects {
     /// The queued message the outbox holds under this row id, or `None`
     /// once it has gone out or been deleted.
     fn queued(&self, id: i64) -> Answer<'_, Result<Option<Queued>, String>>;
+    /// Whether the receipt `message_id` asks for was answered.
+    fn receipt_answered(&self, account_id: AccountId, message_id: String) -> Answer<'_, Result<bool, String>>;
+    /// Sends or declines the receipt and records the answer.
+    fn answer_receipt(
+        &self,
+        account_id: AccountId,
+        message_id: String,
+        send: bool,
+    ) -> Answer<'_, Result<(), String>>;
+    /// The To and Cc addresses of the messages in the person's Sent mail
+    /// whose Message-ID is `rfc822_msgid`, given without angle brackets.
+    /// None when Sent holds no such message.
+    fn sent_recipients(
+        &self,
+        account_id: AccountId,
+        rfc822_msgid: String,
+    ) -> Answer<'_, Result<Vec<String>, String>>;
 
     /// Puts a thread on screen, in place of whatever was there.
     fn show(&self, thread: OpenThread);
@@ -264,6 +294,10 @@ pub trait Effects {
     /// Starts the engine run for a signed or encrypted message.
     fn start_engines(&self);
     fn translation_card(&self, card: Card);
+    fn receipt_card(&self, card: ReceiptCard);
+    /// Whether a receipt answers mail the person sent, and the redraw that
+    /// shows it as one line when it does.
+    fn report_checked(&self, message_id: String, sent: bool);
     /// One message's translation, and the redraw that shows it.
     fn translated(&self, message_id: String, translation: crate::translation::Translation);
     /// Drops cached translations into a language the reader no longer wants.
@@ -316,6 +350,9 @@ pub struct Stale {
     pub thumbnails: bool,
     /// The unread mark, which the reader has now seen.
     pub unread: bool,
+    /// The receipt card and the receipts drawn as a line, read from the
+    /// bodies.
+    pub receipt: bool,
 }
 
 impl Stale {
@@ -328,6 +365,7 @@ impl Stale {
                 protection: true,
                 invitation: true,
                 images: true,
+                receipt: true,
                 ..Stale::default()
             },
             Event::BodiesArrived => Stale {
@@ -337,6 +375,7 @@ impl Stale {
                 images: true,
                 thumbnails: true,
                 unread: true,
+                receipt: true,
             },
             // The stored copy brought the bodies, and what they carry was
             // brought up to date when it went on screen. The pictures and
@@ -352,6 +391,7 @@ impl Stale {
             Event::EngineOpened => Stale {
                 translation: true,
                 invitation: true,
+                receipt: true,
                 ..Stale::default()
             },
             // The writer's own words need no translation, no engine and no
@@ -655,6 +695,11 @@ impl ThreadRun {
             async {
                 if unread {
                     self.mark_read_later(wanted).await;
+                }
+            },
+            async {
+                if stale.receipt {
+                    self.receipt(wanted).await;
                 }
             },
         );

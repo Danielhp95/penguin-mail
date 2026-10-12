@@ -56,6 +56,9 @@ pub enum Action {
     /// The Summarize pill above the thread: ask the assistant to sum up
     /// the conversation on screen.
     Summarize,
+    /// The read receipt card's buttons: send the receipt for the message,
+    /// or decline it.
+    Receipt { message_id: String, send: bool },
     Reply(ReplyKind),
     EditDraft,
     Archive,
@@ -1441,6 +1444,22 @@ impl ConversationView {
         self.render(false);
     }
 
+    /// Puts the read receipt card up, marks it at work, or takes it down,
+    /// and patches the article it sits in.
+    pub fn receipt_card(&self, card: crate::open_thread::run::ReceiptCard) {
+        if self.change(|open| open.take_receipt_card(card)).is_some() {
+            self.render(false);
+        }
+    }
+
+    /// Whether a receipt answers mail the person sent. One that does is
+    /// drawn again as one line.
+    pub fn report_checked(&self, message_id: String, sent: bool) {
+        if self.change(|open| open.report_checked(message_id, sent)).is_some() && sent {
+            self.render(false);
+        }
+    }
+
     /// Shows the original wherever the cached translation used another language.
     pub fn keep_translations(&self, into: &str) {
         if self.change(|open| open.keep_translations(into)) == Some(true) {
@@ -1828,6 +1847,11 @@ impl ConversationView {
             actions(Action::ShowContact(address.to_string()));
         } else if uri == "mailrs:summarize" {
             actions(Action::Summarize);
+        } else if let Some((message_id, send)) = crate::render::receipt::answer_of(uri) {
+            actions(Action::Receipt {
+                message_id: message_id.to_string(),
+                send,
+            });
         } else if let Some(address) = uri.strip_prefix("mailto:") {
             actions(Action::Mailto(
                 address.split('?').next().unwrap_or(address).to_string(),

@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use super::mcp::McpServer;
 
 use super::{
-    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, RemoteImages, Settings, TextSize,
+    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, ReadReceipts, RemoteImages, Settings, TextSize,
     UndoSend, Use, WebSearch,
 };
 
@@ -61,6 +61,8 @@ pub enum Change {
     ComposeFormat(ComposeFormat),
     /// Ask before a message that promises a file goes without one.
     CheckAttachments(bool),
+    /// Offer the read receipts senders ask for, or never ask.
+    ReadReceipts(ReadReceipts),
     /// Open the composer with Sign on.
     SignByDefault(bool),
     /// Turn Encrypt on whenever gpg holds a key for every recipient.
@@ -276,6 +278,7 @@ impl Change {
             Change::UpdateAnnounced(version) => settings.announced_update = Some(version),
             Change::ComposeFormat(format) => settings.compose_format = format,
             Change::CheckAttachments(on) => settings.check_attachments = on,
+            Change::ReadReceipts(when) => settings.read_receipts = when,
             Change::SignByDefault(on) => settings.sign_by_default = on,
             Change::EncryptWhenPossible(on) => settings.encrypt_when_possible = on,
             Change::AccountContacts { email, on } => {
@@ -588,6 +591,9 @@ settable! {
         // The composer reads this as a message goes out, so the assistant
         // has no business turning the warning off.
         check_attachments,
+        // Telling a sender their mail was read is the person's call, so
+        // the assistant does not turn the question on or off.
+        read_receipts,
         // Whether the app asks GitHub for new releases is the person's
         // call, made in Preferences.
         check_for_updates,
@@ -815,6 +821,7 @@ impl Effects {
             send_as_checked,
             compose_format,
             check_attachments,
+            read_receipts,
             sign_by_default,
             encrypt_when_possible,
             contacts,
@@ -857,6 +864,8 @@ impl Effects {
             send_as_checked,
             compose_format,
             check_attachments,
+            // The run reads this as each message opens.
+            read_receipts,
             sign_by_default,
             encrypt_when_possible,
             // The pane reads this as it adds a row, and rows already in the
@@ -1025,6 +1034,15 @@ mod tests {
                 value: "ann".into(),
             }],
         }
+    }
+
+    #[test]
+    fn read_receipts_are_asked_about_until_turned_off() {
+        let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
+        assert_eq!(settings.read_receipts, ReadReceipts::Ask, "an older file asks");
+        let effects = Change::ReadReceipts(ReadReceipts::Never).apply(&mut settings);
+        assert_eq!(settings.read_receipts, ReadReceipts::Never);
+        assert!(effects.is_empty(), "the next message opened reads it");
     }
 
     #[test]

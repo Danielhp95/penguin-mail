@@ -1711,6 +1711,40 @@ fn letters() -> [Letter; 6] {
     ]
 }
 
+/// A letter that asks for a read receipt, and a receipt for the letter
+/// Dana sent about the water butts, so the demo shows the card and the
+/// one-line receipt.
+fn receipt_samples(now: EpochMillis) -> [(Vec<u8>, i64); 2] {
+    let date = |minutes: i64| {
+        chrono::DateTime::from_timestamp_millis(now - minutes * 60 * 1000)
+            .unwrap_or_default()
+            .to_rfc2822()
+    };
+    let asks = format!(
+        "From: Ines Duarte <ines@allotment.example>\r\nTo: {name} <{FASTMAIL}>\r\nSubject: Seed order\r\n\
+         Date: {}\r\nMessage-ID: <seed-order@allotment.example>\r\n\
+         Disposition-Notification-To: Ines Duarte <ines@allotment.example>\r\nMIME-Version: 1.0\r\n\
+         Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n\
+         Hi Dana,\r\n\r\nI sent the seed order to Hollin this morning: two kinds of broad bean, \
+         the frost-hardy peas and a tray of leeks. Could you check the list against your notes?\r\n\r\nInês\r\n",
+        date(40),
+        name = DANA.0,
+    );
+    let receipt = format!(
+        "From: Ines Duarte <ines@allotment.example>\r\nTo: {name} <{FASTMAIL}>\r\n\
+         Subject: Read: Water butts\r\nDate: {}\r\nMessage-ID: <butts-read@allotment.example>\r\n\
+         MIME-Version: 1.0\r\n\
+         Content-Type: multipart/report; report-type=disposition-notification; boundary=\"r\"\r\n\r\n\
+         --r\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nYour message was shown.\r\n\
+         --r\r\nContent-Type: message/disposition-notification\r\n\r\n\
+         Final-Recipient: rfc822; ines@allotment.example\r\nOriginal-Message-ID: <butts-1@fastmail.example>\r\n\
+         Disposition: manual-action/MDN-sent-manually; displayed\r\n--r--\r\n",
+        date(20),
+        name = DANA.0,
+    );
+    [(asks.into_bytes(), 40), (receipt.into_bytes(), 20)]
+}
+
 impl Letter {
     fn at(&self, now: EpochMillis) -> EpochMillis {
         now - self.minutes_ago * 60 * 1000
@@ -1841,6 +1875,9 @@ async fn seed_fastmail(
         for flag in letter.flags() {
             imap.remote_flag(letter.mailbox, uid, flag, true);
         }
+    }
+    for (raw, minutes) in receipt_samples(now) {
+        imap.deliver("INBOX", raw, now - minutes * 60 * 1000);
     }
     let smtp = Arc::new(FakeSmtp::default());
     let dav = Arc::new(FakeDav::new());
@@ -2857,8 +2894,31 @@ mod tests {
         let inbox = demo
             .threads(ThreadFilter::account(id, MailSet::Role(Role::Inbox)))
             .await;
-        assert_eq!(inbox.len(), 1);
-        assert_eq!(inbox[0].message_count, 2);
+        let rota = inbox
+            .iter()
+            .find(|t| t.subject.contains("Allotment rota"))
+            .expect("the rota thread");
+        assert_eq!(rota.message_count, 2);
+        // The letter that asks for a receipt and the receipt itself stand
+        // alone beside it.
+        assert_eq!(inbox.len(), 3);
+    }
+
+    /// The demo's receipt answers a letter in Sent, so it draws as one line.
+    #[tokio::test]
+    async fn the_fastmail_receipt_answers_a_letter_in_sent() {
+        let demo = demo().await;
+        let id = demo.fastmail().await;
+        let found = demo
+            .db
+            .read(move |c| {
+                let bracketed = mailrs_store::pop3::sent_with(c, id, "<butts-1@fastmail.example>")?;
+                let bare = mailrs_store::pop3::sent_with(c, id, "butts-1@fastmail.example")?;
+                Ok(bracketed.or(bare))
+            })
+            .await
+            .unwrap();
+        assert!(found.is_some());
     }
 
     #[tokio::test]

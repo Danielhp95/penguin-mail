@@ -19,6 +19,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Make, turn off and delete Fastmail masked addresses from Hide My Email, and write from a new one with the shield button on the composer's From row.
 - Switch an IMAP account to JMAP from its menu when its server speaks both, keeping its reminders, flags, rules and drafts.
 - Ask for a read receipt from the composer's More menu. It stays off unless you turn it on for a message.
+- When a sender asks for a read receipt, the message offers to send one, and nothing goes until you choose. Set Read Receipts to Never ask in Preferences to stop the question. A receipt for mail you sent shows as one line that says who read it and when.
 
 ## 1.0.7 (2026-10-10)
 
