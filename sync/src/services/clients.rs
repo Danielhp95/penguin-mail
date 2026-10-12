@@ -30,8 +30,8 @@ use mailrs_imap::{
     SmtpClient, UidSet, Woke,
 };
 use mailrs_jmap::{
-    Email, EmailQuery, Got, Identity, Imported, JmapClient, JmapError, Listed as JmapListed, MailChanges, Mailbox, MailboxWrite, Pushed,
-    Queried, Saved, Session, SetResponse, Submission, Threads,
+    Canceled, Email, EmailQuery, Got, HeldSubmission, Hold, Identity, Imported, JmapClient, JmapError, Listed as JmapListed, MailChanges,
+    Mailbox, MailboxWrite, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, Submission, SubmissionState, Threads,
 };
 use mailrs_pop3::{ListItem, Pop3Api, Pop3Client, Pop3Error, Stat, UidlListing};
 use mailrs_sieve::client::{ManageSieveApi, ManageSieveClient, SieveError};
@@ -355,6 +355,14 @@ either_client! {
         fn masked_emails() -> Jmapped<Vec<mailrs_jmap::MaskedEmail>>;
         fn create_masked(for_domain: &str, description: &str) -> Jmapped<mailrs_jmap::MaskedEmail>;
         fn set_masked_state(id: &str, state: mailrs_jmap::MaskedState) -> Jmapped<()>;
+        fn hold(hold: &Hold) -> Jmapped<HeldSubmission>;
+        fn submissions(ids: &[String]) -> Jmapped<Vec<SubmissionState>>;
+        fn answers_submission_get() -> Jmapped<bool>;
+        fn cancel_submission(id: &str) -> Jmapped<Canceled>;
+        fn file_held(email_id: &str, drafts: &str, sent: &str) -> Jmapped<()>;
+        fn unhold(email_id: &str) -> Jmapped<()>;
+        fn quotas() -> Jmapped<Vec<Quota>>;
+        fn send_mdn(mdn: &MdnOut) -> Jmapped<()>;
         fn push() -> Jmapped<Pushed>;
     }
 }

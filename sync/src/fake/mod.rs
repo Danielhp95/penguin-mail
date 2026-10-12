@@ -25,7 +25,7 @@ pub use graph::{Area, FakeGraph, FakeMail, GraphState, ReplyWrites};
 pub use imap::{
     FakeImap, FakeMailbox, FakeMessage, FakeSmtp, ImapState, SmtpState, Submitted, raw_message,
 };
-pub use jmap::{FakeEmail, FakeJmap, FakeMailbox as FakeJmapMailbox, JmapState, Sent};
+pub use jmap::{FakeEmail, FakeHold, FakeJmap, FakeMailbox as FakeJmapMailbox, JmapState, Sent};
 pub use one_click::FakeOneClick;
 pub use pop3::{FakePop3, Release, pop3_mail};
 pub use sent::read_sent;
