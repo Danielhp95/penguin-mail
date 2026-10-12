@@ -579,6 +579,17 @@ impl RulesService for AnyRules {
 }
 
 impl AnyRules {
+    /// Brings a Sieve script in line with folders renamed, moved or
+    /// deleted; `moved` pairs old ids with new ones. Other rules name their
+    /// folders by an id that a rename keeps, or run on this computer.
+    pub async fn follow_folders(&self, moved: &[(String, String)]) -> Result<(), BackendError> {
+        match self {
+            AnyRules::Sieve(rules) => rules.follow_folders(moved).await,
+            AnyRules::JmapSieve(rules) => rules.follow_folders(moved).await,
+            _ => Ok(()),
+        }
+    }
+
     /// Where the rules run, for the line under the Rules dialog's list.
     pub fn place(&self) -> RulesPlace {
         match self {

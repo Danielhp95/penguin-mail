@@ -579,7 +579,8 @@ pub struct Filter {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub read_only: bool,
     /// The rule is kept but does not run. A switch to JMAP turns off a
-    /// local rule that names a mailbox the server lacks; saving the rule
+    /// local rule that names a mailbox the server lacks, and deleting a
+    /// folder turns off the Sieve rules that file into it; saving the rule
     /// again from the Rules dialog turns it back on.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub off: bool,

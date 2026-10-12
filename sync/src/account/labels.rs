@@ -31,7 +31,7 @@ impl AccountSync {
         // deleted one is out of date by the time it is stored, so only a
         // role mailbox not yet stored comes from it.
         let local = self.services.mail.capabilities().local_mailboxes;
-        let (changed, threads) = self
+        let (changed, threads, moved) = self
             .db
             .write(move |c| {
                 let stored = mailboxes::listed(c, account_id)?;
@@ -43,29 +43,48 @@ impl AccountSync {
                         mailboxes::upsert(c, account_id, mailbox)?;
                         changed = true;
                     }
-                    return Ok((changed, Vec::new()));
+                    return Ok((changed, Vec::new(), false));
                 }
                 let mut threads = Vec::new();
                 let mut changed = false;
+                // A folder gone or renamed elsewhere changes what the
+                // rules' script files into.
+                let mut moved = false;
                 for gone in stored
                     .iter()
                     .filter(|s| remote.iter().all(|r| r.id != s.id))
                 {
                     threads.extend(mailboxes::delete(c, account_id, &gone.id)?);
                     changed = true;
+                    moved = true;
                 }
                 for mailbox in remote.iter().filter(|r| !stored.contains(r)) {
+                    moved |= stored.iter().any(|s| s.id == mailbox.id && s.name != mailbox.name);
                     mailboxes::upsert(c, account_id, mailbox)?;
                     changed = true;
                 }
-                Ok((changed, threads))
+                Ok((changed, threads, moved))
             })
             .await?;
         if changed {
             self.emit(ChangeEvent::LabelsChanged { account_id });
             self.emit_threads(threads.into_iter().collect());
         }
+        if moved {
+            self.follow_folders(&[]).await;
+        }
         Ok(changed)
+    }
+
+    /// Rewrites the rules' Sieve script after folders were renamed, moved
+    /// or deleted, so it files into the new paths and turns off the rules
+    /// whose folder is gone. A failure leaves the script as it was: the
+    /// next change tries again, and the folder change itself stands.
+    async fn follow_folders(&self, moved: &[(String, String)]) {
+        let Some(rules) = &self.services.rules else { return };
+        if rules.follow_folders(moved).await.is_err() {
+            tracing::warn!(account = self.account_id, "the rules could not follow a folder change");
+        }
     }
 
     /// Creates a label in Gmail and stores it. Slashes nest it under
@@ -186,6 +205,7 @@ impl AccountSync {
             })
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
+        self.follow_folders(&moved).await;
         if renames {
             for (_, to) in &moved {
                 self.relist_if_renumbered(to).await?;
@@ -241,6 +261,7 @@ impl AccountSync {
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
         self.emit_threads(threads.into_iter().collect::<BTreeSet<_>>());
+        self.follow_folders(&[]).await;
         Ok(())
     }
 

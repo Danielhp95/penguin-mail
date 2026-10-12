@@ -108,3 +108,97 @@ async fn the_reply_stays_on_after_a_rule_is_added() {
     assert!(back.enabled);
     assert_eq!(back.body, "Back on Monday.");
 }
+
+/// An account whose sync holds Sieve rules over the fake, as
+/// `connect_jmap` attaches them, so folder changes reach the rules.
+async fn synced_rules() -> (super::Harness, Arc<crate::AccountSync>, SieveRules<JmapSieve<AnyJmap>>) {
+    let h = over(FakeJmap::new().with_sieve(&["fileinto", "vacation", "include", "imap4flags"])).await;
+    let services = crate::AccountServices::fake_jmap(Arc::clone(&h.fake));
+    let api = Arc::new(JmapSieve::new(Arc::new(AnyJmap::from(Arc::clone(&h.fake)))));
+    let rules = SieveRules::new(api, services.mail.clone(), "me@example.com".into(), "Stalwart".into());
+    let services = services.with_rules(crate::AnyRules::JmapSieve(rules.clone()));
+    let (sender, _events) = async_channel::unbounded();
+    let sync = Arc::new(crate::AccountSync::new(h.account_id, services, h.db.clone(), sender));
+    (h, sync, rules)
+}
+
+fn files_into(id: &str) -> Filter {
+    Filter {
+        criteria: FilterCriteria { from: Some("travel@example.com".into()), ..FilterCriteria::default() },
+        action: FilterAction { add: vec![MailSet::Mailbox(id.to_string())], ..FilterAction::default() },
+        ..Filter::default()
+    }
+}
+
+fn script_text(h: &super::Harness) -> String {
+    h.fake.with(|s| s.scripts.values().find(|(n, _, _)| n == "penguin-mail").map(|(_, t, _)| t.clone()).unwrap_or_default())
+}
+
+#[tokio::test]
+async fn a_folder_renamed_elsewhere_is_followed_by_the_script() {
+    let (h, sync, rules) = synced_rules().await;
+    let trips = h.fake.add_mailbox("Trips", None);
+    let rome = h.fake.add_mailbox("Rome", Some(&trips));
+    sync.refresh_labels().await.unwrap();
+    rules.create_filter(&files_into(&rome)).await.unwrap();
+    h.fake.with(|s| s.mailboxes.get_mut(&rome).unwrap().name = "Roma".into());
+    sync.refresh_labels().await.unwrap();
+    let text = script_text(&h);
+    assert!(text.contains("fileinto \"Trips/Roma\""), "{text}");
+    assert!(!text.contains("\"Trips/Rome\""), "{text}");
+}
+
+#[tokio::test]
+async fn a_folder_renamed_here_is_followed_by_the_script() {
+    let (h, sync, rules) = synced_rules().await;
+    let rome = h.fake.add_mailbox("Rome", None);
+    sync.refresh_labels().await.unwrap();
+    rules.create_filter(&files_into(&rome)).await.unwrap();
+    sync.rename_label(&rome, "Roma").await.unwrap();
+    let text = script_text(&h);
+    assert!(text.contains("fileinto \"Roma\""), "{text}");
+}
+
+#[tokio::test]
+async fn a_deleted_folder_turns_its_rule_off_and_other_saves_still_work() {
+    let (h, sync, rules) = synced_rules().await;
+    let rome = h.fake.add_mailbox("Rome", None);
+    sync.refresh_labels().await.unwrap();
+    rules.create_filter(&files_into(&rome)).await.unwrap();
+    sync.delete_label(&rome).await.unwrap();
+    let listed = rules.filters().await.unwrap();
+    assert!(listed[0].off, "{listed:?}");
+    assert!(!script_text(&h).contains("fileinto"), "{}", script_text(&h));
+    rules.create_filter(&Filter::block("pest@example.com")).await.unwrap();
+    let listed = rules.filters().await.unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed[0].off && !listed[1].off, "{listed:?}");
+}
+
+#[tokio::test]
+async fn a_folder_deleted_elsewhere_turns_its_rule_off_at_the_next_look() {
+    let (h, sync, rules) = synced_rules().await;
+    let rome = h.fake.add_mailbox("Rome", None);
+    sync.refresh_labels().await.unwrap();
+    rules.create_filter(&files_into(&rome)).await.unwrap();
+    h.fake.with(|s| s.mailboxes.remove(&rome));
+    sync.refresh_labels().await.unwrap();
+    let listed = rules.filters().await.unwrap();
+    assert!(listed[0].off, "{listed:?}");
+    rules.create_filter(&Filter::block("pest@example.com")).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_rule_saved_before_the_first_listing_waits_for_it() {
+    let (h, rules) = rules().await;
+    let rome = h.fake.add_mailbox("Rome", None);
+    rules.create_filter(&files_into(&rome)).await.unwrap();
+    assert!(script_text(&h).contains("fileinto \"Rome\""), "{}", script_text(&h));
+}
+
+#[tokio::test]
+async fn saving_a_rule_into_a_missing_folder_still_says_so() {
+    let (_h, rules) = rules().await;
+    let err = rules.create_filter(&files_into("mb-gone")).await.unwrap_err();
+    assert!(matches!(err, crate::BackendError::Refused(_)), "{err:?}");
+}
