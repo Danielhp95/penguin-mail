@@ -4,7 +4,7 @@ mod common;
 
 use mailrs_jmap::{CardWrite, JmapError, MaskedState, VacationResponse};
 use serde_json::{Map, Value, json};
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use common::{client, session_on};
@@ -170,6 +170,93 @@ async fn an_activation_that_goes_unanswered_is_an_error() {
     let server = MockServer::start().await;
     serving(&server, json!({"sessionState": "s1", "methodResponses": [["SieveScript/set", {"accountId": "A1"}, "c0"]]})).await;
     assert!(client(&server).activate_sieve("S1").await.is_err());
+}
+
+/// Answers `SieveScript/get` with `scripts`, ahead of the catch-all answer
+/// `serving` mounts.
+async fn reading_back(server: &MockServer, scripts: Value) {
+    Mock::given(method("POST"))
+        .and(path("/api/"))
+        .and(body_string_contains("SieveScript/get"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sessionState": "s1", "methodResponses": [
+            ["SieveScript/get", {"accountId": "A1", "state": "v2", "notFound": [], "list": scripts}, "c0"]
+        ]})))
+        .with_priority(1)
+        .mount(server)
+        .await;
+}
+
+async fn posts(server: &MockServer) -> usize {
+    server.received_requests().await.unwrap().iter().filter(|r| r.method.as_str() == "POST" && r.url.path() == "/api/").count()
+}
+
+/// RFC 9661 as published, and Cyrus 3.13: one answer, with the created
+/// script `isActive: true`.
+#[tokio::test]
+async fn a_create_answered_active_needs_no_second_answer() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "created": {"s": {"id": "S1", "isActive": true, "blobId": "SB1"}}, "updated": null}, "c0"]
+    ]})).await;
+    assert_eq!(client(&server).put_sieve_active("penguin-mail", None, "keep;").await.unwrap(), "S1");
+    assert_eq!(posts(&server).await, 1, "no read back");
+}
+
+/// Stalwart 0.16: the update answered with the script `isActive: true`,
+/// and nothing said of the script it replaced.
+#[tokio::test]
+async fn an_update_answered_active_needs_no_second_answer() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S1": {"blobId": "SB1", "isActive": true}}}, "c0"]
+    ]})).await;
+    assert_eq!(client(&server).put_sieve_active("penguin-mail", Some("S1"), "keep;").await.unwrap(), "S1");
+}
+
+/// Cyrus 3.13: an activation on its own answers the scripts it switched.
+#[tokio::test]
+async fn an_activation_answered_in_updated_is_taken() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "updated": {"S0": {"isActive": false}, "S1": {"isActive": true}}}, "c0"]
+    ]})).await;
+    client(&server).activate_sieve("S1").await.unwrap();
+    assert_eq!(posts(&server).await, 1, "no read back");
+}
+
+/// Stalwart 0.16: an activation on its own answers with neither `updated`
+/// nor a new state, though the script is then active.
+#[tokio::test]
+async fn an_activation_answered_with_nothing_is_read_back() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "oldState": "v1", "newState": "v1"}, "c0"]
+    ]})).await;
+    reading_back(&server, json!([{"id": "S0", "blobId": "B0", "isActive": false}, {"id": "S1", "blobId": "B1", "isActive": true}])).await;
+    client(&server).activate_sieve("S1").await.unwrap();
+}
+
+#[tokio::test]
+async fn an_activation_the_read_back_does_not_show_is_an_error() {
+    let server = MockServer::start().await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "oldState": "v1", "newState": "v1"}, "c0"]
+    ]})).await;
+    reading_back(&server, json!([{"id": "S0", "blobId": "B0", "isActive": true}, {"id": "S1", "blobId": "B1", "isActive": false}])).await;
+    assert!(client(&server).activate_sieve("S1").await.is_err());
+}
+
+#[tokio::test]
+async fn a_create_answered_without_activation_is_read_back() {
+    let server = MockServer::start().await;
+    with_upload(&server).await;
+    serving(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["SieveScript/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c0"]
+    ]})).await;
+    reading_back(&server, json!([{"id": "S1", "blobId": "B1", "isActive": true}])).await;
+    assert_eq!(client(&server).put_sieve_active("penguin-mail", None, "keep;").await.unwrap(), "S1");
 }
 
 #[tokio::test]

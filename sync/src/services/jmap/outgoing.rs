@@ -96,10 +96,8 @@ impl<J: JmapApi> Jmap<J> {
         if let Some(identity) = kept {
             return Ok(identity);
         }
-        let fresh = self.api().identities().await.map_err(backend)?;
-        let found = identity_for(&fresh, from).cloned();
-        self.known().identities = fresh;
-        found.ok_or_else(|| BackendError::Refused(gettext("This account has no address the server lets it send from.")))
+        let fresh = self.server_identities().await?;
+        identity_for(&fresh, from).cloned().ok_or_else(|| BackendError::Refused(gettext("This account has no address the server lets it send from.")))
     }
 
     pub(super) async fn send_raw(&self, raw: &[u8]) -> Result<String, BackendError> {

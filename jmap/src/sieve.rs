@@ -2,7 +2,7 @@
 //! `SieveScript/set`, one of them active.
 
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::mail::{Got, SetResponse};
 use crate::session::SIEVE;
@@ -83,11 +83,12 @@ impl JmapClient {
             Some(_) => return Err(JmapError::Decode("the script was not updated".into())),
             None => set
                 .created
+                .as_ref()
                 .and_then(|c| c.get("s").and_then(|s| s["id"].as_str()).map(str::to_string))
                 .ok_or_else(|| JmapError::Decode("the script came back without an id".into()))?,
         };
         if activate {
-            Self::activated(&mut answer, &call, &id)?;
+            self.activated(&mut answer, &call, &set, &key, &id).await?;
         }
         Ok(id)
     }
@@ -98,19 +99,40 @@ impl JmapClient {
         let mut request = Request::new();
         let call = request.call(SIEVE, "SieveScript/set", json!({ "accountId": account, "onSuccessActivateScript": id }));
         let mut answer = self.send(&request).await?;
-        let _: SetResponse = answer.take(&call, "SieveScript/set")?;
-        Self::activated(&mut answer, &call, id)
-    }
-
-    /// The implicit `SieveScript/set` answer that follows
-    /// `onSuccessActivateScript`, under the same call id: it must say the
-    /// script was updated.
-    fn activated(answer: &mut crate::Response, call: &crate::CallId, id: &str) -> Result<(), JmapError> {
-        let set: SetResponse = answer.take(call, "SieveScript/set")?;
+        let set: SetResponse = answer.take(&call, "SieveScript/set")?;
         if let Some(refused) = set.refusal(id) {
             return Err(refused.error());
         }
-        match set.updated.as_ref().is_some_and(|u| u.contains_key(id)) {
+        self.activated(&mut answer, &call, &set, id, id).await
+    }
+
+    /// Checks that script `id` is the active one after a call with
+    /// `onSuccessActivateScript`, whose own answer is `set` and which named
+    /// the script `key` (its creation id when it made the script).
+    ///
+    /// RFC 9661 reports the activation in that answer, as `isActive: true`
+    /// under `created` or `updated`; Cyrus 3.13 does so. The drafts before
+    /// it sent a second, implicit `SieveScript/set` answer under the same
+    /// call id, which some servers may still send. Stalwart 0.16 answers an
+    /// activation on its own with neither, though it does activate, so
+    /// when no answer says so the script list is read back.
+    async fn activated(&self, answer: &mut crate::Response, call: &crate::CallId, set: &SetResponse, key: &str, id: &str) -> Result<(), JmapError> {
+        let active = |v: &Value| v["isActive"] == true;
+        let created = set.created.as_ref().and_then(|c| c.get(key)).is_some_and(active);
+        let updated = set.updated.as_ref().and_then(|u| u.get(id)).and_then(Option::as_ref).is_some_and(active);
+        if created || updated {
+            return Ok(());
+        }
+        if answer.answered(call, "SieveScript/set") {
+            let implicit: SetResponse = answer.take(call, "SieveScript/set")?;
+            if let Some(refused) = implicit.refusal(id) {
+                return Err(refused.error());
+            }
+            if implicit.updated.as_ref().is_some_and(|u| u.contains_key(id)) {
+                return Ok(());
+            }
+        }
+        match self.sieve_scripts().await?.iter().any(|s| s.id == id && s.is_active) {
             true => Ok(()),
             false => Err(JmapError::Decode("the script was not activated".into())),
         }

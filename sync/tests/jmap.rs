@@ -56,80 +56,6 @@ fn the_jmap_adapter_syncs_and_writes_against_every_server() {
     runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
 }
 
-/// A step that fails on one server because of a finding in the app's code, as
-/// its own test: ignored until the controller rules on the fix. The main
-/// test skips the step on that server and says so in its log.
-macro_rules! server_finding {
-    ($name:ident, $kind:ident, $reason:literal, $step:ident) => {
-        #[test]
-        #[ignore = $reason]
-        fn $name() {
-            if mailrs_testmail::jmap_docker().is_none() {
-                return;
-            }
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .thread_stack_size(mailrs_sync::WORKER_STACK)
-                .enable_all()
-                .build()
-                .expect("a runtime");
-            let body = runtime.spawn(async move {
-                let password = mailrs_testmail::password();
-                let Some(server) = JmapServer::start(JmapKind::$kind, &password).await else {
-                    return;
-                };
-                Run::new(&server, &password).await.$step().await;
-            });
-            runtime.block_on(body).unwrap_or_else(|panic| std::panic::resume_unwind(panic.into_panic()));
-        }
-    };
-}
-
-// Cyrus 3.13 test image: `Identity/get` answers its one identity with
-// `email: ""`, which the identities service drops as no address, so the
-// account lists none and the From row has nothing to offer.
-server_finding!(
-    cyrus_identities_name_the_account,
-    Cyrus,
-    "Cyrus answers its one identity with an empty email, so the identities service lists no address",
-    identities_name_the_account
-);
-
-// Cyrus 3.13 test image: `SieveScript/set` with `onSuccessActivateScript`
-// answers once, with `created.s.isActive: true` and `updated: null`. RFC
-// 9661's second implicit answer never comes, so `put_sieve_active` fails
-// with "no answer to SieveScript/set" after Cyrus has made and activated
-// the script.
-server_finding!(
-    cyrus_rule_lands_in_sieve,
-    Cyrus,
-    "Cyrus activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
-    a_rule_lands_in_sieve_where_offered
-);
-
-// Stalwart 0.16.25: the same single answer. `SieveScript/set` with
-// `onSuccessActivateScript` returns one response with the script created
-// and active (`SieveScript/get` shows `isActive: true`), and no second
-// `SieveScript/set` response.
-server_finding!(
-    stalwart_rule_lands_in_sieve,
-    Stalwart,
-    "Stalwart activates in the create call and sends no second SieveScript/set answer, so put_sieve_active fails",
-    a_rule_lands_in_sieve_where_offered
-);
-
-// Cyrus 3.13 test image: `CalendarEvent/set` create without `version`
-// answers `notCreated: {"e": {"type": "invalidProperties", "properties":
-// ["version"]}}` (with or without the jscalendarbis capability in
-// `using`). Adding `"version": "2.0"` makes the same create succeed;
-// `"1.0"` is refused the same way. The adapter's JSCalendar object has
-// no `version`.
-server_finding!(
-    cyrus_calendar_round_trips,
-    Cyrus,
-    "Cyrus refuses a created event without version 2.0 (invalidProperties: version); the adapter sends none",
-    the_calendar_round_trips
-);
-
 struct Run<'a> {
     server: &'a JmapServer,
     password: &'a str,
@@ -273,25 +199,12 @@ impl<'a> Run<'a> {
         self.a_body_opens().await;
         self.a_send_lands_in_sent().await;
         self.a_draft_saves_replaces_and_sends().await;
-        if self.kind() == JmapKind::Cyrus {
-            eprintln!("Cyrus: identities skipped, see cyrus_identities_name_the_account (ignored)");
-        } else {
-            self.identities_name_the_account().await;
-        }
+        self.identities_name_the_account().await;
         self.the_reply_round_trips_where_offered().await;
         self.a_contact_round_trips_where_offered().await;
-        if self.kind() != JmapKind::James {
-            eprintln!("{:?}: the Sieve rule skipped, see the ignored *_rule_lands_in_sieve test", self.kind());
-        } else {
-            self.a_rule_lands_in_sieve_where_offered().await;
-        }
+        self.a_rule_lands_in_sieve_where_offered().await;
         self.masked_email_is_hidden_where_not_offered().await;
-        if self.kind() == JmapKind::Cyrus {
-            eprintln!("Cyrus: the calendar write skipped, see cyrus_calendar_round_trips (ignored)");
-            self.the_calendar_is_offered_as_the_gate_reads_it().await;
-        } else {
-            self.the_calendar_round_trips().await;
-        }
+        self.the_calendar_round_trips().await;
         eprintln!("{:?}: the steps took {:?}", self.kind(), started.elapsed());
         self.a_delivery_during_a_watch_reaches_the_store().await;
         self.a_write_during_a_watch_completes().await;
@@ -464,9 +377,11 @@ impl<'a> Run<'a> {
         written.unwrap_or_else(|_| panic!("{:?}: the write waited past {WRITE_WAIT:?}", self.kind())).expect("an unstar");
     }
 
+    /// Cyrus answers `user1`'s identity with an empty email; the adapter
+    /// fills it with the address the user name stands for.
     async fn identities_name_the_account(&self) {
         let listed = self.sync.services().identities.identities().await.expect("identities");
-        assert!(!listed.is_empty(), "{:?}", self.kind());
+        assert!(listed.iter().any(|a| a.email == self.server.address), "{:?}: {listed:?}", self.kind());
     }
 
     async fn the_reply_round_trips_where_offered(&self) {

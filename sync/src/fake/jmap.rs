@@ -1285,9 +1285,17 @@ impl JmapApi for FakeJmap {
     }
 
     /// Filters on `inCalendar` and `uid`; `after` and `before` match
-    /// everything here, which the adapter's tests do not lean on.
+    /// everything here, which the adapter's tests do not lean on. Both must
+    /// be LocalDateTime, as the drafts define them and Cyrus checks: a UTC
+    /// time with `Z` is `invalidArguments`.
     async fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> Answer<EventsPage> {
         self.called("CalendarEvent/query");
+        let local = |key: &str| {
+            filter.get(key).and_then(Value::as_str).is_none_or(|t| chrono::NaiveDateTime::parse_from_str(t, "%Y-%m-%dT%H:%M:%S").is_ok())
+        };
+        if !local("after") || !local("before") {
+            return Err(JmapError::Method { kind: "invalidArguments".into(), description: String::new() });
+        }
         self.with(|s| {
             let calendar = filter.get("inCalendar").and_then(Value::as_str);
             let uid = filter.get("uid").and_then(Value::as_str);
