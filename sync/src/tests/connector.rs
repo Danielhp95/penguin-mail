@@ -969,6 +969,24 @@ async fn signing_in_again_retires_the_session_it_replaces() {
     assert_eq!(secrets.jmap.load(account.id).unwrap().as_deref(), Some("refresh-2"));
 }
 
+#[tokio::test]
+async fn a_sign_in_again_the_keyring_refuses_leaves_the_old_session_saving() {
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    let old = secrets.jmap_sessions.held(account.id).unwrap();
+    let crate::passwords::Passwords::Memory(kept) = &*secrets.jmap else { unreachable!("tests keep secrets in memory") };
+    kept.refuse_saves();
+    let mut again = new_oauth(saved);
+    again.secret = "refresh-2".into();
+    let refused = crate::sign_in::jmap_signed_in(&db, &secrets, again, 1).await;
+    assert!(matches!(refused, Err(crate::sign_in::JmapSignInError::Password(_))));
+    assert!(!old.retired(), "the account still runs on the old grant and must keep saving it");
+    assert!(Arc::ptr_eq(&old, &secrets.jmap_sessions.held(account.id).unwrap()));
+}
+
 /// What the account keeps for `kind`, if anything.
 async fn kept(db: &Db, account: &Account, kind: mailrs_store::services::ServiceKind) -> Option<mailrs_store::services::FoundService> {
     let id = account.id;

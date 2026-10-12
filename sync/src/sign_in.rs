@@ -541,10 +541,14 @@ pub async fn jmap_signed_in(
     }
     saved.owner = Some(signed_as.owner);
     if let Some(held) = &before {
-        // A refresh the old session finishes later must not write its
-        // token over this one.
-        secrets.jmap_sessions.forget(held.id).await;
+        // The old session keeps running, and saving, until the new token
+        // is in the keyring. Retiring it then waits for any save it had
+        // under way and stops later ones. A save that finished between the
+        // write and the retire is undone by writing the token once more.
         keep_secret(Arc::clone(&secrets.jmap), held.id, secret.clone()).await?;
+        if secrets.jmap_sessions.forget(held.id).await.is_some() {
+            keep_secret(Arc::clone(&secrets.jmap), held.id, secret.clone()).await?;
+        }
         if let Some(password) = dav_password.clone() {
             keep_secret(Arc::clone(&secrets.passwords), held.id, password).await?;
         }
