@@ -2619,6 +2619,7 @@ name = "mailrs-jmap"
 version = "1.0.7"
 dependencies = [
  "base64 0.23.1",
+ "chrono",
  "futures",
  "mailrs-domain",
  "mailrs-testmail",
