@@ -95,6 +95,11 @@ pub fn replace_listed(
     for mailbox in listed {
         upsert(conn, account_id, mailbox)?;
     }
+    // A POP3 account's folders live only in the store, so a listing takes
+    // none of them away.
+    if !deletion::allowed(conn, account_id, Cause::Sync)? {
+        return Ok(());
+    }
     let ids: Vec<&str> = listed.iter().map(|m| m.id.as_str()).collect();
     let ids = serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into());
     conn.execute(
