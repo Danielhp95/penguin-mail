@@ -10,10 +10,12 @@
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use futures::future::BoxFuture;
 use mailrs_domain::sign_in_page::{self, Finished};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,6 +23,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::Instant;
 use url::{Host, Url};
 
 use crate::JmapError;
@@ -370,6 +373,142 @@ impl OAuthClient {
     }
 }
 
+/// What `OAuthSession::on_rotated` runs with each new refresh token.
+type Keep = Box<dyn Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync>;
+
+/// How long before its expiry an access token stops going out, so it
+/// cannot expire on its way to the server.
+const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
+
+/// The longest lifetime an access token is taken at. A server could name
+/// one past any clock.
+const LONGEST_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
+
+struct Held {
+    refresh_token: String,
+    access: Option<(String, Instant)>,
+}
+
+impl Held {
+    /// The access token while it has more than the margin to live.
+    fn usable(&self) -> Option<&str> {
+        let (token, until) = self.access.as_ref()?;
+        (*until > Instant::now() + EXPIRY_MARGIN).then_some(token.as_str())
+    }
+}
+
+fn expiry(expires_in: u64) -> Instant {
+    Instant::now() + Duration::from_secs(expires_in).min(LONGEST_LIFETIME)
+}
+
+/// One account's OAuth tokens. A refresh runs under the lock, so calls
+/// that find the token expired, or that the server refused together,
+/// share one refresh. A rotated refresh token replaces the old one before
+/// the access token that came with it goes out, since Fastmail revokes a
+/// grant whose old refresh token comes back.
+pub struct OAuthSession {
+    client: OAuthClient,
+    held: Arc<tokio::sync::Mutex<Held>>,
+    keep: Option<Arc<Keep>>,
+    transport: Transport,
+}
+
+// By hand, so neither token nor the client id reaches a log line.
+impl std::fmt::Debug for OAuthSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthSession").field("token_endpoint", &self.client.token_endpoint).finish_non_exhaustive()
+    }
+}
+
+impl OAuthSession {
+    /// A session that starts from a kept refresh token.
+    pub fn new(client: OAuthClient, refresh_token: String) -> OAuthSession {
+        OAuthSession::holding(client, Held { refresh_token, access: None })
+    }
+
+    /// A session that starts from the code exchange's tokens.
+    pub fn signed_in(client: OAuthClient, tokens: Tokens) -> OAuthSession {
+        let access = Some((tokens.access_token, expiry(tokens.expires_in)));
+        OAuthSession::holding(client, Held { refresh_token: tokens.refresh_token.unwrap_or_default(), access })
+    }
+
+    fn holding(client: OAuthClient, held: Held) -> OAuthSession {
+        OAuthSession { client, held: Arc::new(tokio::sync::Mutex::new(held)), keep: None, transport: Transport::HttpsOnly }
+    }
+
+    /// Runs `keep` with each new refresh token, and waits for it before the
+    /// new access token is used. When `keep` fails, the new token stays in
+    /// memory for this run and the old one is never sent again.
+    pub fn on_rotated(
+        mut self,
+        keep: impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static,
+    ) -> OAuthSession {
+        self.keep = Some(Arc::new(Box::new(keep)));
+        self
+    }
+
+    #[cfg(test)]
+    fn over(mut self, transport: Transport) -> OAuthSession {
+        self.transport = transport;
+        self
+    }
+
+    /// An access token with a minute or more to live, refreshed first when
+    /// `force` or when the held one is about to expire. A refused refresh
+    /// is `Unauthorized`, which asks the person to sign in again.
+    pub async fn bearer(&self, force: bool) -> Result<String, JmapError> {
+        let held = Arc::clone(&self.held).lock_owned().await;
+        if !force && let Some(token) = held.usable() {
+            return Ok(token.to_string());
+        }
+        self.renewed(held).await
+    }
+
+    /// An access token other than `refused`, which the server just turned
+    /// away. When another call refreshed while this one waited for the
+    /// lock, its token comes back and no second refresh goes out.
+    pub(crate) async fn bearer_instead_of(&self, refused: &str) -> Result<String, JmapError> {
+        let held = Arc::clone(&self.held).lock_owned().await;
+        if let Some(token) = held.usable()
+            && token != refused
+        {
+            return Ok(token.to_string());
+        }
+        self.renewed(held).await
+    }
+
+    /// Refreshes in a task of its own that holds the lock, so a caller
+    /// that gives up halfway cannot drop a rotated refresh token the
+    /// server has already moved to.
+    async fn renewed(&self, held: tokio::sync::OwnedMutexGuard<Held>) -> Result<String, JmapError> {
+        let refreshing = renew(self.client.clone(), held, self.keep.clone(), self.transport);
+        tokio::spawn(refreshing).await.map_err(|_| JmapError::Network("the token refresh stopped".into()))?
+    }
+}
+
+async fn renew(
+    client: OAuthClient,
+    mut held: tokio::sync::OwnedMutexGuard<Held>,
+    keep: Option<Arc<Keep>>,
+    transport: Transport,
+) -> Result<String, JmapError> {
+    if held.refresh_token.is_empty() {
+        return Err(JmapError::Unauthorized);
+    }
+    let tokens = client.refresh_over(&held.refresh_token, transport).await?;
+    if let Some(rotated) = tokens.refresh_token.filter(|t| *t != held.refresh_token) {
+        held.refresh_token = rotated.clone();
+        if let Some(keep) = &keep
+            && keep(rotated).await.is_err()
+        {
+            // The callback's words stay out: they are the caller's to log.
+            tracing::warn!("could not keep the server's new refresh token; it stays in memory for this run");
+        }
+    }
+    held.access = Some((tokens.access_token.clone(), expiry(tokens.expires_in)));
+    Ok(tokens.access_token)
+}
+
 /// Receives the redirect on 127.0.0.1, at a port the system picks, during
 /// consent. RFC 8252 section 7.3 has the server take any port on the
 /// loopback for a client registered with it.
@@ -507,7 +646,7 @@ pub fn parse_redirect(request: &str, state: &str, metadata: &Metadata) -> Option
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::matchers::{any, body_string_contains, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
@@ -751,6 +890,259 @@ mod tests {
         let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
         let err = register_over(&found, "http://127.0.0.1/", &[], LOCAL).await.unwrap_err();
         assert_eq!(err, JmapError::Forbidden("invalid_redirect_uri".into()));
+        assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
+    }
+
+    // The OAuth session: refreshes, rotation, and the 401 retry.
+
+    use std::sync::Mutex;
+
+    use crate::{Auth, JmapClient, Request};
+
+    type Saved = Arc<Mutex<Vec<String>>>;
+
+    fn kept() -> (Saved, impl Fn(String) -> BoxFuture<'static, Result<(), String>> + Send + Sync + 'static) {
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let into = Arc::clone(&kept);
+        (kept, move |token: String| {
+            let into = Arc::clone(&into);
+            Box::pin(async move {
+                into.lock().unwrap().push(token);
+                Ok(())
+            }) as BoxFuture<'static, Result<(), String>>
+        })
+    }
+
+    fn bearer_answer(answer: Value) -> ResponseTemplate {
+        let mut answer = answer;
+        answer["token_type"] = json!("Bearer");
+        ResponseTemplate::new(200).set_body_json(answer)
+    }
+
+    #[tokio::test]
+    async fn two_expired_calls_share_one_refresh_saved_first() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                bearer_answer(json!({"access_token": "a2", "expires_in": 3600, "refresh_token": "r2"}))
+                    .set_delay(Duration::from_millis(50)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = Arc::new(OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL));
+        let (one, two) = tokio::join!(session.bearer(false), session.bearer(false));
+        assert_eq!((one.unwrap().as_str(), two.unwrap().as_str()), ("a2", "a2"));
+        assert_eq!(*saved.lock().unwrap(), ["r2"]);
+    }
+
+    #[tokio::test]
+    async fn a_rotation_the_keyring_refuses_keeps_the_new_token_in_memory() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r1"))
+            .respond_with(bearer_answer(json!({"access_token": "a2", "expires_in": 0, "refresh_token": "r2"})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r2"))
+            .respond_with(bearer_answer(json!({"access_token": "a3", "expires_in": 3600})))
+            .mount(&server)
+            .await;
+        let session = OAuthSession::new(client_of(&server), "r1".into())
+            .on_rotated(|_| Box::pin(async { Err("the keyring is locked".to_string()) }) as BoxFuture<'static, Result<(), String>>)
+            .over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        // a2 expired at once; the next refresh goes with r2, never r1 again.
+        assert_eq!(session.bearer(false).await.unwrap(), "a3");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_whose_caller_gave_up_still_keeps_the_rotation() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r1"))
+            .respond_with(
+                bearer_answer(json!({"access_token": "a2", "expires_in": 3600, "refresh_token": "r2"}))
+                    .set_delay(Duration::from_millis(200)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=r2"))
+            .respond_with(bearer_answer(json!({"access_token": "a3", "expires_in": 3600})))
+            .mount(&server)
+            .await;
+        let (saved, keep) = kept();
+        let session = OAuthSession::new(client_of(&server), "r1".into()).on_rotated(keep).over(LOCAL);
+        let gave_up = tokio::time::timeout(Duration::from_millis(20), session.bearer(false)).await;
+        assert!(gave_up.is_err(), "the refresh finished before the caller gave up");
+        assert_eq!(session.bearer(true).await.unwrap(), "a3");
+        assert_eq!(*saved.lock().unwrap(), ["r2"]);
+    }
+
+    #[tokio::test]
+    async fn a_session_without_a_refresh_token_asks_to_sign_in_again() {
+        let server = MockServer::start().await;
+        Mock::given(any()).respond_with(ResponseTemplate::new(500)).expect(0).mount(&server).await;
+        let tokens = Tokens { access_token: "a1".into(), expires_in: 0, refresh_token: None };
+        let session = OAuthSession::signed_in(client_of(&server), tokens).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn a_lifetime_past_any_clock_is_taken_without_a_panic() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(bearer_answer(json!({"access_token": "a2", "expires_in": u64::MAX})))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let session = OAuthSession::new(client_of(&server), "r1".into()).over(LOCAL);
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        assert_eq!(session.bearer(false).await.unwrap(), "a2");
+        let signed = Tokens { access_token: "a1".into(), expires_in: u64::MAX, refresh_token: Some("r1".into()) };
+        assert_eq!(OAuthSession::signed_in(client_of(&server), signed).bearer(false).await.unwrap(), "a1");
+    }
+
+    /// Serves a session that names `server`'s own API, to any token.
+    async fn serving_session(server: &MockServer) {
+        let base = server.uri();
+        Mock::given(method("GET"))
+            .and(path("/jmap/session"))
+            .and(header("Authorization", "Bearer fresh"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "capabilities": {"urn:ietf:params:jmap:core": {}}, "apiUrl": format!("{base}/api/"),
+                "downloadUrl": format!("{base}/d/{{blobId}}"), "uploadUrl": format!("{base}/u/"), "state": "s"
+            })))
+            .mount(server)
+            .await;
+    }
+
+    fn jmap_with(server: &MockServer, access: &str) -> JmapClient {
+        let tokens = Tokens { access_token: access.into(), expires_in: 3600, refresh_token: Some("r1".into()) };
+        let session = OAuthSession::signed_in(client_of(server), tokens).over(LOCAL);
+        JmapClient::new(&format!("{}/jmap/session", server.uri()), Auth::OAuth(Arc::new(session))).unwrap()
+    }
+
+    async fn refreshing_to_fresh(server: &MockServer, times: u64) {
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(bearer_answer(json!({"access_token": "fresh", "expires_in": 3600})).set_delay(Duration::from_millis(50)))
+            .expect(times)
+            .mount(server)
+            .await;
+    }
+
+    fn echo() -> Request {
+        let mut request = Request::new();
+        request.call(crate::CORE, "Core/echo", json!({}));
+        request
+    }
+
+    fn echoed() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({"methodResponses": [["Core/echo", {}, "c0"]], "sessionState": "s"}))
+    }
+
+    #[tokio::test]
+    async fn a_refused_access_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        Mock::given(method("GET"))
+            .and(path("/jmap/session"))
+            .and(header("Authorization", "Bearer stale"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(&server)
+            .await;
+        serving_session(&server).await;
+        assert_eq!(jmap_with(&server, "stale").session().await.unwrap().state, "s");
+    }
+
+    #[tokio::test]
+    async fn two_calls_refused_together_share_one_refresh() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        // The first token reads the session, then expires on the server.
+        // The session lets both calls out at once.
+        Mock::given(method("GET"))
+            .and(path("/jmap/session"))
+            .and(header("Authorization", "Bearer stale"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "capabilities": {"urn:ietf:params:jmap:core": {"maxConcurrentRequests": 4}},
+                "apiUrl": format!("{}/api/", server.uri()),
+                "downloadUrl": format!("{}/d/{{blobId}}", server.uri()), "uploadUrl": format!("{}/u/", server.uri()), "state": "s"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/"))
+            .and(header("Authorization", "Bearer stale"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(2)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/"))
+            .and(header("Authorization", "Bearer fresh"))
+            .respond_with(echoed())
+            .expect(2)
+            .mount(&server)
+            .await;
+        let jmap = jmap_with(&server, "stale");
+        jmap.session().await.unwrap();
+        let (first, second) = (echo(), echo());
+        let (one, two) = tokio::join!(jmap.send(&first), jmap.send(&second));
+        one.unwrap();
+        two.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_call_refused_after_a_refresh_is_not_sent_a_third_time() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        serving_session(&server).await;
+        Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(401)).expect(2).mount(&server).await;
+        let jmap = jmap_with(&server, "fresh");
+        jmap.session().await.unwrap();
+        assert_eq!(jmap.send(&echo()).await.unwrap_err(), JmapError::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn a_call_that_fails_otherwise_is_not_sent_again() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 0).await;
+        serving_session(&server).await;
+        Mock::given(method("POST")).and(path("/api/")).respond_with(ResponseTemplate::new(500)).expect(1).mount(&server).await;
+        let jmap = jmap_with(&server, "fresh");
+        jmap.session().await.unwrap();
+        assert!(jmap.send(&echo()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_refused_refresh_asks_to_sign_in_again_without_the_servers_words() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(json!({"error": "invalid_grant", "error_description": "grant tok-SECRET was revoked"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET")).and(path("/jmap/session")).respond_with(ResponseTemplate::new(401)).expect(1).mount(&server).await;
+        let err = jmap_with(&server, "stale").session().await.unwrap_err();
+        assert_eq!(err, JmapError::Unauthorized);
         assert!(!format!("{err} {err:?}").contains("SECRET"), "{err:?}");
     }
 }

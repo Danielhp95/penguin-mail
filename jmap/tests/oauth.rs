@@ -3,10 +3,11 @@
 //! authorize URL, Debug output and the loopback. The exchanges against
 //! wiremock live in `oauth.rs`'s unit tests, which alone may use http.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use mailrs_jmap::JmapError;
-use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens, parse_redirect};
+use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, OAuthSession, Pkce, Tokens, parse_redirect};
+use mailrs_jmap::{Auth, JmapError};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use wiremock::matchers::any;
@@ -299,4 +300,27 @@ async fn a_request_that_arrives_in_pieces_is_read_whole() {
     stream.read_to_string(&mut reply).await.unwrap();
     assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
     assert_eq!(promptly(waiting).await, Ok("abc".into()));
+}
+
+#[tokio::test]
+async fn a_session_refreshes_over_https_only() {
+    let server = untouchable().await;
+    let client = OAuthClient { client_id: "c1".into(), token_endpoint: format!("{}/token", server.uri()), resource: "x".into() };
+    let err = OAuthSession::new(client, "r1".into()).bearer(false).await.unwrap_err();
+    assert_eq!(err, JmapError::NotHttps);
+    says_no_address(&err, &server.uri());
+}
+
+#[test]
+fn the_session_keeps_its_tokens_out_of_debug() {
+    let client = || OAuthClient {
+        client_id: "client-SECRET".into(),
+        token_endpoint: "https://auth.example.com/token".into(),
+        resource: "https://api.example.com/jmap/session".into(),
+    };
+    let tokens = Tokens { access_token: "access-SECRET".into(), expires_in: 3600, refresh_token: Some("refresh-SECRET".into()) };
+    let signed_in = OAuthSession::signed_in(client(), tokens);
+    let kept = Auth::OAuth(Arc::new(OAuthSession::new(client(), "kept-SECRET".into())));
+    let said = format!("{signed_in:?} {kept:?}");
+    assert!(!said.contains("SECRET"), "{said}");
 }

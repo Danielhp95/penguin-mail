@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 base64.workspace = true
+# BoxFuture, for the callback that keeps a rotated refresh token.
+futures.workspace = true
 # The page the browser shows when the sign-in hands back, shared with
 # Google's and Microsoft's loopbacks.
 mailrs-domain.workspace = true
