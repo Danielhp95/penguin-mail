@@ -10106,7 +10106,7 @@ msgstr "Is unread"
 msgid "Is flagged"
 msgstr "Is flagged"
 
-#: sync/src/account/outbox.rs:171
+#: sync/src/account/outbox.rs:149
 msgid "The server holds this message to send at its hour. Cancel Send before you change it."
 msgstr "The server holds this message to send at its hour. Cancel Send before you change it."
 
@@ -10122,33 +10122,33 @@ msgstr "Your message to {address} was shown on screen. This receipt does not say
 msgid "This message asks for no read receipt."
 msgstr "This message asks for no read receipt."
 
-#: sync/src/account/writes.rs:760
+#: sync/src/account/writes.rs:747
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} is busy. Still working on {conversations}."
 
-#: sync/src/account/writes.rs:783
+#: sync/src/account/writes.rs:770
 msgid "{provider} is busy, so “{action}” did not go through for {conversations}. Try again in a moment."
 msgstr "{provider} is busy, so “{action}” did not go through for {conversations}. Try again in a moment."
 
-#: sync/src/account/writes.rs:792
+#: sync/src/account/writes.rs:779
 msgid "{provider} stayed busy for {waited}, so “{action}” did not go through for {conversations}."
 msgstr "{provider} stayed busy for {waited}, so “{action}” did not go through for {conversations}."
 
-#: sync/src/account/writes.rs:799
+#: sync/src/account/writes.rs:786
 msgid "{action} failed: {reason}"
 msgstr "{action} failed: {reason}"
 
-#: sync/src/account/writes.rs:817
+#: sync/src/account/writes.rs:804
 msgid "a moment"
 msgstr "a moment"
 
-#: sync/src/account/writes.rs:819
+#: sync/src/account/writes.rs:806
 msgid "{count} second"
 msgid_plural "{count} seconds"
 msgstr[0] "{count} second"
 msgstr[1] "{count} seconds"
 
-#: sync/src/account/writes.rs:824
+#: sync/src/account/writes.rs:811
 msgid "a minute"
 msgstr "a minute"
 

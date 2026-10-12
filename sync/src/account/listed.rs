@@ -17,8 +17,7 @@ use mailrs_store::{accounts, labels, messages};
 
 use super::AccountSync;
 use super::fetch::Placing;
-use super::refs::stored_id;
-use crate::{BackendError, MailBackend, RemoteRef, SearchQuery, SyncError, Want};
+use crate::{BackendError, RemoteRef, SearchQuery, SyncError, Want};
 
 /// How long a fetched thread is kept for opening. Only memory depends on
 /// it: whether a kept thread may still be stored is the history cursor's
@@ -72,7 +71,7 @@ impl AccountSync {
             SearchQuery::Tree(tree) if !self.services.capabilities().native_search => {
                 self.stored_matches(tree, limit).await?
             }
-            _ => self.services.mail.search(query, limit).await?,
+            _ => self.mail.search(query, limit).await?,
         };
         self.keep_hits(&found);
         Ok(found)
@@ -86,39 +85,28 @@ impl AccountSync {
     /// are.
     pub async fn search_tree(&self, query: &Query, limit: usize) -> Result<Searched, SyncError> {
         let found = match self
-            .services
             .mail
             .search(&SearchQuery::Tree(query.clone()), limit)
             .await
         {
             Ok(found) => found,
-            Err(BackendError::Unsupported) => {
+            Err(SyncError::Backend(BackendError::Unsupported)) => {
                 return Ok(Searched {
                     refs: Vec::new(),
                     store_only: true,
                 });
             }
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         };
-        let resolved = self
-            .resolve(found.iter().map(|hit| hit.id.clone()).collect())
-            .await?;
-        let named: Vec<(RemoteRef, String)> = found
-            .into_iter()
-            .filter_map(|hit| {
-                let id = stored_id(&hit.id, &resolved)?;
-                Some((hit, id))
-            })
-            .collect();
         let account_id = self.account_id;
         let refs = self
             .db
             .read(move |c| {
-                let mut refs = Vec::with_capacity(named.len());
-                for (hit, id) in named {
+                let mut refs = Vec::with_capacity(found.len());
+                for hit in found {
                     let thread_id =
-                        messages::thread_id_of(c, account_id, &id)?.unwrap_or(hit.thread_id);
-                    refs.push(RemoteRef { id, thread_id });
+                        messages::thread_id_of(c, account_id, &hit.id)?.unwrap_or(hit.thread_id);
+                    refs.push(RemoteRef { id: hit.id, thread_id });
                 }
                 Ok(refs)
             })

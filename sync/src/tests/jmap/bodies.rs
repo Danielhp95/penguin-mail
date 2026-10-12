@@ -109,3 +109,31 @@ fn parts_take_imap_section_numbers() {
     let single = numbered(&leaf("text/plain", "B9"));
     assert_eq!(single.path, "1");
 }
+
+/// A conversation goes out in batches: one `Email/get` names every
+/// message's blob, rather than one per message, and the file reads as
+/// one message at a time would have written it.
+#[tokio::test]
+async fn a_conversation_exports_its_messages_in_one_batch() {
+    let h = fastmail().await;
+    let first = h.fake.deliver("inbox", &raw("e1@x", "Lunch"), 1_000);
+    let mut ids = vec![first.clone()];
+    for n in 2..=3 {
+        let reply = format!(
+            "From: Ada Lovelace <ada@example.com>\r\nTo: me@example.com\r\nSubject: Re: Lunch\r\nMessage-ID: <e{n}@x>\r\nIn-Reply-To: <e1@x>\r\n\r\nReply {n}\r\n"
+        );
+        ids.push(h.fake.deliver("inbox", reply.as_bytes(), 1_000 + n));
+    }
+    h.bootstrap_all().await;
+    let thread = h.fake.with(|s| s.emails[&first].thread_id.clone());
+    let mut one_by_one = Vec::new();
+    for id in &ids {
+        let raw = h.mail().fetch_raw(std::slice::from_ref(id)).await.unwrap().remove(0);
+        crate::export::append(&mut one_by_one, &raw.bytes);
+    }
+    let gets = |h: &super::Harness| h.fake.with(|s| s.calls.iter().filter(|c| *c == "Email/get").count());
+    let before = gets(&h);
+    let mbox = h.sync.export_mbox(&thread, None).await.unwrap();
+    assert_eq!(String::from_utf8(mbox).unwrap(), String::from_utf8(one_by_one).unwrap());
+    assert_eq!(gets(&h) - before, 1, "one for every message's blob");
+}

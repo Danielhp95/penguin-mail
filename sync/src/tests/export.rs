@@ -1,4 +1,4 @@
-use crate::export::{append, file_name};
+use crate::export::{Replacing, append, file_name};
 
 /// A message with the headers an mbox separator is built from.
 fn message(from: &str, body: &str) -> Vec<u8> {
@@ -118,6 +118,32 @@ fn a_subject_of_nothing_still_names_a_file() {
 }
 
 /// A whole conversation, and one message of it, as the app exports them.
+#[tokio::test]
+async fn a_file_written_in_full_takes_the_place_of_the_old_one() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert_eq!(std::fs::read(&path).unwrap(), b"new mail");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no part file left");
+}
+
+#[tokio::test]
+async fn a_file_given_up_part_way_leaves_the_old_one() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"half").await.unwrap();
+    drop(file);
+    assert_eq!(std::fs::read(&path).unwrap(), b"old");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no part file left");
+}
+
 mod conversations {
     use mailrs_gmail::cost;
 

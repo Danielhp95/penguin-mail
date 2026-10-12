@@ -3,14 +3,14 @@
 use mailrs_domain::translate::gettext;
 
 use super::AccountSync;
-use crate::{BackendError, MailBackend, Storage, SyncError};
+use crate::{BackendError, Storage, SyncError};
 
 impl AccountSync {
     /// `None` when the server does not say. A failure carries no text of
     /// the server's, which can name an address, since the caller only
     /// logs it.
     pub async fn storage(&self) -> Result<Option<Storage>, SyncError> {
-        self.services.mail.storage().await.map_err(|err| quiet(err).into())
+        self.mail.storage().await.map_err(|err| quiet(err).into())
     }
 }
 

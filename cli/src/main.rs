@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
+use tokio::io::AsyncWriteExt;
 use mailrs_domain::{Account, AccountId, ChangeEvent, EpochMillis, MailSet, Provider};
 use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize};
 use mailrs_store::threads::{self, ThreadFilter};
@@ -464,20 +465,22 @@ async fn export_mail(
             PathBuf::from(export::file_name(&named.subject, named.date, extension))
         }
     };
-    let length = match message_id {
+    // Written beside the target and renamed over it when whole, so a
+    // failed export leaves what was there.
+    let mut file = export::Replacing::create(&path)
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
+    match message_id {
         Some(id) => {
             let raw = sync.raw_message(id).await?;
-            std::fs::write(&path, raw.as_slice()).with_context(|| format!("could not write {}", path.display()))?;
-            raw.len() as u64
+            file.file().write_all(&raw).await?;
         }
-        None => {
-            let mut file = tokio::fs::File::create(&path)
-                .await
-                .with_context(|| format!("could not write {}", path.display()))?;
-            sync.export_mbox_to(thread_id, None, &mut file).await?;
-            file.metadata().await?.len()
-        }
-    };
+        None => sync.export_mbox_to(thread_id, None, file.file()).await?,
+    }
+    let length = file
+        .finish()
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
     println!("Wrote {length} bytes to {}", path.display());
     Ok(())
 }

@@ -10987,7 +10987,7 @@ msgstr "Está por ler"
 msgid "Is flagged"
 msgstr "Está marcada"
 
-#: sync/src/account/outbox.rs:171
+#: sync/src/account/outbox.rs:149
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -11011,11 +11011,11 @@ msgstr ""
 msgid "This message asks for no read receipt."
 msgstr "Esta mensagem não pede recibo de leitura."
 
-#: sync/src/account/writes.rs:760
+#: sync/src/account/writes.rs:747
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} está ocupado. Ainda a trabalhar em {conversations}."
 
-#: sync/src/account/writes.rs:783
+#: sync/src/account/writes.rs:770
 msgid ""
 "{provider} is busy, so “{action}” did not go through for {conversations}. "
 "Try again in a moment."
@@ -11023,7 +11023,7 @@ msgstr ""
 "{provider} está ocupado, por isso “{action}” não chegou a acontecer em "
 "{conversations}. Tente de novo daqui a pouco."
 
-#: sync/src/account/writes.rs:792
+#: sync/src/account/writes.rs:779
 msgid ""
 "{provider} stayed busy for {waited}, so “{action}” did not go through for "
 "{conversations}."
@@ -11031,21 +11031,21 @@ msgstr ""
 "{provider} esteve ocupado durante {waited}, por isso “{action}” não chegou a "
 "acontecer em {conversations}."
 
-#: sync/src/account/writes.rs:799
+#: sync/src/account/writes.rs:786
 msgid "{action} failed: {reason}"
 msgstr "{action} falhou: {reason}"
 
-#: sync/src/account/writes.rs:817
+#: sync/src/account/writes.rs:804
 msgid "a moment"
 msgstr "um momento"
 
-#: sync/src/account/writes.rs:819
+#: sync/src/account/writes.rs:806
 msgid "{count} second"
 msgid_plural "{count} seconds"
 msgstr[0] "{count} segundo"
 msgstr[1] "{count} segundos"
 
-#: sync/src/account/writes.rs:824
+#: sync/src/account/writes.rs:811
 msgid "a minute"
 msgstr "um minuto"
 

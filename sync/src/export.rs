@@ -8,7 +8,10 @@
 //! its own line endings, CRLF and all, go into the file as they arrived,
 //! and only the lines mbox itself adds end in a bare newline.
 
+use std::path::{Path, PathBuf};
+
 use mailrs_domain::{EpochMillis, Target};
+use tokio::io::AsyncWriteExt;
 use mailrs_mime::address::parse_address_list;
 
 use crate::{Accounts, MailActions, SyncError};
@@ -52,23 +55,10 @@ impl<A: Accounts> MailActions<A> {
     /// `export_mbox` into the file at `path`, written beside it under a
     /// temporary name and renamed over it when every message is in, so a
     /// failed export leaves what was there. Answers the file's length.
-    pub async fn export_mbox_file(&self, targets: &[Target], path: &std::path::Path) -> Result<u64, SyncError> {
-        let mut partial = path.as_os_str().to_owned();
-        partial.push(".part");
-        let partial = std::path::PathBuf::from(partial);
-        let written = async {
-            let mut file = tokio::fs::File::create(&partial).await.map_err(SyncError::io)?;
-            self.export_mbox_to(targets, &mut file).await?;
-            let length = file.metadata().await.map_err(SyncError::io)?.len();
-            drop(file);
-            tokio::fs::rename(&partial, path).await.map_err(SyncError::io)?;
-            Ok(length)
-        }
-        .await;
-        if written.is_err() {
-            let _ = tokio::fs::remove_file(&partial).await;
-        }
-        written
+    pub async fn export_mbox_file(&self, targets: &[Target], path: &Path) -> Result<u64, SyncError> {
+        let mut file = Replacing::create(path).await.map_err(SyncError::io)?;
+        self.export_mbox_to(targets, file.file()).await?;
+        file.finish().await.map_err(SyncError::io)
     }
 
     /// One message as the RFC 822 bytes Gmail holds, the whole of an
@@ -83,6 +73,57 @@ impl<A: Accounts> MailActions<A> {
             .account(account_id)
             .ok_or(SyncError::UnknownAccount(account_id))?;
         sync.raw_message(message_id).await
+    }
+}
+
+/// A file written beside `path` under a temporary name and renamed over
+/// it once whole, so a failed or interrupted write leaves what was there.
+/// Dropped before [`Replacing::finish`], it takes the temporary file away.
+pub struct Replacing {
+    file: Option<tokio::fs::File>,
+    partial: PathBuf,
+    path: PathBuf,
+}
+
+impl Replacing {
+    pub async fn create(path: &Path) -> std::io::Result<Replacing> {
+        let mut partial = path.as_os_str().to_owned();
+        partial.push(".part");
+        let partial = PathBuf::from(partial);
+        let file = tokio::fs::File::create(&partial).await?;
+        Ok(Replacing { file: Some(file), partial, path: path.to_path_buf() })
+    }
+
+    /// The file to write to.
+    pub fn file(&mut self) -> &mut tokio::fs::File {
+        self.file.as_mut().expect("a file until finish")
+    }
+
+    /// Puts the written file in the place of the old one, once its bytes
+    /// are on the disk: a rename that reached the disk before them would
+    /// leave an empty file after a crash. Answers the file's length.
+    pub async fn finish(mut self) -> std::io::Result<u64> {
+        let mut file = self.file.take().expect("a file until finish");
+        let finished = async {
+            file.flush().await?;
+            file.sync_all().await?;
+            let length = file.metadata().await?.len();
+            tokio::fs::rename(&self.partial, &self.path).await?;
+            Ok(length)
+        }
+        .await;
+        if finished.is_err() {
+            let _ = std::fs::remove_file(&self.partial);
+        }
+        finished
+    }
+}
+
+impl Drop for Replacing {
+    fn drop(&mut self) {
+        if self.file.take().is_some() {
+            let _ = std::fs::remove_file(&self.partial);
+        }
     }
 }
 

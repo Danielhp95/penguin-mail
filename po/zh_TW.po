@@ -10509,7 +10509,7 @@ msgstr "未讀"
 msgid "Is flagged"
 msgstr "有旗標"
 
-#: sync/src/account/outbox.rs:171
+#: sync/src/account/outbox.rs:149
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -10529,38 +10529,38 @@ msgstr "寄給 {address} 的郵件已顯示在螢幕上。此回條不表示已�
 msgid "This message asks for no read receipt."
 msgstr "此郵件未要求已讀回條。"
 
-#: sync/src/account/writes.rs:760
+#: sync/src/account/writes.rs:747
 msgid "{provider} is busy. Still working on {conversations}."
 msgstr "{provider} 忙碌中。仍在處理 {conversations}。"
 
-#: sync/src/account/writes.rs:783
+#: sync/src/account/writes.rs:770
 msgid ""
 "{provider} is busy, so “{action}” did not go through for {conversations}. "
 "Try again in a moment."
 msgstr ""
 "{provider} 忙碌中，因此「{action}」未能套用至 {conversations}。請稍後重試。"
 
-#: sync/src/account/writes.rs:792
+#: sync/src/account/writes.rs:779
 msgid ""
 "{provider} stayed busy for {waited}, so “{action}” did not go through for "
 "{conversations}."
 msgstr ""
 "{provider} 持續忙碌了 {waited}，因此「{action}」未能套用至 {conversations}。"
 
-#: sync/src/account/writes.rs:799
+#: sync/src/account/writes.rs:786
 msgid "{action} failed: {reason}"
 msgstr "{action} 失敗：{reason}"
 
-#: sync/src/account/writes.rs:817
+#: sync/src/account/writes.rs:804
 msgid "a moment"
 msgstr "片刻"
 
-#: sync/src/account/writes.rs:819
+#: sync/src/account/writes.rs:806
 msgid "{count} second"
 msgid_plural "{count} seconds"
 msgstr[0] "{count} 秒"
 
-#: sync/src/account/writes.rs:824
+#: sync/src/account/writes.rs:811
 msgid "a minute"
 msgstr "一分鐘"
 

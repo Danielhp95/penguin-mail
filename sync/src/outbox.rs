@@ -34,7 +34,7 @@ use mailrs_store::outbox::{self, Queued};
 
 use crate::account::message_id_header;
 use crate::backoff::{MOST_TRIES, retry_delay};
-use crate::{AccountSync, Accounts, BackendError, Claimed, Held, MailBackend, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
+use crate::{AccountSync, Accounts, BackendError, Claimed, Held, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
 
 /// How long a claim on a waiting message holds. A send that takes longer
 /// than this belongs to a run that died, and the message is free again.
@@ -1222,7 +1222,7 @@ impl<A: Accounts> Outbox<A> {
         let Some(copy) = message.draft_id.clone() else {
             return true;
         };
-        match sync.services().mail.fetch(vec![Want::message(copy)]).await {
+        match sync.mail().fetch(vec![Want::message(copy)]).await {
             Ok(found) => !found.metas.is_empty() || found.gone.is_empty(),
             Err(err) => {
                 tracing::info!(error = %err, "could not look for a called-back copy");
