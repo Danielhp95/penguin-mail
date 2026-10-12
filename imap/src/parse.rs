@@ -149,7 +149,7 @@ pub(crate) struct QuotaReader {
 
 impl Reads for QuotaReader {
     fn read(&mut self, response: &Response<'_>) {
-        use async_imap::imap_proto::QuotaResourceName;
+        use async_imap::imap_proto::rfc2087::QuotaResourceName;
         let Response::Quota(quota) = response else {
             return;
         };
@@ -943,7 +943,7 @@ pub(crate) mod tests {
         feed(&mut reader, &[line]);
         assert_eq!(reader.uses[0].limit, u64::MAX);
         // Beyond u64 the parser refuses the line; nothing may panic or read.
-        assert!(Response::from_bytes(b"* QUOTA \"\" (STORAGE 99999999999999999999999 1)\r\n").is_err());
+        assert!(Response::parse(b"* QUOTA \"\" (STORAGE 99999999999999999999999 1)\r\n").is_err());
     }
 
     #[test]
