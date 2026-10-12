@@ -342,6 +342,31 @@ def in_view(node, row):
     return True
 
 
+def web_place(node):
+    """Where the web page that holds `node` sits in the window, as the
+    point its own coordinates start from, and the page's size. Gives
+    (0, 0, None) for a node outside any page.
+
+    WebKit reports the extents of what is inside a page from the page's
+    own corner, and the page node itself reports (0, 0), so a click aimed
+    at a list item of a message lands that far up and to the left of it,
+    on the sidebar. The page's place in the window is the first ancestor
+    above it that has one."""
+    parent = node.get_parent()
+    while parent is not None and parent.get_role_name() != "document web":
+        parent = parent.get_parent()
+    if parent is None:
+        return 0, 0, None
+    size = parent.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+    above = parent.get_parent()
+    while above is not None:
+        box = above.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+        if box.x or box.y:
+            return box.x, box.y, size
+        above = above.get_parent()
+    return 0, 0, size
+
+
 def rows_in_view(bounds):
     """Every row on screen, with the point at its middle."""
     for app in penguins()[0]:
@@ -351,13 +376,20 @@ def rows_in_view(bounds):
                     continue
                 box = row.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
                 name = (row.get_name() or "").strip()
+                left, top, page = web_place(row)
             except Exception:
                 continue
             # Window coordinates stand for screen ones here: nothing
             # manages the hidden display, so the window sits at its top
             # left corner.
-            x, y = box.x + box.width // 2, box.y + box.height // 2
+            x, y = left + box.x + box.width // 2, top + box.y + box.height // 2
             if box.width <= 0 or not (0 < x < bounds.width and 0 < y < bounds.height):
+                continue
+            if page is not None:
+                # A row of a page is in view when the page's own box, moved
+                # to where the page is, holds it whole.
+                if 0 <= box.x and box.x + box.width <= page.width and 0 <= box.y and box.y + box.height <= page.height:
+                    yield name, x, y
                 continue
             # A row scrolled out of its list still has a place. A click
             # there lands on whatever covers it, and at the foot of the

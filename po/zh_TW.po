@@ -7834,7 +7834,7 @@ msgstr[0] "以及其他 {count} 個"
 msgid "Could not read {file}: {reason}"
 msgstr "無法讀取 {file}：{reason}"
 
-#: app/src/ui/mod.rs:432
+#: app/src/ui/mod.rs:449
 msgid "Gray"
 msgstr "灰色"
 

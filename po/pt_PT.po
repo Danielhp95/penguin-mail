@@ -8186,7 +8186,7 @@ msgstr[1] "E mais {count}"
 msgid "Could not read {file}: {reason}"
 msgstr "Não foi possível ler {file}: {reason}"
 
-#: app/src/ui/mod.rs:432
+#: app/src/ui/mod.rs:449
 msgid "Gray"
 msgstr "Cinzento"
 

@@ -7729,7 +7729,7 @@ msgstr[1] ""
 msgid "Could not read {file}: {reason}"
 msgstr ""
 
-#: app/src/ui/mod.rs:432
+#: app/src/ui/mod.rs:449
 msgid "Gray"
 msgstr ""
 
