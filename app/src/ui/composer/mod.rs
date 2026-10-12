@@ -7,6 +7,7 @@
 //! source, as it always did, and Format Markdown moves a body from one to
 //! the other.
 
+mod body_view;
 mod editor;
 mod pictures;
 mod recipients;
@@ -514,16 +515,15 @@ impl Composer {
         fields.append(&field(&gettext("Subject"), &subject, &column));
         fields.append(&line());
 
-        let body = gtk::TextView::builder()
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .top_margin(BODY_MARGIN)
-            .bottom_margin(BODY_MARGIN)
-            .left_margin(20)
-            .right_margin(20)
-            .accepts_tab(false)
-            .css_classes(["composer-body"])
-            .vexpand(true)
-            .build();
+        let body = body_view::BodyView::new().upcast::<gtk::TextView>();
+        body.set_wrap_mode(gtk::WrapMode::WordChar);
+        body.set_top_margin(BODY_MARGIN);
+        body.set_bottom_margin(BODY_MARGIN);
+        body.set_left_margin(20);
+        body.set_right_margin(20);
+        body.set_accepts_tab(false);
+        body.set_css_classes(&["composer-body"]);
+        body.set_vexpand(true);
         name(&body, &gettext("Message"));
         let editor = Editor::new(&body, format);
         let preview = WebView::sealed();
