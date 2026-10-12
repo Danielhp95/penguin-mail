@@ -369,7 +369,17 @@ impl ThreadList {
         self.subtitle.set_label(subtitle);
         let layout = super::narrow_header::header_layout(self.narrow.get());
         self.subtitle.set_visible(layout.subtitle && !subtitle.is_empty());
+        self.keep_subtitle_room();
         self.page.set_title(title);
+    }
+
+    /// The subtitle hangs 7 px below the header bar (style.css,
+    /// `.list-header-title`), into room the chips leave under it. A mailbox
+    /// with no chips keeps that room empty, so a banner or the first row
+    /// under the header does not cover the subtitle.
+    fn keep_subtitle_room(&self) {
+        let room = if self.subtitle.get_visible() { 7 } else { 0 };
+        self.categories_slot.set_height_request(room);
     }
 
     /// Lays the header out for a phone or for a wider window. On a phone
@@ -383,6 +393,7 @@ impl ThreadList {
         let layout = super::narrow_header::header_layout(narrow);
         self.subtitle
             .set_visible(layout.subtitle && !self.subtitle.label().is_empty());
+        self.keep_subtitle_room();
         match layout.small_title {
             true => self.title.add_css_class("small"),
             false => self.title.remove_css_class("small"),
