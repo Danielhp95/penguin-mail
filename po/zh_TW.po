@@ -3354,7 +3354,7 @@ msgstr[0] "{count} 封郵件"
 msgid "Summarize"
 msgstr "摘要"
 
-#: app/src/render.rs:221 app/src/ui/thread_row.rs:391
+#: app/src/render.rs:221 app/src/ui/thread_row.rs:397
 msgid "Unknown sender"
 msgstr "未知寄件者"
 
@@ -4034,7 +4034,7 @@ msgstr "開啟 Penguin Mail"
 
 #: app/src/tray.rs:290 app/src/ui/composer/mod.rs:336
 #: app/src/ui/composer/mod.rs:643 app/src/ui/composer/mod.rs:1497
-#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:421
+#: app/src/ui/contact_card.rs:158 app/src/ui/thread_list.rs:423
 msgid "New Message"
 msgstr "新增郵件"
 
@@ -4149,7 +4149,7 @@ msgstr "透過瀏覽器登入"
 msgid "Enter server settings by hand"
 msgstr "手動輸入伺服器設定"
 
-#: app/src/ui/add_account.rs:565 app/src/ui/add_account.rs:1758
+#: app/src/ui/add_account.rs:565 app/src/ui/add_account.rs:1790
 msgid "Add Account"
 msgstr "新增帳號"
 
@@ -4207,7 +4207,7 @@ msgstr "在瀏覽器中登入"
 msgid "Time left"
 msgstr "剩餘時間"
 
-#: app/src/ui/add_account.rs:793 app/src/ui/add_account.rs:3259
+#: app/src/ui/add_account.rs:793 app/src/ui/add_account.rs:3282
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail 會在五分鐘後停止等候。"
 
@@ -4221,14 +4221,14 @@ msgstr "再次開啟頁面"
 msgid "Copy Link"
 msgstr "複製連結"
 
-#: app/src/ui/add_account.rs:809 app/src/ui/add_account.rs:994
+#: app/src/ui/add_account.rs:809 app/src/ui/add_account.rs:1025
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:522
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:524
 msgid "Try Again"
 msgstr "重試"
 
-#: app/src/ui/add_account.rs:814 app/src/ui/add_account.rs:3525
-#: app/src/ui/add_account.rs:3587 app/src/ui/assistant_mcp_prefs.rs:347
+#: app/src/ui/add_account.rs:814 app/src/ui/add_account.rs:3548
+#: app/src/ui/add_account.rs:3610 app/src/ui/assistant_mcp_prefs.rs:347
 #: app/src/ui/calendar/editor.rs:183 app/src/ui/calendar/manage.rs:252
 #: app/src/ui/calendar/manage.rs:374 app/src/ui/calendar/manage.rs:417
 #: app/src/ui/calendar/scope.rs:92 app/src/ui/composer/editor.rs:343
@@ -4244,156 +4244,156 @@ msgstr "重試"
 msgid "Cancel"
 msgstr "取消"
 
-#: app/src/ui/add_account.rs:922 app/src/ui/add_account.rs:1075
-#: app/src/ui/add_account.rs:2720 app/src/ui/add_account.rs:2810
+#: app/src/ui/add_account.rs:953 app/src/ui/add_account.rs:1106
+#: app/src/ui/add_account.rs:2743 app/src/ui/add_account.rs:2833
 #: app/src/ui/window.rs:1251
 msgid "Sign In"
 msgstr "登入"
 
-#: app/src/ui/add_account.rs:927 app/src/ui/add_account.rs:930
+#: app/src/ui/add_account.rs:958 app/src/ui/add_account.rs:961
 msgid "Your Name"
 msgstr "姓名"
 
-#: app/src/ui/add_account.rs:947 app/src/ui/switch_jmap.rs:113
+#: app/src/ui/add_account.rs:978 app/src/ui/switch_jmap.rs:113
 #: app/src/ui/switch_jmap.rs:116
 msgid "Sign In With Browser"
 msgstr "使用瀏覽器登入"
 
-#: app/src/ui/add_account.rs:965
+#: app/src/ui/add_account.rs:996
 msgid "Use an API Token Instead"
 msgstr "改用 API 權杖"
 
-#: app/src/ui/add_account.rs:973 app/src/ui/add_account.rs:976
+#: app/src/ui/add_account.rs:1004 app/src/ui/add_account.rs:1007
 msgid "Sign In With a Token"
 msgstr "使用權杖登入"
 
-#: app/src/ui/add_account.rs:979 app/src/ui/add_account.rs:983
+#: app/src/ui/add_account.rs:1010 app/src/ui/add_account.rs:1014
 msgid "App Password for Calendar"
 msgstr "行事曆的應用程式密碼"
 
-#: app/src/ui/add_account.rs:980
+#: app/src/ui/add_account.rs:1011
 msgid ""
 "Optional. Make an app password with calendar access in the provider's "
 "settings."
 msgstr "選填。請在供應商的設定中建立具有行事曆存取權的應用程式密碼。"
 
-#: app/src/ui/add_account.rs:989 app/src/ui/add_account.rs:1620
+#: app/src/ui/add_account.rs:1020 app/src/ui/add_account.rs:1652
 msgid "Server Settings"
 msgstr "伺服器設定"
 
-#: app/src/ui/add_account.rs:1013 app/src/ui/add_account.rs:2867
+#: app/src/ui/add_account.rs:1044 app/src/ui/add_account.rs:2890
 msgid "Outgoing"
 msgstr "寄件"
 
-#: app/src/ui/add_account.rs:1018
+#: app/src/ui/add_account.rs:1049
 msgid "Keep this account's mail on this computer alone"
 msgstr "僅在此電腦上保留此帳號的郵件"
 
-#: app/src/ui/add_account.rs:1023
+#: app/src/ui/add_account.rs:1054
 msgid "Servers"
 msgstr "伺服器"
 
-#: app/src/ui/add_account.rs:1028 app/src/ui/add_account.rs:1030
-#: app/src/ui/add_account.rs:2365 app/src/ui/add_account.rs:2369
+#: app/src/ui/add_account.rs:1059 app/src/ui/add_account.rs:1061
+#: app/src/ui/add_account.rs:2398 app/src/ui/add_account.rs:2402
 msgid "Use these servers"
 msgstr "使用這些伺服器"
 
-#: app/src/ui/add_account.rs:1032 app/src/ui/add_account.rs:2367
+#: app/src/ui/add_account.rs:1063 app/src/ui/add_account.rs:2400
 msgid ""
 "Penguin Mail guessed these servers. Your password goes to them only after "
 "you check the box."
 msgstr ""
 "Penguin Mail 推測使用這些伺服器。勾選核取方塊後，才會將密碼傳送至伺服器。"
 
-#: app/src/ui/add_account.rs:1038 app/src/ui/add_account.rs:1335
-#: app/src/ui/add_account.rs:1576
+#: app/src/ui/add_account.rs:1069 app/src/ui/add_account.rs:1367
+#: app/src/ui/add_account.rs:1608
 msgid "Server"
 msgstr "伺服器"
 
-#: app/src/ui/add_account.rs:1042
+#: app/src/ui/add_account.rs:1073
 msgid "Use IMAP Instead"
 msgstr "改用 IMAP"
 
-#: app/src/ui/add_account.rs:1134
+#: app/src/ui/add_account.rs:1166
 msgid "No Other Mail Apps"
 msgstr "無法使用其他郵件程式"
 
-#: app/src/ui/add_account.rs:1140
+#: app/src/ui/add_account.rs:1172
 msgid "Use another address"
 msgstr "使用其他地址"
 
-#: app/src/ui/add_account.rs:1141
+#: app/src/ui/add_account.rs:1173
 msgid "Change the address and look it up again"
 msgstr "變更地址並重新查詢"
 
-#: app/src/ui/add_account.rs:1147
+#: app/src/ui/add_account.rs:1179
 msgid "Choose another provider"
 msgstr "選擇其他服務提供者"
 
-#: app/src/ui/add_account.rs:1148
+#: app/src/ui/add_account.rs:1180
 msgid "Back to the list"
 msgstr "回到清單"
 
-#: app/src/ui/add_account.rs:1194
+#: app/src/ui/add_account.rs:1226
 msgid "Account Added"
 msgstr "已新增帳號"
 
-#: app/src/ui/add_account.rs:1217
+#: app/src/ui/add_account.rs:1249
 msgctxt "mailbox"
 msgid "Archive"
 msgstr "封存"
 
-#: app/src/ui/add_account.rs:1250
+#: app/src/ui/add_account.rs:1282
 msgid ""
 "Grant Access opens Google's page again. You can also do it later in "
 "Preferences."
 msgstr "[授予存取權] 會再次開啟 Google 頁面。也可以稍後在 [偏好設定] 中授予。"
 
-#: app/src/ui/add_account.rs:1253
+#: app/src/ui/add_account.rs:1285
 msgid "Open Inbox"
 msgstr "開啟收件匣"
 
-#: app/src/ui/add_account.rs:1255
+#: app/src/ui/add_account.rs:1287
 msgid "Add Another Account"
 msgstr "新增其他帳號"
 
-#: app/src/ui/add_account.rs:1257 app/src/ui/confirm.rs:46
+#: app/src/ui/add_account.rs:1289 app/src/ui/confirm.rs:46
 msgid "Not Now"
 msgstr "暫時不要"
 
-#: app/src/ui/add_account.rs:1262 app/src/ui/calendar/editor.rs:1613
+#: app/src/ui/add_account.rs:1294 app/src/ui/calendar/editor.rs:1613
 #: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
-#: app/src/ui/invitation.rs:486 app/src/ui/permission.rs:42
+#: app/src/ui/invitation.rs:489 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1370
 msgid "Grant Access"
 msgstr "授予存取權"
 
-#: app/src/ui/add_account.rs:1338 app/src/ui/add_account.rs:1339
+#: app/src/ui/add_account.rs:1370 app/src/ui/add_account.rs:1371
 msgid "Port"
 msgstr "連接埠"
 
-#: app/src/ui/add_account.rs:1349 app/src/ui/add_account.rs:1351
+#: app/src/ui/add_account.rs:1381 app/src/ui/add_account.rs:1383
 msgid "Security"
 msgstr "安全性"
 
-#: app/src/ui/add_account.rs:1413
+#: app/src/ui/add_account.rs:1445
 msgid "Mail on the Server"
 msgstr "伺服器上的郵件"
 
-#: app/src/ui/add_account.rs:1415
+#: app/src/ui/add_account.rs:1447
 msgid "Penguin Mail keeps every message it downloads on this computer."
 msgstr "Penguin Mail 會在此電腦上保留下載的每封郵件。"
 
-#: app/src/ui/add_account.rs:1420 app/src/ui/add_account.rs:1421
+#: app/src/ui/add_account.rs:1452 app/src/ui/add_account.rs:1453
 #: app/src/ui/preferences.rs:1321
 msgid "Days"
 msgstr "天數"
 
-#: app/src/ui/add_account.rs:1495 app/src/ui/add_account.rs:1577
+#: app/src/ui/add_account.rs:1527 app/src/ui/add_account.rs:1609
 msgid "Incoming User Name"
 msgstr "收件使用者名稱"
 
-#: app/src/ui/add_account.rs:1496
+#: app/src/ui/add_account.rs:1528
 msgid "Outgoing User Name"
 msgstr "寄件使用者名稱"
 
@@ -4401,63 +4401,63 @@ msgstr "寄件使用者名稱"
 #. text draws over the title. The rule goes in a tooltip, since a
 #. second line under the group would push this row off a 768-pixel
 #. screen.
-#: app/src/ui/add_account.rs:1502
+#: app/src/ui/add_account.rs:1534
 msgid "Leave it empty to use the incoming user name."
 msgstr "留空以使用收件使用者名稱。"
 
-#: app/src/ui/add_account.rs:1505 app/src/ui/add_account.rs:1507
+#: app/src/ui/add_account.rs:1537 app/src/ui/add_account.rs:1539
 msgid "Outgoing Password"
 msgstr "寄件密碼"
 
-#: app/src/ui/add_account.rs:1509
+#: app/src/ui/add_account.rs:1541
 msgid "Leave it empty to use the password you sign in with."
 msgstr "留空以使用登入時的密碼。"
 
-#: app/src/ui/add_account.rs:1512
+#: app/src/ui/add_account.rs:1544
 msgid "Incoming Mail"
 msgstr "收件郵件"
 
-#: app/src/ui/add_account.rs:1521 app/src/ui/add_account.rs:1523
+#: app/src/ui/add_account.rs:1553 app/src/ui/add_account.rs:1555
 msgid "Protocol"
 msgstr "通訊協定"
 
-#: app/src/ui/add_account.rs:1535
+#: app/src/ui/add_account.rs:1567
 msgid "Sign-In"
 msgstr "登入"
 
-#: app/src/ui/add_account.rs:1536 app/src/ui/add_account.rs:1578
+#: app/src/ui/add_account.rs:1568 app/src/ui/add_account.rs:1610
 msgid "Leave the user names empty to sign in with your address."
 msgstr "使用者名稱留空即以電子郵件地址登入。"
 
-#: app/src/ui/add_account.rs:1539
+#: app/src/ui/add_account.rs:1571
 msgid "Outgoing Mail"
 msgstr "寄件郵件"
 
-#: app/src/ui/add_account.rs:1571
+#: app/src/ui/add_account.rs:1603
 msgid "Session URL"
 msgstr "工作階段網址"
 
-#: app/src/ui/add_account.rs:1572
+#: app/src/ui/add_account.rs:1604
 msgid "User Name"
 msgstr "使用者名稱"
 
-#: app/src/ui/add_account.rs:1573
+#: app/src/ui/add_account.rs:1605
 msgid "Leave the user name empty to sign in with your address."
 msgstr "使用者名稱留空即以電子郵件地址登入。"
 
-#: app/src/ui/add_account.rs:1609 app/src/ui/add_account.rs:3169
+#: app/src/ui/add_account.rs:1641 app/src/ui/add_account.rs:3192
 msgid "Use These Settings"
 msgstr "使用這些設定"
 
-#: app/src/ui/add_account.rs:2137 app/src/ui/add_account.rs:3898
+#: app/src/ui/add_account.rs:2169 app/src/ui/add_account.rs:3921
 msgid "Looking up {domain}"
 msgstr "正在查詢 {domain}"
 
-#: app/src/ui/add_account.rs:2396
+#: app/src/ui/add_account.rs:2429
 msgid "{domain} uses {provider}"
 msgstr "{domain} 使用 {provider}"
 
-#: app/src/ui/add_account.rs:2420
+#: app/src/ui/add_account.rs:2453
 msgid ""
 "Not your {provider} website password. Make one with mail access in "
 "{provider}'s settings and paste it here."
@@ -4465,34 +4465,34 @@ msgstr ""
 "請勿使用 {provider} 網站密碼。請在 {provider} 設定中建立具郵件存取權的應用程"
 "式密碼，再貼至此處。"
 
-#: app/src/ui/add_account.rs:2712 app/src/ui/add_account.rs:2805
-#: app/src/ui/add_account.rs:3968
+#: app/src/ui/add_account.rs:2735 app/src/ui/add_account.rs:2828
+#: app/src/ui/add_account.rs:3991
 msgid "Signing In…"
 msgstr "正在登入…"
 
-#: app/src/ui/add_account.rs:2886
+#: app/src/ui/add_account.rs:2909
 msgid "Could not reach {host}"
 msgstr "無法連線至 {host}"
 
-#: app/src/ui/add_account.rs:2888
+#: app/src/ui/add_account.rs:2911
 msgid "Your password was not sent."
 msgstr "未傳送密碼。"
 
-#: app/src/ui/add_account.rs:3149
+#: app/src/ui/add_account.rs:3172
 msgid "Looking Up…"
 msgstr "正在查詢…"
 
-#: app/src/ui/add_account.rs:3247 app/src/ui/add_account.rs:3568
+#: app/src/ui/add_account.rs:3270 app/src/ui/add_account.rs:3591
 msgid "Sign in with {provider} in your browser"
 msgstr "在瀏覽器中以 {provider} 登入"
 
-#: app/src/ui/add_account.rs:3252 app/src/ui/add_account.rs:3573
+#: app/src/ui/add_account.rs:3275 app/src/ui/add_account.rs:3596
 msgid ""
 "{provider}'s sign-in page is open in your browser. When you finish there, "
 "this window moves on."
 msgstr "已在瀏覽器中開啟 {provider} 登入頁面。完成登入後，此視窗會繼續下一步。"
 
-#: app/src/ui/add_account.rs:3275
+#: app/src/ui/add_account.rs:3298
 msgid ""
 "This copy of Penguin Mail was built without Google sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4500,7 +4500,7 @@ msgstr ""
 "此版本的 Penguin Mail 未包含 Google 登入功能。請從 github.com/c9dev/penguin-"
 "mail/releases 取得發行版本。"
 
-#: app/src/ui/add_account.rs:3278
+#: app/src/ui/add_account.rs:3301
 msgid ""
 "This copy of Penguin Mail was built without Microsoft sign-in. Get a release "
 "from github.com/c9dev/penguin-mail/releases."
@@ -4508,7 +4508,7 @@ msgstr ""
 "此版本的 Penguin Mail 未包含 Microsoft 登入功能。請從 github.com/c9dev/"
 "penguin-mail/releases 取得發行版本。"
 
-#: app/src/ui/add_account.rs:3289
+#: app/src/ui/add_account.rs:3312
 msgid ""
 "Signing in with your own Google client. Google's sign-in page is open in "
 "your browser. When you finish there, this window moves on."
@@ -4516,27 +4516,27 @@ msgstr ""
 "正在使用自己的 Google 用戶端登入。Google 登入頁面已在瀏覽器中開啟，在該處完成"
 "後，此視窗會繼續下一步。"
 
-#: app/src/ui/add_account.rs:3463
+#: app/src/ui/add_account.rs:3486
 msgid "Link copied"
 msgstr "已複製連結"
 
-#: app/src/ui/add_account.rs:3580
+#: app/src/ui/add_account.rs:3603
 msgid "Penguin Mail stops waiting after ten minutes."
 msgstr "Penguin Mail 會在十分鐘後停止等候。"
 
-#: app/src/ui/add_account.rs:3603
+#: app/src/ui/add_account.rs:3626
 msgid "Canceling…"
 msgstr "正在取消…"
 
-#: app/src/ui/add_account.rs:3667
+#: app/src/ui/add_account.rs:3690
 msgid "{account} is added"
 msgstr "已新增 {account}"
 
-#: app/src/ui/add_account.rs:3687
+#: app/src/ui/add_account.rs:3710
 msgid "{account} is ready"
 msgstr "{account} 已準備就緒"
 
-#: app/src/ui/add_account.rs:3971
+#: app/src/ui/add_account.rs:3994
 msgid ""
 "This server cannot tell its messages apart, so Penguin Mail cannot download "
 "from it safely."
@@ -6012,8 +6012,8 @@ msgstr "外出"
 msgid "Could not save the event: {reason}"
 msgstr "無法儲存活動：{reason}"
 
-#: app/src/ui/calendar/next.rs:87 app/src/ui/invitation.rs:836
-#: app/src/ui/invitation.rs:975 app/src/ui/invitation/strip.rs:168
+#: app/src/ui/calendar/next.rs:87 app/src/ui/invitation.rs:842
+#: app/src/ui/invitation.rs:981 app/src/ui/invitation/strip.rs:168
 msgid "Untitled event"
 msgstr "未命名活動"
 
@@ -6065,24 +6065,24 @@ msgid "Show all guests"
 msgstr "顯示所有參與者"
 
 #: app/src/ui/calendar/popover.rs:315 app/src/ui/calendar/popover.rs:776
-#: app/src/ui/invitation.rs:322
+#: app/src/ui/invitation.rs:325
 msgid "Answer"
 msgstr "回覆"
 
-#: app/src/ui/calendar/popover.rs:329 app/src/ui/invitation.rs:333
+#: app/src/ui/calendar/popover.rs:329 app/src/ui/invitation.rs:336
 msgid "Add a note"
 msgstr "新增備註"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:338
+#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:341
 msgid "Note with your answer"
 msgstr "回覆附註"
 
-#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:338
+#: app/src/ui/calendar/popover.rs:333 app/src/ui/invitation.rs:341
 msgid "The organizer reads it with your answer"
 msgstr "主辦人會連同回覆一起閱讀"
 
 #: app/src/ui/calendar/popover.rs:339 app/src/ui/calendar/popover.rs:346
-#: app/src/ui/invitation.rs:371
+#: app/src/ui/invitation.rs:374
 msgid "Propose New Time"
 msgstr "提議新時間"
 
@@ -6385,7 +6385,7 @@ msgstr[0] "{yes} 位已接受，共 {count} 位"
 
 #. The calendar's popover words its people line the same way.
 #: app/src/ui/calendar/words.rs:231 app/src/ui/calendar/words.rs:592
-#: app/src/ui/invitation.rs:1223
+#: app/src/ui/invitation.rs:1230
 msgid "{name}, organizer"
 msgstr "{name}，主辦人"
 
@@ -6504,7 +6504,7 @@ msgstr "主辦人"
 msgid "No answer yet"
 msgstr "尚未回覆"
 
-#: app/src/ui/calendar/words.rs:588 app/src/ui/invitation.rs:1301
+#: app/src/ui/calendar/words.rs:588 app/src/ui/invitation.rs:1308
 msgid "You"
 msgstr "我"
 
@@ -7568,159 +7568,159 @@ msgstr "無法加入行事曆：{reason}"
 msgid "{calendar} ({account})"
 msgstr "{calendar}（{account}）"
 
-#: app/src/ui/invitation.rs:345
+#: app/src/ui/invitation.rs:348
 msgid "What the answer covers"
 msgstr "回覆範圍"
 
-#: app/src/ui/invitation.rs:347
+#: app/src/ui/invitation.rs:350
 msgid "This Event"
 msgstr "此活動"
 
-#: app/src/ui/invitation.rs:352
+#: app/src/ui/invitation.rs:355
 msgid "All Events"
 msgstr "所有活動"
 
-#: app/src/ui/invitation.rs:363
+#: app/src/ui/invitation.rs:366
 msgid "Add a Note"
 msgstr "新增備註"
 
-#: app/src/ui/invitation.rs:386 app/src/ui/invitation.rs:391
+#: app/src/ui/invitation.rs:389 app/src/ui/invitation.rs:394
 msgid "More Answers"
 msgstr "更多回覆方式"
 
-#: app/src/ui/invitation.rs:397 app/src/ui/invitation.rs:402
+#: app/src/ui/invitation.rs:400 app/src/ui/invitation.rs:405
 msgid "Add to Calendar"
 msgstr "加入行事曆"
 
-#: app/src/ui/invitation.rs:410
+#: app/src/ui/invitation.rs:413
 msgid "Calendar to add to"
 msgstr "要加入的行事曆"
 
-#: app/src/ui/invitation.rs:411
+#: app/src/ui/invitation.rs:414
 msgid "The calendar the events go on"
 msgstr "活動加入的行事曆"
 
-#: app/src/ui/invitation.rs:420
+#: app/src/ui/invitation.rs:423
 msgid "Events to add"
 msgstr "要新增的活動"
 
-#: app/src/ui/invitation.rs:425 app/src/ui/invitation.rs:431
+#: app/src/ui/invitation.rs:428 app/src/ui/invitation.rs:434
 #: app/src/ui/sidebar.rs:133
 msgid "Show in Calendar"
 msgstr "在行事曆中顯示"
 
-#: app/src/ui/invitation.rs:483
+#: app/src/ui/invitation.rs:486
 msgid "Penguin Mail needs permission to show this event in Calendar."
 msgstr "Penguin Mail 需要權限才能在行事曆中顯示此活動。"
 
-#: app/src/ui/invitation.rs:892
+#: app/src/ui/invitation.rs:898
 msgid "Added to your calendar"
 msgstr "已加入行事曆"
 
-#: app/src/ui/invitation.rs:894
+#: app/src/ui/invitation.rs:900
 msgid "Added {count} events to your calendar"
 msgid_plural "Added {count} events to your calendar"
 msgstr[0] "已將 {count} 個活動加入行事曆"
 
-#: app/src/ui/invitation.rs:899
+#: app/src/ui/invitation.rs:905
 msgid "Added to {calendar}"
 msgstr "已加入 {calendar}"
 
-#: app/src/ui/invitation.rs:901
+#: app/src/ui/invitation.rs:907
 msgid "Added {count} events to {calendar}"
 msgid_plural "Added {count} events to {calendar}"
 msgstr[0] "已將 {count} 個活動加入 {calendar}"
 
 #. A file with several events names none of them on the card's
 #. head: the list below does, one row each.
-#: app/src/ui/invitation.rs:985
+#: app/src/ui/invitation.rs:991
 msgid "{count} events"
 msgid_plural "{count} events"
 msgstr[0] "{count} 個活動"
 
-#: app/src/ui/invitation.rs:1064
+#: app/src/ui/invitation.rs:1071
 msgid "Pick a Time…"
 msgstr "選擇時間…"
 
-#: app/src/ui/invitation.rs:1106
+#: app/src/ui/invitation.rs:1113
 msgid "No reply yet"
 msgstr "尚未回覆"
 
-#: app/src/ui/invitation.rs:1176
+#: app/src/ui/invitation.rs:1183
 msgid "Half an Hour Later"
 msgstr "半小時後"
 
-#: app/src/ui/invitation.rs:1179
+#: app/src/ui/invitation.rs:1186
 msgid "An Hour Later"
 msgstr "一小時後"
 
-#: app/src/ui/invitation.rs:1181
+#: app/src/ui/invitation.rs:1188
 msgid "Same Time Tomorrow"
 msgstr "明天同一時間"
 
-#: app/src/ui/invitation.rs:1185
+#: app/src/ui/invitation.rs:1192
 msgid "Same Time Next Week"
 msgstr "下週同一時間"
 
-#: app/src/ui/invitation.rs:1200
+#: app/src/ui/invitation.rs:1207
 msgid "You have {event} then"
 msgstr "該時段有 {event}"
 
-#: app/src/ui/invitation.rs:1202
+#: app/src/ui/invitation.rs:1209
 msgid "You have {event} and {other} then"
 msgstr "該時段有 {event} 和 {other}"
 
-#: app/src/ui/invitation.rs:1206
+#: app/src/ui/invitation.rs:1213
 msgid "You have {event} and {count} more then"
 msgid_plural "You have {event} and {count} more then"
 msgstr[0] "該時段有 {event} 與其他 {count} 個活動"
 
-#: app/src/ui/invitation.rs:1219
+#: app/src/ui/invitation.rs:1226
 msgid "Reply to the invitation from {organizer}"
 msgstr "回覆 {organizer} 的邀請"
 
-#: app/src/ui/invitation.rs:1327
+#: app/src/ui/invitation.rs:1334
 msgid "{count} yes"
 msgid_plural "{count} yes"
 msgstr[0] "{count} 位接受"
 
-#: app/src/ui/invitation.rs:1335
+#: app/src/ui/invitation.rs:1342
 msgid "{count} no"
 msgid_plural "{count} no"
 msgstr[0] "{count} 位婉拒"
 
-#: app/src/ui/invitation.rs:1343
+#: app/src/ui/invitation.rs:1350
 msgid "{count} maybe"
 msgid_plural "{count} maybe"
 msgstr[0] "{count} 位暫定"
 
-#: app/src/ui/invitation.rs:1351
+#: app/src/ui/invitation.rs:1358
 msgid "{count} awaiting"
 msgid_plural "{count} awaiting"
 msgstr[0] "{count} 位尚未回覆"
 
-#: app/src/ui/invitation.rs:1359
+#: app/src/ui/invitation.rs:1366
 msgid "{count} guest"
 msgid_plural "{count} guests"
 msgstr[0] "{count} 位參與者"
 
-#: app/src/ui/invitation.rs:1365
+#: app/src/ui/invitation.rs:1372
 msgid "{guests} · {answers}"
 msgstr "{guests} · {answers}"
 
-#: app/src/ui/invitation.rs:1375
+#: app/src/ui/invitation.rs:1382
 msgid "This meeting moved from {when}"
 msgstr "此會議已從 {when} 改至其他時間"
 
-#: app/src/ui/invitation.rs:1378
+#: app/src/ui/invitation.rs:1385
 msgid "The organizer changed this meeting"
 msgstr "主辦人已變更此會議"
 
-#: app/src/ui/invitation.rs:1379
+#: app/src/ui/invitation.rs:1386
 msgid "The organizer canceled this meeting"
 msgstr "主辦人已取消此會議"
 
-#: app/src/ui/invitation.rs:1380
+#: app/src/ui/invitation.rs:1387
 msgid "This meeting is canceled"
 msgstr "此會議已取消"
 
@@ -8577,7 +8577,7 @@ msgid "Mailboxes"
 msgstr "信箱"
 
 #: app/src/ui/sidebar.rs:355 app/src/ui/sidebar.rs:1406
-#: app/src/ui/thread_list.rs:315
+#: app/src/ui/thread_list.rs:317
 msgid "Mail"
 msgstr "郵件"
 
@@ -8782,11 +8782,11 @@ msgstr "保持不變的部分"
 msgid "Sent to {host} and nowhere else."
 msgstr "只會傳送到 {host}，不會傳到其他地方。"
 
-#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:411
+#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:413
 msgid "Matching your mail…"
 msgstr "正在比對您的郵件…"
 
-#: app/src/ui/switch_jmap.rs:151 app/src/ui/switch_jmap.rs:454
+#: app/src/ui/switch_jmap.rs:151 app/src/ui/switch_jmap.rs:456
 msgid "Finish signing in on {provider}'s page in your browser."
 msgstr "請在瀏覽器中的 {provider} 頁面完成登入。"
 
@@ -8849,34 +8849,34 @@ msgstr "內文"
 msgid "New Template"
 msgstr "新增範本"
 
-#: app/src/ui/thread_list.rs:206
+#: app/src/ui/thread_list.rs:208
 msgid "No Mail"
 msgstr "沒有郵件"
 
 #. The two search terms are Gmail's own and stay in English.
-#: app/src/ui/thread_list.rs:224
+#: app/src/ui/thread_list.rs:226
 msgid "Search mail, e.g. from:ann has:attachment"
 msgstr "搜尋郵件，例如 from:ann has:attachment"
 
-#: app/src/ui/thread_list.rs:243
+#: app/src/ui/thread_list.rs:245
 msgid "All Inboxes"
 msgstr "所有收件匣"
 
-#: app/src/ui/thread_list.rs:263 app/src/ui/thread_list.rs:283
+#: app/src/ui/thread_list.rs:265 app/src/ui/thread_list.rs:285
 msgid "Show Mailboxes"
 msgstr "顯示信箱"
 
-#: app/src/ui/thread_list.rs:268
+#: app/src/ui/thread_list.rs:270
 msgid "New Message (C)"
 msgstr "新增郵件（C）"
 
-#: app/src/ui/thread_list.rs:273
+#: app/src/ui/thread_list.rs:275
 msgid "Search (/)"
 msgstr "搜尋（/）"
 
 #. The tooltips already say what these do; the spoken name takes
 #. the words and leaves the keys to a property of their own.
-#: app/src/ui/thread_list.rs:282
+#: app/src/ui/thread_list.rs:284
 msgid "Search mail"
 msgstr "搜尋郵件"
 
@@ -8888,23 +8888,23 @@ msgstr "VIP"
 msgid "Muted"
 msgstr "已靜音"
 
-#: app/src/ui/thread_row.rs:318
+#: app/src/ui/thread_row.rs:323
 msgid "Unread invitation, {sender}, {subject}, {snippet}"
 msgstr "未讀邀請，{sender}，{subject}，{snippet}"
 
-#: app/src/ui/thread_row.rs:319
+#: app/src/ui/thread_row.rs:324
 msgid "Unread, {sender}, {subject}, {snippet}"
 msgstr "未讀，{sender}，{subject}，{snippet}"
 
-#: app/src/ui/thread_row.rs:320
+#: app/src/ui/thread_row.rs:325
 msgid "Invitation, {sender}, {subject}, {snippet}"
 msgstr "邀請，{sender}，{subject}，{snippet}"
 
-#: app/src/ui/thread_row.rs:321
+#: app/src/ui/thread_row.rs:326
 msgid "{sender}, {subject}, {snippet}"
 msgstr "{sender}，{subject}，{snippet}"
 
-#: app/src/ui/thread_row.rs:466
+#: app/src/ui/thread_row.rs:472
 msgid "On the server, {lines}"
 msgstr "在伺服器上，{lines}"
 
@@ -9538,7 +9538,7 @@ msgid "Review"
 msgstr "檢閱"
 
 #: app/src/ui/window/followup.rs:39 app/src/ui/window/followup.rs:43
-#: app/src/ui/window/storage.rs:90
+#: app/src/ui/window/storage.rs:115
 msgid "Hide Until Next Launch"
 msgstr "隱藏至下次啟動"
 
@@ -10166,13 +10166,13 @@ msgstr "{address} 已滿，可能會拒收新郵件"
 msgid "{address} is {percent}% full"
 msgstr "{address} 已使用 {percent}%"
 
-#: app/src/ui/window/storage.rs:85
+#: app/src/ui/window/storage.rs:110
 msgid "Review Storage"
 msgstr "檢視儲存空間"
 
 #. The Follow Up banner's close has the tooltip's words for its
 #. name, so this one says what it hides.
-#: app/src/ui/window/storage.rs:96
+#: app/src/ui/window/storage.rs:121
 msgid "Hide Storage Warning Until Next Launch"
 msgstr "隱藏空間警告至下次啟動"
 
@@ -10774,43 +10774,43 @@ msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1577
+#: sync/src/mailbox.rs:1586
 msgid "The server has not sent this message yet."
 msgstr "伺服器尚未寄出這封郵件。"
 
-#: sync/src/mailbox.rs:1578
+#: sync/src/mailbox.rs:1587
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr "Penguin Mail 尚未確認伺服器已收下這封郵件。"
 
-#: sync/src/mailbox.rs:1588
+#: sync/src/mailbox.rs:1597
 msgid "Sends {when}."
 msgstr "於 {when} 傳送。"
 
-#: sync/src/mailbox.rs:1589
+#: sync/src/mailbox.rs:1598
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "即使 Penguin Mail 已關閉，伺服器仍會寄出。"
 
-#: sync/src/mailbox.rs:1591
+#: sync/src/mailbox.rs:1600
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1598
+#: sync/src/mailbox.rs:1607
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr "請查看寄件備份。Penguin Mail 無法確認是否已寄出。"
 
-#: sync/src/mailbox.rs:1601
+#: sync/src/mailbox.rs:1610
 msgid "Canceled in another app."
 msgstr "已在其他應用程式中取消。"
 
-#: sync/src/mailbox.rs:1603
+#: sync/src/mailbox.rs:1612
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1610
+#: sync/src/mailbox.rs:1619
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1617
+#: sync/src/mailbox.rs:1626
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 
