@@ -142,6 +142,21 @@ row.account-heading { transition: background-color 120ms ease, color 120ms ease;
 .thread-row .marker { opacity: 0.55; }
 .thread-row .starred.marker { opacity: 1; }
 .thread-row .invite.marker { color: var(--accent-color); opacity: 1; }
+/* Send Later's "On the server" chip (phase6_mock.py's `chip`): 24 px
+   tall, 12 px in at each end, 12 px bold text in the accent on 7 % of it.
+   The negative margins keep the sender's line as tall as on any other
+   row. Every Send Later row says when it goes under the subject, in full
+   ink and weight 600, in place of the date; a held row adds the server's
+   line under it, as dim as a preview. */
+.thread-row .held-chip {
+  min-height: 24px; padding: 0 12px 0 11px; margin: -3px 0;
+  border-radius: 999px;
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 7%, transparent);
+  font-size: 0.82em; font-weight: 700;
+}
+.thread-row.scheduled .snippet:not(.held-note),
+.app-dark .thread-row.scheduled .snippet:not(.held-note) { opacity: 1; font-weight: 600; }
 
 /* Sidebar */
 /* 12.5 px, weight 700, in the dim colour (mockups.py's `side_row`: every

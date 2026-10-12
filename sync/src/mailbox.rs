@@ -1345,6 +1345,8 @@ impl<A: Accounts> Mailboxes<A> {
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
                 message_count: 1,
+                scheduled: true,
+                held: crate::outbox::server_holds(item),
                 ..ThreadSummary::default()
             })
             .collect();
@@ -1564,11 +1566,27 @@ pub fn waiting_line(message: &outbox::Queued, now: DateTime<Local>) -> String {
         return gettext("The server has not sent this message yet.");
     }
     let Some(problem) = message.problem.as_deref() else {
-        return fill(
-            &gettext("Sends {when}"),
-            &[("when", &future_date(message.send_at, now))],
-        );
+        let when = sending_date(message.send_at, now);
+        return match crate::outbox::server_holds(message) {
+            // The server sends it at the hour whether or not this computer
+            // is on. The list row shows the second line under the first.
+            true => format!(
+                "{}\n{}",
+                fill(&gettext("Sends {when}."), &[("when", &when)]),
+                gettext("The server sends it even if Penguin Mail is closed."),
+            ),
+            false => fill(&gettext("Sends {when}"), &[("when", &when)]),
+        };
     };
+    // A hold whose fate nobody could learn: the app never tried to send
+    // it, so neither "trying again" nor "stopped trying" is true. The
+    // preview holds two lines, so what to do comes first.
+    if message.held.is_some() {
+        return gettext("Check Sent. Penguin Mail could not confirm it went out.");
+    }
+    if crate::outbox::canceled_elsewhere_row(message) {
+        return gettext("Canceled in another app.");
+    }
     let unsent = gettext("Not sent");
     let problem = match problem.trim_end_matches(['.', ' ']) {
         "" => unsent.as_str(),
@@ -1606,6 +1624,18 @@ fn counted(rows: usize) -> String {
 /// 21:00", "tomorrow at 08:00", "Monday at 08:00" within the week, then
 /// "Tue 3 Nov at 08:00".
 pub fn future_date(ts: EpochMillis, now: DateTime<Local>) -> String {
+    date_words(ts, now, true)
+}
+
+/// When a Send Later message goes: "today at 21:00", "tomorrow at
+/// 08:00", then "Fri 16 Oct at 09:00", since a weekday alone reads as
+/// this week's on a row that may wait longer.
+fn sending_date(ts: EpochMillis, now: DateTime<Local>) -> String {
+    date_words(ts, now, false)
+}
+
+/// `future_date`, with or without the bare weekday for the coming week.
+fn date_words(ts: EpochMillis, now: DateTime<Local>, weekdays: bool) -> String {
     use chrono::Datelike;
     let Some(when) = Local.timestamp_millis_opt(ts).single() else {
         return String::new();
@@ -1615,7 +1645,7 @@ pub fn future_date(ts: EpochMillis, now: DateTime<Local>) -> String {
     let pattern = match (when.date_naive() - now.date_naive()).num_days() {
         ..=0 => gettext("today at %H:%M"),
         1 => gettext("tomorrow at %H:%M"),
-        2..=6 => gettext("%A at %H:%M"),
+        2..=6 if weekdays => gettext("%A at %H:%M"),
         _ if when.year() == now.year() => gettext("%a %-d %b at %H:%M"),
         _ => gettext("%-d %b %Y at %H:%M"),
     };
@@ -1679,6 +1709,8 @@ fn row_of(hit: &MessageMeta, alone: bool) -> ThreadSummary {
             .map(|a| a.email.clone())
             .unwrap_or_default(),
         invitation: false,
+        scheduled: false,
+        held: false,
     }
 }
 

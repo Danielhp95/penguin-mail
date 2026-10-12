@@ -446,3 +446,30 @@ async fn list_mail_reads_a_smart_mailbox_by_name() {
         Err("There is no smart mailbox called Boats. There are: From Ann.".into())
     );
 }
+
+#[test]
+fn cancel_send_tells_the_model_what_the_server_had_already_sent() {
+    let cancelled = mailrs_sync::Cancelled { already_sent: 2, ..Default::default() };
+    let result = super::super::queue::cancel_result(&cancelled, 0);
+    assert_eq!(result["already_sent"], json!(2));
+    assert_eq!(
+        result["note_sent"],
+        json!("The server had already sent those messages; they are in Sent.")
+    );
+}
+
+#[test]
+fn cancel_send_counts_holds_the_server_kept_as_still_scheduled() {
+    let cancelled = mailrs_sync::Cancelled {
+        still_held: 1,
+        cancelled_elsewhere: 1,
+        unconfirmed: 1,
+        ..Default::default()
+    };
+    let result = super::super::queue::cancel_result(&cancelled, 0);
+    assert_eq!(
+        (&result["still_scheduled"], &result["canceled_elsewhere"], &result["unconfirmed"]),
+        (&json!(1), &json!(1), &json!(1))
+    );
+    assert!(result.get("note").is_none(), "nothing blames Gmail: {result}");
+}
