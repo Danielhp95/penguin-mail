@@ -219,7 +219,7 @@ impl GmailClient {
                 Ok(response) if matches!(response.status(), StatusCode::OK | StatusCode::CREATED) => {
                     open.done = true;
                     sent.store(size, Ordering::SeqCst);
-                    return response.json().await.map_err(|e| GmailError::Decode(e.to_string()));
+                    return crate::client::json_of(response).await;
                 }
                 Ok(response) if response.status() == StatusCode::PERMANENT_REDIRECT => {
                     // Drive's 308 says how much it holds: `Range:

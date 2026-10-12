@@ -23,6 +23,20 @@ use crate::model::{
 use crate::oauth::{AccessToken, Granted, LoopbackListener, OAuthClient, Pkce, random_token};
 use crate::people::{self, ConnectionsPage, ContactFields, Person};
 
+/// The largest JSON answer most calls take: label and message lists,
+/// metadata, history, contacts.
+const JSON_LIMIT: usize = 16 << 20;
+
+/// The largest answer for a call that carries a whole message or file as
+/// base64 in JSON. Gmail takes mail up to 50 MB, which is 67 MB as base64.
+const MESSAGE_LIMIT: usize = 80 << 20;
+
+/// Contact photos are small files; this is far above any real one.
+const PHOTO_LIMIT: usize = 8 << 20;
+
+/// How much of a failed answer is kept for the error and the log.
+const ERROR_LIMIT: usize = 64 << 10;
+
 pub const GMAIL_API_BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 /// The headers a `format=metadata` fetch asks for. The two unsubscribe
@@ -252,7 +266,7 @@ impl GmailClient {
     }
 
     pub async fn message_full(&self, id: &str) -> Result<Message, GmailError> {
-        self.call(cost::GET, || {
+        self.call_message(cost::GET, || {
             self.http()
                 .get(self.url(&format!("messages/{id}")))
                 .query(&[("format", "full")])
@@ -604,7 +618,7 @@ impl GmailClient {
             raw: String,
         }
         let message: Raw = self
-            .call(cost::GET, || {
+            .call_message(cost::GET, || {
                 self.http()
                     .get(self.url(&format!("messages/{id}")))
                     .query(&[("format", "raw")])
@@ -622,7 +636,7 @@ impl GmailClient {
         attachment_id: &str,
     ) -> Result<Vec<u8>, GmailError> {
         let body: AttachmentBody = self
-            .call(cost::ATTACHMENT, || {
+            .call_message(cost::ATTACHMENT, || {
                 self.http().get(self.url(&format!(
                     "messages/{message_id}/attachments/{attachment_id}"
                 )))
@@ -648,7 +662,7 @@ impl GmailClient {
         sync_token: Option<&str>,
     ) -> Result<ConnectionsPage, GmailError> {
         let url = format!("{}/people/me/connections", self.people_url);
-        let body = self
+        let response = self
             .send_request(cost::CONNECTIONS, || {
                 let mut request = self.http().get(&url).query(&[
                     ("personFields", people::PERSON_FIELDS),
@@ -663,10 +677,8 @@ impl GmailClient {
                 }
                 request
             })
-            .await?
-            .text()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))?;
+            .await?;
+        let body = text_of(response, JSON_LIMIT).await?;
         people::parse_connections(&body)
     }
 
@@ -685,10 +697,8 @@ impl GmailClient {
                     .query(&[("personFields", people::PERSON_FIELDS)])
                     .json(&body)
             })
-            .await?
-            .text()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))?;
+            .await?;
+        let reply = text_of(reply, JSON_LIMIT).await?;
         Ok(people::parse_person(&reply)?.0)
     }
 
@@ -708,10 +718,8 @@ impl GmailClient {
             .send_request(cost::CONNECTIONS, || {
                 self.http().get(&url).query(&[("personFields", "metadata")])
             })
-            .await?
-            .text()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))?;
+            .await?;
+        let current = text_of(current, JSON_LIMIT).await?;
         let (_, etag) = people::parse_person(&current)?;
         let mut body = fields.body();
         body["etag"] = json!(etag);
@@ -727,10 +735,8 @@ impl GmailClient {
                     ])
                     .json(&body)
             })
-            .await?
-            .text()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))?;
+            .await?;
+        let reply = text_of(reply, JSON_LIMIT).await?;
         Ok(people::parse_person(&reply)?.0)
     }
 
@@ -741,7 +747,7 @@ impl GmailClient {
         if !response.status().is_success() {
             return Err(error_from_response(response).await);
         }
-        Ok(response.bytes().await?.to_vec())
+        read_capped(response, PHOTO_LIMIT).await
     }
 
     /// The bucket this client spends from, so a caller can see whether the
@@ -787,10 +793,7 @@ impl GmailClient {
         build: impl Fn(&str) -> RequestBuilder,
     ) -> Result<T, GmailError> {
         let response = self.send_request(0, || build(url)).await?;
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))
+        json_of(response).await
     }
 
     /// As [`GmailClient::call_at`], for a call whose answer has no body,
@@ -843,11 +846,27 @@ impl GmailClient {
         units: u32,
         build: impl Fn() -> RequestBuilder,
     ) -> Result<T, GmailError> {
+        self.call_up_to(units, JSON_LIMIT, build).await
+    }
+
+    /// As [`GmailClient::call`], for an answer that may hold a whole
+    /// message or file, which passes the usual cap.
+    async fn call_message<T: DeserializeOwned>(
+        &self,
+        units: u32,
+        build: impl Fn() -> RequestBuilder,
+    ) -> Result<T, GmailError> {
+        self.call_up_to(units, MESSAGE_LIMIT, build).await
+    }
+
+    async fn call_up_to<T: DeserializeOwned>(
+        &self,
+        units: u32,
+        limit: usize,
+        build: impl Fn() -> RequestBuilder,
+    ) -> Result<T, GmailError> {
         let response = self.send_request(units, build).await?;
-        let body = response
-            .text()
-            .await
-            .map_err(|e| GmailError::Decode(e.to_string()))?;
+        let body = text_of(response, limit).await?;
         // Gmail answers some lists that have nothing in them, such as the
         // filters of an account with none, with no body at all, not `{}`.
         let body = if body.trim().is_empty() { "{}" } else { &body };
@@ -914,6 +933,32 @@ fn metadata_query() -> Vec<(&'static str, &'static str)> {
     query
 }
 
+/// The body, read a chunk at a time and refused once it passes `limit`,
+/// so a large answer never sits whole in memory before it is refused.
+pub(crate) async fn read_capped(mut response: Response, limit: usize) -> Result<Vec<u8>, GmailError> {
+    if response.content_length().is_some_and(|n| n > limit as u64) {
+        return Err(GmailError::TooLarge { limit });
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if bytes.len() + chunk.len() > limit {
+            return Err(GmailError::TooLarge { limit });
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+async fn text_of(response: Response, limit: usize) -> Result<String, GmailError> {
+    String::from_utf8(read_capped(response, limit).await?).map_err(|e| GmailError::Decode(e.to_string()))
+}
+
+/// A JSON answer, read under the usual cap.
+pub(crate) async fn json_of<T: DeserializeOwned>(response: Response) -> Result<T, GmailError> {
+    let bytes = read_capped(response, JSON_LIMIT).await?;
+    serde_json::from_slice(&bytes).map_err(|e| GmailError::Decode(e.to_string()))
+}
+
 pub(crate) async fn error_from_response(response: Response) -> GmailError {
     let status = response.status().as_u16();
     let retry_after = response
@@ -922,7 +967,7 @@ pub(crate) async fn error_from_response(response: Response) -> GmailError {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(Duration::from_secs);
-    let body = response.text().await.unwrap_or_default();
+    let body = String::from_utf8_lossy(&read_capped(response, ERROR_LIMIT).await.unwrap_or_default()).into_owned();
     match status {
         401 => GmailError::NeedsReauth,
         404 => GmailError::NotFound,

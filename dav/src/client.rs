@@ -380,6 +380,23 @@ fn absolute(asked: &Url, href: &str) -> String {
     asked.join(&wire_href(href)).map(|url| canonical_href(url.as_str())).unwrap_or_else(|_| canonical_href(href))
 }
 
+/// How much of a failed write's answer is kept to explain it.
+const ERROR_BYTES: usize = 64 << 10;
+
+/// The start of the body, at most `limit` bytes, read a chunk at a time
+/// and abandoned once it is full.
+async fn read_prefix(mut response: reqwest::Response, limit: usize) -> String {
+    let mut bytes = Vec::new();
+    while bytes.len() < limit {
+        match response.chunk().await {
+            Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
+            _ => break,
+        }
+    }
+    bytes.truncate(limit);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn check(answer: Answer) -> Result<Answer, DavError> {
     let detail = |body: &str| body.chars().take(200).collect::<String>();
     match answer.status.as_u16() {
@@ -559,7 +576,9 @@ impl DavApi for DavClient {
         };
         let status = response.status();
         let etag = response.headers().get("ETag").and_then(|e| e.to_str().ok()).map(str::to_string);
-        let text = response.text().await.unwrap_or_default();
+        // The body of a success is never read, and what explains a failure
+        // is a few lines at the start.
+        let text = if status.is_success() { String::new() } else { read_prefix(response, ERROR_BYTES).await };
         check(Answer { url, status, etag: etag.clone(), retry_after: None, dav: None, body: text })?;
         Ok(etag)
     }
@@ -587,5 +606,33 @@ impl DavApi for DavClient {
 
     fn host(&self) -> &str {
         self.base.host_str().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::read_prefix;
+
+    #[tokio::test]
+    async fn a_long_answer_is_read_only_as_far_as_the_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500).set_body_bytes(vec![b'x'; 5 << 20]))
+            .mount(&server)
+            .await;
+        let response = reqwest::get(server.uri()).await.unwrap();
+        let kept = read_prefix(response, 64 << 10).await;
+        assert_eq!(kept.len(), 64 << 10);
+    }
+
+    #[tokio::test]
+    async fn a_short_answer_is_read_whole() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(500).set_body_string("nope")).mount(&server).await;
+        let response = reqwest::get(server.uri()).await.unwrap();
+        assert_eq!(read_prefix(response, 64 << 10).await, "nope");
     }
 }
