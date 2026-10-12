@@ -2189,8 +2189,9 @@ impl Composer {
             Some("composer.edit-markdown"),
         );
         menu.append_section(None, &switch);
+        // A letter rather than ⋮, so it does not read as the header's More.
         let more = gtk::MenuButton::builder()
-            .icon_name("view-more-symbolic")
+            .icon_name("format-text-rich-symbolic")
             .tooltip_text(gettext("More Formatting"))
             .menu_model(&menu)
             .css_classes(["flat"])
