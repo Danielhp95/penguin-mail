@@ -891,7 +891,7 @@ fn floating_in(line: &str, zone: chrono_tz::Tz) -> String {
     }
     let Some(utc) = chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S")
         .ok()
-        .and_then(|naive| local::instant(zone, naive))
+        .and_then(|naive| local::instant(&zone, naive))
         .and_then(DateTime::<Utc>::from_timestamp_millis)
     else {
         return line.to_string();

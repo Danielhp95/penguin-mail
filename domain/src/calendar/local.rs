@@ -49,7 +49,7 @@ fn system() -> Tz {
 /// repeat takes the first; one they skip, as 01:30 the night they go
 /// forward, moves forward by the gap (RFC 5545 section 3.3.5), read with
 /// the offset in force a day earlier.
-pub fn instant(zone: Tz, naive: NaiveDateTime) -> Option<EpochMillis> {
+pub fn instant<Z: TimeZone>(zone: &Z, naive: NaiveDateTime) -> Option<EpochMillis> {
     match zone.from_local_datetime(&naive) {
         LocalResult::Single(at) | LocalResult::Ambiguous(at, _) => Some(at.timestamp_millis()),
         LocalResult::None => {

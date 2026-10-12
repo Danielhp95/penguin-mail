@@ -14,7 +14,7 @@ use calcard::icalendar::{
 use calcard::{Entry, Parser};
 use chrono::{DateTime, NaiveDate, Utc};
 use mailrs_domain::EpochMillis;
-use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, occurrence_id};
+use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, named_zone, occurrence_id};
 use mailrs_domain::invitation::Answer;
 
 use crate::ids::resource_id;
@@ -70,26 +70,24 @@ fn when_of(entry: &ICalendarEntry, zones: &Zones) -> Option<When> {
         return Some(When { at: day.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(), zone: "UTC".into(), all_day: true });
     }
     let result = value.to_date_time()?;
-    // A floating time, with no TZID and no Z, means the same clock time
-    // wherever the person is: it reads in the computer's zone, and an
-    // empty zone writes it back floating.
-    if result.offset.is_none() && entry.tz_id().is_none() {
-        let at = local::instant(local::zone(), result.date_time)?;
-        return Some(When { at, zone: String::new(), all_day: false });
+    if result.offset.is_some() {
+        let at = result.to_date_time_with_tz(Tz::UTC)?.timestamp_millis();
+        return Some(When { at, zone: "UTC".into(), all_day: false });
     }
-    let named = entry.tz_id().and_then(|id| zones.resolve(id));
-    let tz = match (result.offset, named) {
-        (Some(_), _) => Tz::UTC,
-        (None, Some(zone)) => Tz::Tz(zone),
-        // A TZID nothing resolves.
-        (None, None) => Tz::UTC,
+    // A clock time reads in its TZID's zone. A floating one (no TZID)
+    // means the same clock time wherever the person is, so it reads in
+    // the computer's zone and its empty zone writes it back floating. A
+    // TZID nothing here reads also reads in the computer's zone, and its
+    // text stays as the zone so a write gives it back as received.
+    let (zone, name) = match entry.tz_id() {
+        None => (local::zone(), String::new()),
+        Some(id) => match zones.resolve(id).or_else(|| named_zone(id)) {
+            Some(zone) => (zone, zone.name().to_string()),
+            None => (local::zone(), id.to_string()),
+        },
     };
-    let at = result.to_date_time_with_tz(tz)?.timestamp_millis();
-    let zone = match (result.offset, named) {
-        (None, Some(zone)) => zone.name().to_string(),
-        _ => "UTC".to_string(),
-    };
-    Some(When { at, zone, all_day: false })
+    let at = local::instant(&zone, result.date_time)?;
+    Some(When { at, zone: name, all_day: false })
 }
 
 fn line_of(entry: &ICalendarEntry) -> String {
@@ -329,10 +327,21 @@ fn time_line(name: &str, at: EpochMillis, zone: &str, all_day: bool) -> String {
     if zone.is_empty() {
         return format!("{name}:{}", utc.with_timezone(&local::zone()).format("%Y%m%dT%H%M%S"));
     }
-    match zone.parse::<chrono_tz::Tz>() {
-        Ok(tz) if zone != "UTC" => format!("{name};TZID={zone}:{}", utc.with_timezone(&tz).format("%Y%m%dT%H%M%S")),
-        _ => format!("{name}:{}", utc.format("%Y%m%dT%H%M%SZ")),
+    match named_zone(zone) {
+        Some(_) if zone == "UTC" => format!("{name}:{}", utc.format("%Y%m%dT%H%M%SZ")),
+        Some(tz) => format!("{name};TZID={}:{}", tz.name(), utc.with_timezone(&tz).format("%Y%m%dT%H%M%S")),
+        // A TZID nothing here reads goes back as it came, with the clock
+        // time it was read in.
+        None => format!("{name};TZID={}:{}", tzid_text(zone), utc.with_timezone(&local::zone()).format("%Y%m%dT%H%M%S")),
     }
+}
+
+/// `tzid` as a parameter value: quoted when it holds a colon, semicolon
+/// or comma. A parameter value cannot hold a double quote, so none is
+/// kept.
+fn tzid_text(tzid: &str) -> String {
+    let bare = tzid.replace('"', "");
+    if bare.contains([':', ';', ',']) { format!("\"{bare}\"") } else { bare }
 }
 
 fn fresh() -> Result<ICalendar, DavError> {
