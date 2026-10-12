@@ -375,6 +375,22 @@ fn override_entry(current: &Value, key: &str, inner: Option<&str>, value: Value)
     }
 }
 
+/// Puts one patch entry in `patch`. Two entries for one new override, or
+/// for a series with no overrides yet, name the same path with an object
+/// each; their keys join, since a patch names a path once.
+fn merge_entry(patch: &mut Map<String, Value>, path: String, value: Value) {
+    match (patch.get_mut(&path), value) {
+        (Some(Value::Object(held)), Value::Object(more)) => {
+            for (key, value) in more {
+                merge_entry(held, key, value);
+            }
+        }
+        (_, value) => {
+            patch.insert(path, value);
+        }
+    }
+}
+
 /// What one save sends: the patch, and the parts where the server's
 /// version stayed.
 struct Plan {
@@ -817,27 +833,36 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         let Some(participant) = jscal::participant_for(&object, &who) else {
             return Err(BackendError::Refused(gettext("You are not a guest of this event.")));
         };
-        let status = json!(jscal::status_of(Some(answer)));
-        let (path, value) = match occurrence {
-            None => (format!("participants/{}/participationStatus", pointer(&participant)), status),
-            Some(original) => {
-                let key = jscal::override_key(&object, original);
-                let over = object.get("recurrenceOverrides").and_then(|o| o.get(&key));
-                let escaped = pointer(&participant);
-                let whole = format!("participants/{escaped}");
-                // An override may replace the participant map, or one
-                // participant, whole; the answer then goes inside that
-                // copy, since a key inside another key is an invalidPatch.
-                if over.and_then(|o| o.get("participants")).is_some_and(|p| p.get(&participant).is_some()) {
-                    (format!("recurrenceOverrides/{}/participants/{escaped}/participationStatus", pointer(&key)), status)
-                } else if over.and_then(|o| o.get(&whole)).is_some_and(Value::is_object) {
-                    (format!("recurrenceOverrides/{}/{}/participationStatus", pointer(&key), pointer(&whole)), status)
-                } else {
-                    override_entry(&object, &key, Some(&format!("{whole}/participationStatus")), status)
+        // The note goes on the participant too, where a server that
+        // schedules puts it in the REPLY it sends.
+        let mut fields = vec![("participationStatus", json!(jscal::status_of(Some(answer))))];
+        if let Some(note) = note.filter(|n| !n.trim().is_empty()) {
+            fields.push(("participationComment", json!(note)));
+        }
+        let mut patch = Map::new();
+        for (field, value) in fields {
+            let (path, value) = match occurrence {
+                None => (format!("participants/{}/{field}", pointer(&participant)), value),
+                Some(original) => {
+                    let key = jscal::override_key(&object, original);
+                    let over = object.get("recurrenceOverrides").and_then(|o| o.get(&key));
+                    let escaped = pointer(&participant);
+                    let whole = format!("participants/{escaped}");
+                    // An override may replace the participant map, or one
+                    // participant, whole; the answer then goes inside that
+                    // copy, since a key inside another key is an invalidPatch.
+                    if over.and_then(|o| o.get("participants")).is_some_and(|p| p.get(&participant).is_some()) {
+                        (format!("recurrenceOverrides/{}/participants/{escaped}/{field}", pointer(&key)), value)
+                    } else if over.and_then(|o| o.get(&whole)).is_some_and(Value::is_object) {
+                        (format!("recurrenceOverrides/{}/{}/{field}", pointer(&key), pointer(&whole)), value)
+                    } else {
+                        override_entry(&object, &key, Some(&format!("{whole}/{field}")), value)
+                    }
                 }
-            }
-        };
-        let update = EventWrite::Update { id: owner.to_string(), patch: Map::from_iter([(path, value)]) };
+            };
+            merge_entry(&mut patch, path, value);
+        }
+        let update = EventWrite::Update { id: owner.to_string(), patch };
         match self.api().set_calendar_event(&update, true, None).await {
             Ok(_) => {}
             Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods" => {

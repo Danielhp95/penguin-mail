@@ -838,3 +838,26 @@ async fn a_burst_too_long_for_one_read_ends_where_it_got_to_and_goes_on_next_tim
     let rest = calendar.event_changes("cal-1", Some(&token), None, 0).await.unwrap();
     assert_eq!(rest.events.len(), page_size);
 }
+
+#[tokio::test]
+async fn an_answer_with_a_note_saves_the_note_for_the_organizer() {
+    let h = calendared().await;
+    let id = h.fake.add_event(invited());
+    calendar(&h).answer_event("cal-1", &id, "me@example.com", Answer::Maybe, Some("Late by ten minutes")).await.unwrap();
+    let me = &h.fake.event(&id).unwrap()["participants"]["p2"];
+    assert_eq!((me["participationStatus"].as_str(), me["participationComment"].as_str()), (Some("tentative"), Some("Late by ten minutes")));
+}
+
+#[tokio::test]
+async fn an_answer_with_a_note_to_one_occurrence_goes_into_its_new_override() {
+    let h = calendared().await;
+    let mut weekly = invited();
+    weekly["recurrenceRule"] = json!({"@type": "RecurrenceRule", "frequency": "weekly"});
+    let id = h.fake.add_event(weekly);
+    let series = first_event(&h).await;
+    let one = occurrence_id(&series, series.start + 7 * DAY);
+    calendar(&h).answer_event("cal-1", &one, "me@example.com", Answer::No, Some("Away that week")).await.unwrap();
+    let over = &h.fake.event(&id).unwrap()["recurrenceOverrides"]["2026-10-15T18:00:00"];
+    assert_eq!(over["participants/p2/participationStatus"], "declined");
+    assert_eq!(over["participants/p2/participationComment"], "Away that week");
+}
