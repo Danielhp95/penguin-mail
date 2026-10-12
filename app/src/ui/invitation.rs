@@ -168,6 +168,9 @@ pub struct EventCard {
     /// with the answer. Hidden until Add a Note opens it, and emptied
     /// when another invitation goes up.
     note: gtk::Entry,
+    /// Add a Note opened the note for the invitation on show, so a redraw
+    /// of the same invitation keeps it open even while it is empty.
+    note_opened: Cell<bool>,
     add: gtk::Button,
     /// The calendars a file's events can go to, and the drop-down that
     /// picks one. Empty until the window has asked the account, and for
@@ -559,6 +562,7 @@ impl EventCard {
             answers,
             buttons,
             note,
+            note_opened: Cell::new(false),
             add,
             targets: RefCell::new(Vec::new()),
             no_add: Cell::new(false),
@@ -594,6 +598,7 @@ impl EventCard {
             if let Some(popover) = card.more.popover() {
                 popover.popdown();
             }
+            card.note_opened.set(true);
             card.note.set_visible(true);
             card.note.grab_focus();
         });
@@ -641,6 +646,7 @@ impl EventCard {
             .is_some_and(|shown| shown.invitation.uid == showing.invitation.uid);
         if !same {
             self.note.set_text("");
+            self.note_opened.set(false);
             self.targets.borrow_mut().clear();
         }
         self.draw(&showing);
@@ -1004,9 +1010,10 @@ impl EventCard {
         // question, so neither gets answer buttons.
         let answerable = event.card() == Card::Answer;
         self.answers.set_visible(answerable);
-        // The note opens from Add a Note, or stays open while it holds
-        // words for this invitation.
-        self.note.set_visible(answerable && !self.note.text().is_empty());
+        // The note opens from Add a Note and stays open for this
+        // invitation, through a redraw, as it does while it holds words.
+        self.note
+            .set_visible(answerable && (self.note_opened.get() || !self.note.text().is_empty()));
         // Only an invitation to one occurrence of a series leaves the
         // question open; an answer to anything else covers the lot.
         self.reach
