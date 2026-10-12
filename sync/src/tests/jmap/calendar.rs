@@ -443,3 +443,229 @@ async fn an_occurrence_deleted_elsewhere_does_not_come_back() {
     assert!(matches!(refused, BackendError::NotFound), "{refused:?}");
     assert_eq!(h.fake.event(&id).unwrap()["recurrenceOverrides"]["2026-10-13T09:00:00"], json!({"excluded": true}));
 }
+
+/// The one-occurrence change the editor makes of `series` at `original`,
+/// through the domain's own step.
+fn renamed_occurrence(series: &Event, original: i64, title: &str) -> Event {
+    use mailrs_domain::calendar::series::{Picked, RepeatScope, Step, change};
+    let picked = Picked { original_start: original, start: original };
+    let edited = Event { title: title.into(), start: original, end: original + (series.end - series.start), ..series.clone() };
+    let steps = change(series, &[], picked, edited, RepeatScope::This, "pmnew");
+    let [Step::Save(one)] = steps.as_slice() else { panic!("{steps:?}") };
+    one.clone()
+}
+
+fn weekly() -> Value {
+    let mut weekly = rota("cal-1");
+    weekly["recurrenceRule"] = json!({"@type": "RecurrenceRule", "frequency": "weekly"});
+    weekly
+}
+
+#[tokio::test]
+async fn an_occurrence_renamed_here_follows_its_series_moved_elsewhere() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let one = renamed_occurrence(&series, series.start + 7 * DAY, "Rota, renamed");
+    elsewhere(&h, &id, "start", json!("2026-10-06T10:00:00")).await;
+    let saved = calendar(&h).put_event(&one, None, false, Notify::Nobody).await.unwrap();
+    let overrides = h.fake.event(&id).unwrap()["recurrenceOverrides"].clone();
+    assert_eq!(overrides, json!({"2026-10-13T10:00:00": {"title": "Rota, renamed"}}), "no second event at 09:00");
+    assert_eq!((saved.title.as_str(), saved.start), ("Rota, renamed", series.start + 7 * DAY + HOUR));
+    assert!(saved.kept_theirs.is_empty());
+}
+
+#[tokio::test]
+async fn an_occurrence_of_a_series_moved_to_another_day_is_refused() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let one = renamed_occurrence(&series, series.start + 7 * DAY, "Rota, renamed");
+    elsewhere(&h, &id, "start", json!("2026-10-07T09:00:00")).await;
+    let refused = calendar(&h).put_event(&one, None, false, Notify::Nobody).await.unwrap_err();
+    assert!(matches!(refused, BackendError::Changed), "{refused:?}");
+    let no_series_etag = Event { series_etag: String::new(), ..one };
+    let refused = calendar(&h).put_event(&no_series_etag, None, false, Notify::Nobody).await.unwrap_err();
+    assert!(matches!(refused, BackendError::Changed), "{refused:?}");
+    assert!(h.fake.event(&id).unwrap().get("recurrenceOverrides").is_none());
+}
+
+#[tokio::test]
+async fn an_occurrence_change_carries_only_what_the_person_changed() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let one = renamed_occurrence(&series, series.start + 7 * DAY, "Rota, renamed");
+    elsewhere(&h, &id, "locations", json!({"l1": {"@type": "Location", "name": "The shed"}})).await;
+    calendar(&h).put_event(&one, None, false, Notify::Nobody).await.unwrap();
+    let overrides = h.fake.event(&id).unwrap()["recurrenceOverrides"].clone();
+    assert_eq!(overrides, json!({"2026-10-13T09:00:00": {"title": "Rota, renamed"}}), "the stale empty place stays out");
+}
+
+#[tokio::test]
+async fn deleting_an_occurrence_of_a_moved_series_is_refused() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let occurrence = occurrence_id(&series, series.start + 7 * DAY);
+    elsewhere(&h, &id, "start", json!("2026-10-06T10:00:00")).await;
+    let refused = calendar(&h).remove_event("cal-1", &occurrence, None, Notify::Nobody).await.unwrap_err();
+    assert!(matches!(refused, BackendError::Changed), "{refused:?}");
+    assert!(h.fake.event(&id).unwrap().get("recurrenceOverrides").is_none());
+}
+
+#[tokio::test]
+async fn a_guest_added_here_keeps_a_name_changed_elsewhere() {
+    let h = calendared().await;
+    let mut mine = rota("cal-1");
+    mine["participants"] = json!({
+        "p1": {"@type": "Participant", "calendarAddress": "mailto:me@example.com", "roles": {"owner": true, "attendee": true}, "participationStatus": "accepted"},
+        "p2": {"@type": "Participant", "name": "Inês", "calendarAddress": "mailto:ines@allotment.example", "roles": {"attendee": true}}
+    });
+    let id = h.fake.add_event(mine);
+    let mut event = first_event(&h).await;
+    let held = event.etag.clone();
+    elsewhere(&h, &id, "participants/p2/name", json!("Inês Costa")).await;
+    event.guests.push(mailrs_domain::calendar::Guest { email: "bea@allotment.example".into(), name: Some("Bea".into()), ..Default::default() });
+    let saved = calendar(&h).put_event(&event, Some(&held), false, Notify::Nobody).await.unwrap();
+    let stored = h.fake.event(&id).unwrap();
+    assert_eq!(stored["participants"]["p2"]["name"], "Inês Costa");
+    let addresses: Vec<&str> = stored["participants"].as_object().unwrap().values().filter_map(|p| p["calendarAddress"].as_str()).collect();
+    assert!(addresses.contains(&"mailto:bea@allotment.example"), "{addresses:?}");
+    assert!(saved.kept_theirs.is_empty());
+}
+
+#[tokio::test]
+async fn a_delete_reads_the_parts_when_the_server_keeps_no_stamp() {
+    let h = calendared().await;
+    let id = h.fake.add_event(rota("cal-1"));
+    let calm = h.fake.add_event(json!({"@type": "Event", "uid": "calm@example.com", "title": "Calm", "calendarIds": {"cal-1": true}, "start": "2026-10-07T09:00:00", "duration": "PT1H"}));
+    h.fake.with(|s| {
+        for event in s.events.values_mut() {
+            event.as_object_mut().unwrap().remove("updated");
+        }
+    });
+    let page = calendar(&h).event_changes("cal-1", None, None, 0).await.unwrap();
+    let etag = |id: &str| page.events.iter().find(|e| e.id == id).unwrap().etag.clone();
+    h.fake.with(|s| s.events.get_mut(&id).unwrap()["title"] = json!("Elsewhere"));
+    let refused = calendar(&h).remove_event("cal-1", &id, Some(&etag(&id)), Notify::Nobody).await.unwrap_err();
+    assert!(matches!(refused, BackendError::Changed), "{refused:?}");
+    assert!(h.fake.event(&id).is_some());
+    calendar(&h).remove_event("cal-1", &calm, Some(&etag(&calm)), Notify::Nobody).await.unwrap();
+    assert!(h.fake.event(&calm).is_none());
+}
+
+fn invited_weekly(me: &str) -> Value {
+    let mut weekly = invited();
+    weekly["recurrenceRule"] = json!({"@type": "RecurrenceRule", "frequency": "weekly"});
+    let mine = weekly["participants"]["p2"].take();
+    weekly["participants"].as_object_mut().unwrap().remove("p2");
+    weekly["participants"][me] = mine;
+    weekly
+}
+
+#[tokio::test]
+async fn an_answer_escapes_a_participant_id_with_a_slash() {
+    let h = calendared().await;
+    let mut weekly = invited_weekly("p/2");
+    weekly["recurrenceOverrides"] = json!({"2026-10-15T18:00:00": {"title": "Planting plan, outside"}});
+    let id = h.fake.add_event(weekly);
+    let series = first_event(&h).await;
+    let occurrence = occurrence_id(&series, series.start + 7 * DAY);
+    calendar(&h).answer_event("cal-1", &occurrence, "me@example.com", Answer::Maybe, None).await.unwrap();
+    let over = &h.fake.event(&id).unwrap()["recurrenceOverrides"]["2026-10-15T18:00:00"];
+    assert_eq!(over["participants/p~12/participationStatus"], "tentative", "{over}");
+}
+
+#[tokio::test]
+async fn an_answer_goes_inside_a_participant_the_override_holds_whole() {
+    let h = calendared().await;
+    let mut weekly = invited_weekly("p2");
+    weekly["recurrenceOverrides"] = json!({"2026-10-15T18:00:00": {
+        "participants/p2": {"@type": "Participant", "calendarAddress": "mailto:me@example.com", "roles": {"attendee": true}, "participationStatus": "needs-action"}
+    }});
+    let id = h.fake.add_event(weekly);
+    let series = first_event(&h).await;
+    let occurrence = occurrence_id(&series, series.start + 7 * DAY);
+    calendar(&h).answer_event("cal-1", &occurrence, "me@example.com", Answer::Yes, None).await.unwrap();
+    let over = h.fake.event(&id).unwrap()["recurrenceOverrides"]["2026-10-15T18:00:00"].clone();
+    assert_eq!(over["participants/p2"]["participationStatus"], "accepted", "{over}");
+    assert!(over.get("participants/p2/participationStatus").is_none(), "no key inside another key: {over}");
+}
+
+#[tokio::test]
+async fn an_imported_occurrence_becomes_an_override_of_its_series() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let original = series.start + 7 * DAY;
+    let file = Event {
+        calendar: "cal-1".into(),
+        uid: series.uid.clone(),
+        title: "Rota, from a file".into(),
+        start: original + HOUR,
+        end: original + 2 * HOUR,
+        zone: "Europe/Lisbon".into(),
+        busy: true,
+        original_start: Some(original),
+        ..Event::default()
+    };
+    let imported = calendar(&h).import_event(&file).await.unwrap();
+    let stored = h.fake.event(&id).unwrap();
+    assert_eq!(stored["recurrenceRule"]["frequency"], "weekly", "the series stays a series");
+    assert_eq!(stored["title"], "Allotment rota");
+    let over = &stored["recurrenceOverrides"]["2026-10-13T09:00:00"];
+    assert_eq!((over["title"].as_str(), over["start"].as_str()), (Some("Rota, from a file"), Some("2026-10-13T10:00:00")));
+    assert_eq!(imported.id, occurrence_id(&series, original));
+}
+
+#[tokio::test]
+async fn a_title_edit_while_the_notes_changed_elsewhere_keeps_both_quietly() {
+    let h = calendared().await;
+    let id = h.fake.add_event(rota("cal-1"));
+    let mut event = first_event(&h).await;
+    let held = event.etag.clone();
+    elsewhere(&h, &id, "description", json!("Bring gloves")).await;
+    event.title = "Rota, with tea".into();
+    let saved = calendar(&h).put_event(&event, Some(&held), false, Notify::Nobody).await.unwrap();
+    let stored = h.fake.event(&id).unwrap();
+    assert_eq!((stored["title"].as_str(), stored["description"].as_str()), (Some("Rota, with tea"), Some("Bring gloves")));
+    assert!(saved.kept_theirs.is_empty());
+}
+
+#[tokio::test]
+async fn what_the_editor_tidies_does_not_count_as_the_person_s_change() {
+    let h = calendared().await;
+    let id = h.fake.add_event(json!({
+        "@type": "Event", "uid": "fair@allotment.example", "title": "Seed fair ", "calendarIds": {"cal-1": true},
+        "start": "2026-10-10T00:00:00", "showWithoutTime": true, "duration": "P1D", "timeZone": "Europe/Lisbon"
+    }));
+    let mut event = first_event(&h).await;
+    let held = event.etag.clone();
+    elsewhere(&h, &id, "start", json!("2026-10-11T00:00:00")).await;
+    elsewhere(&h, &id, "title", json!("Seed fair, moved")).await;
+    // The editor trims the title and gives an all-day event the zone UTC.
+    event.title = event.title.trim().to_string();
+    event.zone = "UTC".into();
+    event.busy = false;
+    let saved = calendar(&h).put_event(&event, Some(&held), false, Notify::Nobody).await.unwrap();
+    let stored = h.fake.event(&id).unwrap();
+    assert_eq!((stored["title"].as_str(), stored["start"].as_str()), (Some("Seed fair, moved"), Some("2026-10-11T00:00:00")));
+    assert_eq!(stored["freeBusyStatus"], "free");
+    assert!(saved.kept_theirs.is_empty(), "{:?}", saved.kept_theirs);
+}
+
+#[tokio::test]
+async fn an_occurrence_moved_here_while_its_series_moved_elsewhere_keeps_the_servers_time() {
+    let h = calendared().await;
+    let id = h.fake.add_event(weekly());
+    let series = first_event(&h).await;
+    let original = series.start + 7 * DAY;
+    let mut one = renamed_occurrence(&series, original, &series.title);
+    one.start = original + 2 * HOUR;
+    one.end = one.start + HOUR;
+    elsewhere(&h, &id, "start", json!("2026-10-06T10:00:00")).await;
+    let saved = calendar(&h).put_event(&one, None, false, Notify::Nobody).await.unwrap();
+    assert_eq!((saved.start, saved.kept_theirs.as_slice()), (original + HOUR, ["the time".to_string()].as_slice()));
+    assert!(h.fake.event(&id).unwrap().get("recurrenceOverrides").is_none(), "nothing to write, so no empty override");
+}

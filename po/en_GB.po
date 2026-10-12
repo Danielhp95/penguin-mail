@@ -9878,71 +9878,71 @@ msgstr "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgid "The message names nobody to send it to."
 msgstr "The message names nobody to send it to."
 
-#: sync/src/services/jmap/calendar.rs:184
+#: sync/src/services/jmap/calendar.rs:198
 msgid "the title"
 msgstr "the title"
 
-#: sync/src/services/jmap/calendar.rs:185
+#: sync/src/services/jmap/calendar.rs:199
 msgid "the time"
 msgstr "the time"
 
-#: sync/src/services/jmap/calendar.rs:186
+#: sync/src/services/jmap/calendar.rs:200
 msgid "the repeat"
 msgstr "the repeat"
 
-#: sync/src/services/jmap/calendar.rs:187
+#: sync/src/services/jmap/calendar.rs:201
 msgid "the place"
 msgstr "the place"
 
-#: sync/src/services/jmap/calendar.rs:188
+#: sync/src/services/jmap/calendar.rs:202
 msgid "the meeting link"
 msgstr "the meeting link"
 
-#: sync/src/services/jmap/calendar.rs:189
+#: sync/src/services/jmap/calendar.rs:203
 msgid "the notes"
 msgstr "the notes"
 
-#: sync/src/services/jmap/calendar.rs:190
+#: sync/src/services/jmap/calendar.rs:204
 msgid "the reminders"
 msgstr "the reminders"
 
-#: sync/src/services/jmap/calendar.rs:191
+#: sync/src/services/jmap/calendar.rs:205
 msgid "the guests"
 msgstr "the guests"
 
-#: sync/src/services/jmap/calendar.rs:192
+#: sync/src/services/jmap/calendar.rs:206
 msgid "your answer"
 msgstr "your answer"
 
-#: sync/src/services/jmap/calendar.rs:193
+#: sync/src/services/jmap/calendar.rs:207
 msgid "the color"
 msgstr "the colour"
 
-#: sync/src/services/jmap/calendar.rs:194
+#: sync/src/services/jmap/calendar.rs:208
 msgid "the privacy"
 msgstr "the privacy"
 
-#: sync/src/services/jmap/calendar.rs:195
+#: sync/src/services/jmap/calendar.rs:209
 msgid "whether it shows as busy"
 msgstr "whether it shows as busy"
 
-#: sync/src/services/jmap/calendar.rs:196
+#: sync/src/services/jmap/calendar.rs:210
 msgid "the status"
 msgstr "the status"
 
-#: sync/src/services/jmap/calendar.rs:322
+#: sync/src/services/jmap/calendar.rs:421
 msgid "The server kept the event but did not say its id."
 msgstr "The server kept the event but did not say its id."
 
-#: sync/src/services/jmap/calendar.rs:572
+#: sync/src/services/jmap/calendar.rs:724
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr "Penguin Mail cannot attach files to events on this JMAP calendar."
 
-#: sync/src/services/jmap/calendar.rs:576
+#: sync/src/services/jmap/calendar.rs:728
 msgid "This JMAP calendar has no files to share."
 msgstr "This JMAP calendar has no files to share."
 
-#: sync/src/services/jmap/calendar.rs:637
+#: sync/src/services/jmap/calendar.rs:788
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail cannot change the calendar list of a JMAP server."
 

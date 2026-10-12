@@ -454,6 +454,12 @@ pub struct Event {
     /// save's answer carries it; the copy never stores it.
     #[serde(skip)]
     pub kept_theirs: Vec<String>,
+    /// On a changed occurrence, the etag of the series it was changed
+    /// from, so a provider can tell what the person changed from what
+    /// another app changed in the series meanwhile. Only the queued
+    /// change carries it; the store's rows do not.
+    #[serde(default)]
+    pub series_etag: String,
 }
 
 impl Event {

@@ -10690,72 +10690,72 @@ msgstr ""
 msgid "The message names nobody to send it to."
 msgstr "A mensagem não indica a quem a enviar."
 
-#: sync/src/services/jmap/calendar.rs:184
+#: sync/src/services/jmap/calendar.rs:198
 msgid "the title"
 msgstr "o título"
 
-#: sync/src/services/jmap/calendar.rs:185
+#: sync/src/services/jmap/calendar.rs:199
 msgid "the time"
 msgstr "a hora"
 
-#: sync/src/services/jmap/calendar.rs:186
+#: sync/src/services/jmap/calendar.rs:200
 msgid "the repeat"
 msgstr "a repetição"
 
-#: sync/src/services/jmap/calendar.rs:187
+#: sync/src/services/jmap/calendar.rs:201
 msgid "the place"
 msgstr "o local"
 
-#: sync/src/services/jmap/calendar.rs:188
+#: sync/src/services/jmap/calendar.rs:202
 msgid "the meeting link"
 msgstr "a ligação da reunião"
 
-#: sync/src/services/jmap/calendar.rs:189
+#: sync/src/services/jmap/calendar.rs:203
 msgid "the notes"
 msgstr "as notas"
 
-#: sync/src/services/jmap/calendar.rs:190
+#: sync/src/services/jmap/calendar.rs:204
 msgid "the reminders"
 msgstr "os lembretes"
 
-#: sync/src/services/jmap/calendar.rs:191
+#: sync/src/services/jmap/calendar.rs:205
 msgid "the guests"
 msgstr "os convidados"
 
-#: sync/src/services/jmap/calendar.rs:192
+#: sync/src/services/jmap/calendar.rs:206
 msgid "your answer"
 msgstr "a sua resposta"
 
-#: sync/src/services/jmap/calendar.rs:193
+#: sync/src/services/jmap/calendar.rs:207
 msgid "the color"
 msgstr "a cor"
 
-#: sync/src/services/jmap/calendar.rs:194
+#: sync/src/services/jmap/calendar.rs:208
 msgid "the privacy"
 msgstr "a privacidade"
 
-#: sync/src/services/jmap/calendar.rs:195
+#: sync/src/services/jmap/calendar.rs:209
 msgid "whether it shows as busy"
 msgstr "se aparece como ocupado"
 
-#: sync/src/services/jmap/calendar.rs:196
+#: sync/src/services/jmap/calendar.rs:210
 msgid "the status"
 msgstr "o estado"
 
-#: sync/src/services/jmap/calendar.rs:322
+#: sync/src/services/jmap/calendar.rs:421
 msgid "The server kept the event but did not say its id."
 msgstr "O servidor guardou o evento, mas não disse qual é o seu identificador."
 
-#: sync/src/services/jmap/calendar.rs:572
+#: sync/src/services/jmap/calendar.rs:724
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr ""
 "O Penguin Mail não consegue anexar ficheiros a eventos neste calendário JMAP."
 
-#: sync/src/services/jmap/calendar.rs:576
+#: sync/src/services/jmap/calendar.rs:728
 msgid "This JMAP calendar has no files to share."
 msgstr "Este calendário JMAP não tem ficheiros para partilhar."
 
-#: sync/src/services/jmap/calendar.rs:637
+#: sync/src/services/jmap/calendar.rs:788
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr ""
 "O Penguin Mail não consegue alterar a lista de calendários de um servidor "

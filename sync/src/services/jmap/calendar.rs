@@ -17,8 +17,9 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use mailrs_domain::EpochMillis;
-use mailrs_domain::calendar::{self as model, Access, Notify, split_occurrence_id};
+use mailrs_domain::calendar::{self as model, Access, Notify, occurrence_id, split_occurrence_id};
 use mailrs_domain::invitation::Answer;
 use mailrs_domain::translate::gettext;
 use mailrs_jmap::{EventWrite, JmapCalendar, JmapError, pointer};
@@ -39,6 +40,7 @@ const ROUNDS: usize = 20;
 /// Hex digits of each part's hash in an etag: 24 bits, so two different
 /// values of one part match by chance once in 16 million.
 const DIGITS: usize = 6;
+const DAY: EpochMillis = 86_400_000;
 
 /// One read of the account's event changes since a state.
 #[derive(Debug, Default)]
@@ -133,10 +135,12 @@ fn fnv(bytes: &[u8]) -> u32 {
 impl Part {
     fn hash(self, event: &model::Event) -> u32 {
         let bytes = match self {
-            Part::Title => serde_json::to_vec(&event.title),
-            Part::Time => serde_json::to_vec(&(event.start, event.end, event.all_day, &event.zone)),
+            // The editor trims the title and the place, and gives an
+            // all-day event the zone UTC, so neither counts as a change.
+            Part::Title => serde_json::to_vec(event.title.trim()),
+            Part::Time => serde_json::to_vec(&(event.start, event.end, event.all_day, timed_zone(event))),
             Part::Repeat => serde_json::to_vec(&event.rules),
-            Part::Place => serde_json::to_vec(&event.place),
+            Part::Place => serde_json::to_vec(event.place.trim()),
             Part::Link => serde_json::to_vec(&event.conference),
             Part::Notes => serde_json::to_vec(&event.description),
             Part::Reminders => serde_json::to_vec(&event.reminders),
@@ -169,7 +173,17 @@ impl Part {
             Part::Link => into.conference.clone_from(&from.conference),
             Part::Notes => into.description.clone_from(&from.description),
             Part::Reminders => into.reminders.clone_from(&from.reminders),
-            Part::Guests => into.guests.clone_from(&from.guests),
+            // The addresses only: a guest on both sides keeps the record
+            // `into` holds, so a name another app changed stays.
+            Part::Guests => {
+                into.guests = from
+                    .guests
+                    .iter()
+                    .map(|guest| {
+                        into.guests.iter().find(|g| g.email.eq_ignore_ascii_case(&guest.email)).unwrap_or(guest).clone()
+                    })
+                    .collect();
+            }
             Part::Answer => into.my_answer = from.my_answer,
             Part::Color => into.color.clone_from(&from.color),
             Part::Privacy => into.private = from.private,
@@ -198,10 +212,29 @@ impl Part {
     }
 }
 
+/// The zone a timed event is read in; an all-day event has none.
+fn timed_zone(event: &model::Event) -> &str {
+    if event.all_day { "" } else { &event.zone }
+}
+
+/// Where the hash of an event's shape sits in a print, after the parts:
+/// its length and its clock, which a changed occurrence compares with the
+/// series it came from.
+const SHAPE: usize = PARTS.len();
+
+fn shape(event: &model::Event) -> u32 {
+    fnv(&serde_json::to_vec(&(event.end - event.start, event.all_day, timed_zone(event))).unwrap_or_default())
+}
+
+/// The hashes of `event`'s parts and of its shape, in etag order.
+fn print_of(event: &model::Event) -> Vec<u32> {
+    PARTS.iter().map(|part| part.hash(event)).chain([shape(event)]).collect()
+}
+
 /// `event` with its etag, the object's `updated` stamp as read, followed
 /// by the fingerprint of the event as read.
 fn stamped(mut event: model::Event) -> model::Event {
-    let print: String = PARTS.iter().map(|part| format!("{:0DIGITS$x}", part.hash(&event))).collect();
+    let print: String = print_of(&event).iter().map(|hash| format!("{hash:0DIGITS$x}")).collect();
     event.etag = format!("{}|{print}", event.etag);
     event
 }
@@ -210,7 +243,7 @@ fn stamped(mut event: model::Event) -> model::Event {
 /// an etag without a fingerprint this version can read.
 fn fingerprint(etag: &str) -> Option<(&str, Vec<u32>)> {
     let (updated, print) = etag.rsplit_once('|')?;
-    if print.len() != PARTS.len() * DIGITS || !print.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if print.len() != (SHAPE + 1) * DIGITS || !print.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let hashes = print.as_bytes().chunks(DIGITS).map(|digits| {
@@ -239,6 +272,61 @@ fn merge(edited: &model::Event, print: &[u32], now: &model::Event) -> (model::Ev
         }
     }
     (merged, kept)
+}
+
+/// [`merge`] for an occurrence changed for the first time, whose print is
+/// the series' as the copy read it. The time counts as the person's change
+/// when the occurrence no longer starts at `original` or its shape no
+/// longer matches the series'; the server's, when the series' time changed
+/// or the occurrence has an override of its own. An occurrence has no
+/// repeat, so the repeat is never compared.
+fn merge_from_series(edited: &model::Event, print: &[u32], now: &model::Event, series: &model::Event, original: EpochMillis) -> (model::Event, Vec<Part>) {
+    let mut merged = now.clone();
+    let mut kept = Vec::new();
+    for (part, was) in PARTS.iter().zip(print) {
+        let (mine, theirs, same) = match part {
+            Part::Repeat => continue,
+            Part::Time => (
+                edited.start != original || shape(edited) != print[SHAPE],
+                part.hash(series) != *was || shape(now) != shape(series) || Some(now.start) != now.original_start,
+                (edited.start, edited.end) == (now.start, now.end),
+            ),
+            _ => (part.hash(edited) != *was, part.hash(now) != *was, part.hash(edited) == part.hash(now)),
+        };
+        if !mine {
+            continue;
+        }
+        if theirs && !same {
+            kept.push(*part);
+        } else {
+            part.take(edited, &mut merged);
+        }
+    }
+    (merged, kept)
+}
+
+/// Whether `series`, as the server holds it now, has an occurrence that
+/// starts at `at`.
+fn occurs(series: &model::Event, at: EpochMillis) -> bool {
+    model::expand(series, at - 1, at + 1).iter().any(|(start, _)| *start == at)
+}
+
+/// The one occurrence of `series` on the day `original` fell on, in the
+/// series' zone, for an occurrence whose series another app moved to
+/// another time of day. `None` when the day has none, or several.
+fn same_day(series: &model::Event, original: EpochMillis) -> Option<EpochMillis> {
+    let zone: Tz = series.zone.parse().unwrap_or(Tz::UTC);
+    let day = |at: EpochMillis| DateTime::<Utc>::from_timestamp_millis(at).map(|d| d.with_timezone(&zone).date_naive());
+    let wanted = day(original)?;
+    let found: Vec<EpochMillis> = model::expand(series, original - 2 * DAY, original + 2 * DAY)
+        .into_iter()
+        .map(|(start, _)| start)
+        .filter(|start| day(*start) == Some(wanted))
+        .collect();
+    match found.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
 }
 
 /// The events one object holds, each with its fingerprinted etag.
@@ -274,6 +362,9 @@ fn override_entry(current: &Value, key: &str, inner: Option<&str>, value: Value)
 struct Plan {
     patch: Map<String, Value>,
     kept: Vec<Part>,
+    /// The id of the event the save lands on: an occurrence of a series
+    /// another app moved has a new one.
+    want: String,
 }
 
 impl<J: JmapApi> Jmap<J> {
@@ -308,7 +399,15 @@ impl<J: JmapApi> Jmap<J> {
     /// The event `want` from the object `id` as the server holds it now.
     async fn read_back(&self, calendar: &str, id: &str, want: &str) -> Result<model::Event, BackendError> {
         let (object, _) = self.event_object(id).await?;
-        read_events(&object, calendar, &self.me()).into_iter().find(|e| e.id == want).ok_or(BackendError::NotFound)
+        let me = self.me();
+        if let Some(found) = read_events(&object, calendar, &me).into_iter().find(|e| e.id == want) {
+            return Ok(found);
+        }
+        // An occurrence with no override of its own, as the series shows
+        // it; it has no version of its own either, as the copy expects.
+        let (_, original) = split_occurrence_id(want).ok_or(BackendError::NotFound)?;
+        let occurrence = jscal::occurrence_of(&object, calendar, &me, original).ok_or(BackendError::NotFound)?;
+        Ok(model::Event { etag: String::new(), ..occurrence })
     }
 
     async fn create(&self, event: &model::Event, send: bool) -> Result<model::Event, BackendError> {
@@ -331,6 +430,9 @@ impl<J: JmapApi> Jmap<J> {
     /// that same version.
     fn plan(&self, event: &model::Event, etag: Option<&str>, current: &Value) -> Result<Plan, BackendError> {
         let me = self.me();
+        if let (Some(_), Some(original)) = (&event.series, event.original_start) {
+            return self.plan_occurrence(event, etag, current, original, &me);
+        }
         let now = read_events(current, &event.calendar, &me).into_iter().find(|e| e.id == event.id);
         let (wanted, kept) = match (etag.filter(|e| !e.is_empty()), now) {
             (Some(etag), Some(now)) => match fingerprint(etag) {
@@ -338,32 +440,59 @@ impl<J: JmapApi> Jmap<J> {
                 None if etag == updated(current) => (event.clone(), Vec::new()),
                 None => return Err(BackendError::Changed),
             },
-            // The person edited a version the server no longer holds: an
-            // occurrence another app deleted, or put back to the series.
-            (Some(_), None) => {
-                let excluded = event.original_start.is_some_and(|original| {
-                    current
-                        .get("recurrenceOverrides")
-                        .and_then(|o| o.get(jscal::override_key(current, original)))
-                        .and_then(|o| o.get("excluded"))
-                        .and_then(Value::as_bool)
-                        == Some(true)
-                });
-                return Err(if excluded { BackendError::NotFound } else { BackendError::Changed });
-            }
-            // An occurrence changed for the first time has no version of
-            // its own to compare with.
+            (Some(_), None) => return Err(BackendError::NotFound),
             (None, _) => (event.clone(), Vec::new()),
         };
-        let patch = match wanted.original_start {
-            Some(original) if wanted.series.is_some() => {
-                let key = jscal::override_key(current, original);
-                let (path, value) = override_entry(current, &key, None, jscal::override_of(&wanted, current, &me)?);
-                Map::from_iter([(path, value)])
+        Ok(Plan { patch: jscal::patch_of(&wanted, current, &me)?, kept, want: event.id.clone() })
+    }
+
+    /// [`Self::plan`] for one occurrence of a series. An occurrence with an
+    /// override compares with its own version; one changed for the first
+    /// time compares with the series' version it came from, and lands on
+    /// the occurrence the series has now on that day when another app
+    /// moved the series. The patch never names a recurrence id the rule no
+    /// longer makes, which would add an occurrence.
+    fn plan_occurrence(&self, event: &model::Event, etag: Option<&str>, current: &Value, original: EpochMillis, me: &[String]) -> Result<Plan, BackendError> {
+        let series = read_events(current, &event.calendar, me).into_iter().next().ok_or(BackendError::NotFound)?;
+        let entry = current.get("recurrenceOverrides").and_then(|o| o.get(jscal::override_key(current, original)));
+        if entry.and_then(|o| o.get("excluded")).and_then(Value::as_bool) == Some(true) {
+            // Another app deleted it.
+            return Err(BackendError::NotFound);
+        }
+        let own = etag.filter(|e| !e.is_empty());
+        let series_print = fingerprint(&event.series_etag).map(|(_, print)| print);
+        let target = match (entry.is_some() || occurs(&series, original), own, &series_print) {
+            (true, _, _) => original,
+            (false, None, Some(print)) if Part::Time.hash(&series) != print[Part::Time as usize] => {
+                same_day(&series, original).ok_or(BackendError::Changed)?
             }
-            _ => jscal::patch_of(&wanted, current, &me)?,
+            // Its override went, or its series changed in a way that
+            // leaves no occurrence to put the change on.
+            _ => return Err(BackendError::Changed),
         };
-        Ok(Plan { patch, kept })
+        let now = jscal::occurrence_of(current, &event.calendar, me, target).ok_or(BackendError::NotFound)?;
+        let (mut wanted, kept) = match (own, &series_print) {
+            (Some(etag), _) => match fingerprint(etag) {
+                Some((_, print)) => merge(event, &print, &now),
+                None if etag == updated(current) => (event.clone(), Vec::new()),
+                None => return Err(BackendError::Changed),
+            },
+            (None, Some(print)) => merge_from_series(event, print, &now, &series, original),
+            // A change queued before the copy kept the series' version.
+            (None, None) => (event.clone(), Vec::new()),
+        };
+        wanted.id.clone_from(&now.id);
+        wanted.series.clone_from(&now.series);
+        wanted.original_start = Some(target);
+        let key = jscal::override_key(current, target);
+        let value = jscal::override_of(&wanted, current, me)?;
+        let held = current.get("recurrenceOverrides").and_then(|o| o.get(&key)).is_some();
+        // An empty override where none was changes nothing.
+        let patch = match !held && value.as_object().is_some_and(Map::is_empty) {
+            true => Map::new(),
+            false => Map::from_iter([override_entry(current, &key, None, value)]),
+        };
+        Ok(Plan { patch, kept, want: wanted.id })
     }
 
     /// One try at saving a change to an event the server has. `None` when
@@ -371,7 +500,7 @@ impl<J: JmapApi> Jmap<J> {
     async fn try_change(&self, event: &model::Event, etag: Option<&str>, send: bool) -> Result<Option<model::Event>, BackendError> {
         let owner = event.series.as_deref().filter(|_| event.original_start.is_some()).unwrap_or(&event.id);
         let (current, state) = self.event_object(owner).await?;
-        let Plan { patch, kept } = self.plan(event, etag, &current)?;
+        let Plan { patch, kept, want } = self.plan(event, etag, &current)?;
         if !patch.is_empty() {
             let update = EventWrite::Update { id: owner.to_string(), patch };
             match self.write_event(&update, send, Some(&state)).await {
@@ -379,7 +508,7 @@ impl<J: JmapApi> Jmap<J> {
                 other => other.map_err(backend)?,
             };
         }
-        let mut saved = self.read_back(&event.calendar, owner, &event.id).await?;
+        let mut saved = self.read_back(&event.calendar, owner, &want).await?;
         saved.kept_theirs = kept.into_iter().map(Part::words).collect();
         Ok(Some(saved))
     }
@@ -387,10 +516,17 @@ impl<J: JmapApi> Jmap<J> {
     /// One try at deleting an event, or excluding one occurrence. `None`
     /// when another write reached the server between the read and the
     /// write.
-    async fn try_remove(&self, id: &str, etag: Option<&str>, send: bool) -> Result<Option<()>, BackendError> {
+    async fn try_remove(&self, calendar: &str, id: &str, etag: Option<&str>, send: bool) -> Result<Option<()>, BackendError> {
         if let Some((series, original)) = split_occurrence_id(id) {
             let (current, state) = self.event_object(series).await?;
             let key = jscal::exclusion_key(&current, original)?;
+            // A recurrence id the rule no longer makes would exclude
+            // nothing: another app moved the series since.
+            let held = current.get("recurrenceOverrides").and_then(|o| o.get(&key)).is_some();
+            let now = read_events(&current, calendar, &self.me()).into_iter().next().ok_or(BackendError::NotFound)?;
+            if !held && !occurs(&now, original) {
+                return Err(BackendError::Changed);
+            }
             let (path, value) = override_entry(&current, &key, None, json!({ "excluded": true }));
             let update = EventWrite::Update { id: series.to_string(), patch: Map::from_iter([(path, value)]) };
             return match self.write_event(&update, send, Some(&state)).await {
@@ -400,8 +536,12 @@ impl<J: JmapApi> Jmap<J> {
         }
         let (current, state) = self.event_object(id).await?;
         if let Some(etag) = etag.filter(|e| !e.is_empty()) {
-            let held = fingerprint(etag).map_or(etag, |(stamp, _)| stamp);
-            if held != updated(&current) {
+            // The parts, since a server may keep no `updated` stamp.
+            let unchanged = match fingerprint(etag) {
+                Some((_, print)) => read_events(&current, calendar, &self.me()).first().is_some_and(|now| print_of(now) == print),
+                None => etag == updated(&current),
+            };
+            if !unchanged {
                 return Err(BackendError::Changed);
             }
         }
@@ -539,10 +679,10 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         Err(BackendError::Changed)
     }
 
-    async fn remove_event(&self, _calendar: &str, id: &str, etag: Option<&str>, notify: Notify) -> Result<(), BackendError> {
+    async fn remove_event(&self, calendar: &str, id: &str, etag: Option<&str>, notify: Notify) -> Result<(), BackendError> {
         let send = notify == Notify::Guests;
         for _ in 0..2 {
-            if let Some(()) = self.try_remove(id, etag, send).await? {
+            if let Some(()) = self.try_remove(calendar, id, etag, send).await? {
                 return Ok(());
             }
         }
@@ -559,9 +699,21 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
             return self.create(event, false).await;
         };
         let id = object.get("id").and_then(Value::as_str).ok_or(BackendError::NotFound)?.to_string();
+        let me = self.me();
+        // A file holding one occurrence (a RECURRENCE-ID and no rule) of a
+        // series the calendar has changes that occurrence, as CalDAV does.
+        if let Some(original) = event.original_start {
+            let series = read_events(object, &event.calendar, &me).into_iter().next().ok_or(BackendError::NotFound)?;
+            let one = model::Event { id: occurrence_id(&series, original), series: Some(id.clone()), ..event.clone() };
+            let key = jscal::override_key(object, original);
+            let entry = override_entry(object, &key, None, jscal::override_of(&one, object, &me)?);
+            let update = EventWrite::Update { id: id.clone(), patch: Map::from_iter([entry]) };
+            self.write_event(&update, false, None).await.map_err(backend)?;
+            return self.read_back(&event.calendar, &id, &one.id).await;
+        }
         // The file is the version the person chose to keep, whole.
         let same = model::Event { id: id.clone(), series: None, original_start: None, ..event.clone() };
-        let patch = jscal::patch_of(&same, object, &self.me())?;
+        let patch = jscal::patch_of(&same, object, &me)?;
         if !patch.is_empty() {
             self.write_event(&EventWrite::Update { id: id.clone(), patch }, false, None).await.map_err(backend)?;
         }
@@ -604,19 +756,18 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
             None => (format!("participants/{}/participationStatus", pointer(&participant)), status),
             Some(original) => {
                 let key = jscal::override_key(&object, original);
-                // An override that replaces the whole participant map
-                // takes the answer inside its own copy of it.
-                let own_map = object
-                    .get("recurrenceOverrides")
-                    .and_then(|o| o.get(&key))
-                    .and_then(|o| o.get("participants"))
-                    .is_some_and(|p| p.get(&participant).is_some());
-                match own_map {
-                    true => (
-                        format!("recurrenceOverrides/{}/participants/{}/participationStatus", pointer(&key), pointer(&participant)),
-                        status,
-                    ),
-                    false => override_entry(&object, &key, Some(&format!("participants/{participant}/participationStatus")), status),
+                let over = object.get("recurrenceOverrides").and_then(|o| o.get(&key));
+                let escaped = pointer(&participant);
+                let whole = format!("participants/{escaped}");
+                // An override may replace the participant map, or one
+                // participant, whole; the answer then goes inside that
+                // copy, since a key inside another key is an invalidPatch.
+                if over.and_then(|o| o.get("participants")).is_some_and(|p| p.get(&participant).is_some()) {
+                    (format!("recurrenceOverrides/{}/participants/{escaped}/participationStatus", pointer(&key)), status)
+                } else if over.and_then(|o| o.get(&whole)).is_some_and(Value::is_object) {
+                    (format!("recurrenceOverrides/{}/{}/participationStatus", pointer(&key), pointer(&whole)), status)
+                } else {
+                    override_entry(&object, &key, Some(&format!("{whole}/participationStatus")), status)
                 }
             }
         };

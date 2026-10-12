@@ -10243,71 +10243,71 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/calendar.rs:184
+#: sync/src/services/jmap/calendar.rs:198
 msgid "the title"
 msgstr "標題"
 
-#: sync/src/services/jmap/calendar.rs:185
+#: sync/src/services/jmap/calendar.rs:199
 msgid "the time"
 msgstr "時間"
 
-#: sync/src/services/jmap/calendar.rs:186
+#: sync/src/services/jmap/calendar.rs:200
 msgid "the repeat"
 msgstr "重複設定"
 
-#: sync/src/services/jmap/calendar.rs:187
+#: sync/src/services/jmap/calendar.rs:201
 msgid "the place"
 msgstr "地點"
 
-#: sync/src/services/jmap/calendar.rs:188
+#: sync/src/services/jmap/calendar.rs:202
 msgid "the meeting link"
 msgstr "會議連結"
 
-#: sync/src/services/jmap/calendar.rs:189
+#: sync/src/services/jmap/calendar.rs:203
 msgid "the notes"
 msgstr "備註"
 
-#: sync/src/services/jmap/calendar.rs:190
+#: sync/src/services/jmap/calendar.rs:204
 msgid "the reminders"
 msgstr "提醒"
 
-#: sync/src/services/jmap/calendar.rs:191
+#: sync/src/services/jmap/calendar.rs:205
 msgid "the guests"
 msgstr "參與者"
 
-#: sync/src/services/jmap/calendar.rs:192
+#: sync/src/services/jmap/calendar.rs:206
 msgid "your answer"
 msgstr "您的回覆"
 
-#: sync/src/services/jmap/calendar.rs:193
+#: sync/src/services/jmap/calendar.rs:207
 msgid "the color"
 msgstr "顏色"
 
-#: sync/src/services/jmap/calendar.rs:194
+#: sync/src/services/jmap/calendar.rs:208
 msgid "the privacy"
 msgstr "隱私設定"
 
-#: sync/src/services/jmap/calendar.rs:195
+#: sync/src/services/jmap/calendar.rs:209
 msgid "whether it shows as busy"
 msgstr "是否顯示為忙碌"
 
-#: sync/src/services/jmap/calendar.rs:196
+#: sync/src/services/jmap/calendar.rs:210
 msgid "the status"
 msgstr "狀態"
 
-#: sync/src/services/jmap/calendar.rs:322
+#: sync/src/services/jmap/calendar.rs:421
 msgid "The server kept the event but did not say its id."
 msgstr "伺服器已儲存活動，但未提供其識別碼。"
 
-#: sync/src/services/jmap/calendar.rs:572
+#: sync/src/services/jmap/calendar.rs:724
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr "Penguin Mail 無法在此 JMAP 行事曆中為活動附加檔案。"
 
-#: sync/src/services/jmap/calendar.rs:576
+#: sync/src/services/jmap/calendar.rs:728
 msgid "This JMAP calendar has no files to share."
 msgstr "此 JMAP 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/jmap/calendar.rs:637
+#: sync/src/services/jmap/calendar.rs:788
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail 無法變更 JMAP 伺服器的行事曆清單。"
 
