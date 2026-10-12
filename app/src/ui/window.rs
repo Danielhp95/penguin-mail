@@ -145,9 +145,6 @@ pub struct MainWindow {
     /// The storage banner of each nearly full account, beside the Grant
     /// Access banners, and whether the account was full when it went up.
     storage_banner_widgets: RefCell<HashMap<AccountId, (adw::Banner, bool)>>,
-    /// Accounts whose storage banner the person took down this run, and
-    /// whether each was full then.
-    storage_dismissed: RefCell<HashMap<AccountId, bool>>,
     /// The main menu's update entry: Check for Updates, or what to do with
     /// the one that is waiting.
     update_menu: gio::Menu,
@@ -856,7 +853,6 @@ impl MainWindow {
                 grant_banners,
                 grant_banner_widgets: RefCell::new(HashMap::new()),
                 storage_banner_widgets: RefCell::new(HashMap::new()),
-                storage_dismissed: RefCell::new(HashMap::new()),
                 update_menu: gio::Menu::new(),
                 about: RefCell::new(None),
                 stack,

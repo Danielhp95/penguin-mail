@@ -94,6 +94,10 @@ pub struct Settings {
     /// The send-as address each account last sent from, so the composer
     /// opens where the writer left it.
     pub last_sender: BTreeMap<String, String>,
+    /// The storage banners the person took down, by the account's address:
+    /// whether the account was full then. One stays down until the
+    /// account's level changes.
+    pub storage_dismissed: BTreeMap<String, bool>,
     /// Send-as addresses keyed by the account's own address. Gmail refreshes
     /// its list in the background; SMTP accounts keep the owner's choices.
     pub send_as: BTreeMap<String, Vec<crate::compose::SendAsAddress>>,
@@ -476,6 +480,7 @@ impl Default for Settings {
             spell_languages: BTreeMap::new(),
             spell_words: Vec::new(),
             last_sender: BTreeMap::new(),
+            storage_dismissed: BTreeMap::new(),
             send_as: BTreeMap::new(),
             send_as_checked: BTreeMap::new(),
             compose_format: ComposeFormat::Rich,
