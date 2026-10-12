@@ -670,7 +670,10 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
                 primary: if names_a_default { c.is_default } else { index == 0 },
                 shown: true,
                 hidden: false,
-                reminders: Vec::new(),
+                reminders: c.default_alerts_with_time.as_ref().map(jscal::default_reminders).unwrap_or_default(),
+                // JMAP keeps the two apart: a calendar with timed defaults
+                // and none for all-day events reminds of no all-day event.
+                all_day_reminders: Some(c.default_alerts_without_time.as_ref().map(jscal::default_reminders).unwrap_or_default()),
                 name: c.name,
                 id: c.id,
             })

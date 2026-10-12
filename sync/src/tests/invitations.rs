@@ -293,6 +293,7 @@ async fn an_answer_from_the_calendar_marks_the_copy_and_the_card_and_waits_to_go
                     shown: true,
                     hidden: false,
                     reminders: Vec::new(),
+                    all_day_reminders: None,
                 };
                 calendar_store::save_calendars(c, account_id, std::slice::from_ref(&calendar))?;
                 calendar_store::save_events(c, account_id, std::slice::from_ref(&event), 1_000)
@@ -642,6 +643,7 @@ async fn the_copy_answers_a_clash_with_no_call_to_google() {
         shown: true,
         hidden: false,
         reminders: Vec::new(),
+        all_day_reminders: None,
     }]);
     h.fake.put_calendar_event(mailrs_domain::calendar::Event {
         calendar: "primary".into(),
@@ -1004,6 +1006,7 @@ fn primary() -> Cal {
         shown: true,
         hidden: false,
         reminders: Vec::new(),
+        all_day_reminders: None,
     }
 }
 

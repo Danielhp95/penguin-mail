@@ -804,6 +804,7 @@ mod tests {
             shown: true,
             hidden: false,
             reminders: vec![Reminder { minutes: 10, method: ReminderMethod::Notification }],
+            all_day_reminders: None,
         }
     }
 

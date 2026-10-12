@@ -34,6 +34,7 @@ fn calendar(id: &str, primary: bool) -> Calendar {
         shown: true,
         hidden: false,
         reminders: Vec::new(),
+        all_day_reminders: None,
     }
 }
 

@@ -33,6 +33,7 @@ fn primary() -> Calendar {
         shown: true,
         hidden: false,
         reminders: Vec::new(),
+        all_day_reminders: None,
     }
 }
 

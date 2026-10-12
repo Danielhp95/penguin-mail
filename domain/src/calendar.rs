@@ -100,6 +100,21 @@ pub struct Calendar {
     pub hidden: bool,
     /// What an event on this calendar reminds of when it names none.
     pub reminders: Vec<Reminder>,
+    /// What an all-day event reminds of when it names none, for a provider
+    /// that keeps it apart (JMAP's `defaultAlertsWithoutTime`). `None`
+    /// means [`Self::reminders`] serves both.
+    #[serde(default)]
+    pub all_day_reminders: Option<Vec<Reminder>>,
+}
+
+impl Calendar {
+    /// What an event that names no reminders of its own reminds of.
+    pub fn default_reminders(&self, all_day: bool) -> &[Reminder] {
+        match (&self.all_day_reminders, all_day) {
+            (Some(all_day), true) => all_day,
+            _ => &self.reminders,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

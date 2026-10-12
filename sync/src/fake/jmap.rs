@@ -635,6 +635,8 @@ impl FakeJmap {
                 is_visible: true,
                 time_zone: Some("Europe/Lisbon".into()),
                 my_rights: rights,
+                default_alerts_with_time: None,
+                default_alerts_without_time: None,
             });
         });
         fake

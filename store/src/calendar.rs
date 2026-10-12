@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use mailrs_domain::calendar::series::Step;
-use mailrs_domain::calendar::{self as model, Access, Calendar, Event, Guest, Kind, Notify, Occurrence, Status};
+use mailrs_domain::calendar::{self as model, Access, Calendar, Event, Guest, Kind, Notify, Occurrence, Reminder, Status};
 use mailrs_domain::invitation::Answer;
 use mailrs_domain::{AccountId, EpochMillis};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -69,7 +69,7 @@ pub fn save_calendars(conn: &Connection, account_id: AccountId, list: &[Calendar
                 calendar.zone,
                 calendar.primary,
                 calendar.shown,
-                json(&calendar.reminders),
+                reminders_text(calendar),
             ],
         )?;
     }
@@ -83,6 +83,7 @@ pub fn calendars(conn: &Connection, account_id: AccountId) -> Result<Vec<Calenda
          FROM calendars WHERE account_id = ?1 ORDER BY is_primary DESC, name",
     )?;
     let rows = stmt.query_map(params![account_id], |row| {
+        let (reminders, all_day_reminders) = reminders_of(&row.get::<_, String>(7)?);
         Ok(Calendar {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -91,11 +92,36 @@ pub fn calendars(conn: &Connection, account_id: AccountId) -> Result<Vec<Calenda
             zone: row.get(4)?,
             primary: row.get(5)?,
             shown: row.get(6)?,
-            reminders: parse(&row.get::<_, String>(7)?),
+            reminders,
+            all_day_reminders,
             hidden: row.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// A calendar's default reminders as its row keeps them: a list, or an
+/// object holding the timed list and the all-day one for a provider that
+/// keeps the two apart. The column is JSON, so the second shape needs no
+/// new column, and a row written before reads as the list it was.
+pub(crate) fn reminders_text(calendar: &Calendar) -> String {
+    match &calendar.all_day_reminders {
+        None => json(&calendar.reminders),
+        Some(all_day) => json(&serde_json::json!({ "timed": calendar.reminders, "allDay": all_day })),
+    }
+}
+
+fn reminders_of(text: &str) -> (Vec<Reminder>, Option<Vec<Reminder>>) {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Split {
+        timed: Vec<Reminder>,
+        all_day: Vec<Reminder>,
+    }
+    match serde_json::from_str::<Split>(text) {
+        Ok(split) => (split.timed, Some(split.all_day)),
+        Err(_) => (parse(text), None),
+    }
 }
 
 pub fn set_shown(conn: &Connection, account_id: AccountId, calendar: &str, shown: bool) -> Result<()> {
@@ -1580,6 +1606,7 @@ mod tests {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }
     }
 
@@ -1596,6 +1623,18 @@ mod tests {
             busy: true,
             ..Event::default()
         }
+    }
+
+    #[test]
+    fn a_calendar_keeps_its_all_day_reminders_apart() {
+        let (conn, id) = store();
+        let ten = Reminder { minutes: 10, method: model::ReminderMethod::Notification };
+        let night = Reminder { minutes: 540, method: model::ReminderMethod::Email };
+        let split = Calendar { reminders: vec![ten], all_day_reminders: Some(vec![night]), ..calendar("primary", true) };
+        let one = Calendar { reminders: vec![ten], ..calendar("team", false) };
+        save_calendars(&conn, id, &[split.clone(), one.clone()]).unwrap();
+        let read = calendars(&conn, id).unwrap();
+        assert_eq!(read, [split, one]);
     }
 
     #[test]

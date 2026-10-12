@@ -37,6 +37,28 @@ async fn calendars_list_with_the_default_first() {
 }
 
 #[tokio::test]
+async fn a_calendar_s_default_alerts_become_its_reminders() {
+    use mailrs_domain::calendar::{Reminder, ReminderMethod};
+    let h = calendared().await;
+    h.fake.with(|s| {
+        let alert = |offset: &str, action: &str| json!({"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": offset}, "action": action});
+        s.calendars[0].default_alerts_with_time = serde_json::from_value(json!({"k1": alert("-PT10M", "display")})).ok();
+        s.calendars[0].default_alerts_without_time = serde_json::from_value(json!({"k2": alert("-PT9H", "email"), "k3": alert("PT9H", "display")})).ok();
+    });
+    let listed = calendar(&h).calendars().await.unwrap();
+    assert_eq!(listed[0].reminders, [Reminder { minutes: 10, method: ReminderMethod::Notification }]);
+    assert_eq!(listed[0].all_day_reminders, Some(vec![Reminder { minutes: 540, method: ReminderMethod::Email }]), "an alert after the start has no reminder");
+}
+
+#[tokio::test]
+async fn a_calendar_without_default_alerts_reminds_of_nothing() {
+    let h = calendared().await;
+    let listed = calendar(&h).calendars().await.unwrap();
+    assert!(listed[0].reminders.is_empty());
+    assert_eq!(listed[0].all_day_reminders, Some(Vec::new()));
+}
+
+#[tokio::test]
 async fn an_account_without_jmap_calendars_has_no_jmap_calendar() {
     let h = over(FakeJmap::new()).await;
     assert!(h.sync.services().calendar.is_none());

@@ -577,6 +577,13 @@ fn reminder_alerts<'a>(fields: &Fields<'a>) -> impl Iterator<Item = (&'a str, Re
     })
 }
 
+/// The reminders a calendar's default alerts stand for, as an event that
+/// uses them would show.
+pub(crate) fn default_reminders(alerts: &Map<String, Value>) -> Vec<Reminder> {
+    let holder = json!({ "alerts": alerts });
+    reminder_alerts(&Fields::of(&holder)).map(|(_, r)| r).collect()
+}
+
 fn reminders_of(fields: &Fields) -> Option<Vec<Reminder>> {
     if fields.get("useDefaultAlerts").and_then(Value::as_bool) == Some(true) {
         return None;
