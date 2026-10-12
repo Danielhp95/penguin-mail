@@ -3957,7 +3957,9 @@ msgstr "Time left"
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail stops waiting after five minutes."
 
-#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:139
+#. The wait for the browser, in the button's place: a spinner and its
+#. line, with Open Page Again and Cancel under them.
+#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:140
 msgid "Open Page Again"
 msgstr "Open Page Again"
 
@@ -3967,7 +3969,7 @@ msgstr "Copy Link"
 
 #: app/src/ui/add_account.rs:805 app/src/ui/add_account.rs:976
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:492
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:502
 msgid "Try Again"
 msgstr "Try Again"
 
@@ -3980,7 +3982,7 @@ msgstr "Try Again"
 #: app/src/ui/composer/mod.rs:2175 app/src/ui/composer/mod.rs:2626
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:467 app/src/ui/rules.rs:647
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
-#: app/src/ui/switch_jmap.rs:140 app/src/ui/templates.rs:239
+#: app/src/ui/switch_jmap.rs:141 app/src/ui/templates.rs:239
 #: app/src/ui/unsubscribe.rs:119 app/src/ui/vacation.rs:45
 #: app/src/ui/when.rs:52 app/src/ui/window/arrange.rs:148
 #: app/src/ui/window/images.rs:101 app/src/ui/window/organize.rs:73
@@ -3998,8 +4000,8 @@ msgstr "Sign In"
 msgid "Your Name"
 msgstr "Your Name"
 
-#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:113
-#: app/src/ui/switch_jmap.rs:116
+#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:112
+#: app/src/ui/switch_jmap.rs:115
 msgid "Sign In With Browser"
 msgstr "Sign In With Browser"
 
@@ -8346,34 +8348,33 @@ msgstr "Give the mailbox a name"
 msgid "Add a condition with a value"
 msgstr "Add a condition with a value"
 
-#: app/src/ui/switch_jmap.rs:93
+#: app/src/ui/switch_jmap.rs:92
 msgid "What changes"
 msgstr "What changes"
 
-#: app/src/ui/switch_jmap.rs:94
+#: app/src/ui/switch_jmap.rs:93
 msgid "What stays"
 msgstr "What stays"
 
-#: app/src/ui/switch_jmap.rs:103
+#: app/src/ui/switch_jmap.rs:102
 msgid "Sent to {host} and nowhere else."
 msgstr "Sent to {host} and nowhere else."
 
-#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:320
-#: app/src/ui/switch_jmap.rs:391
+#: app/src/ui/switch_jmap.rs:136 app/src/ui/switch_jmap.rs:399
 msgid "Matching your mail…"
 msgstr "Matching your mail…"
 
-#: app/src/ui/switch_jmap.rs:154
+#: app/src/ui/switch_jmap.rs:150 app/src/ui/switch_jmap.rs:442
+msgid "Finish signing in on {provider}'s page in your browser."
+msgstr "Finish signing in on {provider}'s page in your browser."
+
+#: app/src/ui/switch_jmap.rs:165
 msgid "Switch"
 msgstr "Switch"
 
-#: app/src/ui/switch_jmap.rs:164
+#: app/src/ui/switch_jmap.rs:175
 msgid "Switch to JMAP"
 msgstr "Switch to JMAP"
-
-#: app/src/ui/switch_jmap.rs:417 app/src/ui/switch_jmap.rs:432
-msgid "Finish signing in on {provider}'s page in your browser."
-msgstr "Finish signing in on {provider}'s page in your browser."
 
 #: app/src/ui/templates.rs:25
 msgid "Saved bodies the composer's Templates menu drops into a message. Markdown works, and {{first_name}}, {{name}}, {{email}}, {{subject}} and {{date}} fill in when you use one."

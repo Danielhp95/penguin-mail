@@ -4484,7 +4484,9 @@ msgstr "Verbleibende Zeit"
 msgid "Penguin Mail stops waiting after five minutes."
 msgstr "Penguin Mail hört nach fünf Minuten auf zu warten."
 
-#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:139
+#. The wait for the browser, in the button's place: a spinner and its
+#. line, with Open Page Again and Cancel under them.
+#: app/src/ui/add_account.rs:795 app/src/ui/switch_jmap.rs:140
 msgid "Open Page Again"
 msgstr "Seite erneut öffnen"
 
@@ -4494,7 +4496,7 @@ msgstr "Link kopieren"
 
 #: app/src/ui/add_account.rs:805 app/src/ui/add_account.rs:976
 #: app/src/ui/hide_my_email.rs:366 app/src/ui/hide_my_email.rs:370
-#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:492
+#: app/src/ui/key_import.rs:213 app/src/ui/switch_jmap.rs:502
 msgid "Try Again"
 msgstr "Erneut versuchen"
 
@@ -4507,7 +4509,7 @@ msgstr "Erneut versuchen"
 #: app/src/ui/composer/mod.rs:2175 app/src/ui/composer/mod.rs:2626
 #: app/src/ui/confirm.rs:29 app/src/ui/rules.rs:467 app/src/ui/rules.rs:647
 #: app/src/ui/sender_prefs.rs:129 app/src/ui/smart_editor.rs:150
-#: app/src/ui/switch_jmap.rs:140 app/src/ui/templates.rs:239
+#: app/src/ui/switch_jmap.rs:141 app/src/ui/templates.rs:239
 #: app/src/ui/unsubscribe.rs:119 app/src/ui/vacation.rs:45
 #: app/src/ui/when.rs:52 app/src/ui/window/arrange.rs:148
 #: app/src/ui/window/images.rs:101 app/src/ui/window/organize.rs:73
@@ -4525,8 +4527,8 @@ msgstr "Anmelden"
 msgid "Your Name"
 msgstr "Ihr Name"
 
-#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:113
-#: app/src/ui/switch_jmap.rs:116
+#: app/src/ui/add_account.rs:939 app/src/ui/switch_jmap.rs:112
+#: app/src/ui/switch_jmap.rs:115
 msgid "Sign In With Browser"
 msgstr "Mit Browser anmelden"
 
@@ -9190,35 +9192,34 @@ msgstr "Geben Sie dem Postfach einen Namen"
 msgid "Add a condition with a value"
 msgstr "Fügen Sie eine Bedingung mit einem Wert hinzu"
 
-#: app/src/ui/switch_jmap.rs:93
+#: app/src/ui/switch_jmap.rs:92
 msgid "What changes"
 msgstr "Was sich ändert"
 
-#: app/src/ui/switch_jmap.rs:94
+#: app/src/ui/switch_jmap.rs:93
 msgid "What stays"
 msgstr "Was bleibt"
 
-#: app/src/ui/switch_jmap.rs:103
+#: app/src/ui/switch_jmap.rs:102
 msgid "Sent to {host} and nowhere else."
 msgstr "Geht nur an {host} und nirgendwohin sonst."
 
-#: app/src/ui/switch_jmap.rs:137 app/src/ui/switch_jmap.rs:320
-#: app/src/ui/switch_jmap.rs:391
+#: app/src/ui/switch_jmap.rs:136 app/src/ui/switch_jmap.rs:399
 msgid "Matching your mail…"
 msgstr "E-Mails werden zugeordnet …"
 
-#: app/src/ui/switch_jmap.rs:154
-msgid "Switch"
-msgstr "Wechseln"
-
-#: app/src/ui/switch_jmap.rs:164
-msgid "Switch to JMAP"
-msgstr "Zu JMAP wechseln"
-
-#: app/src/ui/switch_jmap.rs:417 app/src/ui/switch_jmap.rs:432
+#: app/src/ui/switch_jmap.rs:150 app/src/ui/switch_jmap.rs:442
 msgid "Finish signing in on {provider}'s page in your browser."
 msgstr ""
 "Schließen Sie die Anmeldung auf der Seite von {provider} in Ihrem Browser ab."
+
+#: app/src/ui/switch_jmap.rs:165
+msgid "Switch"
+msgstr "Wechseln"
+
+#: app/src/ui/switch_jmap.rs:175
+msgid "Switch to JMAP"
+msgstr "Zu JMAP wechseln"
 
 #: app/src/ui/templates.rs:25
 msgid ""

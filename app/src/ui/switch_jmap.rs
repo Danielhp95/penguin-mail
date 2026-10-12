@@ -39,7 +39,6 @@ struct Dialog {
     browser_offer: gtk::Box,
     browser: gtk::Button,
     progress: gtk::Box,
-    progress_line: gtk::Label,
     /// Open Page Again and Cancel, while the browser has the sign-in.
     waiting: gtk::Box,
     /// The page the browser sign-in opened, for Open Page Again.
@@ -134,17 +133,29 @@ pub fn present(
     }
     let progress = gtk::Box::builder().spacing(10).halign(gtk::Align::Center).visible(false).css_classes(["switch-progress"]).build();
     progress.append(&adw::Spinner::builder().width_request(24).height_request(24).build());
-    let progress_line = gtk::Label::builder().label(gettext("Matching your mail…")).wrap(true).justify(gtk::Justification::Center).build();
-    progress.append(&progress_line);
+    progress.append(&gtk::Label::new(Some(&gettext("Matching your mail…"))));
+    page.append(&progress);
+    // The wait for the browser, in the button's place: a spinner and its
+    // line, with Open Page Again and Cancel under them.
     let again = gtk::Button::builder().label(gettext("Open Page Again")).css_classes(["pill"]).build();
     let cancel = gtk::Button::builder().label(gettext("Cancel")).css_classes(["pill"]).build();
-    let waiting = gtk::Box::builder().spacing(12).halign(gtk::Align::Center).visible(false).css_classes(["switch-waiting"]).build();
-    waiting.append(&again);
-    waiting.append(&cancel);
-    let progress_area = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    progress_area.append(&progress);
-    progress_area.append(&waiting);
-    page.append(&progress_area);
+    let buttons = gtk::Box::builder().spacing(12).halign(gtk::Align::Center).build();
+    buttons.append(&again);
+    buttons.append(&cancel);
+    let wait_line = gtk::Box::builder().spacing(10).halign(gtk::Align::Center).css_classes(["switch-progress"]).build();
+    wait_line.append(&adw::Spinner::builder().width_request(24).height_request(24).build());
+    let provider = add_account::post::short_name(&proposal.provider_name);
+    wait_line.append(
+        &gtk::Label::builder()
+            .label(fill(&gettext("Finish signing in on {provider}'s page in your browser."), &[("provider", &provider)]))
+            .wrap(true)
+            .justify(gtk::Justification::Center)
+            .build(),
+    );
+    let waiting = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(14).visible(false).css_classes(["switch-waiting"]).build();
+    waiting.append(&wait_line);
+    waiting.append(&buttons);
+    page.insert_child_after(&waiting, Some(&browser_offer));
 
     let scrolled = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -184,7 +195,6 @@ pub fn present(
         browser_offer,
         browser: browser.clone(),
         progress,
-        progress_line,
         waiting,
         browser_url: RefCell::default(),
         browser_cancel: RefCell::default(),
@@ -317,8 +327,6 @@ impl Dialog {
         self.secret.set_sensitive(!on);
         self.switch.set_sensitive(!on && !self.secret.text().is_empty());
         self.browser.set_sensitive(!on);
-        self.progress_line.set_text(&gettext("Matching your mail…"));
-        self.waiting.set_visible(false);
         self.progress.set_visible(on);
         // Closing now would leave a failure with nowhere to show.
         self.dialog.set_can_close(!on);
@@ -406,17 +414,19 @@ impl Dialog {
         });
     }
 
-    /// The wait for the server's own page: the spinner with its line, and
-    /// Open Page Again and Cancel under it. The field, Switch and the
-    /// button dim; the dialog can close, which ends the wait.
+    /// The wait for the server's own page, in the button's place: the
+    /// spinner with its line, and Open Page Again and Cancel under it,
+    /// which take the focus the button had. The field and Switch dim; the
+    /// dialog can close, which ends the wait.
     fn waiting_for_browser(&self, on: bool) {
         self.secret.set_sensitive(!on);
         self.switch.set_sensitive(!on && !self.secret.text().is_empty());
         self.browser.set_sensitive(!on);
-        let provider = add_account::post::short_name(&self.proposal.provider_name);
-        self.progress_line.set_text(&fill(&gettext("Finish signing in on {provider}'s page in your browser."), &[("provider", &provider)]));
-        self.progress.set_visible(on);
+        self.browser_offer.set_visible(!on);
         self.waiting.set_visible(on);
+        if on {
+            self.waiting.child_focus(gtk::DirectionType::TabForward);
+        }
         self.fit();
     }
 
