@@ -111,6 +111,33 @@ impl Check {
     }
 }
 
+/// The More menu beside Send. Templates, Preview, Sign and Encrypt stood
+/// in the header as four icon buttons left of Send. They share this menu
+/// now, so the bar holds Attach Files, More and Send, and the shield while
+/// the message goes out signed or encrypted. Sign and Encrypt only show
+/// when this computer has gpg or gpgsm to run them; Request Read Receipt
+/// has a section of its own after them.
+fn more_menu(template_menu: &gio::Menu, has_engine: bool) -> gio::Menu {
+    let menu = gio::Menu::new();
+    let writing = gio::Menu::new();
+    writing.append_submenu(Some(&gettext("Templates")), template_menu);
+    writing.append(Some(&gettext("Preview")), Some("composer.preview"));
+    menu.append_section(None, &writing);
+    if has_engine {
+        let guarding = gio::Menu::new();
+        guarding.append(Some(&gettext("Sign")), Some("composer.sign"));
+        guarding.append(Some(&gettext("Encrypt")), Some("composer.encrypt"));
+        let note_item = gio::MenuItem::new(None, None);
+        note_item.set_attribute_value("custom", Some(&"encrypt-note".to_variant()));
+        guarding.append_item(&note_item);
+        menu.append_section(None, &guarding);
+    }
+    let asking = gio::Menu::new();
+    asking.append(Some(&gettext("Request Read Receipt")), Some("composer.receipt"));
+    menu.append_section(None, &asking);
+    menu
+}
+
 /// The space above and below the words in the body.
 const BODY_MARGIN: i32 = 18;
 /// The room under the last line for the "•••" row, and the gap above it.
@@ -207,7 +234,10 @@ pub struct Composer {
     encrypt: Check,
     /// Under Encrypt in the menu: why it cannot be chosen, while it cannot.
     encrypt_note: gtk::Label,
-    /// The More menu beside Send: Templates, Preview, Sign and Encrypt.
+    /// Request Read Receipt, a check item in the More menu.
+    receipt: Check,
+    /// The More menu beside Send: Templates, Preview, Sign, Encrypt and
+    /// Request Read Receipt.
     more_menu: gtk::MenuButton,
     /// The shield in the header while the message goes out signed or
     /// encrypted. Its icon and its name say which; it opens More.
@@ -329,24 +359,8 @@ impl Composer {
         let sign = Check::new("sign", has_engine && (sign_by_default || draft.sign));
         let encrypt = Check::new("encrypt", false);
         encrypt.set_sensitive(false);
-        // Templates, Preview, Sign and Encrypt stood in the header as four
-        // icon buttons left of Send. They share one menu now, so the bar
-        // holds Attach Files, More and Send, and the shield while the
-        // message goes out signed or encrypted.
-        let menu = gio::Menu::new();
-        let writing = gio::Menu::new();
-        writing.append_submenu(Some(&gettext("Templates")), &template_menu);
-        writing.append(Some(&gettext("Preview")), Some("composer.preview"));
-        menu.append_section(None, &writing);
-        let guarding = gio::Menu::new();
-        guarding.append(Some(&gettext("Sign")), Some("composer.sign"));
-        guarding.append(Some(&gettext("Encrypt")), Some("composer.encrypt"));
-        let note_item = gio::MenuItem::new(None, None);
-        note_item.set_attribute_value("custom", Some(&"encrypt-note".to_variant()));
-        guarding.append_item(&note_item);
-        if has_engine {
-            menu.append_section(None, &guarding);
-        }
+        let receipt = Check::new("receipt", draft.receipt);
+        let menu = more_menu(&template_menu, has_engine);
         let more = gtk::MenuButton::builder()
             .icon_name("view-more-symbolic")
             .tooltip_text(gettext("More"))
@@ -675,6 +689,7 @@ impl Composer {
             sign,
             encrypt,
             encrypt_note,
+            receipt,
             more_menu: more.clone(),
             protection,
             asked_keys: RefCell::new(Asked::default()),
@@ -858,6 +873,12 @@ impl Composer {
             }
         });
         let weak = Rc::downgrade(self);
+        self.receipt.connect_toggled(move |_| {
+            if let Some(c) = weak.upgrade() {
+                c.mark_unsaved();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.encrypt.connect_toggled(move |on| {
             let Some(c) = weak.upgrade() else { return };
             // Only the writer's own click changes what they want. "Encrypt
@@ -945,7 +966,7 @@ impl Composer {
                 c.stack.set_visible_child_name("edit");
             }
         });
-        for check in [&self.sign, &self.encrypt, &preview] {
+        for check in [&self.sign, &self.encrypt, &self.receipt, &preview] {
             actions.add_action(&check.0);
         }
         self.window.insert_action_group("composer", Some(&actions));
@@ -1614,6 +1635,7 @@ impl Composer {
         draft.attachments = self.attachments.borrow().clone();
         draft.sign = self.sign.is_active();
         draft.encrypt = self.encrypt.is_active() && self.encrypt.is_sensitive();
+        draft.receipt = self.receipt.is_active();
         // A signature on an encrypted message goes inside the encryption,
         // so the recipients' standard carries both.
         draft.standard = match draft.encrypt {
@@ -2785,6 +2807,31 @@ fn block_of(name: &str) -> BlockKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The action of each item in each section of `menu`, in order.
+    fn actions(menu: &gio::Menu) -> Vec<Vec<String>> {
+        (0..menu.n_items())
+            .filter_map(|i| menu.item_link(i, gio::MENU_LINK_SECTION))
+            .map(|section| {
+                (0..section.n_items())
+                    .filter_map(|i| {
+                        section
+                            .item_attribute_value(i, gio::MENU_ATTRIBUTE_ACTION, None)
+                            .and_then(|v| v.get::<String>())
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_read_receipt_has_a_section_of_its_own_at_the_end_of_more() {
+        for has_engine in [true, false] {
+            let menu = more_menu(&gio::Menu::new(), has_engine);
+            let sections = actions(&menu);
+            assert_eq!(sections.last().unwrap(), &["composer.receipt"], "{sections:?}");
+        }
+    }
 
     #[test]
     fn each_paragraph_style_in_the_menu_reads_back_as_itself() {

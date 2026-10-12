@@ -559,6 +559,10 @@ pub struct Draft {
     /// is the one that asked both engines what they hold; a draft that is
     /// neither signed nor encrypted never uses this.
     pub standard: Standard,
+    /// Ask the recipients' mail programs for a read receipt. Off unless
+    /// the writer turns it on for this message.
+    #[serde(default)]
+    pub receipt: bool,
 }
 
 /// When the composer hands a message over for sending.
@@ -592,6 +596,7 @@ impl Draft {
             sign: false,
             encrypt: false,
             standard: Standard::default(),
+            receipt: false,
         }
     }
 
@@ -1503,6 +1508,9 @@ fn envelope<'a>(draft: &'a Draft, date_secs: i64, message_id: &str) -> MessageBu
                 .collect::<Vec<_>>(),
         );
     }
+    if draft.receipt {
+        builder = builder.header("Disposition-Notification-To", mime_address(&draft.from));
+    }
     builder
 }
 
@@ -1597,6 +1605,29 @@ mod tests {
 
     fn me() -> Address {
         addr(Some("Dana Reyes"), "dana@example.com")
+    }
+
+    #[test]
+    fn a_draft_that_asks_for_a_receipt_names_its_sender() {
+        let mut draft = Draft::new(1, addr(Some("Dana"), "dana@fastmail.example"));
+        draft.to = parse_recipients("ines@allotment.example");
+        draft.subject = "Rota".into();
+        let plain = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        assert!(!plain.contains("Disposition-Notification-To"), "off unless asked");
+        draft.receipt = true;
+        let asked = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        assert!(
+            asked.contains("Disposition-Notification-To: \"Dana\" <dana@fastmail.example>"),
+            "{asked}"
+        );
+    }
+
+    #[test]
+    fn a_draft_saved_before_receipts_reads_back_without_one() {
+        let mut stored = serde_json::to_value(Draft::new(1, addr(None, "a@x.example"))).unwrap();
+        stored.as_object_mut().unwrap().remove("receipt");
+        let draft: Draft = serde_json::from_value(stored).unwrap();
+        assert!(!draft.receipt);
     }
 
     /// A forwarded newsletter as it might arrive: a tracking pixel, a
