@@ -7,8 +7,9 @@
 //! Cyrus answers no other request of the account while a stream is open.
 //! So a new stream is followed by one `Core/echo`, which every server
 //! answers; when no answer comes within the probe limit the stream is
-//! dropped and push stays off for the client's life. A call that stalls
-//! later while a stream is open does the same (see `JmapClient::sent`).
+//! dropped and push stays off for the client's life. An API call that
+//! stalls later while a stream is open drops the stream and pauses push
+//! for a while (see `JmapClient::sent`).
 //!
 //! The open stream holds no request permit. A permit lasts one call, and
 //! a stream lives for hours: holding one of the four would starve the
@@ -110,14 +111,78 @@ impl Parser {
     }
 }
 
-/// An open event stream and the bytes read from it.
+/// What the reader task passes to the watch.
+enum Read {
+    /// The server answered the stream's head.
+    Opened,
+    Bytes(Vec<u8>),
+    Failed(JmapError),
+}
+
+/// An open event stream and the bytes read from it. A task of its own
+/// holds the connection, so a stalled call can close it through the
+/// task's abort handle while the watch sits unpolled holding this.
 pub(crate) struct EventStream {
-    response: reqwest::Response,
+    reads: tokio::sync::mpsc::Receiver<Read>,
+    reader: tokio::task::AbortHandle,
     pending: Vec<u8>,
     parser: Parser,
 }
 
+impl Drop for EventStream {
+    fn drop(&mut self) {
+        self.reader.abort();
+    }
+}
+
+/// Opens the stream and passes on its bytes until the watch lets go of
+/// the other end or the task is aborted.
+async fn read_stream(request: reqwest::RequestBuilder, to: tokio::sync::mpsc::Sender<Read>) {
+    let mut response = match request.send().await {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            let _ = to.send(Read::Failed(failure(response).await)).await;
+            return;
+        }
+        Err(err) => {
+            let _ = to.send(Read::Failed(network(err))).await;
+            return;
+        }
+    };
+    if to.send(Read::Opened).await.is_err() {
+        return;
+    }
+    loop {
+        let read = match response.chunk().await {
+            Ok(Some(chunk)) => Read::Bytes(Vec::from(chunk)),
+            Ok(None) => Read::Failed(JmapError::Network("the event stream ended".into())),
+            Err(err) => Read::Failed(network(err)),
+        };
+        let last = matches!(read, Read::Failed(_));
+        if to.send(read).await.is_err() || last {
+            return;
+        }
+    }
+}
+
 impl EventStream {
+    /// The next thing the reader passes on, waiting at most `idle`.
+    async fn read(&mut self, idle: Duration, quiet: &str) -> Result<Read, JmapError> {
+        tokio::time::timeout(idle, self.reads.recv())
+            .await
+            .map_err(|_| JmapError::Network(quiet.into()))?
+            .ok_or_else(|| JmapError::Network("the event stream was closed".into()))
+    }
+
+    /// Waits for the head of the answer.
+    async fn opened(&mut self, idle: Duration) -> Result<(), JmapError> {
+        match self.read(idle, "the event stream did not open").await? {
+            Read::Opened => Ok(()),
+            Read::Failed(err) => Err(err),
+            Read::Bytes(_) => Err(JmapError::Network("the event stream sent bytes before its head".into())),
+        }
+    }
+
     /// The next state change. Any bytes reset the idle clock, a ping too.
     async fn next(&mut self, idle: Duration) -> Result<StateChange, JmapError> {
         loop {
@@ -136,18 +201,20 @@ impl EventStream {
             if self.pending.len() > MOST_EVENT_BYTES {
                 return Err(JmapError::AnswerTooLarge { limit: MOST_EVENT_BYTES });
             }
-            let chunk = tokio::time::timeout(idle, self.response.chunk())
-                .await
-                .map_err(|_| JmapError::Network("the event stream went quiet".into()))?
-                .map_err(network)?
-                .ok_or_else(|| JmapError::Network("the event stream ended".into()))?;
-            self.pending.extend_from_slice(&chunk);
+            match self.read(idle, "the event stream went quiet").await? {
+                Read::Bytes(chunk) => self.pending.extend_from_slice(&chunk),
+                Read::Failed(err) => return Err(err),
+                Read::Opened => {}
+            }
         }
     }
 }
 
 impl JmapClient {
-    async fn open_events(&self, template: &str, idle: Duration) -> Result<EventStream, JmapError> {
+    /// Starts the task that opens the stream and reads it, and marks the
+    /// stream open from now on: a call stalled behind a stream that is
+    /// still opening can close it too.
+    async fn open_events(&self, template: &str) -> Result<EventStream, JmapError> {
         let ping = PING_SECONDS.to_string();
         let url = match template.contains("{types}") {
             true => {
@@ -160,20 +227,13 @@ impl JmapClient {
                 url
             }
         };
-        let response = tokio::time::timeout(idle, async {
-            self.authorized(reqwest::Method::GET, url)
-                .await?
-                .header(reqwest::header::ACCEPT, "text/event-stream")
-                .send()
-                .await
-                .map_err(network)
-        })
-        .await
-        .map_err(|_| JmapError::Network("the event stream did not open".into()))??;
-        if !response.status().is_success() {
-            return Err(failure(response).await);
-        }
-        Ok(EventStream { response, pending: Vec::new(), parser: Parser::new() })
+        let request = self.authorized(reqwest::Method::GET, url).await?.header(reqwest::header::ACCEPT, "text/event-stream");
+        // A few chunks ahead at most: the reader waits for the watch.
+        let (to, reads) = tokio::sync::mpsc::channel(4);
+        let reader = tokio::spawn(read_stream(request, to)).abort_handle();
+        self.set_streaming(true);
+        self.keep_reader(reader.clone());
+        Ok(EventStream { reads, reader, pending: Vec::new(), parser: Parser::new() })
     }
 
     /// Waits until the server says the mail account changed. The stream
@@ -183,10 +243,14 @@ impl JmapClient {
     /// One task drives this: a second concurrent caller waits on the
     /// stream's lock. After `Network` (the stream ended or went quiet) the
     /// caller must back off before calling again, or a server that closes
-    /// at once makes a tight reconnect loop.
+    /// at once makes a tight reconnect loop. While push is paused after a
+    /// stall, a call waits out the pause before it opens a stream.
     pub async fn push(&self, idle: Duration) -> Result<Pushed, JmapError> {
         if self.push_off() {
             return Ok(Pushed::NoPush);
+        }
+        if let Some(until) = self.push_paused() {
+            tokio::time::sleep_until(until).await;
         }
         let session = self.session().await?;
         let Some(template) = session.event_source_url.clone() else {
@@ -194,45 +258,53 @@ impl JmapClient {
         };
         let account = session.account_for(MAIL).ok_or_else(|| JmapError::UnknownCapability(MAIL.into()))?.to_string();
         let mut held = self.events().lock().await;
-        let close = |held: &mut Option<EventStream>| {
+        let close = |held: &mut Option<EventStream>, err: JmapError| {
             *held = None;
             self.set_streaming(false);
+            self.stopped_by(err)
         };
         loop {
-            if self.push_off() {
-                close(&mut held);
-                return Ok(Pushed::NoPush);
+            if self.push_off() || self.push_paused().is_some() {
+                return close(&mut held, JmapError::Network("push was turned off".into()));
             }
             if held.is_none() {
-                *held = Some(self.open_events(&template, idle).await?);
-                self.set_streaming(true);
+                let stream = held.insert(self.open_events(&template).await?);
+                // A stall between the check above and the reader's
+                // registration could not reach this reader.
+                if self.push_off() || self.push_paused().is_some() {
+                    continue;
+                }
+                if let Err(err) = stream.opened(idle).await {
+                    return close(&mut held, err);
+                }
                 match self.answers_beside_a_stream().await {
                     Ok(true) => {}
                     Ok(false) => {
                         tracing::info!("the server holds calls while a push stream is open; polling instead");
                         self.stop_pushing();
-                        close(&mut held);
-                        return Ok(Pushed::NoPush);
+                        return close(&mut held, JmapError::Network("push was turned off".into()));
                     }
-                    Err(err) => {
-                        close(&mut held);
-                        return Err(err);
-                    }
+                    Err(err) => return close(&mut held, err),
                 }
             }
             let Some(stream) = held.as_mut() else { continue };
-            let next = tokio::select! {
-                next = stream.next(idle) => next,
-                () = self.stream_unwanted() => continue,
-            };
-            match next {
+            match stream.next(idle).await {
                 Ok(change) if change.touches(&account, &["Email", "Mailbox", "EmailDelivery"]) => return Ok(Pushed::Changed),
                 Ok(_) => {}
-                Err(err) => {
-                    close(&mut held);
-                    return Err(err);
-                }
+                Err(err) => return close(&mut held, err),
             }
+        }
+    }
+
+    /// What a watch whose stream closed answers: no push once push is off
+    /// for good, the stall while it is paused, and `err` otherwise.
+    fn stopped_by(&self, err: JmapError) -> Result<Pushed, JmapError> {
+        if self.push_off() {
+            return Ok(Pushed::NoPush);
+        }
+        match self.push_paused() {
+            Some(_) => Err(JmapError::Network("a call stalled behind the event stream".into())),
+            None => Err(err),
         }
     }
 

@@ -252,7 +252,8 @@ async fn a_call_stalled_behind_a_held_stream_drops_the_stream_and_completes() {
     let started = std::time::Instant::now();
     tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
     assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
-    assert_eq!(client.push(Duration::from_secs(120)).await.unwrap(), Pushed::NoPush, "push stays off");
+    let next = tokio::time::timeout(Duration::from_secs(1), client.push(Duration::from_secs(120))).await;
+    assert!(next.is_err(), "push came back at once: {next:?}");
 }
 
 #[tokio::test]
@@ -265,5 +266,42 @@ async fn a_call_stalled_while_the_watch_waits_ends_the_watch_and_completes() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
     let watched = tokio::time::timeout(Duration::from_secs(5), watch).await.expect("the watch kept going").unwrap();
-    assert_eq!(watched.unwrap(), Pushed::NoPush);
+    assert!(matches!(&watched, Err(JmapError::Network(said)) if said.contains("stalled")), "{watched:?}");
+}
+
+/// Polls `watch` for `long`, then leaves it pending and unpolled, as the
+/// engine leaves its watch while a tick runs.
+async fn poll_for<F: std::future::Future + Unpin>(watch: &mut F, long: Duration) {
+    tokio::select! {
+        _ = watch => panic!("the watch ended before it was left"),
+        () = tokio::time::sleep(long) => {}
+    }
+}
+
+#[tokio::test]
+async fn a_call_stalled_while_the_watch_sits_unpolled_drops_the_stream_and_completes() {
+    let base = blocking_server(1, false).await;
+    let client = raw_client(&base);
+    let mut watch = Box::pin(client.push(Duration::from_secs(120)));
+    // The stream opens and the probe passes; then nobody polls the watch.
+    poll_for(&mut watch, Duration::from_millis(500)).await;
+    let started = std::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
+    assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
+    let watched = tokio::time::timeout(Duration::from_secs(5), watch).await.expect("the watch kept going");
+    assert!(matches!(&watched, Err(JmapError::Network(said)) if said.contains("stalled")), "{watched:?}");
+}
+
+#[tokio::test]
+async fn a_call_stalled_while_the_watch_sits_unpolled_in_its_probe_completes() {
+    let base = blocking_server(0, false).await;
+    let client = raw_client(&base);
+    let mut watch = Box::pin(client.push(Duration::from_secs(120)));
+    // The stream opens and the probe goes out; then nobody polls the watch.
+    poll_for(&mut watch, Duration::from_millis(500)).await;
+    let started = std::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(40), client.send(&echo())).await.expect("the call never completed").unwrap();
+    assert!(started.elapsed() < Duration::from_secs(30), "took {:?}", started.elapsed());
+    let watched = tokio::time::timeout(Duration::from_secs(5), watch).await.expect("the watch kept going");
+    assert!(matches!(&watched, Err(JmapError::Network(said)) if said.contains("stalled")), "{watched:?}");
 }

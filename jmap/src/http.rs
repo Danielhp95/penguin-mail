@@ -35,6 +35,10 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 /// answers no other request of the account while a stream is open.
 const STALL_LIMIT: Duration = Duration::from_secs(20);
 
+/// How long push stays off after an API call stalled behind the stream.
+/// The account polls meanwhile, and the next stream is probed again.
+const PUSH_PAUSE: Duration = Duration::from_secs(30 * 60);
+
 /// How many same-host redirects the session fetch follows.
 const MOST_REDIRECTS: usize = 5;
 
@@ -58,11 +62,13 @@ struct Inner {
     events: tokio::sync::Mutex<Option<crate::push::EventStream>>,
     /// Set while a push stream is open.
     streaming: AtomicBool,
-    /// Set once a stream was found to hold up the account's other calls;
-    /// the account then polls instead.
+    /// Set once the probe beside a new stream went unanswered; the
+    /// account then polls for the client's life.
     push_off: AtomicBool,
-    /// Tells a waiting watch to drop its stream.
-    drop_stream: tokio::sync::Notify,
+    /// Until when push stays off after a call stalled behind the stream.
+    paused_until: Mutex<Option<tokio::time::Instant>>,
+    /// The task that holds the open stream's connection.
+    reader: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 #[derive(Default)]
@@ -142,7 +148,8 @@ impl JmapClient {
                 events: tokio::sync::Mutex::new(None),
                 streaming: AtomicBool::new(false),
                 push_off: AtomicBool::new(false),
-                drop_stream: tokio::sync::Notify::new(),
+                paused_until: Mutex::new(None),
+                reader: Mutex::new(None),
             }),
         })
     }
@@ -288,36 +295,59 @@ impl JmapClient {
         self.inner.push_off.load(Ordering::SeqCst)
     }
 
-    /// Waits until a stalled call asks the watch to drop its stream.
-    pub(crate) async fn stream_unwanted(&self) {
-        self.inner.drop_stream.notified().await
+    /// When push comes back, while it is paused after a stall.
+    pub(crate) fn push_paused(&self) -> Option<tokio::time::Instant> {
+        let mut until = self.inner.paused_until.lock().unwrap_or_else(PoisonError::into_inner);
+        if until.is_some_and(|at| at <= tokio::time::Instant::now()) {
+            *until = None;
+        }
+        *until
     }
 
-    /// Turns push off and closes the stream: dropped here when no watch
-    /// holds it, by the watch itself when one does.
+    /// Records the task that holds a newly opened stream.
+    pub(crate) fn keep_reader(&self, reader: tokio::task::AbortHandle) {
+        *self.inner.reader.lock().unwrap_or_else(PoisonError::into_inner) = Some(reader);
+    }
+
+    /// Turns push off for the client's life and closes the stream.
     pub(crate) fn stop_pushing(&self) {
         self.inner.push_off.store(true, Ordering::SeqCst);
-        self.inner.drop_stream.notify_one();
+        self.close_stream();
+    }
+
+    /// Turns push off for a while and closes the stream.
+    fn pause_pushing(&self) {
+        *self.inner.paused_until.lock().unwrap_or_else(PoisonError::into_inner) = Some(tokio::time::Instant::now() + PUSH_PAUSE);
+        self.close_stream();
+    }
+
+    /// Aborts the task that holds the stream, which drops the connection
+    /// whether or not anyone polls the watch that waits on it. The watch
+    /// finds the stream closed when it next runs.
+    fn close_stream(&self) {
+        if let Some(reader) = self.inner.reader.lock().unwrap_or_else(PoisonError::into_inner).take() {
+            reader.abort();
+        }
+        self.set_streaming(false);
         if let Ok(mut held) = self.inner.events.try_lock() {
             *held = None;
-            self.set_streaming(false);
         }
     }
 
-    /// Sends `request` and waits for the head of its answer. While a push
-    /// stream is open, a head that takes past the stall limit turns push
-    /// off and drops the stream, and the wait goes on: the call may be a
+    /// Sends an API call and waits for the head of its answer. While a
+    /// push stream is open, a head that takes past the stall limit pauses
+    /// push and drops the stream, and the wait goes on: the call may be a
     /// write, and giving up on it could let it run later unseen. Only the
     /// head is timed, so a slow body is never taken for a stall.
-    pub(crate) async fn sent(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, JmapError> {
+    async fn sent(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response, JmapError> {
         let answer = request.send();
         tokio::pin!(answer);
         if self.inner.streaming.load(Ordering::SeqCst) && !self.push_off() {
             tokio::select! {
                 got = &mut answer => return got.map_err(network),
                 _ = tokio::time::sleep(STALL_LIMIT) => {
-                    tracing::warn!("a call stalled while the push stream was open; turning push off");
-                    self.stop_pushing();
+                    tracing::warn!("a call stalled while the push stream was open; pausing push");
+                    self.pause_pushing();
                 }
             }
         }
@@ -474,6 +504,16 @@ mod tests {
         let err = reqwest::Client::new().get(url).send().await.unwrap_err();
         let said = network(err).to_string();
         assert!(!said.contains("me@example.org"), "{said}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn push_comes_back_after_a_stall_has_paused_it() {
+        let client = JmapClient::new("https://mail.example.org/jmap/session", Auth::Bearer("t".into())).unwrap();
+        client.pause_pushing();
+        assert!(client.push_paused().is_some());
+        tokio::time::advance(PUSH_PAUSE).await;
+        assert_eq!(client.push_paused(), None);
+        assert!(!client.push_off());
     }
 
     #[tokio::test]
