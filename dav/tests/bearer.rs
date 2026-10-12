@@ -91,3 +91,48 @@ fn ip_addresses_share_a_site_only_with_themselves() {
     assert!(!shares_site("https://192.0.2.10/jmap/session", "https://10.2.10/dav/"));
     assert!(!shares_site("https://[2001:db8::1]/jmap/session", "https://[2001:db8::2]/dav/"));
 }
+
+/// Counts the times a client says the fresh token was refused too.
+struct Telling(Counting, AtomicU32);
+
+impl TokenSource for Telling {
+    fn token<'a>(&'a self, refused: Option<&'a str>) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        self.0.token(refused)
+    }
+
+    fn refused_again(&self) {
+        self.1.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[tokio::test]
+async fn a_refused_fresh_token_is_reported_to_its_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("PROPFIND")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    Mock::given(method("PUT")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let source = Arc::new(Telling(Counting::new(), AtomicU32::new(0)));
+    let client = DavClient::over(url::Url::parse(&server.uri()).unwrap(), Kind::Calendar, Login::new("me", ""))
+        .unwrap()
+        .with_bearer(source.clone());
+    assert!(client.homes().await.is_err());
+    assert_eq!(source.1.load(Ordering::Relaxed), 1);
+    assert!(client.put("/cal/a.ics", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", Kind::Calendar, mailrs_dav::Precondition::NoneMatch).await.is_err());
+    assert_eq!(source.1.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test]
+async fn a_token_taken_after_a_refresh_reports_nothing() {
+    let server = MockServer::start().await;
+    Mock::given(method("PROPFIND"))
+        .and(header("Authorization", "Bearer fresh"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    Mock::given(method("PROPFIND")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let source = Arc::new(Telling(Counting::new(), AtomicU32::new(0)));
+    let client = DavClient::over(url::Url::parse(&server.uri()).unwrap(), Kind::Calendar, Login::new("me", ""))
+        .unwrap()
+        .with_bearer(source.clone());
+    let _ = client.homes().await;
+    assert_eq!(source.1.load(Ordering::Relaxed), 0);
+}

@@ -12,7 +12,7 @@ use mailrs_jmap::oauth::OAuthSession;
 use mailrs_pop3::Pop3Client;
 use mailrs_sieve::client::{Login as SieveLogin, ManageSieveClient};
 use mailrs_store::servers::{self, Pop3Servers, Saved, Servers};
-use mailrs_store::services::{FoundService, ServiceKind};
+use mailrs_store::services::{FoundService, Miss, ServiceKind};
 use mailrs_store::{Db, accounts};
 
 use crate::config::Config;
@@ -614,8 +614,9 @@ impl mailrs_dav::TokenSource for SessionTokens {
 /// account signed in through the browser keeps its refresh token in
 /// `secrets.jmap` and one OAuth session in `secrets.jmap_sessions` for the
 /// run; its CalDAV and CardDAV servers on the session's own site take the
-/// same session's token. Nothing here connects; the client reads the
-/// session when sync first asks.
+/// same session's token, or an app password once one refused the token.
+/// Nothing here connects; the client reads the session when sync first
+/// asks.
 pub async fn connect_jmap(db: &Db, secrets: &Secrets, account: &Account, window_days: i64) -> Result<AccountServices, SyncError> {
     connect_jmap_within(db, secrets, account, window_days, STEP_WAIT).await
 }
@@ -695,17 +696,7 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION),
     };
     let mut services = AccountServices::jmap(client, settings);
-    // DAV and ManageSieve servers take the account password over Basic, or
-    // the app password kept beside a token. An OAuth account's CalDAV and
-    // CardDAV servers take its bearer token, and its login carries no
-    // password.
-    let dav_secret = match &bearer {
-        Some(_) => Some(String::new()),
-        None => match read_secret(dav, id, wait).await? {
-            Some(password) => Some(password),
-            None => basic_password,
-        },
-    };
+    let app_password = read_secret(dav, id, wait).await?;
     if saved.offers(mailrs_jmap::CONTACTS)
         && let AnyMail::Jmap(adapter) = services.mail.clone()
     {
@@ -721,25 +712,24 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string());
         services = services.with_rules(AnyRules::JmapSieve(rules));
     }
-    if let Some(secret) = &dav_secret {
-        let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
-        // The password goes only to a server the person confirmed, and
-        // never for a service the session already gives. The OAuth token
-        // goes only to a server on the JMAP session's own site, since it
-        // carries the mail scope; ManageSieve takes no bearer token here.
-        // An OAuth account leaves any other server out.
-        for service in found.into_iter().filter(|f| f.confirmed) {
-            let off_site = bearer.is_some() && !mailrs_dav::shares_site(&saved.session_url, &service.url);
-            let skip = off_site
-                || match service.kind {
-                    ServiceKind::CardDav => saved.offers(mailrs_jmap::CONTACTS),
-                    ServiceKind::Sieve => saved.offers(mailrs_jmap::SIEVE) || bearer.is_some(),
-                    ServiceKind::CalDav => saved.offers(mailrs_jmap::CALENDARS),
-                };
-            if !skip {
-                services = attach(services, &service, secret, bearer.clone(), account, account.provider_name());
+    let read = db.read(move |c| {
+        let refused = mailrs_store::services::all_misses(c)?
+            .into_iter()
+            .filter(|(account, _, miss)| *account == id && *miss == Miss::Refused)
+            .map(|(_, kind, _)| kind)
+            .collect::<Vec<_>>();
+        Ok((mailrs_store::services::load(c, id)?, refused))
+    });
+    let (found, refused) = bounded(id, "the mail store", wait, read).await?;
+    for (service, sign) in dav_plan(found, &saved, bearer.is_some(), app_password, basic_password, &refused) {
+        services = match (sign, &bearer) {
+            (DavSign::Password(password), _) => attach(services, &service, &password, None, account, account.provider_name()),
+            (DavSign::Bearer, Some(tokens)) => {
+                let source = dav_bearer(Arc::clone(tokens), db.clone(), id, service.kind);
+                attach(services, &service, "", Some(source), account, account.provider_name())
             }
-        }
+            (DavSign::Bearer, None) => services,
+        };
     }
     // A ManageSieve server brings its own automatic reply with its rules;
     // JMAP's own reply wins where the session offers it.
@@ -752,6 +742,109 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         services = services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), id)));
     }
     Ok(services)
+}
+
+/// How a CalDAV, CardDAV or ManageSieve server beside a JMAP session
+/// signs in.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum DavSign {
+    /// The account's own password over Basic, or the app password kept
+    /// beside a token or a browser sign-in.
+    Password(String),
+    /// The OAuth session's token.
+    Bearer,
+}
+
+/// The servers kept for a JMAP account that serve what its session lacks,
+/// and how each signs in. Only a confirmed server is used. An app password
+/// wins: a server that takes it signs in with it, as beside a token. An
+/// account signed in through the browser (`oauth`) with no app password
+/// sends its token only to CalDAV and CardDAV servers on the session's own
+/// site, since the token carries the mail scope, and leaves out a service
+/// in `refused`, whose server refused a fresh token: it waits for an app
+/// password rather than refreshing on every call. An account with neither
+/// password nor token reaches no server.
+pub(crate) fn dav_plan(
+    found: Vec<FoundService>,
+    saved: &mailrs_store::jmap::JmapSaved,
+    oauth: bool,
+    app_password: Option<String>,
+    basic_password: Option<String>,
+    refused: &[ServiceKind],
+) -> Vec<(FoundService, DavSign)> {
+    let sign = match (app_password.or(basic_password), oauth) {
+        (Some(password), _) => DavSign::Password(password),
+        (None, true) => DavSign::Bearer,
+        (None, false) => return Vec::new(),
+    };
+    let bearer = sign == DavSign::Bearer;
+    found
+        .into_iter()
+        .filter(|f| f.confirmed)
+        .filter(|f| match f.kind {
+            ServiceKind::CardDav => !saved.offers(mailrs_jmap::CONTACTS),
+            ServiceKind::CalDav => !saved.offers(mailrs_jmap::CALENDARS),
+            ServiceKind::Sieve => !saved.offers(mailrs_jmap::SIEVE) && !bearer,
+        })
+        .filter(|f| !bearer || (mailrs_dav::shares_site(&saved.session_url, &f.url) && !refused.contains(&f.kind)))
+        .map(|f| (f, sign.clone()))
+        .collect()
+}
+
+/// The token source for one CalDAV or CardDAV server of an account signed
+/// in through the browser. Tokens come from `inner`, the account's one
+/// session. When the server refuses a fresh token too, the source hands
+/// out no more tokens for it this run, so no call refreshes again, and
+/// the store keeps that the service refused the sign-in: the next start
+/// leaves it out until the person gives an app password.
+pub(crate) fn dav_bearer(inner: Arc<dyn mailrs_dav::TokenSource>, db: Db, account: AccountId, kind: ServiceKind) -> Arc<dyn mailrs_dav::TokenSource> {
+    Arc::new(DavBearer { inner, db, account, kind, stopped: std::sync::atomic::AtomicBool::new(false) })
+}
+
+struct DavBearer {
+    inner: Arc<dyn mailrs_dav::TokenSource>,
+    db: Db,
+    account: AccountId,
+    kind: ServiceKind,
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+impl mailrs_dav::TokenSource for DavBearer {
+    fn token<'a>(&'a self, refused: Option<&'a str>) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        if self.stopped.load(std::sync::atomic::Ordering::SeqCst) {
+            return Box::pin(async { Err("the server refused the account's sign-in".to_string()) });
+        }
+        self.inner.token(refused)
+    }
+
+    fn refused_again(&self) {
+        if self.stopped.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let (db, account, kind) = (self.db.clone(), self.account, self.kind);
+        tracing::warn!(account, service = kind.as_str(), "the server refused the browser sign-in; it needs an app password");
+        tokio::spawn(async move {
+            let kept = db.write(move |c| mailrs_store::services::save_miss(c, account, kind, Some(Miss::Refused))).await;
+            if let Err(err) = kept {
+                tracing::warn!(account, %err, "could not keep that the server refused the sign-in");
+            }
+        });
+    }
+}
+
+/// Forgets that the account's CalDAV or CardDAV server refused its token,
+/// so the next connect sends the token there once more. A browser sign-in
+/// calls this with its new grant: a server that refuses that one too after
+/// the one shared refresh is marked again and waits for an app password.
+pub(crate) async fn try_the_token_again(db: &Db, account: AccountId) -> Result<(), SyncError> {
+    db.write(move |c| {
+        for kind in [ServiceKind::CalDav, ServiceKind::CardDav] {
+            mailrs_store::services::save_miss(c, account, kind, None)?;
+        }
+        Ok(())
+    })
+    .await?;
+    Ok(())
 }
 
 /// `services` with the server `service` names put behind the service it

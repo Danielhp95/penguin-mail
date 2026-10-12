@@ -1408,6 +1408,25 @@ pub fn again_line(account: &Account) -> String {
     )
 }
 
+/// What step 2 says above the fields for a JMAP account that signed in
+/// through the browser and needs to again. It has no password to give.
+pub fn again_browser_line(account: &Account) -> String {
+    fill(
+        &gettext("Choose Sign In With Browser to sign in to {address} again."),
+        &[("address", &account.email)],
+    )
+}
+
+/// The banner over the mail list for an account that needs to sign in
+/// again. One that signed in through the browser does so there again.
+pub fn sign_in_again_banner(address: &str, through_browser: bool) -> String {
+    let template = match through_browser {
+        true => gettext("Sign in again through the browser to keep {account} syncing"),
+        false => gettext("Sign in again to keep {account} syncing"),
+    };
+    fill(&template, &[("account", address)])
+}
+
 /// Which question the dialog asked last. Continue and Sign In each take
 /// a ticket, and an answer that comes back counts only while its ticket
 /// is the last one handed out and the dialog is open. Editing the
@@ -1762,6 +1781,17 @@ pub fn asks_dav_password(proposal: &JmapProposal, token: bool) -> bool {
             .is_some_and(|host| mailrs_discover::services_of(host).caldav.is_some())
 }
 
+/// Whether the password page asks for the calendar's app password when
+/// an account signs in again: it signed in through the browser, and its
+/// calendar or contacts server, in `refused`, refused that sign-in. A
+/// token account asks by [`asks_dav_password`].
+pub fn asks_dav_password_again(saved: &mailrs_store::jmap::JmapSaved, refused: &[mailrs_store::services::ServiceKind]) -> bool {
+    use mailrs_store::services::ServiceKind;
+
+    saved.auth == mailrs_store::jmap::JmapAuth::OAuth
+        && refused.iter().any(|kind| matches!(kind, ServiceKind::CalDav | ServiceKind::CardDav))
+}
+
 /// The session a browser sign-in for `proposal` goes to.
 pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowser {
     mailrs_sync::sign_in::JmapBrowser {
@@ -1770,12 +1800,22 @@ pub fn jmap_browser(proposal: &JmapProposal) -> mailrs_sync::sign_in::JmapBrowse
     }
 }
 
-/// The line under Sign In With Browser.
+/// The line under Sign In With Browser. Where the table's token card
+/// lists Masked Email, it says that only a token gives it: Fastmail grants
+/// no Masked Email scope to an app that signs in through the browser.
 pub fn browser_line(proposal: &JmapProposal) -> String {
-    fill(
+    let line = fill(
         &gettext("Sign in on {provider}'s own page instead of making a token."),
         &[("provider", &post::short_name(&proposal.provider_name))],
-    )
+    );
+    let masked = proposal
+        .provider
+        .as_ref()
+        .is_some_and(|p| p.token_access.iter().any(|access| access == "Masked Email"));
+    match masked {
+        true => format!("{line} {}", gettext("Masked Email needs an API token.")),
+        false => line,
+    }
 }
 
 /// Whether Sign In With Browser can start: nothing else is signing in, and
@@ -2556,6 +2596,22 @@ mod tests {
             provider: Provider::Imap,
             provider_name: Some("iCloud Mail".into()),
         }
+    }
+
+    #[test]
+    fn an_account_signed_in_through_the_browser_is_asked_to_sign_in_there_again() {
+        let account = Account {
+            email: "dana@fastmail.com".into(),
+            provider: Provider::Jmap,
+            provider_name: Some("Fastmail".into()),
+            ..icloud_account()
+        };
+        assert_eq!(again_browser_line(&account), "Choose Sign In With Browser to sign in to dana@fastmail.com again.");
+        assert_eq!(
+            sign_in_again_banner("dana@fastmail.com", true),
+            "Sign in again through the browser to keep dana@fastmail.com syncing"
+        );
+        assert_eq!(sign_in_again_banner("dana@fastmail.com", false), "Sign in again to keep dana@fastmail.com syncing");
     }
 
     #[test]
@@ -3416,7 +3472,19 @@ mod tests {
     fn the_browser_button_names_the_provider() {
         let address = Address::parse("me@fastmail.com").unwrap();
         let proposal = jmap_proposal(fastmail_jmap(), None, &address);
-        assert_eq!(browser_line(&proposal), "Sign in on Fastmail's own page instead of making a token.");
+        assert!(browser_line(&proposal).starts_with("Sign in on Fastmail's own page instead of making a token."));
+    }
+
+    #[test]
+    fn the_browser_line_says_masked_email_needs_a_token() {
+        let address = Address::parse("me@fastmail.com").unwrap();
+        let proposal = jmap_proposal(fastmail_jmap(), None, &address);
+        assert_eq!(
+            browser_line(&proposal),
+            "Sign in on Fastmail's own page instead of making a token. Masked Email needs an API token."
+        );
+        let elsewhere = jmap_proposal(hoster_jmap(), None, &Address::parse("me@example.org").unwrap());
+        assert!(!browser_line(&elsewhere).contains("Masked Email"), "only a provider whose tokens give Masked Email says so");
     }
 
     #[test]
@@ -3721,6 +3789,26 @@ mod tests {
         assert!(saved_jmap(&account, &saved).token);
         let basic = mailrs_store::jmap::JmapSaved { auth: mailrs_store::jmap::JmapAuth::Basic, ..saved };
         assert!(!saved_jmap(&account, &basic).token);
+    }
+
+    #[test]
+    fn a_browser_account_whose_calendar_refused_the_sign_in_asks_for_its_app_password() {
+        use mailrs_store::jmap::{JmapAuth, JmapSaved, SavedOAuth};
+        use mailrs_store::services::ServiceKind;
+
+        let saved = JmapSaved {
+            session_url: "https://api.fastmail.com/jmap/session".into(),
+            auth: JmapAuth::OAuth,
+            user_name: None,
+            labels: true,
+            capabilities: Vec::new(),
+            oauth: Some(SavedOAuth { client_id: "c1".into(), token_endpoint: "https://api.fastmail.com/oauth/refresh".into() }),
+        };
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CalDav]));
+        assert!(asks_dav_password_again(&saved, &[ServiceKind::CardDav]));
+        assert!(!asks_dav_password_again(&saved, &[]), "a calendar that takes the token needs nothing more");
+        let token = JmapSaved { auth: JmapAuth::Bearer, oauth: None, ..saved };
+        assert!(!asks_dav_password_again(&token, &[ServiceKind::CalDav]), "a token account asks through its own rule");
     }
 
     #[test]

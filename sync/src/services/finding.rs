@@ -190,6 +190,70 @@ pub async fn keep_found(db: &Db, account_id: AccountId, found: &FoundServices) -
         .await?)
 }
 
+/// The provider table's CalDAV and CardDAV servers for an account that
+/// signed in through the browser and keeps no password a DAV server
+/// takes. A server counts as confirmed only when the table names it for
+/// the account's provider and it shares a site with the JMAP session at
+/// `session_url`: the session's token goes to it, and to no host found
+/// any other way. Nothing is probed, since a probe would spend the token.
+/// A row kept before is replaced unless the person typed it, and the
+/// reason the store keeps for a server that refused the token stays while
+/// the server does not move, so the account goes on asking for an app
+/// password instead of refreshing.
+/// Answers what the account can use, and whether a confirmed server is
+/// new or moved.
+pub async fn keep_oauth_table(db: &Db, account: &mailrs_domain::Account, session_url: &str) -> Result<(FoundServices, bool), SyncError> {
+    let services = mailrs_discover::jmap_named(account.provider_name())
+        .and_then(|p| p.imap_host)
+        .map(|host| mailrs_discover::services_of(&host))
+        .unwrap_or_default();
+    let row = |kind, url: Option<String>| {
+        url.filter(|url| mailrs_dav::shares_site(session_url, url)).map(|url| FoundService {
+            kind,
+            url,
+            user_name: account.email.clone(),
+            confirmed: true,
+            source: source_word(Source::Table).into(),
+        })
+    };
+    let table = [row(ServiceKind::CalDav, services.caldav), row(ServiceKind::CardDav, services.carddav)];
+    let account_id = account.id;
+    Ok(db
+        .write(move |c| {
+            let held = services::load(c, account_id)?;
+            let mut refused: Vec<ServiceKind> = services::all_misses(c)?
+                .into_iter()
+                .filter(|(id, _, miss)| *id == account_id && *miss == Miss::Refused)
+                .map(|(_, kind, _)| kind)
+                .collect();
+            let mut found = FoundServices::default();
+            let mut changed = false;
+            for new in table.into_iter().flatten() {
+                let old = held.iter().find(|h| h.kind == new.kind);
+                if old.is_some_and(|o| o.source == "typed") {
+                    continue;
+                }
+                if old != Some(&new) {
+                    // A server at a new address gets its own try.
+                    changed = true;
+                    services::save(c, account_id, &new)?;
+                    services::save_miss(c, account_id, new.kind, None)?;
+                    refused.retain(|kind| *kind != new.kind);
+                }
+                let (usable, missed) = match new.kind {
+                    ServiceKind::CalDav => (&mut found.caldav, &mut found.caldav_missed),
+                    _ => (&mut found.carddav, &mut found.carddav_missed),
+                };
+                match refused.contains(&new.kind) {
+                    true => *missed = Some(Miss::Refused),
+                    false => *usable = Some(new),
+                }
+            }
+            Ok((found, changed))
+        })
+        .await?)
+}
+
 /// A URL the person typed for `kind`, checked with the login and kept.
 pub async fn use_typed<P: ServiceProbe>(probe: &P, db: &Db, account_id: AccountId, kind: ServiceKind, url: &str, user: &str, password: &str) -> Result<FoundService, SyncError> {
     let url = url.trim();

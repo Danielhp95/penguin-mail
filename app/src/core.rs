@@ -1008,11 +1008,13 @@ impl Core {
     /// it had for the account. Dropping the sender behind `cancel` ends
     /// the wait for the browser. Once the browser came back, the sign-in
     /// runs to its end however the dialog moves, so an account is never
-    /// left half kept.
+    /// left half kept. `dav_password` is the app password the person gave
+    /// for a calendar server that refused the browser sign-in.
     pub async fn sign_in_jmap_browser(
         &self,
         offer: JmapBrowser,
         address: String,
+        dav_password: Option<String>,
         urls: async_channel::Sender<String>,
         cancel: async_channel::Receiver<()>,
     ) -> Result<Account> {
@@ -1031,7 +1033,7 @@ impl Core {
             let canceled = async move {
                 let _ = cancel.recv().await;
             };
-            let signed = jmap_in_browser(&connector, offer, &address, open, canceled).await?;
+            let signed = jmap_in_browser(&connector, offer, &address, dav_password, open, canceled).await?;
             engine.start_account(signed.account.id, signed.services);
             Ok::<_, anyhow::Error>(signed.account)
         })
@@ -1040,8 +1042,10 @@ impl Core {
 
     /// Looks for the account's calendar, contacts and Sieve servers
     /// (calendar and contacts alone for a POP3 account) and keeps what it
-    /// finds. A JMAP account keeps none for what its session gives, and
-    /// looks for nothing when it keeps no password such a server takes. A
+    /// finds. A JMAP account keeps none for what its session gives. One
+    /// signed in through the browser with no app password takes its
+    /// provider's servers from the table instead of looking; any other
+    /// that keeps no password such a server takes looks for nothing. A
     /// new confirmed server restarts the account's services, so the
     /// calendar and contacts show without a restart. The demo asks nobody.
     pub async fn find_services(&self, account: Account) -> Result<ServicesFound> {
@@ -1059,7 +1063,31 @@ impl Core {
             let offers = |capability: &str| session.as_ref().is_some_and(|saved| saved.offers(capability));
             let offers_contacts = offers(mailrs_jmap::CONTACTS);
             let Some((host, user, password)) = dav_login(&db, &secrets, &account).await? else {
-                return Ok(ServicesFound { contacts: offers_contacts, ..ServicesFound::default() });
+                // An account signed in through the browser has no password
+                // to search with: it takes its provider's servers from the
+                // table, on the session's own site, and sends them its token.
+                let Some(saved) = session.as_ref().filter(|saved| saved.auth == mailrs_store::jmap::JmapAuth::OAuth) else {
+                    return Ok(ServicesFound { contacts: offers_contacts, ..ServicesFound::default() });
+                };
+                let (mut found, changed) = finding::keep_oauth_table(&db, &account, &saved.session_url).await?;
+                if saved.offers(mailrs_jmap::CONTACTS) {
+                    found.carddav = None;
+                    found.carddav_missed = None;
+                }
+                if saved.offers(mailrs_jmap::CALENDARS) {
+                    found.caldav = None;
+                    found.caldav_missed = None;
+                }
+                if changed {
+                    restart_services(&connector, engine, &account).await?;
+                }
+                return Ok(ServicesFound {
+                    calendar: found.caldav.is_some(),
+                    contacts: found.carddav.is_some() || offers_contacts,
+                    rules_on_server: false,
+                    calendar_missed: found.caldav_missed,
+                    contacts_missed: found.carddav_missed,
+                });
             };
             let net = RealNet::new()?;
             let mut found = finding::find_services(

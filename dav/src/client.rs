@@ -157,6 +157,11 @@ pub fn shares_site(a: &str, b: &str) -> bool {
 /// so calls refused together share one refresh.
 pub trait TokenSource: Send + Sync {
     fn token<'a>(&'a self, refused: Option<&'a str>) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
+
+    /// The server refused the token handed out after a refusal too, so a
+    /// fresh token does not help here. The source can stop handing out
+    /// tokens for this server rather than refresh on every call.
+    fn refused_again(&self) {}
 }
 
 pub struct DavClient {
@@ -234,6 +239,13 @@ impl DavClient {
         }
     }
 
+    /// Tells the token source that a fresh token was refused too.
+    fn refused_again(&self) {
+        if let Some(source) = &self.bearer {
+            source.refused_again();
+        }
+    }
+
     fn url(&self, href: &str) -> Result<Url, DavError> {
         // The path is encoded here, once, from its canonical form: `join`
         // alone would leave a stray `?` or `#` to start a query.
@@ -270,6 +282,9 @@ impl DavClient {
             {
                 refused = Some(token);
                 continue;
+            }
+            if status == StatusCode::UNAUTHORIZED && trusted && sent.is_some() {
+                self.refused_again();
             }
             if status.is_redirection() {
                 let Some(next) = response.headers().get("Location").and_then(|l| l.to_str().ok()) else {
@@ -536,6 +551,9 @@ impl DavApi for DavClient {
             {
                 refused = Some(token);
                 continue;
+            }
+            if response.status() == StatusCode::UNAUTHORIZED && trusted && sent.is_some() {
+                self.refused_again();
             }
             break response;
         };

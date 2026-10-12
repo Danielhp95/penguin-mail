@@ -1234,16 +1234,20 @@ impl MainWindow {
         self.follow_gates();
         self.list
             .set_show_accounts(mailbox.account().is_none() && data.len() > 1);
-        let reauth: Vec<&str> = data
+        let reauth: Vec<&Account> = data
             .iter()
             .filter(|(a, _)| a.state == AccountState::NeedsReauth)
-            .map(|(a, _)| a.email.as_str())
+            .map(|(a, _)| a)
             .collect();
         match reauth.first() {
-            Some(email) => {
-                self.list.banner.set_title(&fill(
-                    &gettext("Sign in again to keep {account} syncing"),
-                    &[("account", email)],
+            Some(account) => {
+                let through_browser = self
+                    .app
+                    .upgrade()
+                    .is_some_and(|app| app.signs_in_through_browser(account.id));
+                self.list.banner.set_title(&crate::add_account::sign_in_again_banner(
+                    &account.email,
+                    through_browser,
                 ));
                 self.list.banner.set_button_label(Some(&gettext("Sign In")));
                 self.list.banner.set_revealed(true);
@@ -2781,6 +2785,12 @@ impl MainWindow {
                         &[("account", &account.email)],
                     ));
                     win.refresh_accounts(Reload::Yes);
+                    // A JMAP account may have signed in another way, through
+                    // the browser or with an app password for its calendar,
+                    // which changes the servers it can reach beside mail.
+                    if account.provider == Provider::Jmap {
+                        win.look_for_servers(&account);
+                    }
                 }
             }
         });
