@@ -966,3 +966,41 @@ async fn a_calendar_server_that_refuses_the_fresh_token_asks_for_an_app_password
     let plan = crate::connect::dav_plan(vec![calendar_row], &saved, true, Some("app-password".into()), None, &[ServiceKind::CalDav]);
     assert!(matches!(&plan[0].1, crate::connect::DavSign::Password(p) if p == "app-password"));
 }
+
+#[tokio::test]
+async fn a_calendar_that_refuses_a_new_grant_too_asks_for_the_app_password_again() {
+    use mailrs_dav::{DavApi, DavClient, Kind, Login};
+    use mailrs_store::services::{Miss, ServiceKind};
+    use std::time::Duration;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+    let server = MockServer::start().await;
+    Mock::given(any()).respond_with(ResponseTemplate::new(401)).mount(&server).await;
+    let (db, _dir) = store().await;
+    let secrets = Secrets::memory();
+    let saved = oauth_row("https://api.fastmail.com/jmap/session", &[mailrs_jmap::MAIL]);
+    let account = crate::sign_in::jmap_signed_in(&db, &secrets, new_oauth(saved.clone()), 0).await.unwrap();
+    crate::services::finding::keep_oauth_table(&db, &account, &saved.session_url).await.unwrap();
+    let id = account.id;
+    db.write(move |c| mailrs_store::services::save_miss(c, id, ServiceKind::CalDav, Some(Miss::Refused))).await.unwrap();
+    // What a browser sign-in does with its new grant.
+    crate::connect::try_the_token_again(&db, id).await.unwrap();
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(matches!(services.calendar, Some(crate::AnyCalendar::Dav(_))), "the calendar gets one more try with the token");
+    let refreshing = Arc::new(Refreshing(std::sync::atomic::AtomicUsize::new(0)));
+    let source = crate::connect::dav_bearer(Arc::clone(&refreshing) as Arc<dyn mailrs_dav::TokenSource>, db.clone(), id, ServiceKind::CalDav);
+    let calendar = DavClient::over(format!("{}/cal/", server.uri()).parse().unwrap(), Kind::Calendar, Login::new("me@fastmail.com", ""))
+        .unwrap()
+        .with_bearer(source);
+    assert!(calendar.homes().await.is_err());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !db.read(mailrs_store::services::all_misses).await.unwrap().contains(&(id, ServiceKind::CalDav, Miss::Refused)) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the refusal was never kept again");
+    assert_eq!(refreshing.0.load(std::sync::atomic::Ordering::SeqCst), 1, "one refresh for the new grant");
+    let services = crate::connect_jmap(&db, &secrets, &account, 30).await.unwrap();
+    assert!(services.calendar.is_none(), "the calendar waits for an app password again");
+}

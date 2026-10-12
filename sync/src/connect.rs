@@ -832,6 +832,21 @@ impl mailrs_dav::TokenSource for DavBearer {
     }
 }
 
+/// Forgets that the account's CalDAV or CardDAV server refused its token,
+/// so the next connect sends the token there once more. A browser sign-in
+/// calls this with its new grant: a server that refuses that one too after
+/// the one shared refresh is marked again and waits for an app password.
+pub(crate) async fn try_the_token_again(db: &Db, account: AccountId) -> Result<(), SyncError> {
+    db.write(move |c| {
+        for kind in [ServiceKind::CalDav, ServiceKind::CardDav] {
+            mailrs_store::services::save_miss(c, account, kind, None)?;
+        }
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}
+
 /// `services` with the server `service` names put behind the service it
 /// offers. A server that cannot be set up is logged and left out, so the
 /// account keeps its mail. A Sieve row is passed over for an account whose

@@ -277,6 +277,8 @@ pub(crate) async fn signing_in<S: SignInServer>(
     let account = jmap_signed_in(db, secrets, new, now_millis()).await?;
     // The new refresh token, and maybe a new client, need a new session.
     secrets.jmap_sessions.forget(account.id);
+    // A new grant may carry what a calendar server refused before.
+    crate::connect::try_the_token_again(db, account.id).await?;
     let window_days = config.engine_config().window_days;
     let services = connect_jmap(db, secrets, &account, window_days).await?;
     Ok(SignedIn { account, name: None, services })
@@ -416,6 +418,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(reach.secrets.passwords.load(signed.account.id).unwrap().as_deref(), Some("app-pw"));
+    }
+
+    #[tokio::test]
+    async fn a_new_grant_lets_a_refused_calendar_try_the_token_once_more() {
+        use mailrs_store::services::{FoundService, Miss, ServiceKind};
+
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let session_url = format!("{}/jmap/session", jmap.uri());
+        let server = FakeServer::answering("client", vec![tokens("r1"), tokens("r2")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        let id = sign_in(&server, &reach, &session_url, &pages).await.unwrap().account.id;
+        db.write(move |c| {
+            let row = FoundService { kind: ServiceKind::CalDav, url: "https://127.0.0.1/dav/".into(), user_name: "me@fastmail.com".into(), confirmed: true, source: "table".into() };
+            mailrs_store::services::save(c, id, &row)?;
+            mailrs_store::services::save_miss(c, id, ServiceKind::CalDav, Some(Miss::Refused))
+        })
+        .await
+        .unwrap();
+        let again = sign_in(&server, &reach, &session_url, &pages).await.unwrap();
+        assert!(db.read(mailrs_store::services::all_misses).await.unwrap().is_empty(), "the new grant clears the mark");
+        assert!(matches!(again.services.calendar, Some(crate::AnyCalendar::Dav(_))), "the calendar tries the token again");
     }
 
     #[tokio::test]
