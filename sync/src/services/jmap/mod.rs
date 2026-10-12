@@ -36,8 +36,8 @@ pub(crate) use errors::backend;
 pub(crate) use bodies::numbered as numbered_for_tests;
 
 use super::{
-    Backfill, Changes, Found, IdentityService, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
-    RemoteRef, SearchQuery, SendAsAddress, SyncState, Unapplied, Want,
+    Backfill, Changes, Found, KeywordsPage, MailBackend, MailCapabilities, RawMessage, Relocated,
+    RemoteRef, SearchQuery, SyncState, Unapplied, Want,
 };
 use crate::api::{DraftRef, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -362,12 +362,5 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
 
     async fn list_drafts(&self) -> Result<Vec<DraftRef>, BackendError> {
         self.drafts().await
-    }
-}
-
-impl<J: JmapApi> IdentityService for Jmap<J> {
-    /// The account's own address. Part 3 reads the server's identities.
-    async fn identities(&self) -> Result<Vec<SendAsAddress>, BackendError> {
-        Ok(vec![SendAsAddress { email: self.settings.address.clone(), name: None, signature: String::new(), default: true }])
     }
 }

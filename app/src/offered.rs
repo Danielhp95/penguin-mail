@@ -615,11 +615,11 @@ pub fn kept_here_lines(accounts: &[Account]) -> Vec<String> {
 }
 
 /// Whether the app asks the server which addresses `account` sends as.
-/// Gmail keeps send-as addresses with their names. An IMAP server keeps
-/// neither, and asking it would replace the name the person typed when
-/// adding the account with none.
+/// Gmail keeps send-as addresses with their names, and a JMAP server its
+/// identities. An IMAP server keeps neither, and asking it would replace
+/// the name the person typed when adding the account with none.
 pub fn reads_send_as(account: &Account) -> bool {
-    account.provider == Provider::Gmail
+    matches!(account.provider, Provider::Gmail | Provider::Jmap)
 }
 
 #[cfg(test)]
@@ -1291,6 +1291,8 @@ mod tests {
     fn only_gmail_is_asked_which_addresses_it_sends_as() {
         assert!(reads_send_as(&gmail()));
         assert!(!reads_send_as(&fastmail()));
+        let jmap = Account { provider: Provider::Jmap, ..fastmail() };
+        assert!(reads_send_as(&jmap));
     }
 
     #[test]
