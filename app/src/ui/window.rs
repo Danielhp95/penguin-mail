@@ -1090,6 +1090,9 @@ impl MainWindow {
                 self.refresh_accounts(Reload::No);
                 if *state == AccountState::Ok {
                     self.account_ready_for_threads(*account_id);
+                    if let Some(app) = self.app.upgrade() {
+                        app.read_storage_of(*account_id);
+                    }
                 }
             }
             ChangeEvent::LabelsChanged { .. } => self.refresh_accounts(Reload::Yes),
