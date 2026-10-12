@@ -61,6 +61,14 @@ pub enum JmapError {
     /// never the path. A retry would hit the same full disk.
     #[error("local file: {0}")]
     LocalFile(String),
+    /// The server refuses the sign-in for now and may take it later, as
+    /// Fastmail's `invalid_grant` with `temporary: true` says.
+    #[error("the server holds the sign-in for now")]
+    SignInLocked,
+    /// The person, or the server's administrator, said no on the consent
+    /// page.
+    #[error("the sign-in was declined")]
+    Declined,
 }
 
 /// A decode failure for `what`, keeping the error's category and position
@@ -72,7 +80,7 @@ pub(crate) fn decode(what: &str, err: &serde_json::Error) -> JmapError {
 
 impl JmapError {
     pub fn is_transient(&self) -> bool {
-        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. })
+        matches!(self, JmapError::Network(_) | JmapError::RateLimited { .. } | JmapError::SignInLocked)
     }
 }
 
