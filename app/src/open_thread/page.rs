@@ -228,7 +228,8 @@ impl ToClean {
 
     /// Cleans them all. Slow, so not on the GTK thread. A body the
     /// sanitizer panics on comes back as a failed copy, so one bad body
-    /// does not take the others with it.
+    /// does not take the others with it. This needs panics to unwind;
+    /// `no_profile_aborts_on_panic` keeps `panic = "abort"` out.
     pub fn clean(self) -> HashMap<String, Cleaned> {
         self.0
             .into_iter()
@@ -883,6 +884,21 @@ mod tests {
         let page = whole(open.page(&theme()));
         assert!(page.contains("Kites at ten") && !page.contains("Loading…"), "{page}");
         assert!(open.to_clean().is_empty(), "the same body is not sent out again");
+    }
+
+    /// `ToClean::clean` and `compose::off_thread` catch a panic so one bad
+    /// body or build does not end the app. With `panic = "abort"` in a
+    /// profile they would catch nothing, and tests, which always unwind,
+    /// would not notice; so the manifests are read instead.
+    #[test]
+    fn no_profile_aborts_on_panic() {
+        for manifest in [include_str!("../../../Cargo.toml"), include_str!("../../Cargo.toml")] {
+            let aborts = manifest
+                .lines()
+                .map(|line| line.split('#').next().unwrap_or_default().replace(' ', ""))
+                .any(|line| line.starts_with("panic=") && line.contains("abort"));
+            assert!(!aborts, "catch_unwind needs panics to unwind");
+        }
     }
 
     #[test]

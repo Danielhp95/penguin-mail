@@ -159,8 +159,14 @@ impl MainWindow {
 
     /// Shows the newest message in `view` as it arrived, headers and all.
     pub(super) fn view_source(self: &Rc<Self>, view: &ConversationView) {
+        self.view_source_of(view, None);
+    }
+
+    /// Shows `message_id` in `view` as it arrived, or the newest message
+    /// when it is `None`.
+    pub(super) fn view_source_of(self: &Rc<Self>, view: &ConversationView, message_id: Option<String>) {
         let found = view.find(|o| {
-            let message = match &o.only_message {
+            let message = match message_id.as_ref().or(o.only_message.as_ref()) {
                 Some(id) => o.messages.iter().find(|m| &m.id == id),
                 None => o.messages.last(),
             }?;

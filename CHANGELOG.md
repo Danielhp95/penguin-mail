@@ -26,6 +26,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 - The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
 - Sending or saving a message with a large attachment no longer freezes the window, and holds the file in memory once rather than three times.
+- A message that cannot be displayed offers View Source beside the notice, to read it as it arrived or save it as an .eml file.
 
 ### Fixed
 

@@ -1527,6 +1527,7 @@ impl MainWindow {
             Action::SaveAllAttachments { message_id } => {
                 self.save_all_attachments_from(view, message_id)
             }
+            Action::ViewSource { message_id } => self.view_source_of(view, Some(message_id)),
             Action::Mailto(address) => {
                 if let Some(app) = self.app.upgrade() {
                     app.new_message(self.account_in_view(), &address);
