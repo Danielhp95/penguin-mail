@@ -59,6 +59,10 @@ const BATCH_LIMIT: usize = 1000;
 /// How many opened messages keep the spans of their parts.
 const OUTLINES_KEPT: usize = 8;
 
+/// What `Pop3::outlined` answers: the copy's length, its parts and their
+/// spans, and the part asked for, decoded.
+type Streamed = (u64, Parts, Spans, Option<Option<Vec<u8>>>);
+
 /// Where the parts of a message opened lately lie in its stored copy, which
 /// was `length` bytes long then.
 struct Outlined {
@@ -276,6 +280,42 @@ impl<S, P> Pop3<S, P> {
             .iter()
             .find(|o| o.id == id)
             .map(|o| (o.length, Arc::clone(&o.spans)))
+    }
+
+    /// The outline of the stored copy of `id`, read from its blob a piece
+    /// at a time, with its length. With `path`, also that part decoded
+    /// from the blob when the outline puts it there. `None` when the copy
+    /// is gone, cannot be read or cannot be outlined, for the caller to
+    /// read it whole.
+    async fn outlined(&self, id: &str, path: Option<&str>) -> Result<Option<Streamed>, BackendError> {
+        let (id, path) = (id.to_string(), path.map(str::to_string));
+        let read = self
+            .read(move |c, a| {
+                let Some(mut blob) = local_messages::open(c, a, &id)? else {
+                    return Ok(None);
+                };
+                let length = blob.len() as u64;
+                let streamed = (|| {
+                    let Some((parts, spans)) = mailrs_mime::outline_from(&mut blob, length)? else {
+                        return Ok(None);
+                    };
+                    let found = match path.as_deref().and_then(|p| spans.get(p)) {
+                        Some(span) => Some(mailrs_mime::decode_span(&mut blob, span)?),
+                        None => None,
+                    };
+                    Ok::<_, std::io::Error>(Some((length, parts, spans, found)))
+                })();
+                Ok(Some(streamed))
+            })
+            .await?;
+        Ok(match read {
+            Some(Ok(streamed)) => streamed,
+            Some(Err(err)) => {
+                tracing::info!(%err, "could not outline a stored copy from its blob");
+                None
+            }
+            None => None,
+        })
     }
 
     /// Part `path` of message `id`, decoded from its stored copy a piece at
@@ -611,6 +651,10 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     /// `fetch_part`. A full read would decode every file in the message,
     /// three and a half times its size in memory for one large file.
     async fn fetch_structure(&self, id: &str) -> Result<Parts, BackendError> {
+        if let Some((length, parts, spans, _)) = self.outlined(id, None).await? {
+            self.remember(id, length, spans);
+            return Ok(parts);
+        }
         let raw = self.raw(id).await?;
         let (parts, spans) = mailrs_mime::outline(&raw).ok_or(BackendError::NotFound)?;
         self.remember(id, raw.len() as u64, spans);
@@ -623,6 +667,10 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     async fn fetch_part(&self, id: &str, path: &str) -> Result<Vec<u8>, BackendError> {
         if let Some(bytes) = self.part_alone(id, path).await? {
             return Ok(bytes);
+        }
+        if let Some((length, _, spans, Some(found))) = self.outlined(id, Some(path)).await? {
+            self.remember(id, length, spans);
+            return found.ok_or(BackendError::NotFound);
         }
         let raw = self.raw(id).await?;
         let (_, spans) = mailrs_mime::outline(&raw).ok_or(BackendError::NotFound)?;

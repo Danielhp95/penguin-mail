@@ -17,12 +17,13 @@ pub const MARK: &str = "X-Penguin-Mail-Forwarded";
 
 /// Whether `raw` is a forward a local rule made.
 pub fn is_forward(raw: &[u8]) -> bool {
-    mailrs_mime::parts(raw).is_some_and(|p| p.header(MARK).is_some())
+    mailrs_mime::head::head(raw).header(MARK).is_some()
 }
 
 pub fn forwarded(raw: &[u8], from: &str, to: &str, now: EpochMillis) -> Result<Vec<u8>, SyncError> {
-    let subject = mailrs_mime::parts(raw)
-        .and_then(|p| p.header("Subject").map(str::to_string))
+    let subject = mailrs_mime::head::head(raw)
+        .header("Subject")
+        .map(str::to_string)
         .unwrap_or_default();
     let note = fill(
         &gettext("A rule on this computer forwarded the attached message from {address}."),

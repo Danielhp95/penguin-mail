@@ -1266,3 +1266,46 @@ async fn a_mail_change_restarts_pending_counts_for_unopened_folders() {
     tokio::time::timeout(Duration::from_secs(2), changed.changed()).await.unwrap().unwrap();
     assert_eq!(service.counts(sidebar, &folder, &view()).await.unwrap().mailboxes[&folder], 1);
 }
+
+#[tokio::test]
+async fn a_stopped_account_is_dropped_once_its_unread_counts_arrive() {
+    use std::time::Duration;
+    use crate::{AccountServices, AccountSync};
+    use crate::fake::{FakeImap, FakeSmtp};
+
+    let h = super::imap_harness().await;
+    let other_id = h.db.write(|c| mailrs_store::accounts::insert_account(c, "second@example.com", 0))
+        .await.unwrap();
+    let other = Arc::new(FakeImap::new());
+    other.add_mailbox("INBOX/Lists", None);
+    other.deliver("INBOX/Lists", b"Subject: Unopened\r\n\r\nHi".to_vec(), now_millis());
+    let services = AccountServices::imap(other, Arc::new(FakeSmtp::default()), super::fake_settings());
+    let (events, _) = async_channel::unbounded();
+    let second = Arc::new(AccountSync::new(other_id, services, h.db.clone(), events));
+    second.refresh_labels().await.unwrap();
+    let weak = Arc::downgrade(&second);
+    struct Registry(std::sync::Mutex<HashMap<mailrs_domain::AccountId, Arc<AccountSync>>>);
+    impl crate::Accounts for Registry {
+        fn account(&self, account_id: mailrs_domain::AccountId) -> Option<Arc<AccountSync>> {
+            self.0.lock().unwrap().get(&account_id).cloned()
+        }
+    }
+    let registry = Arc::new(Registry(std::sync::Mutex::new(HashMap::from([(other_id, second)]))));
+    let service = Mailboxes::new(Arc::clone(&registry), h.db.clone());
+    let folder = Mailbox::Label { account_id: other_id, label_id: "INBOX/Lists".into(), name: "Lists".into() };
+    let mut changed = service.counts_changed();
+    service.counts(std::slice::from_ref(&folder), &folder, &view()).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), changed.changed()).await.unwrap().unwrap();
+
+    // The account stops: nothing but the count task still points at it, and
+    // that task waits a minute before it looks again.
+    registry.0.lock().unwrap().remove(&other_id);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while weak.upgrade().is_some() {
+            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the account stayed alive through the count task's wait");
+}

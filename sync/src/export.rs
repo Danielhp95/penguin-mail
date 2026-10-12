@@ -27,17 +27,48 @@ impl<A: Accounts> MailActions<A> {
     /// names. The window's Export and the assistant both write this.
     pub async fn export_mbox(&self, targets: &[Target]) -> Result<Vec<u8>, SyncError> {
         let mut mbox = Vec::new();
+        self.export_mbox_to(targets, &mut mbox).await?;
+        Ok(mbox)
+    }
+
+    /// `export_mbox`, written to `out` one message at a time, so the file
+    /// is fed as the messages arrive and the mail is never held whole.
+    pub async fn export_mbox_to<W: tokio::io::AsyncWrite + Unpin>(
+        &self,
+        targets: &[Target],
+        out: &mut W,
+    ) -> Result<(), SyncError> {
         for target in targets {
             let sync = self
                 .accounts
                 .account(target.account_id)
                 .ok_or(SyncError::UnknownAccount(target.account_id))?;
-            mbox.extend(
-                sync.export_mbox(&target.thread_id, target.message_id.as_deref())
-                    .await?,
-            );
+            sync.export_mbox_to(&target.thread_id, target.message_id.as_deref(), out)
+                .await?;
         }
-        Ok(mbox)
+        Ok(())
+    }
+
+    /// `export_mbox` into the file at `path`, written beside it under a
+    /// temporary name and renamed over it when every message is in, so a
+    /// failed export leaves what was there. Answers the file's length.
+    pub async fn export_mbox_file(&self, targets: &[Target], path: &std::path::Path) -> Result<u64, SyncError> {
+        let mut partial = path.as_os_str().to_owned();
+        partial.push(".part");
+        let partial = std::path::PathBuf::from(partial);
+        let written = async {
+            let mut file = tokio::fs::File::create(&partial).await.map_err(SyncError::io)?;
+            self.export_mbox_to(targets, &mut file).await?;
+            let length = file.metadata().await.map_err(SyncError::io)?.len();
+            drop(file);
+            tokio::fs::rename(&partial, path).await.map_err(SyncError::io)?;
+            Ok(length)
+        }
+        .await;
+        if written.is_err() {
+            let _ = tokio::fs::remove_file(&partial).await;
+        }
+        written
     }
 
     /// One message as the RFC 822 bytes Gmail holds, the whole of an
@@ -46,7 +77,7 @@ impl<A: Accounts> MailActions<A> {
         &self,
         account_id: mailrs_domain::AccountId,
         message_id: &str,
-    ) -> Result<Vec<u8>, SyncError> {
+    ) -> Result<std::sync::Arc<Vec<u8>>, SyncError> {
         let sync = self
             .accounts
             .account(account_id)

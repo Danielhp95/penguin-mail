@@ -5,10 +5,12 @@
 //! `\Draft`. Saving it again appends the new copy and then erases the
 //! old, and the draft's id is the store's id for its message.
 
+use std::borrow::Cow;
+
 use mailrs_domain::translate::gettext;
 use mailrs_domain::{Location, Role};
 use mailrs_imap::UidSet;
-use mailrs_mime::address::parse_address_list;
+use mailrs_mime::head::{Envelope, Head};
 
 use super::syntax::string;
 use super::{Imap, ImapApi, Submit};
@@ -20,85 +22,43 @@ const DRAFT: &str = "\\Draft";
 const SEEN: &str = "\\Seen";
 const DELETED: &str = "\\Deleted";
 
-/// Where the header block of `raw` ends, after its blank line.
-fn header_end(raw: &[u8]) -> usize {
-    raw.windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .map(|p| p + 4)
-        .or_else(|| raw.windows(2).position(|w| w == b"\n\n").map(|p| p + 2))
-        .unwrap_or(raw.len())
-}
-
 /// `raw` without its Bcc header and the lines folded under it: the blind
 /// copies' addresses must not reach the other recipients. The envelope
-/// still carries them.
-pub(crate) fn without_bcc(raw: &[u8]) -> Vec<u8> {
-    let (head, body) = raw.split_at(header_end(raw));
-    let mut out = Vec::with_capacity(raw.len());
-    let mut skipping = false;
-    for line in head.split_inclusive(|b| *b == b'\n') {
-        let folded = line.first().is_some_and(|b| *b == b' ' || *b == b'\t');
-        if !folded {
-            skipping = line.len() >= 4 && line[..4].eq_ignore_ascii_case(b"bcc:");
-        }
-        if !skipping {
-            out.extend_from_slice(line);
-        }
-    }
-    out.extend_from_slice(body);
-    out
+/// still carries them. Borrowed when there is no Bcc header.
+pub(crate) fn without_bcc(raw: &[u8]) -> Cow<'_, [u8]> {
+    mailrs_mime::head::without_header(raw, "Bcc")
 }
 
 /// The Message-ID of `raw` without its angle brackets.
 fn message_id_of(raw: &[u8]) -> Option<String> {
-    mailrs_mime::parts(raw).and_then(|parts| {
-        parts
-            .header("Message-ID")
-            .map(|id| id.trim().trim_matches(['<', '>']).to_string())
-    })
+    mailrs_mime::head::message_id(raw)
 }
 
 /// Who `raw` goes from and to: the address in its From header, or
 /// `fallback` when there is none, and every address in To, Cc and Bcc
 /// once. Refused when it names nobody.
 pub(crate) fn envelope_of(raw: &[u8], fallback: &str) -> Result<(String, Vec<String>), BackendError> {
-    let parts = mailrs_mime::parts(raw).unwrap_or_default();
-    let from = parts
-        .header("From")
-        .map(parse_address_list)
-        .unwrap_or_default()
-        .into_iter()
-        .next()
-        .map(|a| a.email)
-        .unwrap_or_else(|| fallback.to_string());
-    let mut to: Vec<String> = parts
-        .headers
-        .iter()
-        .filter(|(name, _)| ["To", "Cc", "Bcc"].iter().any(|h| name.eq_ignore_ascii_case(h)))
-        .flat_map(|(_, value)| parse_address_list(value))
-        .map(|a| a.email)
-        .collect();
-    to.sort();
-    to.dedup();
-    if to.is_empty() {
+    envelope_from(&mailrs_mime::head::head(raw), fallback)
+}
+
+fn envelope_from(head: &Head, fallback: &str) -> Result<(String, Vec<String>), BackendError> {
+    let Envelope { from, recipients } = head.envelope();
+    if recipients.is_empty() {
         return Err(BackendError::Refused(gettext(
             "The message names nobody to send it to.",
         )));
     }
-    Ok((from, to))
+    Ok((from.unwrap_or_else(|| fallback.to_string()), recipients))
 }
 
 /// Hands `raw` to the SMTP server `smtp` and answers its Message-ID, which
 /// is all the server says about it. The envelope comes from
 /// [`envelope_of`]; the Bcc header itself stays out of what is sent.
 pub(crate) async fn submit_over<S: Submit>(smtp: &S, address: &str, raw: &[u8]) -> Result<String, BackendError> {
-    let (from, to) = envelope_of(raw, address)?;
+    let head = mailrs_mime::head::head(raw);
+    let (from, to) = envelope_from(&head, address)?;
     smtp.submit(&from, &to, &without_bcc(raw)).await?;
-    let parts = mailrs_mime::parts(raw).unwrap_or_default();
-    Ok(parts
-        .header("Message-ID")
-        .map(|id| id.trim().to_string())
-        .unwrap_or_default())
+    Ok(head.header("Message-ID").map(|id| id.trim().to_string()).unwrap_or_default())
 }
 
 impl<I: ImapApi, S: Submit> Imap<I, S> {
@@ -287,7 +247,7 @@ mod tests {
     fn the_bcc_header_and_its_folded_lines_stay_behind() {
         let raw = b"From: me@example.com\r\nTo: ann@example.com\r\nBcc: cy@example.com,\r\n dee@example.com\r\nSubject: Hi\r\n\r\nBcc: this line is the body\r\n";
         assert_eq!(
-            without_bcc(raw),
+            &*without_bcc(raw),
             b"From: me@example.com\r\nTo: ann@example.com\r\nSubject: Hi\r\n\r\nBcc: this line is the body\r\n"
         );
     }

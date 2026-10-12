@@ -248,7 +248,7 @@ impl Core {
         } else {
             None
         };
-        let (events_tx, events) = async_channel::unbounded();
+        let (events_tx, events) = async_channel::bounded(mailrs_sync::events::CHANNEL_EVENTS);
         let engine = Arc::new(RunningEngine::default());
         // The demo's newsletters point at addresses nobody owns, so its
         // one-click requests go to a fake.

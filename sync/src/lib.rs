@@ -23,6 +23,7 @@ mod one_click;
 mod ops;
 pub mod outbox;
 pub mod passwords;
+pub mod events;
 pub mod raw_cache;
 pub mod rules;
 pub mod sign_in;

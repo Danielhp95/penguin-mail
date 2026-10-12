@@ -840,6 +840,10 @@ impl<A: Accounts> Mailboxes<A> {
             // Each account updates on its own; no network await holds up local badges.
             let task = tokio::spawn(async move {
                 let answer = sync.services().mail.unread_counts().await.unwrap_or_default();
+                // The wait below runs a minute. An account that stops in
+                // that time must not stay alive, with its connections and
+                // caches, for the sake of this task.
+                drop(sync);
                 let Some(current) = state.upgrade() else { return };
                 let saved = {
                     let mut cached = current.lock().expect("unread counts poisoned");

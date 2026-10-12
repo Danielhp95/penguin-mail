@@ -1535,6 +1535,8 @@ fn worth_retrying(err: &SyncError) -> bool {
         // would fail the same way on every try.
         SyncError::Mime(_) => false,
         SyncError::NotAnAddress(_) => false,
+        // An export's file; the outbox exports nothing.
+        SyncError::Write(_) => false,
         // The outbox sends nothing to a list's server.
         SyncError::OneClick(_) => false,
         // The keyring's own trouble, not the message's; it usually clears

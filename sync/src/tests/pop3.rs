@@ -363,3 +363,12 @@ async fn a_kept_message_opens_by_its_structure_and_each_file_comes_alone() {
     }
     assert!(matches!(mail.fetch_part(&id, "9").await, Err(BackendError::NotFound)));
 }
+
+#[tokio::test]
+async fn a_pop3_message_read_raw_is_not_cached_beside_its_stored_copy() {
+    let h = pop3_harness(FakePop3::default(), RemoveSetting::Never).await;
+    let raw = b"From: ana@example.org\r\nTo: me@example.org\r\nSubject: Hi\r\n\r\nHello\r\n";
+    let id = h.keep("u1", raw, "INBOX", 1_700_000_000_000).await;
+    assert_eq!(h.sync.raw_message(&id).await.unwrap().as_slice(), raw);
+    assert!(h.sync.cached_raw(&id).is_none(), "the store already holds these bytes");
+}

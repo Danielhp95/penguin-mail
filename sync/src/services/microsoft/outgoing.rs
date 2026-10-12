@@ -17,7 +17,7 @@ use crate::api::{DraftRef, SavedDraft};
 /// The Message-ID of `raw` without its angle brackets, the only name the
 /// sent message has until Graph lists it in Sent Items.
 fn message_id_of(raw: &[u8]) -> Option<String> {
-    mailrs_mime::parts(raw).and_then(|parts| parts.header("Message-ID").map(|id| id.trim().trim_matches(['<', '>']).to_string()))
+    mailrs_mime::head::message_id(raw)
 }
 
 /// The largest MIME message `sendMail` takes: 3 MB grows to 4 MB as

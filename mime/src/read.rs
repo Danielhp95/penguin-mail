@@ -14,6 +14,9 @@ use mail_parser::parsers::MessageStream;
 use mail_parser::{Message, MessageParser, MessagePart, MimeHeaders, PartType};
 use mailrs_domain::MessageBody;
 
+mod stream;
+pub use stream::outline_from;
+
 use crate::parts::{
     MAX_DEPTH, Part, Parts, body, content_id, is_attachment, is_calendar, is_readable, numbered,
 };
@@ -76,6 +79,38 @@ pub fn outline(raw: &[u8]) -> Option<(Parts, Spans)> {
     Some((parts, Spans(skim.spans)))
 }
 
+/// What a part's own headers say, before its body is looked at.
+struct Described {
+    /// The part with its type, name and flags, and no path, size or bytes.
+    skimmed: Part,
+    boundary: Option<String>,
+    encoding: Option<String>,
+}
+
+/// The root part of `message`, a header-only parse, as [`Skim`] describes it.
+fn describe(message: &Message<'_>) -> Described {
+    let part = message.root_part();
+    let attribute = |name: &str| {
+        part.content_type()
+            .and_then(|ct| ct.attribute(name))
+            .map(str::to_string)
+    };
+    Described {
+        skimmed: Part {
+            mime_type: mime_type(part),
+            charset: attribute("charset"),
+            protocol: attribute("protocol"),
+            smime_type: attribute("smime-type"),
+            filename: part.attachment_name().map(str::to_string),
+            content_id: part.content_id().map(content_id),
+            attachment: part.content_disposition().is_some_and(|d| d.is_attachment()),
+            ..Part::default()
+        },
+        boundary: attribute("boundary"),
+        encoding: part.content_transfer_encoding().map(str::to_string),
+    }
+}
+
 /// A walk over a message's parts that decodes only their text.
 #[derive(Default)]
 struct Skim {
@@ -131,25 +166,10 @@ impl Skim {
                 ..Part::default()
             };
         };
-        let part = message.root_part();
-        let attribute = |name: &str| {
-            part.content_type()
-                .and_then(|ct| ct.attribute(name))
-                .map(str::to_string)
-        };
-        let encoding = part.content_transfer_encoding();
-        let mut skimmed = Part {
-            mime_type: mime_type(part),
-            charset: attribute("charset"),
-            protocol: attribute("protocol"),
-            smime_type: attribute("smime-type"),
-            filename: part.attachment_name().map(str::to_string),
-            content_id: part.content_id().map(content_id),
-            attachment: part.content_disposition().is_some_and(|d| d.is_attachment()),
-            ..Part::default()
-        };
+        let Described { mut skimmed, boundary, encoding } = describe(&message);
+        let encoding = encoding.as_deref();
         if skimmed.mime_type.starts_with("multipart/") {
-            if let (Some(boundary), true) = (attribute("boundary"), depth < MAX_DEPTH) {
+            if let (Some(boundary), true) = (boundary, depth < MAX_DEPTH) {
                 skimmed.children = self.children(body, body_at, boundary.as_bytes(), &path, depth);
             }
         } else if skimmed.mime_type == "message/rfc822" {

@@ -1605,7 +1605,7 @@ msgstr "是否將 {what} 匯出至 {file}？"
 msgid "A file with that name is there already, and exporting replaces it."
 msgstr "已有同名檔案，匯出會取代原檔案。"
 
-#: app/src/assistant/run/manage.rs:752
+#: app/src/assistant/run/manage.rs:753
 msgid "the message “{subject}”"
 msgstr "「{subject}」郵件"
 
@@ -9525,11 +9525,11 @@ msgstr "匯出郵件"
 msgid "Exporting…"
 msgstr "正在匯出…"
 
-#: app/src/ui/window/export.rs:103 app/src/ui/window/export.rs:161
+#: app/src/ui/window/export.rs:103 app/src/ui/window/export.rs:160
 msgid "Saved {file}"
 msgstr "已儲存 {file}"
 
-#: app/src/ui/window/export.rs:104 app/src/ui/window/export.rs:162
+#: app/src/ui/window/export.rs:104 app/src/ui/window/export.rs:161
 msgid "Could not export the mail: {reason}"
 msgstr "無法匯出郵件：{reason}"
 
@@ -10505,7 +10505,7 @@ msgstr "未讀"
 msgid "Is flagged"
 msgstr "有旗標"
 
-#: sync/src/account/outbox.rs:168
+#: sync/src/account/outbox.rs:171
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -10609,21 +10609,21 @@ msgid ""
 "school accounts ({reason})"
 msgstr "Google 日曆僅為部分工作及學校帳號提供外出與專注時間（{reason}）"
 
-#: sync/src/error.rs:144
+#: sync/src/error.rs:154
 msgid "Gmail keeps “{name}” for its own label. Choose another name."
 msgstr "Gmail 保留「{name}」作為自己的標籤。請選擇其他名稱。"
 
-#: sync/src/error.rs:151
+#: sync/src/error.rs:161
 msgid ""
 "Google Calendar makes “{title}” itself, so only Google Calendar can change "
 "it."
 msgstr "Google 日曆會自行建立「{title}」，因此僅能由 Google 日曆變更。"
 
-#: sync/src/error.rs:159
+#: sync/src/error.rs:169
 msgid "{host} refused the request to unsubscribe (HTTP {status})"
 msgstr "{host} 拒絕取消訂閱請求（HTTP {status}）"
 
-#: sync/src/error.rs:163
+#: sync/src/error.rs:173
 msgid "could not reach {host}"
 msgstr "無法連線至 {host}"
 
@@ -10735,82 +10735,82 @@ msgstr "所有郵件"
 msgid "This smart mailbox has no conditions"
 msgstr "此智慧信箱沒有條件"
 
-#: sync/src/mailbox.rs:1286
+#: sync/src/mailbox.rs:1290
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr "{account} 的結果僅來自此電腦上的郵件"
 
-#: sync/src/mailbox.rs:1298
+#: sync/src/mailbox.rs:1302
 msgid "Could not load mail for {account}: {reason}"
 msgstr "無法載入 {account} 的郵件：{reason}"
 
-#: sync/src/mailbox.rs:1423
+#: sync/src/mailbox.rs:1427
 msgid "Returns {when}"
 msgstr "於 {when} 移回"
 
-#: sync/src/mailbox.rs:1466 sync/src/mailbox.rs:1549
+#: sync/src/mailbox.rs:1470 sync/src/mailbox.rs:1553
 msgid "No recipients"
 msgstr "沒有收件者"
 
-#: sync/src/mailbox.rs:1469 sync/src/mailbox.rs:1552
+#: sync/src/mailbox.rs:1473 sync/src/mailbox.rs:1556
 msgid "To {recipients}"
 msgstr "收件者：{recipients}"
 
-#: sync/src/mailbox.rs:1512
+#: sync/src/mailbox.rs:1516
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} 封未讀 · {category}"
 
-#: sync/src/mailbox.rs:1517
+#: sync/src/mailbox.rs:1521
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} 封未讀"
 
-#: sync/src/mailbox.rs:1524
+#: sync/src/mailbox.rs:1528
 msgid "Sent yesterday, no reply yet"
 msgstr "昨天傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1526
+#: sync/src/mailbox.rs:1530
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1586
+#: sync/src/mailbox.rs:1590
 msgid "The server has not sent this message yet."
 msgstr "伺服器尚未寄出這封郵件。"
 
-#: sync/src/mailbox.rs:1587
+#: sync/src/mailbox.rs:1591
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr "Penguin Mail 尚未確認伺服器已收下這封郵件。"
 
-#: sync/src/mailbox.rs:1597
+#: sync/src/mailbox.rs:1601
 msgid "Sends {when}."
 msgstr "於 {when} 傳送。"
 
-#: sync/src/mailbox.rs:1598
+#: sync/src/mailbox.rs:1602
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "即使 Penguin Mail 已關閉，伺服器仍會寄出。"
 
-#: sync/src/mailbox.rs:1600
+#: sync/src/mailbox.rs:1604
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1607
+#: sync/src/mailbox.rs:1611
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr "請查看寄件備份。Penguin Mail 無法確認是否已寄出。"
 
-#: sync/src/mailbox.rs:1610
+#: sync/src/mailbox.rs:1614
 msgid "Canceled in another app."
 msgstr "已在其他應用程式中取消。"
 
-#: sync/src/mailbox.rs:1612
+#: sync/src/mailbox.rs:1616
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1619
+#: sync/src/mailbox.rs:1623
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1626
+#: sync/src/mailbox.rs:1630
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 
@@ -10834,7 +10834,7 @@ msgstr "無法要求伺服器釋出這封郵件。"
 msgid "The keyring refused: {reason}"
 msgstr "鑰匙圈拒絕操作：{reason}"
 
-#: sync/src/rules/forward.rs:28
+#: sync/src/rules/forward.rs:29
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "此電腦上的規則轉寄了 {address} 的郵件，內容如附件。"
 
@@ -10862,7 +10862,7 @@ msgstr "Penguin Mail 無法變更 CalDAV 伺服器的行事曆清單。"
 msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 
-#: sync/src/services/imap/outgoing.rs:85
+#: sync/src/services/imap/outgoing.rs:48
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
@@ -11106,13 +11106,13 @@ msgstr "Outlook 已回應，但未保留自動回覆。"
 msgid "A folder needs a name."
 msgstr "資料夾需要名稱。"
 
-#: sync/src/services/pop3/mod.rs:416
+#: sync/src/services/pop3/mod.rs:456
 msgid ""
 "Penguin Mail keeps the names of Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "Penguin Mail 保留收件匣、寄件備份、草稿、垃圾桶、垃圾郵件及封存的名稱。"
 
-#: sync/src/services/pop3/mod.rs:432
+#: sync/src/services/pop3/mod.rs:472
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr "Penguin Mail 保留收件匣、寄件備份、草稿、垃圾桶、垃圾郵件及封存。"
 

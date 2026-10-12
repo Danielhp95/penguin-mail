@@ -37,6 +37,10 @@ pub enum GmailError {
     Http { status: u16, body: String },
     #[error("network error: {0}")]
     Network(String),
+    /// An answer passed the size this call allows. It is refused as it
+    /// arrives, so a hostile or broken server cannot fill memory.
+    #[error("the answer is larger than {limit} bytes")]
+    TooLarge { limit: usize },
     #[error("could not decode Gmail response: {0}")]
     Decode(String),
     #[error("OAuth flow failed: {0}")]

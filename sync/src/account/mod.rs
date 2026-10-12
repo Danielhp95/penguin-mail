@@ -59,7 +59,7 @@ pub struct AccountSync {
     account_id: AccountId,
     services: AccountServices,
     db: Db,
-    events: async_channel::Sender<ChangeEvent>,
+    events: crate::events::Outgoing,
     window_days: i64,
     body_cache_bytes: i64,
     retry_max: Duration,
@@ -80,7 +80,8 @@ pub struct AccountSync {
     /// Forever on a row the store lacks knows what to erase.
     hits: Mutex<std::collections::HashMap<String, listed::Hits>>,
     /// The last small messages fetched whole, so a file opened right
-    /// after its message costs no second fetch.
+    /// after its message costs no second fetch. One cache serves every
+    /// account of the engine.
     raw: Arc<Mutex<RawCache>>,
     /// Taken on a folder server by a write from its first server command
     /// to the moment its moved messages' refs are recorded, and by every
@@ -116,7 +117,7 @@ impl AccountSync {
             account_id,
             services,
             db,
-            events,
+            events: crate::events::Outgoing::new(events),
             window_days: DEFAULT_WINDOW_DAYS,
             body_cache_bytes: DEFAULT_BODY_CACHE_BYTES,
             retry_max: Duration::from_secs(8),
@@ -137,6 +138,13 @@ impl AccountSync {
     pub fn with_limits(mut self, window_days: i64, body_cache_bytes: i64) -> Self {
         self.window_days = window_days;
         self.body_cache_bytes = body_cache_bytes;
+        self
+    }
+
+    /// Shares `cache` with the other accounts, so all of them keep their
+    /// raw messages under one budget.
+    pub fn with_raw_cache(mut self, cache: Arc<Mutex<RawCache>>) -> Self {
+        self.raw = cache;
         self
     }
 
@@ -177,11 +185,14 @@ impl AccountSync {
         // real length: Gmail's size estimate can put it under the limit
         // while its bytes come to more, and its files are read from these
         // bytes next.
-        if (bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await? {
+        // A POP3 account's bytes are in the store already, and keeping a
+        // second copy here would double them.
+        let local = self.services.mail.capabilities().local_mailboxes;
+        if !local && ((bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await?) {
             self.raw
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .put(message_id.to_string(), Arc::clone(&bytes));
+                .put(self.account_id, message_id.to_string(), Arc::clone(&bytes));
         }
         Ok(bytes)
     }
@@ -191,7 +202,7 @@ impl AccountSync {
         self.raw
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(message_id)
+            .get(self.account_id, message_id)
     }
 
     /// Whether `message_id` goes by the raw path: a stored message whose
@@ -286,8 +297,7 @@ impl AccountSync {
         ) {
             self.mail_changed();
         }
-        // The channel is unbounded, so this only fails when nobody listens.
-        let _ = self.events.try_send(event);
+        self.events.send(event);
     }
 
     fn emit_threads(&self, thread_ids: BTreeSet<String>) {

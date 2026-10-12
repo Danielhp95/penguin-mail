@@ -33,6 +33,7 @@ mod microsoft;
 mod muted_replies;
 mod newsletters;
 mod outbox;
+mod outgoing_heap;
 mod parity;
 mod pop3;
 mod pop3_check;

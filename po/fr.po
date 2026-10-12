@@ -1724,7 +1724,7 @@ msgstr "Exporter {what} vers {file} ?"
 msgid "A file with that name is there already, and exporting replaces it."
 msgstr "Un fichier portant ce nom existe déjà, et l’exportation le remplacera."
 
-#: app/src/assistant/run/manage.rs:752
+#: app/src/assistant/run/manage.rs:753
 msgid "the message “{subject}”"
 msgstr "le message « {subject} »"
 
@@ -10018,11 +10018,11 @@ msgstr "Exporter le courrier"
 msgid "Exporting…"
 msgstr "Exportation…"
 
-#: app/src/ui/window/export.rs:103 app/src/ui/window/export.rs:161
+#: app/src/ui/window/export.rs:103 app/src/ui/window/export.rs:160
 msgid "Saved {file}"
 msgstr "{file} enregistré"
 
-#: app/src/ui/window/export.rs:104 app/src/ui/window/export.rs:162
+#: app/src/ui/window/export.rs:104 app/src/ui/window/export.rs:161
 msgid "Could not export the mail: {reason}"
 msgstr "Impossible d’exporter le courrier : {reason}"
 
@@ -11062,7 +11062,7 @@ msgstr "Est non lu"
 msgid "Is flagged"
 msgstr "A un drapeau"
 
-#: sync/src/account/outbox.rs:168
+#: sync/src/account/outbox.rs:171
 msgid ""
 "The server holds this message to send at its hour. Cancel Send before you "
 "change it."
@@ -11180,12 +11180,12 @@ msgstr ""
 "Google Agenda ne propose l’absence du bureau et le temps de concentration "
 "que sur certains comptes professionnels et scolaires ({reason})"
 
-#: sync/src/error.rs:144
+#: sync/src/error.rs:154
 msgid "Gmail keeps “{name}” for its own label. Choose another name."
 msgstr ""
 "Gmail réserve « {name} » pour sa propre étiquette. Choisissez un autre nom."
 
-#: sync/src/error.rs:151
+#: sync/src/error.rs:161
 msgid ""
 "Google Calendar makes “{title}” itself, so only Google Calendar can change "
 "it."
@@ -11193,11 +11193,11 @@ msgstr ""
 "Google Agenda crée lui-même « {title} », seul Google Agenda peut donc le "
 "modifier."
 
-#: sync/src/error.rs:159
+#: sync/src/error.rs:169
 msgid "{host} refused the request to unsubscribe (HTTP {status})"
 msgstr "{host} a refusé la demande de désabonnement (HTTP {status})"
 
-#: sync/src/error.rs:163
+#: sync/src/error.rs:173
 msgid "could not reach {host}"
 msgstr "impossible de joindre {host}"
 
@@ -11311,88 +11311,88 @@ msgstr "Tous les messages"
 msgid "This smart mailbox has no conditions"
 msgstr "Cette boîte intelligente n’a aucune condition"
 
-#: sync/src/mailbox.rs:1286
+#: sync/src/mailbox.rs:1290
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr ""
 "Les résultats pour {account} proviennent uniquement du courrier présent sur "
 "cet ordinateur"
 
-#: sync/src/mailbox.rs:1298
+#: sync/src/mailbox.rs:1302
 msgid "Could not load mail for {account}: {reason}"
 msgstr "Impossible de charger le courrier de {account} : {reason}"
 
-#: sync/src/mailbox.rs:1423
+#: sync/src/mailbox.rs:1427
 msgid "Returns {when}"
 msgstr "Revient {when}"
 
-#: sync/src/mailbox.rs:1466 sync/src/mailbox.rs:1549
+#: sync/src/mailbox.rs:1470 sync/src/mailbox.rs:1553
 msgid "No recipients"
 msgstr "Aucun destinataire"
 
-#: sync/src/mailbox.rs:1469 sync/src/mailbox.rs:1552
+#: sync/src/mailbox.rs:1473 sync/src/mailbox.rs:1556
 msgid "To {recipients}"
 msgstr "À {recipients}"
 
-#: sync/src/mailbox.rs:1512
+#: sync/src/mailbox.rs:1516
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} non lu · {category}"
 msgstr[1] "{count} non lus · {category}"
 
-#: sync/src/mailbox.rs:1517
+#: sync/src/mailbox.rs:1521
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} non lu"
 msgstr[1] "{count} non lus"
 
-#: sync/src/mailbox.rs:1524
+#: sync/src/mailbox.rs:1528
 msgid "Sent yesterday, no reply yet"
 msgstr "Envoyé hier, pas encore de réponse"
 
-#: sync/src/mailbox.rs:1526
+#: sync/src/mailbox.rs:1530
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Envoyé il y a {days} jour, pas encore de réponse"
 msgstr[1] "Envoyé il y a {days} jours, pas encore de réponse"
 
-#: sync/src/mailbox.rs:1586
+#: sync/src/mailbox.rs:1590
 msgid "The server has not sent this message yet."
 msgstr "Le serveur n’a pas encore envoyé ce message."
 
-#: sync/src/mailbox.rs:1587
+#: sync/src/mailbox.rs:1591
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr ""
 "Penguin Mail n’a pas confirmé que le serveur a pris ce message en charge."
 
-#: sync/src/mailbox.rs:1597
+#: sync/src/mailbox.rs:1601
 msgid "Sends {when}."
 msgstr "Envoi {when}."
 
-#: sync/src/mailbox.rs:1598
+#: sync/src/mailbox.rs:1602
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "Le serveur l’envoie même si Penguin Mail est fermé."
 
-#: sync/src/mailbox.rs:1600
+#: sync/src/mailbox.rs:1604
 msgid "Sends {when}"
 msgstr "Envoi {when}"
 
-#: sync/src/mailbox.rs:1607
+#: sync/src/mailbox.rs:1611
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr "Vérifiez les Envoyés. Penguin Mail n’a pas pu confirmer l’envoi."
 
-#: sync/src/mailbox.rs:1610
+#: sync/src/mailbox.rs:1614
 msgid "Canceled in another app."
 msgstr "Annulé dans une autre application."
 
-#: sync/src/mailbox.rs:1612
+#: sync/src/mailbox.rs:1616
 msgid "Not sent"
 msgstr "Non envoyé"
 
-#: sync/src/mailbox.rs:1619
+#: sync/src/mailbox.rs:1623
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Nouvelle tentative {when}"
 
-#: sync/src/mailbox.rs:1626
+#: sync/src/mailbox.rs:1630
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail a cessé de réessayer"
 
@@ -11420,7 +11420,7 @@ msgstr "Impossible de demander au serveur de libérer le message."
 msgid "The keyring refused: {reason}"
 msgstr "Le trousseau a refusé : {reason}"
 
-#: sync/src/rules/forward.rs:28
+#: sync/src/rules/forward.rs:29
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "Une règle de cet ordinateur a transféré le message joint de {address}."
 
@@ -11450,7 +11450,7 @@ msgid "Penguin Mail reaches calendar and contact servers over HTTPS only."
 msgstr ""
 "Penguin Mail ne joint les serveurs d’agenda et de contacts que via HTTPS."
 
-#: sync/src/services/imap/outgoing.rs:85
+#: sync/src/services/imap/outgoing.rs:48
 msgid "The message names nobody to send it to."
 msgstr "Le message n’indique aucun destinataire."
 
@@ -11715,14 +11715,14 @@ msgstr "Outlook a répondu mais n’a pas conservé la réponse automatique."
 msgid "A folder needs a name."
 msgstr "Un dossier a besoin d’un nom."
 
-#: sync/src/services/pop3/mod.rs:416
+#: sync/src/services/pop3/mod.rs:456
 msgid ""
 "Penguin Mail keeps the names of Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "Penguin Mail réserve les noms Boîte de réception, Envoyés, Brouillons, "
 "Corbeille, Indésirables et Archives."
 
-#: sync/src/services/pop3/mod.rs:432
+#: sync/src/services/pop3/mod.rs:472
 msgid "Penguin Mail keeps Inbox, Sent, Drafts, Trash, Junk and Archive."
 msgstr ""
 "Penguin Mail conserve Boîte de réception, Envoyés, Brouillons, Corbeille, "

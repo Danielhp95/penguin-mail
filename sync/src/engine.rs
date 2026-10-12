@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::account::{DEFAULT_BODY_CACHE_BYTES, DEFAULT_WINDOW_DAYS};
+use crate::raw_cache::{RAW_CACHE_BYTES, RawCache};
 use crate::{
     AccountServices, AccountSync, BackendError, MailBackend, SyncError, backoff_delay, background,
     now_millis, poll_offset, with_jitter,
@@ -67,6 +68,8 @@ pub struct SyncEngine {
     /// Whether the main window is open, which sets how often an account
     /// looks at mail nobody is watching.
     window_open: AtomicBool,
+    /// The raw messages of every account, under one byte budget.
+    raw: Arc<Mutex<RawCache>>,
 }
 
 struct Running {
@@ -77,7 +80,7 @@ struct Running {
 
 impl SyncEngine {
     pub fn new(db: Db, config: EngineConfig) -> (Self, async_channel::Receiver<ChangeEvent>) {
-        let (events, receiver) = async_channel::unbounded();
+        let (events, receiver) = async_channel::bounded(crate::events::CHANNEL_EVENTS);
         (
             SyncEngine {
                 db,
@@ -86,6 +89,7 @@ impl SyncEngine {
                 running: Mutex::new(HashMap::new()),
                 network: Arc::new(AtomicBool::new(true)),
                 window_open: AtomicBool::new(true),
+                raw: Arc::new(Mutex::new(RawCache::new(RAW_CACHE_BYTES))),
             },
             receiver,
         )
@@ -99,7 +103,8 @@ impl SyncEngine {
             .set_window_open(self.window_open.load(Ordering::SeqCst));
         let sync = Arc::new(
             AccountSync::new(account_id, services, self.db.clone(), self.events.clone())
-                .with_limits(self.config.window_days, self.config.body_cache_bytes),
+                .with_limits(self.config.window_days, self.config.body_cache_bytes)
+                .with_raw_cache(Arc::clone(&self.raw)),
         );
         let poke = Arc::new(Notify::new());
         let mut running = self.lock();
@@ -131,6 +136,10 @@ impl SyncEngine {
         if let Some(running) = self.lock().remove(&account_id) {
             running.task.abort();
         }
+        self.raw
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .forget(account_id);
     }
 
     /// Polls the account now instead of at the next interval.
@@ -163,9 +172,14 @@ impl SyncEngine {
     /// tray running, an account looks at mailboxes other than its Inbox
     /// less often.
     pub fn set_window_open(&self, open: bool) {
-        self.window_open.store(open, Ordering::SeqCst);
+        let was_open = self.window_open.swap(open, Ordering::SeqCst);
         for running in self.lock().values() {
             running.sync.services().mail.set_window_open(open);
+            // The tray looks every few minutes; a window that opens now
+            // should not show mail from before the last look.
+            if open && !was_open {
+                running.poke.notify_one();
+            }
         }
     }
 
