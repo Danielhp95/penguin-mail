@@ -1798,6 +1798,9 @@ pub fn holdings(conn: &Connection) -> Result<Vec<Holding>> {
 ///   provider never heard of it. But the create is on its way, so the
 ///   row is gone and the provider now holds the event: queue its
 ///   removal against `new_etag`, and keep the answer out of the copy.
+/// - A delete of an event whose `Save` is on its way turns that row into
+///   the removal, with the same event in its body. The row stays, its
+///   etag moved to `new_etag`, and the answer stays out of the copy.
 pub fn finish_change(
     conn: &Connection,
     account_id: AccountId,
@@ -1805,9 +1808,14 @@ pub fn finish_change(
     attempted: &Event,
     new_etag: &str,
 ) -> Result<bool> {
-    let current: Option<Option<String>> = conn
-        .query_row("SELECT body FROM calendar_changes WHERE seq = ?1", params![seq], |row| row.get(0))
+    let current: Option<(String, Option<String>)> = conn
+        .query_row("SELECT kind, body FROM calendar_changes WHERE seq = ?1", params![seq], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
         .optional()?;
+    // A delete that took the row over carries the same event in its body,
+    // and is still to go out.
+    let current = current.map(|(kind, body)| body.filter(|_| kind != "remove"));
     match current {
         None => {
             let gone = Event {
@@ -2777,6 +2785,24 @@ mod tests {
         let (conn, id) = store();
         let lunch = event("primary", "lunch", MONDAY, 1);
         enqueue(&conn, id, ChangeKind::Create, &lunch).unwrap();
+        let seq = queued(&conn, id).unwrap()[0].seq;
+        enqueue(&conn, id, ChangeKind::Remove, &lunch).unwrap();
+        assert!(!finish_change(&conn, id, seq, &lunch, "\"2\"").unwrap());
+        let held = queued(&conn, id).unwrap();
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].kind, ChangeKind::Remove);
+        assert_eq!(held[0].etag.as_deref(), Some("\"2\""));
+    }
+
+    /// A delete made while an edit is in flight turns the edit's row into
+    /// the removal, with the same event in its body. Finishing the edit
+    /// must leave the removal queued and keep the answer out of the copy,
+    /// or the deleted event comes back and never leaves the provider.
+    #[test]
+    fn finishing_an_edit_a_delete_took_over_keeps_the_delete_queued() {
+        let (conn, id) = store();
+        let lunch = event("primary", "lunch", MONDAY, 1);
+        enqueue(&conn, id, ChangeKind::Save, &lunch).unwrap();
         let seq = queued(&conn, id).unwrap()[0].seq;
         enqueue(&conn, id, ChangeKind::Remove, &lunch).unwrap();
         assert!(!finish_change(&conn, id, seq, &lunch, "\"2\"").unwrap());
