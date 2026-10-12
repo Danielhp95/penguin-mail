@@ -227,6 +227,17 @@ impl Rules {
                 self.shown.borrow_mut().push(row.upcast());
                 continue;
             }
+            if filter.off {
+                // The switch to JMAP turned it off: the server lacks a
+                // folder it names. Saving it with a folder the server has
+                // turns it back on.
+                row.set_subtitle(&glib::markup_escape_text(&format!(
+                    "{}\n{}",
+                    describe_action(&filter.action, |id| self.label_name(id)),
+                    gettext("Off: its folder is not on this server"),
+                )));
+                row.add_css_class("dim-label");
+            }
             // The row points its LabelledBy relation at the title, which
             // wins over a label set on it, so drop the relation first.
             row.upcast_ref::<gtk::Widget>()

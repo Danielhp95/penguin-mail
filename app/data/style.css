@@ -1751,3 +1751,37 @@ row.guest-field:focus-within {
 .composer-narrow .format-bar button { padding: 2px 1px; }
 .composer-narrow .format-group { padding: 0 3px; }
 .calendar-narrow button.calendar-today { padding: 0 10px; }
+
+/* Switch to JMAP (jmap34_mock.py, switch-*): the dialog on the window
+   colour, a token card tinted 3 % with the accent (10 % in dark) inside a
+   25 % accent border, 16 px in, its body 6 px under the heading and its
+   link 10 px under the body. */
+dialog.switch-jmap { --dialog-bg-color: var(--window-bg-color); }
+.switch-help {
+  margin-bottom: 6px;
+  padding: 16px;
+  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--accent-bg-color) 3%, var(--window-bg-color));
+  border: 1px solid color-mix(in srgb, var(--accent-bg-color) 25%, var(--window-bg-color));
+}
+.app-dark .switch-help { background-color: color-mix(in srgb, var(--accent-bg-color) 10%, var(--window-bg-color)); }
+.switch-help-title { font-size: 0.95em; font-weight: 700; }
+.switch-help-body { font-size: 0.89em; margin-top: 6px; line-height: 1.08; }
+.switch-help-link { margin-top: 10px; padding: 0; min-height: 0; font-size: 0.92em; font-weight: 700; color: var(--accent-color); }
+.switch-help-link buttoncontent > box { border-spacing: 8px; }
+.switch-help-link buttoncontent image { -gtk-icon-size: 14px; }
+.switch-progress label { font-size: 0.95em; }
+/* The mockup's info rows: title baseline 31 px down, 18 px lines, 12 px
+   under the last one, the words 52 px in from the box's edge. */
+row.switch-info > box.header { padding-top: 5px; padding-bottom: 4px; }
+row.switch-info box.title { border-spacing: 0; }
+row.switch-info > box.header > box.prefixes { margin-right: 10px; }
+row.switch-info label.subtitle { font-size: 0.89em; line-height: 1.3; }
+.switch-help-link, .switch-help-link:hover { background: none; }
+row.switch-entry image.edit-icon { -gtk-icon-size: 0; min-width: 0; margin: 0; padding: 0; }
+.switch-jmap preferencesgroup > box > box.header { margin-bottom: 0; }
+.switch-sent-to { font-size: 0.89em; margin-bottom: 12px; }
+row.switch-entry > box.header { min-height: 58px; }
+.switch-toast { font-weight: 400; }
+.switch-toasts toast { border-radius: 18px; }
+.switch-progress spinner { color: var(--accent-color); }
