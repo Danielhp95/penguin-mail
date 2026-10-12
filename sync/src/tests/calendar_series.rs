@@ -49,6 +49,7 @@ async fn read_standup(h: &Harness) -> CalendarCopy<Connected> {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }]
     });
     h.fake.put_calendar_event(standup());
@@ -170,6 +171,7 @@ async fn split_six_weeks(h: &Harness) -> (CalendarCopy<Connected>, String) {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }]
     });
     h.fake.put_calendar_event(Event {

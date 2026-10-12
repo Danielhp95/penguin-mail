@@ -14,7 +14,7 @@ use calcard::icalendar::{
 use calcard::{Entry, Parser};
 use chrono::{DateTime, NaiveDate, Utc};
 use mailrs_domain::EpochMillis;
-use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, named_zone, occurrence_id};
+use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, made_uid, named_zone, occurrence_id};
 use mailrs_domain::invitation::Answer;
 
 use crate::ids::resource_id;
@@ -352,7 +352,7 @@ fn fresh() -> Result<ICalendar, DavError> {
 /// index: its UID, and for a changed occurrence its RECURRENCE-ID in the
 /// shape of the master's DTSTART.
 fn add_vevent(ical: &mut ICalendar, event: &Event, master: Option<&Event>) -> Result<usize, DavError> {
-    let uid = if event.uid.is_empty() { format!("{}@penguin-mail", event.id) } else { event.uid.clone() };
+    let uid = if event.uid.is_empty() { made_uid(&event.id) } else { event.uid.clone() };
     let mut lines = vec![format!("UID:{uid}")];
     if let (Some(original), Some(master)) = (event.original_start, master) {
         lines.push(time_line("RECURRENCE-ID", original, &master.zone, master.all_day));

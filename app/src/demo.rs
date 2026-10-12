@@ -990,6 +990,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 // A common choice on Google's side; lets a run of the
                 // demo show a reminder for the call with Rita below.
                 reminders: vec![Reminder { minutes: 10, method: ReminderMethod::Notification }],
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: FAMILY.into(),
@@ -1001,6 +1002,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: HOLIDAYS_PT.into(),
@@ -1012,6 +1014,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
         ],
         1 => vec![
@@ -1025,6 +1028,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: DESIGN_TEAM.into(),
@@ -1036,6 +1040,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: MARKETING.into(),
@@ -1047,6 +1052,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: false,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
         ],
         _ => vec![CalendarModel {
@@ -1059,6 +1065,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }],
     }
 }

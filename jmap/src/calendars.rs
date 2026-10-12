@@ -63,6 +63,12 @@ pub struct JmapCalendar {
     pub time_zone: Option<String>,
     #[serde(default)]
     pub my_rights: CalendarRights,
+    /// The alerts of a timed event that uses the calendar's defaults, by id.
+    #[serde(default)]
+    pub default_alerts_with_time: Option<Map<String, Value>>,
+    /// The same for an all-day event.
+    #[serde(default)]
+    pub default_alerts_without_time: Option<Map<String, Value>>,
 }
 
 /// Events as `CalendarEvent/get` answers them, whole JSCalendar objects.

@@ -3584,8 +3584,8 @@ msgstr "在 {host} 找到。是否使用？"
 msgid "{host} refused the login: {reason}"
 msgstr "{host} 拒絕登入：{reason}"
 
-#: app/src/servers.rs:34 app/src/ui/calendar/editor.rs:1164
-#: app/src/ui/calendar/editor.rs:1240 app/src/ui/contacts_prefs.rs:271
+#: app/src/servers.rs:34 app/src/ui/calendar/editor.rs:1168
+#: app/src/ui/calendar/editor.rs:1244 app/src/ui/contacts_prefs.rs:271
 #: app/src/ui/sidebar.rs:356 app/src/ui/sidebar.rs:1407
 #: app/src/ui/window/shortcuts.rs:236
 msgid "Calendar"
@@ -3683,11 +3683,11 @@ msgstr "Markdown"
 msgid "Automatic"
 msgstr "自動"
 
-#: app/src/settings/mod.rs:537 app/src/ui/calendar/editor.rs:2034
+#: app/src/settings/mod.rs:537 app/src/ui/calendar/editor.rs:2041
 msgid "Monday"
 msgstr "星期一"
 
-#: app/src/settings/mod.rs:538 app/src/ui/calendar/editor.rs:2040
+#: app/src/settings/mod.rs:538 app/src/ui/calendar/editor.rs:2047
 msgid "Sunday"
 msgstr "星期日"
 
@@ -4296,7 +4296,7 @@ msgstr "新增其他帳號"
 msgid "Not Now"
 msgstr "暫時不要"
 
-#: app/src/ui/add_account.rs:1242 app/src/ui/calendar/editor.rs:1606
+#: app/src/ui/add_account.rs:1242 app/src/ui/calendar/editor.rs:1613
 #: app/src/ui/calendar/sidebar.rs:922 app/src/ui/contacts_prefs.rs:365
 #: app/src/ui/invitation.rs:461 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1371
@@ -4618,7 +4618,7 @@ msgstr "編輯"
 msgid "Edit {server}"
 msgstr "編輯 {server}"
 
-#: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1639
+#: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:1951 app/src/ui/composer/recipients.rs:315
 #: app/src/ui/sender_prefs.rs:134 app/src/ui/window.rs:3002
 msgid "Remove"
@@ -5056,7 +5056,7 @@ msgstr "Brave Search API 金鑰（已儲存）"
 msgid "Brave Search API Key"
 msgstr "Brave Search API 金鑰"
 
-#: app/src/ui/autocomplete.rs:307 app/src/ui/calendar/editor.rs:2274
+#: app/src/ui/autocomplete.rs:307 app/src/ui/calendar/editor.rs:2281
 #: app/src/ui/composer/recipients.rs:50
 msgid "{name}, {address}"
 msgstr "{name}，{address}"
@@ -5142,12 +5142,12 @@ msgstr "{title}，全天，{calendar}"
 msgid "{title}, {start} to {end}, {calendar}"
 msgstr "{title}，{start} 至 {end}，{calendar}"
 
-#: app/src/ui/calendar/draft.rs:103 app/src/ui/calendar/editor.rs:1997
+#: app/src/ui/calendar/draft.rs:103 app/src/ui/calendar/editor.rs:2004
 #: app/src/ui/calendar/kinds.rs:59
 msgid "Out of office"
 msgstr "外出"
 
-#: app/src/ui/calendar/draft.rs:104 app/src/ui/calendar/editor.rs:1996
+#: app/src/ui/calendar/draft.rs:104 app/src/ui/calendar/editor.rs:2003
 #: app/src/ui/calendar/kinds.rs:60
 msgid "Focus time"
 msgstr "專注時間"
@@ -5250,279 +5250,279 @@ msgstr "開始"
 msgid "Ends"
 msgstr "結束"
 
-#: app/src/ui/calendar/editor.rs:850
+#: app/src/ui/calendar/editor.rs:854
 msgid "Repeats"
 msgstr "重複"
 
-#: app/src/ui/calendar/editor.rs:893
+#: app/src/ui/calendar/editor.rs:897
 msgid "Custom…"
 msgstr "自訂…"
 
-#: app/src/ui/calendar/editor.rs:947
+#: app/src/ui/calendar/editor.rs:951
 msgid "Every"
 msgstr "每"
 
-#: app/src/ui/calendar/editor.rs:951
+#: app/src/ui/calendar/editor.rs:955
 msgid "Unit"
 msgstr "單位"
 
-#: app/src/ui/calendar/editor.rs:955
+#: app/src/ui/calendar/editor.rs:959
 msgid "On"
 msgstr "於"
 
-#: app/src/ui/calendar/editor.rs:1007
+#: app/src/ui/calendar/editor.rs:1011
 msgid "Stops"
 msgstr "結束"
 
-#: app/src/ui/calendar/editor.rs:1014 app/src/ui/calendar/editor.rs:1019
+#: app/src/ui/calendar/editor.rs:1018 app/src/ui/calendar/editor.rs:1023
 #: app/src/ui/calendar/words.rs:466
 msgid "Never"
 msgstr "永不"
 
-#: app/src/ui/calendar/editor.rs:1015 app/src/ui/calendar/editor.rs:1038
+#: app/src/ui/calendar/editor.rs:1019 app/src/ui/calendar/editor.rs:1042
 msgid "On a date"
 msgstr "於指定日期"
 
-#: app/src/ui/calendar/editor.rs:1016 app/src/ui/calendar/editor.rs:1064
+#: app/src/ui/calendar/editor.rs:1020 app/src/ui/calendar/editor.rs:1068
 msgid "After"
 msgstr "經過"
 
-#: app/src/ui/calendar/editor.rs:1028
+#: app/src/ui/calendar/editor.rs:1032
 msgid "End date of the repeat"
 msgstr "重複結束日期"
 
-#: app/src/ui/calendar/editor.rs:1051 app/src/ui/calendar/editor.rs:1060
+#: app/src/ui/calendar/editor.rs:1055 app/src/ui/calendar/editor.rs:1064
 msgid "time"
 msgid_plural "times"
 msgstr[0] "次"
 
-#: app/src/ui/calendar/editor.rs:1052
+#: app/src/ui/calendar/editor.rs:1056
 msgid "Number of times"
 msgstr "次數"
 
-#: app/src/ui/calendar/editor.rs:1252
+#: app/src/ui/calendar/editor.rs:1256
 msgid "Place"
 msgstr "地點"
 
 #. Named for the moment Show all hands it the focus.
-#: app/src/ui/calendar/editor.rs:1267 app/src/ui/calendar/popover.rs:288
+#: app/src/ui/calendar/editor.rs:1271 app/src/ui/calendar/popover.rs:288
 msgid "Guests"
 msgstr "參與者"
 
-#: app/src/ui/calendar/editor.rs:1270 app/src/ui/calendar/editor.rs:1275
+#: app/src/ui/calendar/editor.rs:1274 app/src/ui/calendar/editor.rs:1279
 msgid "Add guests"
 msgstr "新增參與者"
 
-#: app/src/ui/calendar/editor.rs:1336
+#: app/src/ui/calendar/editor.rs:1340
 msgid "Not an address: {text}"
 msgstr "不是地址：{text}"
 
-#: app/src/ui/calendar/editor.rs:1359
+#: app/src/ui/calendar/editor.rs:1363
 msgid "{address} · {answer}"
 msgstr "{address} · {answer}"
 
-#: app/src/ui/calendar/editor.rs:1377
+#: app/src/ui/calendar/editor.rs:1381
 msgid "Remove {guest}"
 msgstr "移除 {guest}"
 
-#: app/src/ui/calendar/editor.rs:1404
+#: app/src/ui/calendar/editor.rs:1408
 msgid "Reminders"
 msgstr "提醒"
 
-#: app/src/ui/calendar/editor.rs:1444
+#: app/src/ui/calendar/editor.rs:1451
 msgid "Add Reminder"
 msgstr "新增提醒"
 
-#: app/src/ui/calendar/editor.rs:1486
+#: app/src/ui/calendar/editor.rs:1493
 msgid "Remove reminder"
 msgstr "移除提醒"
 
-#: app/src/ui/calendar/editor.rs:1530 app/src/ui/calendar/editor.rs:1541
+#: app/src/ui/calendar/editor.rs:1537 app/src/ui/calendar/editor.rs:1548
 #: app/src/ui/calendar/popover.rs:266
 msgid "Notes"
 msgstr "備註"
 
-#: app/src/ui/calendar/editor.rs:1556
+#: app/src/ui/calendar/editor.rs:1563
 msgid "Attachments"
 msgstr "附件"
 
-#: app/src/ui/calendar/editor.rs:1561 app/src/ui/calendar/editor.rs:1567
+#: app/src/ui/calendar/editor.rs:1568 app/src/ui/calendar/editor.rs:1574
 msgid "Attach File…"
 msgstr "附加檔案…"
 
-#: app/src/ui/calendar/editor.rs:1610
+#: app/src/ui/calendar/editor.rs:1617
 msgid "Grant access to upload {file}"
 msgstr "授予上傳 {file} 的存取權"
 
-#: app/src/ui/calendar/editor.rs:1623
+#: app/src/ui/calendar/editor.rs:1630
 msgid "Share with guests"
 msgstr "與參與者共用"
 
-#: app/src/ui/calendar/editor.rs:1625
+#: app/src/ui/calendar/editor.rs:1632
 msgid "Share {file} with the guests"
 msgstr "與參與者共用 {file}"
 
-#: app/src/ui/calendar/editor.rs:1641 app/src/ui/composer/mod.rs:1955
+#: app/src/ui/calendar/editor.rs:1648 app/src/ui/composer/mod.rs:1955
 msgid "Remove {file}"
 msgstr "移除 {file}"
 
-#: app/src/ui/calendar/editor.rs:1675
+#: app/src/ui/calendar/editor.rs:1682
 msgid "Cancel Upload"
 msgstr "取消上傳"
 
-#: app/src/ui/calendar/editor.rs:1677
+#: app/src/ui/calendar/editor.rs:1684
 msgid "Cancel upload of {file}"
 msgstr "取消上傳 {file}"
 
-#: app/src/ui/calendar/editor.rs:1702
+#: app/src/ui/calendar/editor.rs:1709
 msgid "Attach File"
 msgstr "附加檔案"
 
-#: app/src/ui/calendar/editor.rs:1716
+#: app/src/ui/calendar/editor.rs:1723
 msgid "Penguin Mail can attach only a file saved on this computer."
 msgstr "Penguin Mail 只能附加儲存在此電腦上的檔案。"
 
-#: app/src/ui/calendar/editor.rs:1744
+#: app/src/ui/calendar/editor.rs:1751
 msgid "Uploading {file}"
 msgstr "正在上傳 {file}"
 
-#: app/src/ui/calendar/editor.rs:1775
+#: app/src/ui/calendar/editor.rs:1782
 msgid "Could not attach {file}: {reason}"
 msgstr "無法附加 {file}：{reason}"
 
-#: app/src/ui/calendar/editor.rs:1818 app/src/ui/composer/mod.rs:367
+#: app/src/ui/calendar/editor.rs:1825 app/src/ui/composer/mod.rs:367
 msgid "More"
 msgstr "更多"
 
-#: app/src/ui/calendar/editor.rs:1822
+#: app/src/ui/calendar/editor.rs:1829
 msgid "Time zone"
 msgstr "時區"
 
-#: app/src/ui/calendar/editor.rs:1866
+#: app/src/ui/calendar/editor.rs:1873
 msgid "Show as busy"
 msgstr "顯示為忙碌"
 
-#: app/src/ui/calendar/editor.rs:1880
+#: app/src/ui/calendar/editor.rs:1887
 msgid "Private"
 msgstr "私人"
 
-#: app/src/ui/calendar/editor.rs:1882
+#: app/src/ui/calendar/editor.rs:1889
 msgid "Only people who can change this calendar see the details"
 msgstr "僅有可變更此行事曆的人能檢視詳細資料"
 
-#: app/src/ui/calendar/editor.rs:1896 app/src/ui/calendar/manage.rs:353
+#: app/src/ui/calendar/editor.rs:1903 app/src/ui/calendar/manage.rs:353
 #: app/src/ui/calendar/sidebar.rs:1261 app/src/ui/sidebar.rs:1588
 #: app/src/ui/sidebar.rs:1832
 msgid "Color"
 msgstr "顏色"
 
-#: app/src/ui/calendar/editor.rs:1900
+#: app/src/ui/calendar/editor.rs:1907
 msgid "Calendar color"
 msgstr "行事曆顏色"
 
-#: app/src/ui/calendar/editor.rs:1944
+#: app/src/ui/calendar/editor.rs:1951
 msgid "Add Google Meet"
 msgstr "新增 Google Meet"
 
-#: app/src/ui/calendar/editor.rs:1995 app/src/ui/calendar/mod.rs:2270
+#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2270
 #: app/src/ui/calendar/quick.rs:54
 msgid "Event"
 msgstr "活動"
 
-#: app/src/ui/calendar/editor.rs:2019
+#: app/src/ui/calendar/editor.rs:2026
 msgid "day"
 msgid_plural "days"
 msgstr[0] "天"
 
-#: app/src/ui/calendar/editor.rs:2020
+#: app/src/ui/calendar/editor.rs:2027
 msgid "week"
 msgid_plural "weeks"
 msgstr[0] "週"
 
-#: app/src/ui/calendar/editor.rs:2021
+#: app/src/ui/calendar/editor.rs:2028
 msgid "month"
 msgid_plural "months"
 msgstr[0] "月"
 
-#: app/src/ui/calendar/editor.rs:2022
+#: app/src/ui/calendar/editor.rs:2029
 msgid "year"
 msgid_plural "years"
 msgstr[0] "年"
 
-#: app/src/ui/calendar/editor.rs:2035
+#: app/src/ui/calendar/editor.rs:2042
 msgid "Tuesday"
 msgstr "星期二"
 
-#: app/src/ui/calendar/editor.rs:2036
+#: app/src/ui/calendar/editor.rs:2043
 msgid "Wednesday"
 msgstr "星期三"
 
-#: app/src/ui/calendar/editor.rs:2037
+#: app/src/ui/calendar/editor.rs:2044
 msgid "Thursday"
 msgstr "星期四"
 
-#: app/src/ui/calendar/editor.rs:2038
+#: app/src/ui/calendar/editor.rs:2045
 msgid "Friday"
 msgstr "星期五"
 
-#: app/src/ui/calendar/editor.rs:2039
+#: app/src/ui/calendar/editor.rs:2046
 msgid "Saturday"
 msgstr "星期六"
 
-#: app/src/ui/calendar/editor.rs:2051
+#: app/src/ui/calendar/editor.rs:2058
 msgid "Lavender"
 msgstr "薰衣草紫"
 
-#: app/src/ui/calendar/editor.rs:2052
+#: app/src/ui/calendar/editor.rs:2059
 msgid "Sage"
 msgstr "鼠尾草綠"
 
-#: app/src/ui/calendar/editor.rs:2053
+#: app/src/ui/calendar/editor.rs:2060
 msgid "Grape"
 msgstr "葡萄紫"
 
-#: app/src/ui/calendar/editor.rs:2054
+#: app/src/ui/calendar/editor.rs:2061
 msgid "Flamingo"
 msgstr "紅鶴粉"
 
-#: app/src/ui/calendar/editor.rs:2055
+#: app/src/ui/calendar/editor.rs:2062
 msgid "Banana"
 msgstr "香蕉黃"
 
-#: app/src/ui/calendar/editor.rs:2056
+#: app/src/ui/calendar/editor.rs:2063
 msgid "Tangerine"
 msgstr "橘子橙"
 
-#: app/src/ui/calendar/editor.rs:2057
+#: app/src/ui/calendar/editor.rs:2064
 msgid "Peacock"
 msgstr "孔雀藍"
 
-#: app/src/ui/calendar/editor.rs:2058
+#: app/src/ui/calendar/editor.rs:2065
 msgid "Graphite"
 msgstr "石墨灰"
 
-#: app/src/ui/calendar/editor.rs:2059
+#: app/src/ui/calendar/editor.rs:2066
 msgid "Blueberry"
 msgstr "藍莓藍"
 
-#: app/src/ui/calendar/editor.rs:2060
+#: app/src/ui/calendar/editor.rs:2067
 msgid "Basil"
 msgstr "羅勒綠"
 
-#: app/src/ui/calendar/editor.rs:2061
+#: app/src/ui/calendar/editor.rs:2068
 msgid "Tomato"
 msgstr "番茄紅"
 
-#: app/src/ui/calendar/editor.rs:2069 app/src/ui/calendar/editor.rs:2303
+#: app/src/ui/calendar/editor.rs:2076 app/src/ui/calendar/editor.rs:2310
 msgid "By email"
 msgstr "以電子郵件"
 
-#: app/src/ui/calendar/editor.rs:2070 app/src/ui/calendar/editor.rs:2300
-#: app/src/ui/calendar/editor.rs:2303
+#: app/src/ui/calendar/editor.rs:2077 app/src/ui/calendar/editor.rs:2307
+#: app/src/ui/calendar/editor.rs:2310
 msgid "Reminder"
 msgstr "提醒"
 
-#: app/src/ui/calendar/editor.rs:2076
+#: app/src/ui/calendar/editor.rs:2083
 msgid "Uses the calendar's default"
 msgstr "使用行事曆預設值"
 
@@ -10456,18 +10456,24 @@ msgid "{accounts} will get a new label."
 msgid_plural "{accounts} will get new labels."
 msgstr[0] "將為 {accounts} 新增標籤。"
 
-#: sync/src/calendar_copy.rs:922 sync/src/calendar_copy.rs:991
-#: sync/src/calendar_copy.rs:1036
+#: sync/src/calendar_copy.rs:847
+msgid ""
+"this account's calendars moved to another server, which does not have this "
+"event"
+msgstr "此帳號的行事曆已移到另一台伺服器，那裡沒有這個活動"
+
+#: sync/src/calendar_copy.rs:993 sync/src/calendar_copy.rs:1095
+#: sync/src/calendar_copy.rs:1140
 msgid "deleted elsewhere"
 msgstr "已在其他地方刪除"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:927
+#: sync/src/calendar_copy.rs:998
 msgid "the calendar is gone"
 msgstr "行事曆已不存在"
 
-#: sync/src/calendar_copy.rs:1690
+#: sync/src/calendar_copy.rs:1814
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10700,23 +10706,23 @@ msgstr "鑰匙圈拒絕操作：{reason}"
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "此電腦上的規則轉寄了 {address} 的郵件，內容如附件。"
 
-#: sync/src/services/caldav.rs:387
+#: sync/src/services/caldav.rs:388
 msgid "An event needs an ID to be imported."
 msgstr "活動需要識別碼才能匯入。"
 
-#: sync/src/services/caldav.rs:408
+#: sync/src/services/caldav.rs:409
 msgid "A CalDAV calendar cannot store attached files."
 msgstr "CalDAV 行事曆無法儲存附加檔案。"
 
-#: sync/src/services/caldav.rs:412
+#: sync/src/services/caldav.rs:413
 msgid "A CalDAV calendar has no files to share."
 msgstr "CalDAV 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/caldav.rs:442
+#: sync/src/services/caldav.rs:443
 msgid "You are not a guest of this event."
 msgstr "並非此活動的參與者。"
 
-#: sync/src/services/caldav.rs:446
+#: sync/src/services/caldav.rs:447
 msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr "Penguin Mail 無法變更 CalDAV 伺服器的行事曆清單。"
 
@@ -10728,71 +10734,71 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:216
 msgid "the title"
 msgstr "標題"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:217
 msgid "the time"
 msgstr "時間"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:218
 msgid "the repeat"
 msgstr "重複設定"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:219
 msgid "the place"
 msgstr "地點"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:220
 msgid "the meeting link"
 msgstr "會議連結"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:221
 msgid "the notes"
 msgstr "備註"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:222
 msgid "the reminders"
 msgstr "提醒"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:223
 msgid "the guests"
 msgstr "參與者"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:224
 msgid "your answer"
 msgstr "您的回覆"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:225
 msgid "the color"
 msgstr "顏色"
 
-#: sync/src/services/jmap/calendar.rs:211
+#: sync/src/services/jmap/calendar.rs:226
 msgid "the privacy"
 msgstr "隱私設定"
 
-#: sync/src/services/jmap/calendar.rs:212
+#: sync/src/services/jmap/calendar.rs:227
 msgid "whether it shows as busy"
 msgstr "是否顯示為忙碌"
 
-#: sync/src/services/jmap/calendar.rs:213
+#: sync/src/services/jmap/calendar.rs:228
 msgid "the status"
 msgstr "狀態"
 
-#: sync/src/services/jmap/calendar.rs:424
+#: sync/src/services/jmap/calendar.rs:486
 msgid "The server kept the event but did not say its id."
 msgstr "伺服器已儲存活動，但未提供其識別碼。"
 
-#: sync/src/services/jmap/calendar.rs:727
+#: sync/src/services/jmap/calendar.rs:806
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr "Penguin Mail 無法在此 JMAP 行事曆中為活動附加檔案。"
 
-#: sync/src/services/jmap/calendar.rs:731
+#: sync/src/services/jmap/calendar.rs:810
 msgid "This JMAP calendar has no files to share."
 msgstr "此 JMAP 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/jmap/calendar.rs:791
+#: sync/src/services/jmap/calendar.rs:879
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail 無法變更 JMAP 伺服器的行事曆清單。"
 
@@ -10808,7 +10814,7 @@ msgstr "伺服器拒絕了此請求。"
 msgid "The server could not take this request."
 msgstr "伺服器無法接受此請求。"
 
-#: sync/src/services/jmap/jscal.rs:1113
+#: sync/src/services/jmap/jscal.rs:1120
 msgid ""
 "Penguin Mail cannot read how this event repeats, so it cannot change the "
 "repeat. Change it in the app that set it."
@@ -10816,7 +10822,7 @@ msgstr ""
 "Penguin Mail 無法讀取此活動的重複方式，因此無法變更重複設定。請在設定它的應用"
 "程式中變更。"
 
-#: sync/src/services/jmap/jscal.rs:1117
+#: sync/src/services/jmap/jscal.rs:1124
 msgid "Penguin Mail cannot save this repeat to a JMAP calendar."
 msgstr "Penguin Mail 無法將此重複設定儲存到 JMAP 行事曆。"
 
@@ -10902,37 +10908,37 @@ msgstr "郵件必須至少留在一個信箱中，而此伺服器沒有 [封存]
 msgid "This rule is read-only, so Penguin Mail leaves it as it is."
 msgstr "此為唯讀規則，Penguin Mail 會保留原樣。"
 
-#: sync/src/services/microsoft/calendar.rs:359
+#: sync/src/services/microsoft/calendar.rs:360
 msgid "Outlook cannot repeat an event that way."
 msgstr "Outlook 無法以此方式重複活動。"
 
-#: sync/src/services/microsoft/calendar.rs:651
+#: sync/src/services/microsoft/calendar.rs:652
 msgid "Outlook cannot attach a file to an event."
 msgstr "Outlook 無法將檔案附加至活動。"
 
-#: sync/src/services/microsoft/calendar.rs:655
+#: sync/src/services/microsoft/calendar.rs:656
 msgid "Outlook has no files to share."
 msgstr "Outlook 沒有可共用的檔案。"
 
-#: sync/src/services/microsoft/calendar.rs:664
+#: sync/src/services/microsoft/calendar.rs:665
 msgid "Outlook cannot move an event to another calendar."
 msgstr "Outlook 無法將活動移至其他行事曆。"
 
 #. What Outlook has no call for is a refusal, not `Unsupported`:
 #. that answer would keep the change in the queue for good.
-#: sync/src/services/microsoft/calendar.rs:698
+#: sync/src/services/microsoft/calendar.rs:699
 msgid "Outlook cannot take a calendar off the list."
 msgstr "Outlook 無法從清單移除行事曆。"
 
-#: sync/src/services/microsoft/calendar.rs:699
+#: sync/src/services/microsoft/calendar.rs:700
 msgid "Outlook cannot hide a calendar on all your devices."
 msgstr "Outlook 無法在所有裝置上隱藏行事曆。"
 
-#: sync/src/services/microsoft/calendar.rs:700
+#: sync/src/services/microsoft/calendar.rs:701
 msgid "Outlook cannot subscribe to a calendar by its address."
 msgstr "Outlook 無法使用網址訂閱行事曆。"
 
-#: sync/src/services/microsoft/calendar.rs:701
+#: sync/src/services/microsoft/calendar.rs:702
 msgid "Outlook has no other calendars to add."
 msgstr "Outlook 沒有可新增的其他行事曆。"
 

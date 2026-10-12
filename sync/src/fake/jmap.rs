@@ -168,6 +168,11 @@ pub struct JmapState {
     /// How many event writes still answer `stateMismatch`, as when another
     /// client changed the calendar since the `ifInState` the write named.
     pub state_mismatches: u32,
+    /// The next `CalendarEvent/set` lands, and then its answer is lost on
+    /// the way back, as a dropped connection or a gateway timeout does.
+    pub lose_event_answer: bool,
+    /// How many `CalendarEvent/get` calls still fail, as the network does.
+    pub failing_event_gets: u32,
     /// The answer the next `EmailSubmission/query` gets, once.
     pub submission_query_failure: Option<JmapError>,
     /// How long an upload takes.
@@ -470,6 +475,8 @@ impl FakeJmap {
             schedules: true,
             scheduled: Vec::new(),
             state_mismatches: 0,
+            lose_event_answer: false,
+            failing_event_gets: 0,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -628,6 +635,8 @@ impl FakeJmap {
                 is_visible: true,
                 time_zone: Some("Europe/Lisbon".into()),
                 my_rights: rights,
+                default_alerts_with_time: None,
+                default_alerts_without_time: None,
             });
         });
         fake
@@ -1275,6 +1284,10 @@ impl JmapApi for FakeJmap {
     async fn calendar_events(&self, ids: &[String]) -> Answer<CalendarEvents> {
         self.called("CalendarEvent/get");
         self.with(|s| {
+            if s.failing_event_gets > 0 {
+                s.failing_event_gets -= 1;
+                return Err(JmapError::Network("the read failed".into()));
+            }
             let (found, missing): (Vec<&String>, Vec<&String>) = ids.iter().partition(|id| s.events.contains_key(*id));
             Ok(CalendarEvents {
                 state: s.state.to_string(),
@@ -1358,6 +1371,9 @@ impl JmapApi for FakeJmap {
             };
             if send {
                 s.scheduled.push(id);
+            }
+            if std::mem::take(&mut s.lose_event_answer) {
+                return Err(JmapError::Network("the answer was lost".into()));
             }
             Ok(answer)
         })
