@@ -10423,24 +10423,24 @@ msgid "{accounts} will get a new label."
 msgid_plural "{accounts} will get new labels."
 msgstr[0] "將為 {accounts} 新增標籤。"
 
-#: sync/src/calendar_copy.rs:806
+#: sync/src/calendar_copy.rs:847
 msgid ""
 "this account's calendars moved to another server, which does not have this "
 "event"
 msgstr "此帳號的行事曆已移到另一台伺服器，那裡沒有這個活動"
 
-#: sync/src/calendar_copy.rs:952 sync/src/calendar_copy.rs:1054
-#: sync/src/calendar_copy.rs:1099
+#: sync/src/calendar_copy.rs:993 sync/src/calendar_copy.rs:1095
+#: sync/src/calendar_copy.rs:1140
 msgid "deleted elsewhere"
 msgstr "已在其他地方刪除"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:957
+#: sync/src/calendar_copy.rs:998
 msgid "the calendar is gone"
 msgstr "行事曆已不存在"
 
-#: sync/src/calendar_copy.rs:1773
+#: sync/src/calendar_copy.rs:1814
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -10701,71 +10701,71 @@ msgstr "Penguin Mail 僅透過 HTTPS 連線至行事曆及聯絡人伺服器。"
 msgid "The message names nobody to send it to."
 msgstr "郵件未指定收件者。"
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:216
 msgid "the title"
 msgstr "標題"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:217
 msgid "the time"
 msgstr "時間"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:218
 msgid "the repeat"
 msgstr "重複設定"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:219
 msgid "the place"
 msgstr "地點"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:220
 msgid "the meeting link"
 msgstr "會議連結"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:221
 msgid "the notes"
 msgstr "備註"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:222
 msgid "the reminders"
 msgstr "提醒"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:223
 msgid "the guests"
 msgstr "參與者"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:224
 msgid "your answer"
 msgstr "您的回覆"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:225
 msgid "the color"
 msgstr "顏色"
 
-#: sync/src/services/jmap/calendar.rs:211
+#: sync/src/services/jmap/calendar.rs:226
 msgid "the privacy"
 msgstr "隱私設定"
 
-#: sync/src/services/jmap/calendar.rs:212
+#: sync/src/services/jmap/calendar.rs:227
 msgid "whether it shows as busy"
 msgstr "是否顯示為忙碌"
 
-#: sync/src/services/jmap/calendar.rs:213
+#: sync/src/services/jmap/calendar.rs:228
 msgid "the status"
 msgstr "狀態"
 
-#: sync/src/services/jmap/calendar.rs:455
+#: sync/src/services/jmap/calendar.rs:486
 msgid "The server kept the event but did not say its id."
 msgstr "伺服器已儲存活動，但未提供其識別碼。"
 
-#: sync/src/services/jmap/calendar.rs:754
+#: sync/src/services/jmap/calendar.rs:806
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr "Penguin Mail 無法在此 JMAP 行事曆中為活動附加檔案。"
 
-#: sync/src/services/jmap/calendar.rs:758
+#: sync/src/services/jmap/calendar.rs:810
 msgid "This JMAP calendar has no files to share."
 msgstr "此 JMAP 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/jmap/calendar.rs:818
+#: sync/src/services/jmap/calendar.rs:879
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail 無法變更 JMAP 伺服器的行事曆清單。"
 

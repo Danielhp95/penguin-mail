@@ -11010,24 +11010,26 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} erhält ein neues Label."
 msgstr[1] "{accounts} erhalten neue Labels."
 
-#: sync/src/calendar_copy.rs:806
+#: sync/src/calendar_copy.rs:847
 msgid ""
 "this account's calendars moved to another server, which does not have this "
 "event"
-msgstr "die Kalender dieses Kontos liegen jetzt auf einem anderen Server, der diesen Termin nicht hat"
+msgstr ""
+"die Kalender dieses Kontos liegen jetzt auf einem anderen Server, der diesen "
+"Termin nicht hat"
 
-#: sync/src/calendar_copy.rs:952 sync/src/calendar_copy.rs:1054
-#: sync/src/calendar_copy.rs:1099
+#: sync/src/calendar_copy.rs:993 sync/src/calendar_copy.rs:1095
+#: sync/src/calendar_copy.rs:1140
 msgid "deleted elsewhere"
 msgstr "anderswo gelöscht"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:957
+#: sync/src/calendar_copy.rs:998
 msgid "the calendar is gone"
 msgstr "der Kalender existiert nicht mehr"
 
-#: sync/src/calendar_copy.rs:1773
+#: sync/src/calendar_copy.rs:1814
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"
@@ -11310,72 +11312,72 @@ msgstr "Penguin Mail erreicht Kalender- und Kontakteserver nur über HTTPS."
 msgid "The message names nobody to send it to."
 msgstr "Die Nachricht nennt niemanden, an den sie gesendet werden soll."
 
-#: sync/src/services/jmap/calendar.rs:201
+#: sync/src/services/jmap/calendar.rs:216
 msgid "the title"
 msgstr "den Titel"
 
-#: sync/src/services/jmap/calendar.rs:202
+#: sync/src/services/jmap/calendar.rs:217
 msgid "the time"
 msgstr "die Uhrzeit"
 
-#: sync/src/services/jmap/calendar.rs:203
+#: sync/src/services/jmap/calendar.rs:218
 msgid "the repeat"
 msgstr "die Wiederholung"
 
-#: sync/src/services/jmap/calendar.rs:204
+#: sync/src/services/jmap/calendar.rs:219
 msgid "the place"
 msgstr "den Ort"
 
-#: sync/src/services/jmap/calendar.rs:205
+#: sync/src/services/jmap/calendar.rs:220
 msgid "the meeting link"
 msgstr "den Besprechungslink"
 
-#: sync/src/services/jmap/calendar.rs:206
+#: sync/src/services/jmap/calendar.rs:221
 msgid "the notes"
 msgstr "die Notizen"
 
-#: sync/src/services/jmap/calendar.rs:207
+#: sync/src/services/jmap/calendar.rs:222
 msgid "the reminders"
 msgstr "die Erinnerungen"
 
-#: sync/src/services/jmap/calendar.rs:208
+#: sync/src/services/jmap/calendar.rs:223
 msgid "the guests"
 msgstr "die Gäste"
 
-#: sync/src/services/jmap/calendar.rs:209
+#: sync/src/services/jmap/calendar.rs:224
 msgid "your answer"
 msgstr "Ihre Antwort"
 
-#: sync/src/services/jmap/calendar.rs:210
+#: sync/src/services/jmap/calendar.rs:225
 msgid "the color"
 msgstr "die Farbe"
 
-#: sync/src/services/jmap/calendar.rs:211
+#: sync/src/services/jmap/calendar.rs:226
 msgid "the privacy"
 msgstr "die Sichtbarkeit"
 
-#: sync/src/services/jmap/calendar.rs:212
+#: sync/src/services/jmap/calendar.rs:227
 msgid "whether it shows as busy"
 msgstr "ob der Termin als beschäftigt angezeigt wird"
 
-#: sync/src/services/jmap/calendar.rs:213
+#: sync/src/services/jmap/calendar.rs:228
 msgid "the status"
 msgstr "den Status"
 
-#: sync/src/services/jmap/calendar.rs:455
+#: sync/src/services/jmap/calendar.rs:486
 msgid "The server kept the event but did not say its id."
 msgstr "Der Server hat den Termin gespeichert, aber seine ID nicht genannt."
 
-#: sync/src/services/jmap/calendar.rs:754
+#: sync/src/services/jmap/calendar.rs:806
 msgid "Penguin Mail cannot attach files to events on this JMAP calendar."
 msgstr ""
 "Penguin Mail kann in diesem JMAP-Kalender keine Dateien an Termine anhängen."
 
-#: sync/src/services/jmap/calendar.rs:758
+#: sync/src/services/jmap/calendar.rs:810
 msgid "This JMAP calendar has no files to share."
 msgstr "Dieser JMAP-Kalender hat keine Dateien zum Teilen."
 
-#: sync/src/services/jmap/calendar.rs:818
+#: sync/src/services/jmap/calendar.rs:879
 msgid "Penguin Mail cannot change the calendar list of a JMAP server."
 msgstr "Penguin Mail kann die Kalenderliste eines JMAP-Servers nicht ändern."
 
