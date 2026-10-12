@@ -445,15 +445,22 @@ impl AccountServices {
             capabilities: fake.with(|s| s.session.capabilities.keys().filter(|c| s.session.offers(c)).cloned().collect()),
             auto_reply_needs_sign_in: false,
         };
+        let offers_contacts = fake.with(|s| s.session.offers(mailrs_jmap::CONTACTS));
         let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
-        AccountServices {
+        let mut services = AccountServices {
             mail: AnyMail::Jmap(adapter.clone()),
             calendar: None,
             contacts: None,
             rules: None,
             auto_reply: None,
             identities: AnyIdentities::Jmap(adapter),
+        };
+        if offers_contacts
+            && let AnyMail::Jmap(adapter) = &services.mail
+        {
+            services.contacts = Some(AnyContacts::Jmap(adapter.clone()));
         }
+        services
     }
 
     /// A Microsoft account: every service over the one Graph client.
