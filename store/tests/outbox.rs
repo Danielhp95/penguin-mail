@@ -299,3 +299,13 @@ fn the_sidebar_counts_waiting_and_stuck_messages_without_reading_them() {
     outbox::put(&conn, &held(id, "Stuck", 300)).unwrap();
     assert_eq!(outbox::counts(&conn).unwrap(), (2, 1));
 }
+
+#[test]
+fn a_held_message_keeps_its_hold() {
+    let conn = mailrs_store::open_in_memory().unwrap();
+    let account = mailrs_store::accounts::insert_account(&conn, "me@example.com", 0).unwrap();
+    let message = Queued { held: Some("S1".into()), ..scheduled(account, "M9", 100) };
+    let id = outbox::put(&conn, &message).unwrap();
+    assert_eq!(outbox::find(&conn, id).unwrap().unwrap().held.as_deref(), Some("S1"));
+    assert_eq!(outbox::find_held(&conn, account, "S1").unwrap().map(|m| m.id), Some(id));
+}

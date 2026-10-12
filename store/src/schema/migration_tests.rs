@@ -13,6 +13,15 @@ use crate::StoreError;
 
 const TO_MAILBOXES: &str = include_str!("26-mailboxes.sql");
 
+/// `put_body` writes the receipt columns migration 57 adds, which a store
+/// held back to an older version lacks. This gives it the columns for the
+/// write, then takes them away so the migration finds the store as it was.
+fn put_body_before_57(conn: &Connection, message_id: &str, body: &mailrs_domain::MessageBody) {
+    conn.execute_batch("ALTER TABLE bodies ADD COLUMN receipt_to TEXT; ALTER TABLE bodies ADD COLUMN read_report TEXT;").unwrap();
+    crate::bodies::put_body(conn, 1, message_id, body, 1).unwrap();
+    conn.execute_batch("ALTER TABLE bodies DROP COLUMN receipt_to; ALTER TABLE bodies DROP COLUMN read_report;").unwrap();
+}
+
 /// Two accounts. Messages carry each role label, both keyword labels,
 /// UNREAD, two categories, a person's label that is listed, one that is
 /// not, and CHAT, which Gmail puts on mail but never lists. `t3` starts
@@ -392,8 +401,8 @@ fn a_body_read_as_two_text_attachments_is_fetched_again() {
         text: Some("fine".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "li", &empty, 1).unwrap();
-    bodies::put_body(&conn, 1, "ok", &fine, 1).unwrap();
+    put_body_before_57(&conn, "li", &empty);
+    put_body_before_57(&conn, "ok", &fine);
     drop(conn);
 
     let conn = open_with(&path, MIGRATIONS).unwrap();
@@ -434,9 +443,9 @@ fn a_body_decoded_in_the_wrong_charset_is_fetched_again() {
         text: Some("Direção de Recuperação de Crédito, «café» às três".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "html", &garbled_html, 1).unwrap();
-    bodies::put_body(&conn, 1, "text", &garbled_text, 1).unwrap();
-    bodies::put_body(&conn, 1, "ok", &fine, 1).unwrap();
+    put_body_before_57(&conn, "html", &garbled_html);
+    put_body_before_57(&conn, "text", &garbled_text);
+    put_body_before_57(&conn, "ok", &fine);
     drop(conn);
 
     let conn = open_with(&path, MIGRATIONS).unwrap();
@@ -453,7 +462,6 @@ fn a_body_decoded_in_the_wrong_charset_is_fetched_again() {
 fn an_invitation_read_without_its_calendar_is_fetched_again() {
     use mailrs_domain::{Attachment, MessageBody};
 
-    use crate::bodies;
 
     let ics = |mime: &str| Attachment {
         part_id: "1".into(),
@@ -487,17 +495,21 @@ fn an_invitation_read_without_its_calendar_is_fetched_again() {
         text: Some("hello".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "missed", &missed, 1).unwrap();
-    bodies::put_body(&conn, 1, "read", &read, 1).unwrap();
-    bodies::put_body(&conn, 1, "plain", &plain, 1).unwrap();
+    put_body_before_57(&conn, "missed", &missed);
+    put_body_before_57(&conn, "read", &read);
+    put_body_before_57(&conn, "plain", &plain);
     drop(conn);
 
     // Up to migration 28 alone: a later one drops every body with a file,
     // the invitation that was read among them.
     let conn = open_with(&path, &MIGRATIONS[..28]).unwrap();
-    assert!(bodies::get_body(&conn, 1, "missed", 2).unwrap().is_none());
-    assert!(bodies::get_body(&conn, 1, "read", 2).unwrap().is_some());
-    assert!(bodies::get_body(&conn, 1, "plain", 2).unwrap().is_some());
+    // Read with plain SQL: `get_body` selects columns migration 57 adds.
+    let kept = |id: &str| -> bool {
+        conn.query_row("SELECT COUNT(*) FROM bodies WHERE message_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap() > 0
+    };
+    assert!(!kept("missed"));
+    assert!(kept("read"));
+    assert!(kept("plain"));
 }
 
 /// Migration 30 adds local threading's table and column without touching a
@@ -1095,7 +1107,7 @@ fn migration_56_adds_jmap_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mail.db");
     let conn = open_with(&path, MIGRATIONS).unwrap();
-    assert_eq!(schema_version(&conn).unwrap(), 56);
+    assert_eq!(schema_version(&conn).unwrap(), 57);
     conn.execute_batch(
         "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
          INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)

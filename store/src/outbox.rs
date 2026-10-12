@@ -39,10 +39,13 @@ pub struct Queued {
     /// Why the last attempt failed. `None` while the message is waiting for
     /// its hour and nothing has gone wrong.
     pub problem: Option<String>,
+    /// The server's hold, for a message the server sends itself at its
+    /// hour. The app sends nothing for it while this is set.
+    pub held: Option<String>,
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, thread_id, subject, recipients, \
-                       send_at, raw, composer, attempts, problem";
+                       send_at, raw, composer, attempts, problem, held";
 
 fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
     Ok(Queued {
@@ -58,6 +61,7 @@ fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
         composer: row.get(9)?,
         attempts: row.get(10)?,
         problem: row.get(11)?,
+        held: row.get(12)?,
     })
 }
 
@@ -75,7 +79,7 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
         let changed = conn.execute(
             "UPDATE outbox SET draft_id = ?2, message_id = ?3, thread_id = ?4, subject = ?5, \
              recipients = ?6, send_at = ?7, raw = ?8, composer = ?9, attempts = ?10, \
-             problem = ?11 WHERE id = ?1",
+             problem = ?11, held = ?12 WHERE id = ?1",
             params![
                 id,
                 message.draft_id,
@@ -87,7 +91,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
                 message.raw,
                 message.composer,
                 message.attempts,
-                message.problem
+                message.problem,
+                message.held
             ],
         )?;
         if changed > 0 {
@@ -97,8 +102,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
     }
     conn.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, thread_id, subject, recipients, \
-         send_at, raw, composer, attempts, problem) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         send_at, raw, composer, attempts, problem, held) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             message.account_id,
             message.draft_id,
@@ -110,7 +115,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
             message.raw,
             message.composer,
             message.attempts,
-            message.problem
+            message.problem,
+            message.held
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -179,6 +185,17 @@ pub fn find_draft(
         .query_row(
             &format!("SELECT {COLUMNS} FROM outbox WHERE account_id = ?1 AND draft_id = ?2"),
             params![account_id, draft_id],
+            to_queued,
+        )
+        .optional()?)
+}
+
+/// The waiting message the server holds under `handle`.
+pub fn find_held(conn: &Connection, account_id: AccountId, handle: &str) -> Result<Option<Queued>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS} FROM outbox WHERE account_id = ?1 AND held = ?2"),
+            params![account_id, handle],
             to_queued,
         )
         .optional()?)
