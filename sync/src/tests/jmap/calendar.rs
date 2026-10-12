@@ -768,3 +768,63 @@ async fn a_create_queued_without_a_uid_still_goes_up_with_one() {
     assert_eq!(made.uid, format!("{}@penguin-mail", new.id));
     assert_eq!(h.fake.with(|s| (s.events.len(), s.scheduled.len())), (1, 1));
 }
+
+/// Adds `count` events to `cal-1` the way another app would, in one burst.
+fn burst(h: &Harness, count: usize) {
+    for n in 0..count {
+        h.fake.add_event(json!({
+            "@type": "Event", "uid": format!("burst-{n}@example.com"), "title": format!("Burst {n}"), "calendarIds": {"cal-1": true},
+            "start": "2026-10-06T09:00:00", "timeZone": "Europe/Lisbon", "duration": "PT1H"
+        }));
+    }
+}
+
+#[tokio::test]
+async fn a_burst_of_changes_comes_a_page_at_a_time() {
+    let h = calendared().await;
+    let since = state(&h.fake).await;
+    burst(&h, 1000);
+    let calendar = calendar(&h);
+    let (mut seen, mut pages, mut page) = (0, 0, None::<String>);
+    loop {
+        let got = calendar.event_changes("cal-1", Some(&since), page.as_deref(), 0).await.unwrap();
+        assert!(got.events.len() <= crate::services::jmap::calendar::PAGE, "{} events in one page", got.events.len());
+        let AnyCalendar::Jmap(adapter) = &calendar else { unreachable!() };
+        let held = adapter.kept_calendar_objects();
+        assert!(held <= crate::services::jmap::calendar::PAGE, "{held} objects kept");
+        seen += got.events.len();
+        pages += 1;
+        match got.next_page {
+            Some(next) => page = Some(next),
+            None => {
+                assert_eq!(got.next_sync, Some(state(&h.fake).await));
+                break;
+            }
+        }
+    }
+    assert_eq!((seen, pages), (1000, 5));
+}
+
+#[tokio::test]
+async fn a_burst_too_long_for_one_read_ends_where_it_got_to_and_goes_on_next_time() {
+    let h = calendared().await;
+    let since = state(&h.fake).await;
+    let rounds = crate::services::jmap::calendar::ROUNDS;
+    let page_size = crate::services::jmap::calendar::PAGE;
+    burst(&h, (rounds + 2) * page_size);
+    let calendar = calendar(&h);
+    let mut page = None::<String>;
+    let mut seen = 0;
+    let token = loop {
+        let got = calendar.event_changes("cal-1", Some(&since), page.as_deref(), 0).await.unwrap();
+        seen += got.events.len();
+        match got.next_page {
+            Some(next) => page = Some(next),
+            None => break got.next_sync.unwrap(),
+        }
+    };
+    assert_eq!(seen, rounds * page_size, "one read stops after its rounds");
+    assert_ne!(token, state(&h.fake).await);
+    let rest = calendar.event_changes("cal-1", Some(&token), None, 0).await.unwrap();
+    assert_eq!(rest.events.len(), page_size);
+}

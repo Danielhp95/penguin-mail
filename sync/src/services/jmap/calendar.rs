@@ -32,32 +32,43 @@ use crate::{BackendError, now_millis};
 
 /// The colour a calendar without one gets: GNOME's blue, as for CalDAV.
 const DEFAULT_COLOR: &str = "#3584e4";
-/// Events per query page and per `/get` of changed events.
-pub(super) const PAGE: usize = 200;
-const CHANGES_PER_CALL: usize = 500;
-/// Rounds of `/changes` one read follows while the server has more.
-const ROUNDS: usize = 20;
+/// Events per query page, and changes per `/changes` call, so one page of
+/// either holds at most this many event objects.
+pub(crate) const PAGE: usize = 200;
+/// Pages of `/changes` one read follows while the server has more. The
+/// read then ends at the state it got to, and the next one goes on from
+/// there, so a burst of any size moves the copy forward every time.
+pub(crate) const ROUNDS: usize = 20;
 /// Hex digits of each part's hash in an etag: 24 bits, so two different
 /// values of one part match by chance once in 16 million.
 const DIGITS: usize = 6;
 const DAY: EpochMillis = 86_400_000;
 
-/// One read of the account's event changes since a state.
+/// One page of the account's event changes since a state: at most
+/// [`PAGE`] changed events, the ones destroyed, and the state they lead to.
 #[derive(Debug, Default)]
 pub(crate) struct EventChanges {
     since: String,
     new_state: String,
+    more: bool,
     objects: Vec<Value>,
     destroyed: Vec<String>,
 }
 
-/// Where a whole read stands between pages: the next position, and the
-/// state its first page was read at, which becomes the calendar's token.
+/// Where a read stands between pages. A whole read keeps the next
+/// position and the state its first page was read at, which becomes the
+/// calendar's token. A read of changes keeps the state the last page
+/// reached and how many pages it has read.
 #[derive(Serialize, Deserialize)]
 struct Cursor {
+    #[serde(default)]
     position: u64,
     #[serde(default)]
     state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    changes_from: Option<String>,
+    #[serde(default)]
+    round: usize,
 }
 
 /// Year 1 and the end of year 9999, the span `chrono` and a server's date
@@ -598,11 +609,18 @@ impl<J: JmapApi> Jmap<J> {
         }
         let next = position + page.events.len() as u64;
         if !page.events.is_empty() && page.total.is_some_and(|total| next < total) {
-            out.next_page = serde_json::to_string(&Cursor { position: next, state }).ok();
+            out.next_page = serde_json::to_string(&Cursor { position: next, state, changes_from: None, round: 0 }).ok();
         } else if with_token {
             out.next_sync = Some(state);
         }
         Ok(out)
+    }
+
+    /// How many event objects the adapter keeps from its last read of
+    /// changes.
+    #[cfg(test)]
+    pub(crate) fn kept_calendar_objects(&self) -> usize {
+        self.known().calendar_changes.as_ref().map_or(0, |kept| kept.objects.len())
     }
 
     async fn changes_since(&self, since: &str) -> Result<Arc<EventChanges>, BackendError> {
@@ -610,29 +628,36 @@ impl<J: JmapApi> Jmap<J> {
         if let Some(kept) = kept.filter(|k| k.since == since) {
             return Ok(kept);
         }
-        let (mut at, mut ids, mut destroyed) = (since.to_string(), Vec::new(), Vec::new());
-        for _ in 0..ROUNDS {
-            let changes = self.api().calendar_event_changes(&at, CHANGES_PER_CALL).await.map_err(backend)?;
-            ids.extend(changes.created);
-            ids.extend(changes.updated);
-            destroyed.extend(changes.destroyed);
-            at = changes.new_state;
-            if !changes.has_more_changes {
-                break;
-            }
-        }
+        // The page goes before the next is read, so the copy holds one.
+        self.known().calendar_changes = None;
+        let changes = self.api().calendar_event_changes(since, PAGE).await.map_err(backend)?;
+        let mut ids = changes.created;
+        ids.extend(changes.updated);
         ids.sort_unstable();
         ids.dedup();
-        let mut objects = Vec::new();
-        for chunk in ids.chunks(PAGE) {
-            objects.extend(self.api().calendar_events(chunk).await.map_err(backend)?.list);
+        // A server that answers more than it was asked for is read whole
+        // again, a page at a time, rather than held at once.
+        if ids.len() + changes.destroyed.len() > PAGE {
+            return Err(BackendError::StateLost);
         }
-        let read = Arc::new(EventChanges { since: since.to_string(), new_state: at, objects, destroyed });
+        let objects = match ids.is_empty() {
+            true => Vec::new(),
+            false => self.api().calendar_events(&ids).await.map_err(backend)?.list,
+        };
+        let read = Arc::new(EventChanges {
+            since: since.to_string(),
+            new_state: changes.new_state,
+            more: changes.has_more_changes,
+            objects,
+            destroyed: changes.destroyed,
+        });
         self.known().calendar_changes = Some(Arc::clone(&read));
         Ok(read)
     }
 
-    async fn changed_in(&self, calendar: &str, since: &str) -> Result<model::EventPage, BackendError> {
+    /// One page of the changes to `calendar` since `since`, the `round`th
+    /// of this read.
+    async fn changed_in(&self, calendar: &str, since: &str, round: usize) -> Result<model::EventPage, BackendError> {
         let changes = self.changes_since(since).await?;
         let me = self.me();
         let mut page = model::EventPage::default();
@@ -652,6 +677,10 @@ impl<J: JmapApi> Jmap<J> {
         }
         page.removed.extend(changes.destroyed.iter().cloned());
         page.next_sync = Some(changes.new_state.clone());
+        if changes.more && round + 1 < ROUNDS {
+            let next = Cursor { position: 0, state: String::new(), changes_from: Some(changes.new_state.clone()), round: round + 1 };
+            page.next_page = serde_json::to_string(&next).ok();
+        }
         Ok(page)
     }
 }
@@ -684,10 +713,13 @@ impl<J: JmapApi> CalendarService for Jmap<J> {
         let filter = json!({ "inCalendar": calendar, "after": filter_time(from) });
         if let Some(page) = page {
             let cursor: Cursor = serde_json::from_str(page).map_err(|_| BackendError::StateLost)?;
+            if let Some(from) = &cursor.changes_from {
+                return self.changed_in(calendar, from, cursor.round).await;
+            }
             return self.page_of(calendar, &filter, cursor.position, Some(cursor.state), true).await;
         }
         match token {
-            Some(since) => self.changed_in(calendar, since).await,
+            Some(since) => self.changed_in(calendar, since, 0).await,
             None => self.page_of(calendar, &filter, 0, None, true).await,
         }
     }
