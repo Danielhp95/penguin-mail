@@ -17,6 +17,7 @@ use crate::{AccountId, EpochMillis};
 pub mod clock;
 pub mod hours;
 pub mod list;
+pub mod local;
 pub mod repeat;
 pub mod series;
 pub mod week;
@@ -684,6 +685,11 @@ pub struct EventPage {
 /// the `rrule` crate cannot read gives the first occurrence, so the
 /// event stays visible, and the log names the rule.
 pub fn expand(event: &Event, from: EpochMillis, to: EpochMillis) -> Vec<(EpochMillis, EpochMillis)> {
+    expand_in(event, from, to, local::zone())
+}
+
+/// [`expand`] on a computer in zone `here`.
+pub fn expand_in(event: &Event, from: EpochMillis, to: EpochMillis, here: chrono_tz::Tz) -> Vec<(EpochMillis, EpochMillis)> {
     let length = event.end - event.start;
     let overlaps = |start: EpochMillis| start < to && start + length > from;
     if event.rules.is_empty() {
@@ -693,10 +699,10 @@ pub fn expand(event: &Event, from: EpochMillis, to: EpochMillis) -> Vec<(EpochMi
             Vec::new()
         };
     }
-    let Some(set) = rule_set(event) else {
+    let Some(set) = rule_set(event, here) else {
         return if overlaps(event.start) { vec![(event.start, event.end)] } else { Vec::new() };
     };
-    let tz = zone(event);
+    let tz = zone(event, here);
     let (Some(after), Some(before)) = (at(from - length, tz), at(to, tz)) else {
         return Vec::new();
     };
@@ -716,10 +722,15 @@ pub fn expand(event: &Event, from: EpochMillis, to: EpochMillis) -> Vec<(EpochMi
 /// finished long ago. A rule nobody can read ends with its first
 /// occurrence, since that is all [`expand`] shows of it.
 pub fn series_end(event: &Event) -> Option<EpochMillis> {
+    series_end_in(event, local::zone())
+}
+
+/// [`series_end`] on a computer in zone `here`.
+pub fn series_end_in(event: &Event, here: chrono_tz::Tz) -> Option<EpochMillis> {
     if event.rules.is_empty() {
         return Some(event.end);
     }
-    let Some(set) = rule_set(event) else {
+    let Some(set) = rule_set(event, here) else {
         return Some(event.end);
     };
     let rule = event.rules.iter().find(|line| is_rule_line(line))?;
@@ -799,8 +810,16 @@ pub(crate) fn is_date_line(line: &str) -> bool {
     upper.starts_with("EXDATE") || upper.starts_with("RDATE")
 }
 
-fn zone(event: &Event) -> rrule::Tz {
-    let tz: chrono_tz::Tz = event.zone.parse().unwrap_or(chrono_tz::UTC);
+/// The zone `event` repeats in. A timed event with no zone floats: it
+/// means the same clock time wherever the person is, so it repeats in
+/// `here`, the computer's zone. A zone name nothing here reads repeats
+/// there too, since the readers place the first occurrence in it.
+fn zone(event: &Event, here: chrono_tz::Tz) -> rrule::Tz {
+    let tz = if event.all_day {
+        event.zone.parse().unwrap_or(chrono_tz::UTC)
+    } else {
+        named_zone(&event.zone).unwrap_or(here)
+    };
     rrule::Tz::Tz(tz)
 }
 
@@ -809,8 +828,8 @@ fn at(instant: EpochMillis, tz: rrule::Tz) -> Option<DateTime<rrule::Tz>> {
 }
 
 /// The event's rules with its start in front, as `rrule` reads a set.
-fn rule_set(event: &Event) -> Option<RRuleSet> {
-    let tz = zone(event);
+fn rule_set(event: &Event, here: chrono_tz::Tz) -> Option<RRuleSet> {
+    let tz = zone(event, here);
     let start = at(event.start, tz)?;
     let name = match tz {
         rrule::Tz::Tz(tz) => tz.name().to_string(),
@@ -819,7 +838,17 @@ fn rule_set(event: &Event) -> Option<RRuleSet> {
     // A zone `rrule` cannot read, such as Outlook's Windows names in rows
     // stored before the readers renamed them, reads as the series' own.
     let iana = |tzid: &str| Some(crate::invitation::zone::named(tzid).map_or_else(|| name.clone(), |tz| tz.name().to_string()));
-    let rules: Vec<String> = event.rules.iter().map(|rule| dates_in_utc(&until_in_utc(&rename_zone(rule, &iana)))).collect();
+    let rules: Vec<String> = event
+        .rules
+        .iter()
+        .map(|rule| {
+            let rule = dates_in_utc(&until_in_utc(&rename_zone(rule, &iana)));
+            match tz {
+                rrule::Tz::Tz(zone) => floating_in(&rule, zone),
+                rrule::Tz::Local(_) => rule,
+            }
+        })
+        .collect();
     let text = format!(
         "DTSTART;TZID={name}:{}\n{}",
         start.format("%Y%m%dT%H%M%S"),
@@ -832,6 +861,42 @@ fn rule_set(event: &Event) -> Option<RRuleSet> {
             None
         }
     }
+}
+
+/// `line` with its floating date-times (neither TZID nor Z) read in
+/// `zone`, the series' own. `rrule` reads them in the machine's zone, and
+/// refuses a floating `UNTIL` once `DTSTART` names a zone, which loses the
+/// whole series. A floating series' lines are floating (RFC 5545 3.3.10),
+/// so these come with every one another app writes.
+fn floating_in(line: &str, zone: chrono_tz::Tz) -> String {
+    let floating = |value: &str| value.contains('T') && !value.ends_with(['Z', 'z']);
+    if is_date_line(line) {
+        let Some((head, values)) = line.split_once(':') else {
+            return line.to_string();
+        };
+        let zoned = head.split(';').any(|p| p.to_ascii_uppercase().starts_with("TZID="));
+        if zoned || !values.split(',').all(floating) {
+            return line.to_string();
+        }
+        return format!("{head};TZID={}:{values}", zone.name());
+    }
+    let Some(at) = line.to_ascii_uppercase().find("UNTIL=") else {
+        return line.to_string();
+    };
+    let start = at + "UNTIL=".len();
+    let end = line[start..].find(';').map_or(line.len(), |offset| start + offset);
+    let value = &line[start..end];
+    if !floating(value) {
+        return line.to_string();
+    }
+    let Some(utc) = chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%S")
+        .ok()
+        .and_then(|naive| local::instant(&zone, naive))
+        .and_then(DateTime::<Utc>::from_timestamp_millis)
+    else {
+        return line.to_string();
+    };
+    format!("{}{}{}", &line[..start], utc.format("%Y%m%dT%H%M%SZ"), &line[end..])
 }
 
 /// Google writes an all-day series' `UNTIL` as a bare date
@@ -1294,5 +1359,130 @@ mod tests {
         assert!(event.all_day);
         assert_eq!((event.start, event.end), (day(20), day(22)));
         assert_eq!(event.guests, vec![Guest { email: "ann@example.com".into(), ..Guest::default() }]);
+    }
+}
+
+/// A series with no zone, or with a zone name nothing here reads, repeats
+/// in the computer's zone. These pass that zone in, so they hold whatever
+/// zone the test machine runs in.
+#[cfg(test)]
+mod computer_zone_tests {
+    use super::*;
+    use chrono::{NaiveDate, TimeZone, Timelike};
+    use chrono_tz::America::New_York;
+    use chrono_tz::Europe::Lisbon;
+
+    fn at(zone: chrono_tz::Tz, m: u32, d: u32, h: u32) -> EpochMillis {
+        let naive = NaiveDate::from_ymd_opt(2026, m, d).unwrap().and_hms_opt(h, 0, 0).unwrap();
+        zone.from_local_datetime(&naive).single().unwrap().timestamp_millis()
+    }
+
+    /// A weekly 09:00 series from 18 March to 4 November 2026, which spans
+    /// both of the year's clock changes in Lisbon and in New York.
+    fn weekly(zone: &str, start: EpochMillis) -> Event {
+        Event {
+            calendar: "home".into(),
+            id: "swim".into(),
+            start,
+            end: start + 60 * 60 * 1000,
+            zone: zone.into(),
+            rules: vec!["RRULE:FREQ=WEEKLY;COUNT=34".into()],
+            ..Event::default()
+        }
+    }
+
+    fn hours_in(zone: chrono_tz::Tz, got: &[(EpochMillis, EpochMillis)]) -> Vec<u32> {
+        got.iter().map(|(start, _)| DateTime::from_timestamp_millis(*start).unwrap().with_timezone(&zone).hour()).collect()
+    }
+
+    fn whole_year(event: &Event, here: chrono_tz::Tz) -> Vec<(EpochMillis, EpochMillis)> {
+        expand_in(event, at(Lisbon, 1, 1, 0), at(Lisbon, 12, 31, 0), here)
+    }
+
+    #[test]
+    fn a_floating_series_keeps_its_clock_time_in_the_computers_zone() {
+        let event = weekly("", at(Lisbon, 3, 18, 9));
+        let got = whole_year(&event, Lisbon);
+        assert_eq!(got.len(), 34);
+        assert_eq!(hours_in(Lisbon, &got), vec![9; 34]);
+    }
+
+    #[test]
+    fn a_floating_series_follows_whichever_zone_the_computer_is_in() {
+        let event = weekly("", at(New_York, 3, 4, 9));
+        let got = whole_year(&event, New_York);
+        assert_eq!(hours_in(New_York, &got), vec![9; 34]);
+    }
+
+    #[test]
+    fn a_series_in_a_zone_nobody_knows_repeats_in_the_computers_zone() {
+        let event = weekly("Mars/Olympus_Mons", at(Lisbon, 3, 18, 9));
+        let got = whole_year(&event, Lisbon);
+        assert_eq!(hours_in(Lisbon, &got), vec![9; 34]);
+    }
+
+    #[test]
+    fn a_series_in_a_named_zone_repeats_in_that_zone_wherever_the_computer_is() {
+        let event = weekly("Europe/Lisbon", at(Lisbon, 3, 18, 9));
+        let got = whole_year(&event, New_York);
+        assert_eq!(hours_in(Lisbon, &got), vec![9; 34]);
+    }
+
+    #[test]
+    fn a_series_in_a_windows_zone_name_repeats_in_that_zone() {
+        let event = weekly("GMT Standard Time", at(Lisbon, 3, 18, 9));
+        let got = whole_year(&event, New_York);
+        assert_eq!(hours_in(Lisbon, &got), vec![9; 34]);
+    }
+
+    #[test]
+    fn an_all_day_series_keeps_its_dates_wherever_the_computer_is() {
+        let midnight = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis();
+        let event = Event {
+            start: midnight(19),
+            end: midnight(20),
+            zone: "UTC".into(),
+            all_day: true,
+            rules: vec!["RRULE:FREQ=WEEKLY;COUNT=2".into()],
+            ..weekly("UTC", 0)
+        };
+        let got = expand_in(&event, midnight(1), midnight(31), New_York);
+        assert_eq!(got, vec![(midnight(19), midnight(20)), (midnight(26), midnight(27))]);
+    }
+
+    /// `rrule` reads a date-time with neither TZID nor Z in the machine's
+    /// own zone; it must read in the series' zone. New York is not where
+    /// the test machine runs.
+    #[test]
+    fn a_floating_exclusion_leaves_out_its_occurrence_in_the_computers_zone() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;COUNT=3".into(), "EXDATE:20261028T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        let starts: Vec<EpochMillis> = got.iter().map(|(start, _)| *start).collect();
+        assert_eq!(starts, vec![at(New_York, 10, 21, 9), at(New_York, 11, 4, 9)]);
+    }
+
+    #[test]
+    fn a_floating_extra_date_lands_at_its_clock_time_in_the_computers_zone() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;COUNT=1".into(), "RDATE:20261105T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        assert_eq!(hours_in(New_York, &got), vec![9, 9]);
+    }
+
+    #[test]
+    fn a_floating_until_stops_the_series_at_its_clock_time() {
+        let mut event = weekly("", at(New_York, 10, 21, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;UNTIL=20261104T090000".into()];
+        let got = expand_in(&event, at(New_York, 10, 1, 0), at(New_York, 12, 1, 0), New_York);
+        assert_eq!(hours_in(New_York, &got), vec![9, 9, 9]);
+    }
+
+    #[test]
+    fn a_floating_series_ends_at_its_last_clock_time_in_the_computers_zone() {
+        let mut event = weekly("", at(Lisbon, 10, 7, 9));
+        event.rules = vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()];
+        // The fourth Wednesday, 28 October, falls after the clocks go back.
+        assert_eq!(series_end_in(&event, Lisbon), Some(at(Lisbon, 10, 28, 10)));
     }
 }

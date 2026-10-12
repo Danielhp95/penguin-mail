@@ -14,7 +14,7 @@ use calcard::icalendar::{
 use calcard::{Entry, Parser};
 use chrono::{DateTime, NaiveDate, Utc};
 use mailrs_domain::EpochMillis;
-use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, occurrence_id};
+use mailrs_domain::calendar::{Attachment, Event, Guest, Notify, Reminder, ReminderMethod, Status, local, named_zone, occurrence_id};
 use mailrs_domain::invitation::Answer;
 
 use crate::ids::resource_id;
@@ -70,20 +70,24 @@ fn when_of(entry: &ICalendarEntry, zones: &Zones) -> Option<When> {
         return Some(When { at: day.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(), zone: "UTC".into(), all_day: true });
     }
     let result = value.to_date_time()?;
-    let named = entry.tz_id().and_then(|id| zones.resolve(id));
-    let tz = match (result.offset, named) {
-        (Some(_), _) => Tz::UTC,
-        (None, Some(zone)) => Tz::Tz(zone),
-        // A floating time means the same clock time wherever the reader
-        // is; UTC keeps it where the file put it.
-        (None, None) => Tz::UTC,
+    if result.offset.is_some() {
+        let at = result.to_date_time_with_tz(Tz::UTC)?.timestamp_millis();
+        return Some(When { at, zone: "UTC".into(), all_day: false });
+    }
+    // A clock time reads in its TZID's zone. A floating one (no TZID)
+    // means the same clock time wherever the person is, so it reads in
+    // the computer's zone and its empty zone writes it back floating. A
+    // TZID nothing here reads also reads in the computer's zone, and its
+    // text stays as the zone so a write gives it back as received.
+    let (zone, name) = match entry.tz_id() {
+        None => (local::zone(), String::new()),
+        Some(id) => match zones.resolve(id).or_else(|| named_zone(id)) {
+            Some(zone) => (zone, zone.name().to_string()),
+            None => (local::zone(), id.to_string()),
+        },
     };
-    let at = result.to_date_time_with_tz(tz)?.timestamp_millis();
-    let zone = match (result.offset, named) {
-        (None, Some(zone)) => zone.name().to_string(),
-        _ => "UTC".to_string(),
-    };
-    Some(When { at, zone, all_day: false })
+    let at = local::instant(&zone, result.date_time)?;
+    Some(When { at, zone: name, all_day: false })
 }
 
 fn line_of(entry: &ICalendarEntry) -> String {
@@ -311,7 +315,8 @@ fn replace(ical: &mut ICalendar, at: usize, property: ICalendarProperty, lines: 
 }
 
 /// A DTSTART-shaped line for `at`: a date for an all-day event, the local
-/// time with its TZID for a zoned one, UTC otherwise.
+/// time with its TZID for a zoned one, the computer's clock time with
+/// neither TZID nor Z for a floating one (no zone), UTC otherwise.
 fn time_line(name: &str, at: EpochMillis, zone: &str, all_day: bool) -> String {
     let Some(utc) = DateTime::<Utc>::from_timestamp_millis(at) else {
         return format!("{name}:19700101T000000Z");
@@ -319,10 +324,24 @@ fn time_line(name: &str, at: EpochMillis, zone: &str, all_day: bool) -> String {
     if all_day {
         return format!("{name};VALUE=DATE:{}", utc.format("%Y%m%d"));
     }
-    match zone.parse::<chrono_tz::Tz>() {
-        Ok(tz) if zone != "UTC" => format!("{name};TZID={zone}:{}", utc.with_timezone(&tz).format("%Y%m%dT%H%M%S")),
-        _ => format!("{name}:{}", utc.format("%Y%m%dT%H%M%SZ")),
+    if zone.is_empty() {
+        return format!("{name}:{}", utc.with_timezone(&local::zone()).format("%Y%m%dT%H%M%S"));
     }
+    match named_zone(zone) {
+        Some(_) if zone == "UTC" => format!("{name}:{}", utc.format("%Y%m%dT%H%M%SZ")),
+        Some(tz) => format!("{name};TZID={}:{}", tz.name(), utc.with_timezone(&tz).format("%Y%m%dT%H%M%S")),
+        // A TZID nothing here reads goes back as it came, with the clock
+        // time it was read in.
+        None => format!("{name};TZID={}:{}", tzid_text(zone), utc.with_timezone(&local::zone()).format("%Y%m%dT%H%M%S")),
+    }
+}
+
+/// `tzid` as a parameter value: quoted when it holds a colon, semicolon
+/// or comma. A parameter value cannot hold a double quote, so none is
+/// kept.
+fn tzid_text(tzid: &str) -> String {
+    let bare = tzid.replace('"', "");
+    if bare.contains([':', ';', ',']) { format!("\"{bare}\"") } else { bare }
 }
 
 fn fresh() -> Result<ICalendar, DavError> {
