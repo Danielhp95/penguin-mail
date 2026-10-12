@@ -2350,9 +2350,10 @@ msgstr "Als gelesen markieren"
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:289
-#: app/src/ui/queued.rs:58 app/src/ui/templates.rs:149
-#: app/src/ui/window/arrange.rs:106 app/src/ui/window/organize.rs:204
+#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:504
+#: app/src/ui/hide_my_email.rs:530 app/src/ui/queued.rs:58
+#: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:106
+#: app/src/ui/window/organize.rs:204
 msgid "Delete"
 msgstr "Löschen"
 
@@ -4063,7 +4064,7 @@ msgstr "E-Mail und Kalender für Linux. Ihre E-Mails bleiben auf Ihrem Rechner."
 msgid "What's New"
 msgstr "Neuigkeiten"
 
-#: app/src/ui/about.rs:178
+#: app/src/ui/about.rs:178 app/src/ui/hide_my_email.rs:593
 msgid "Website"
 msgstr "Webseite"
 
@@ -4212,6 +4213,7 @@ msgid "Copy Link"
 msgstr "Link kopieren"
 
 #: app/src/ui/add_account.rs:802 app/src/ui/add_account.rs:950
+#: app/src/ui/hide_my_email.rs:318 app/src/ui/hide_my_email.rs:322
 #: app/src/ui/key_import.rs:213
 msgid "Try Again"
 msgstr "Erneut versuchen"
@@ -4632,7 +4634,7 @@ msgid "Running"
 msgstr "Läuft"
 
 #: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
-#: app/src/ui/hide_my_email.rs:467
+#: app/src/ui/hide_my_email.rs:767
 msgid "Done"
 msgstr "Fertig"
 
@@ -5889,7 +5891,7 @@ msgstr "Abbestellen fehlgeschlagen: {reason}"
 msgid "New Calendar"
 msgstr "Neuer Kalender"
 
-#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:365
+#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:626
 #: app/src/ui/rules.rs:439 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
@@ -7005,7 +7007,10 @@ msgstr "Server für Kalender, Kontakte und Regeln"
 msgid ""
 "Penguin Mail looks for these when you add an account, and signs in with the "
 "account's password, or the app password you gave for its calendar."
-msgstr "Penguin Mail sucht diese Server, wenn Sie ein Konto hinzufügen, und meldet sich mit dem Passwort des Kontos an oder mit dem App-Passwort, das Sie für den Kalender angegeben haben."
+msgstr ""
+"Penguin Mail sucht diese Server, wenn Sie ein Konto hinzufügen, und meldet "
+"sich mit dem Passwort des Kontos an oder mit dem App-Passwort, das Sie für "
+"den Kalender angegeben haben."
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"
@@ -7352,7 +7357,7 @@ msgstr "Vorheriger Treffer"
 msgid "Next Match"
 msgstr "Nächster Treffer"
 
-#: app/src/ui/hide_my_email.rs:22
+#: app/src/ui/hide_my_email.rs:24
 msgid ""
 "Gmail delivers mail sent to these addresses to your inbox. Each one shows "
 "which site shared your address, and you can turn one off when the spam "
@@ -7365,76 +7370,119 @@ msgstr ""
 "dieser Adressen, daher kann Sie jeder, der den Zusatz entfernt, trotzdem "
 "erreichen, und Ihre Antworten kommen von Ihrer Hauptadresse."
 
-#: app/src/ui/hide_my_email.rs:73 app/src/ui/hide_my_email.rs:75
-#: app/src/ui/hide_my_email.rs:375
+#: app/src/ui/hide_my_email.rs:34
+msgid ""
+"Addresses that hide your own. Each one shows which site you gave it to, and "
+"you can turn one off when the spam starts."
+msgstr ""
+"Adressen, die Ihre eigene verbergen. Jede zeigt, welcher Website Sie sie "
+"gegeben haben, und Sie können eine ausschalten, sobald der Spam beginnt."
+
+#: app/src/ui/hide_my_email.rs:65
+msgid "Off: mail to it is dropped"
+msgstr "Aus: E-Mails an sie werden verworfen"
+
+#: app/src/ui/hide_my_email.rs:66
+msgid "Waiting for its first message"
+msgstr "Wartet auf die erste Nachricht"
+
+#: app/src/ui/hide_my_email.rs:121 app/src/ui/hide_my_email.rs:123
+#: app/src/ui/hide_my_email.rs:636
 msgid "Create Address"
 msgstr "Adresse erstellen"
 
-#: app/src/ui/hide_my_email.rs:82
+#: app/src/ui/hide_my_email.rs:130
 msgid "Hide My Email"
 msgstr "Hide My Email"
 
-#: app/src/ui/hide_my_email.rs:130
+#: app/src/ui/hide_my_email.rs:180
 msgid "Created {date}"
 msgstr "Erstellt am {date}"
 
-#: app/src/ui/hide_my_email.rs:165
+#: app/src/ui/hide_my_email.rs:230
 msgid "No addresses yet"
 msgstr "Noch keine Adressen"
 
-#: app/src/ui/hide_my_email.rs:166
+#: app/src/ui/hide_my_email.rs:231
 msgid "Create one with the + button."
 msgstr "Erstellen Sie eine mit dem Knopf +."
 
-#: app/src/ui/hide_my_email.rs:186
+#: app/src/ui/hide_my_email.rs:257
+msgid "Loading masked addresses…"
+msgstr "Maskierte Adressen werden geladen…"
+
+#: app/src/ui/hide_my_email.rs:305
+msgid "Could not read the masked addresses: {reason}"
+msgstr "Die maskierten Adressen konnten nicht gelesen werden: {reason}"
+
+#: app/src/ui/hide_my_email.rs:340
 msgid "Off: mail goes to the Trash"
 msgstr "Aus: E-Mails landen im Papierkorb"
 
-#: app/src/ui/hide_my_email.rs:208 app/src/ui/window/message_menu.rs:137
+#: app/src/ui/hide_my_email.rs:351 app/src/ui/hide_my_email.rs:435
+#: app/src/ui/window/message_menu.rs:137
 msgid "Copy Address"
 msgstr "Adresse kopieren"
 
-#: app/src/ui/hide_my_email.rs:209
+#: app/src/ui/hide_my_email.rs:352 app/src/ui/hide_my_email.rs:436
 msgid "Copy {address}"
 msgstr "{address} kopieren"
 
-#: app/src/ui/hide_my_email.rs:216 app/src/ui/hide_my_email.rs:451
+#: app/src/ui/hide_my_email.rs:359 app/src/ui/hide_my_email.rs:443
+#: app/src/ui/hide_my_email.rs:754
 msgid "Address copied"
 msgstr "Adresse kopiert"
 
-#: app/src/ui/hide_my_email.rs:224
+#: app/src/ui/hide_my_email.rs:367 app/src/ui/hide_my_email.rs:451
 msgid "Receive Mail"
 msgstr "E-Mails empfangen"
 
-#: app/src/ui/hide_my_email.rs:229
+#: app/src/ui/hide_my_email.rs:372 app/src/ui/hide_my_email.rs:456
 msgid "Receive mail at {address}"
 msgstr "E-Mails an {address} empfangen"
 
-#: app/src/ui/hide_my_email.rs:244
+#: app/src/ui/hide_my_email.rs:387 app/src/ui/hide_my_email.rs:471
 msgid "Mail to this address reaches you again"
 msgstr "E-Mails an diese Adresse erreichen Sie wieder"
 
-#: app/src/ui/hide_my_email.rs:247
+#: app/src/ui/hide_my_email.rs:390
 msgid "Mail to this address now goes to the Trash"
 msgstr "E-Mails an diese Adresse landen jetzt im Papierkorb"
 
-#: app/src/ui/hide_my_email.rs:251
+#: app/src/ui/hide_my_email.rs:394 app/src/ui/hide_my_email.rs:473
 msgid "Could not change the address: {reason}"
 msgstr "Die Adresse konnte nicht geändert werden: {reason}"
 
-#: app/src/ui/hide_my_email.rs:262
+#: app/src/ui/hide_my_email.rs:405 app/src/ui/hide_my_email.rs:483
 msgid "Delete Address"
 msgstr "Adresse löschen"
 
-#: app/src/ui/hide_my_email.rs:264
+#: app/src/ui/hide_my_email.rs:407 app/src/ui/hide_my_email.rs:484
 msgid "Delete {address}"
 msgstr "{address} löschen"
 
-#: app/src/ui/hide_my_email.rs:281
+#: app/src/ui/hide_my_email.rs:472
+msgid "Mail to this address is now dropped"
+msgstr "E-Mails an diese Adresse werden jetzt verworfen"
+
+#: app/src/ui/hide_my_email.rs:499 app/src/ui/hide_my_email.rs:522
 msgid "Delete Address?"
 msgstr "Adresse löschen?"
 
-#: app/src/ui/hide_my_email.rs:284
+#: app/src/ui/hide_my_email.rs:501
+msgid "{address} stops working, and mail sent to it is dropped."
+msgstr ""
+"{address} funktioniert nicht mehr, und E-Mails an sie werden verworfen."
+
+#: app/src/ui/hide_my_email.rs:513 app/src/ui/hide_my_email.rs:539
+msgid "Address deleted"
+msgstr "Adresse gelöscht"
+
+#: app/src/ui/hide_my_email.rs:514 app/src/ui/hide_my_email.rs:541
+msgid "Could not delete the address: {reason}"
+msgstr "Die Adresse konnte nicht gelöscht werden: {reason}"
+
+#: app/src/ui/hide_my_email.rs:525
 msgid ""
 "Mail sent to {address} arrives in your inbox again, without the Hide My "
 "Email label. To stop that mail, turn the address off instead."
@@ -7443,23 +7491,31 @@ msgstr ""
 "Ihrem Posteingang an. Um diese E-Mails zu stoppen, schalten Sie die Adresse "
 "stattdessen aus."
 
-#: app/src/ui/hide_my_email.rs:298
-msgid "Address deleted"
-msgstr "Adresse gelöscht"
-
-#: app/src/ui/hide_my_email.rs:300
-msgid "Could not delete the address: {reason}"
-msgstr "Die Adresse konnte nicht gelöscht werden: {reason}"
-
-#: app/src/ui/hide_my_email.rs:315
+#: app/src/ui/hide_my_email.rs:556
 msgid "Allow Hide My Email"
 msgstr "Hide My Email erlauben"
 
-#: app/src/ui/hide_my_email.rs:336 app/src/ui/window.rs:3288
+#: app/src/ui/hide_my_email.rs:577 app/src/ui/window.rs:3288
 msgid "Add an account first"
 msgstr "Fügen Sie zuerst ein Konto hinzu"
 
-#: app/src/ui/hide_my_email.rs:340
+#: app/src/ui/hide_my_email.rs:582
+msgid "Account"
+msgstr "Konto"
+
+#: app/src/ui/hide_my_email.rs:595
+msgid "Where Did You Use It?"
+msgstr "Wo haben Sie sie verwendet?"
+
+#: app/src/ui/hide_my_email.rs:609
+msgid ""
+"Your provider makes a new address that delivers to you. Give it to one site "
+"only."
+msgstr ""
+"Ihr Anbieter erstellt eine neue Adresse, die E-Mails an Sie zustellt. Geben "
+"Sie sie nur an eine einzige Website weiter."
+
+#: app/src/ui/hide_my_email.rs:614
 msgid ""
 "You get a new address that ends in your own, such as "
 "name+kite.fern482@gmail.com. Give it to one site only."
@@ -7468,27 +7524,16 @@ msgstr ""
 "name+kite.fern482@gmail.com. Geben Sie sie nur an eine einzige Website "
 "weiter."
 
-#: app/src/ui/hide_my_email.rs:346
-msgid "Account"
-msgstr "Konto"
+#: app/src/ui/hide_my_email.rs:669
+msgid "It is on your clipboard. Mail sent to it arrives in your inbox."
+msgstr ""
+"Sie ist in der Zwischenablage. E-Mails an sie landen in Ihrem Posteingang."
 
-#: app/src/ui/hide_my_email.rs:358
-msgid "Where Did You Use It?"
-msgstr "Wo haben Sie sie verwendet?"
-
-#: app/src/ui/hide_my_email.rs:403
+#: app/src/ui/hide_my_email.rs:674 app/src/ui/hide_my_email.rs:698
 msgid "Could not create the address: {reason}"
 msgstr "Die Adresse konnte nicht erstellt werden: {reason}"
 
-#: app/src/ui/hide_my_email.rs:428
-msgid "Your New Address"
-msgstr "Ihre neue Adresse"
-
-#: app/src/ui/hide_my_email.rs:443
-msgid "Copy"
-msgstr "Kopieren"
-
-#: app/src/ui/hide_my_email.rs:458
+#: app/src/ui/hide_my_email.rs:687
 msgid ""
 "It is on your clipboard. Mail sent to it gets the Hide My Email label in "
 "Gmail."
@@ -7496,7 +7541,15 @@ msgstr ""
 "Sie liegt in Ihrer Zwischenablage. E-Mails an diese Adresse erhalten in "
 "Gmail das Label „Hide My Email“."
 
-#: app/src/ui/hide_my_email.rs:482
+#: app/src/ui/hide_my_email.rs:732
+msgid "Your New Address"
+msgstr "Ihre neue Adresse"
+
+#: app/src/ui/hide_my_email.rs:746
+msgid "Copy"
+msgstr "Kopieren"
+
+#: app/src/ui/hide_my_email.rs:782
 msgid "Address Created"
 msgstr "Adresse erstellt"
 
@@ -10832,6 +10885,11 @@ msgstr "Dieser Server speichert keine Farben für seine Postfächer."
 #: sync/src/services/jmap/mod.rs:340
 msgid "This server files sent mail itself."
 msgstr "Dieser Server legt gesendete E-Mails selbst ab."
+
+#: sync/src/services/jmap/mod.rs:433
+msgid "The server made an address Penguin Mail cannot read."
+msgstr ""
+"Der Server hat eine Adresse erstellt, die Penguin Mail nicht lesen kann."
 
 #: sync/src/services/jmap/outgoing.rs:70
 msgid "The server does not let this account send from {address}."

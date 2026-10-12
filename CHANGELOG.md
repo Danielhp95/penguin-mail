@@ -15,6 +15,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
 - Add a JMAP account, such as Fastmail with an API token or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent. The addresses and names you set up on the server appear in the From menu, each with its own signature. Contacts kept on the server sync both ways, and so does the automatic reply when the server offers one, such as Stalwart.
 - A JMAP account brings its contacts and rules from its server, and its calendar from CalDAV; Fastmail's calendar takes an app password beside the API token.
+- Make, turn off and delete Fastmail masked addresses from Hide My Email.
 
 ## 1.0.7 (2026-10-10)
 

@@ -586,6 +586,7 @@ impl AccountServices {
             out_of_office: features.out_of_office,
             focus_time: features.focus_time,
             declines: features.declines,
+            masked_email: self.mail.masked_email(),
         }
     }
 }
@@ -808,6 +809,8 @@ pub struct Offers {
     /// Out of office and focus time keep which meetings they decline and
     /// a message, so the editor offers both.
     pub declines: bool,
+    /// The account makes masked addresses on its server, as Fastmail does.
+    pub masked_email: bool,
 }
 
 impl Offers {
@@ -837,6 +840,7 @@ impl Offers {
         out_of_office: false,
         focus_time: false,
         declines: false,
+        masked_email: false,
     };
 
     /// What the account lacks, in the order Preferences lists it.

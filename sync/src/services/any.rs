@@ -159,6 +159,14 @@ pub enum AnyIdentities {
 }
 
 impl AnyMail {
+    /// The account's session offers Masked Email.
+    pub fn masked_email(&self) -> bool {
+        match self {
+            AnyMail::Jmap(adapter) => adapter.masked_email(),
+            _ => false,
+        }
+    }
+
     /// The server keeps an automatic reply this account's sign-in cannot
     /// reach. Only a JMAP account signed in with a token can say so.
     pub fn auto_reply_needs_sign_in(&self) -> bool {

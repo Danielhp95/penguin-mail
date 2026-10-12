@@ -2188,9 +2188,10 @@ msgstr "標示為已讀"
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:289
-#: app/src/ui/queued.rs:58 app/src/ui/templates.rs:149
-#: app/src/ui/window/arrange.rs:106 app/src/ui/window/organize.rs:204
+#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:504
+#: app/src/ui/hide_my_email.rs:530 app/src/ui/queued.rs:58
+#: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:106
+#: app/src/ui/window/organize.rs:204
 msgid "Delete"
 msgstr "刪除"
 
@@ -3787,7 +3788,7 @@ msgstr "Linux 郵件與行事曆。郵件儲存在自己的電腦上。"
 msgid "What's New"
 msgstr "新功能"
 
-#: app/src/ui/about.rs:178
+#: app/src/ui/about.rs:178 app/src/ui/hide_my_email.rs:593
 msgid "Website"
 msgstr "網站"
 
@@ -3934,6 +3935,7 @@ msgid "Copy Link"
 msgstr "複製連結"
 
 #: app/src/ui/add_account.rs:802 app/src/ui/add_account.rs:950
+#: app/src/ui/hide_my_email.rs:318 app/src/ui/hide_my_email.rs:322
 #: app/src/ui/key_import.rs:213
 msgid "Try Again"
 msgstr "重試"
@@ -4337,7 +4339,7 @@ msgid "Running"
 msgstr "執行中"
 
 #: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
-#: app/src/ui/hide_my_email.rs:467
+#: app/src/ui/hide_my_email.rs:767
 msgid "Done"
 msgstr "完成"
 
@@ -5546,7 +5548,7 @@ msgstr "無法取消訂閱：{reason}"
 msgid "New Calendar"
 msgstr "新增行事曆"
 
-#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:365
+#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:626
 #: app/src/ui/rules.rs:439 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
@@ -6637,7 +6639,9 @@ msgstr "行事曆、聯絡人與規則伺服器"
 msgid ""
 "Penguin Mail looks for these when you add an account, and signs in with the "
 "account's password, or the app password you gave for its calendar."
-msgstr "新增帳號時，Penguin Mail 會尋找這些伺服器，並以帳號的密碼或您為其行事曆提供的應用程式密碼登入。"
+msgstr ""
+"新增帳號時，Penguin Mail 會尋找這些伺服器，並以帳號的密碼或您為其行事曆提供的"
+"應用程式密碼登入。"
 
 #: app/src/ui/contacts_prefs.rs:99
 msgid "Use It"
@@ -6975,7 +6979,7 @@ msgstr "上一筆結果"
 msgid "Next Match"
 msgstr "下一筆結果"
 
-#: app/src/ui/hide_my_email.rs:22
+#: app/src/ui/hide_my_email.rs:24
 msgid ""
 "Gmail delivers mail sent to these addresses to your inbox. Each one shows "
 "which site shared your address, and you can turn one off when the spam "
@@ -6986,76 +6990,118 @@ msgstr ""
 "址，開始收到垃圾郵件時可以停用。每個地址都包含真實地址，因此移除標記後仍能寄"
 "信，而回覆也會使用主要地址寄出。"
 
-#: app/src/ui/hide_my_email.rs:73 app/src/ui/hide_my_email.rs:75
-#: app/src/ui/hide_my_email.rs:375
+#: app/src/ui/hide_my_email.rs:34
+msgid ""
+"Addresses that hide your own. Each one shows which site you gave it to, and "
+"you can turn one off when the spam starts."
+msgstr ""
+"用來隱藏真實地址的地址。每個地址都能看出提供給了哪個網站，開始收到垃圾郵件時"
+"可以停用。"
+
+#: app/src/ui/hide_my_email.rs:65
+msgid "Off: mail to it is dropped"
+msgstr "已停用：寄至此地址的郵件會被捨棄"
+
+#: app/src/ui/hide_my_email.rs:66
+msgid "Waiting for its first message"
+msgstr "正在等候第一封郵件"
+
+#: app/src/ui/hide_my_email.rs:121 app/src/ui/hide_my_email.rs:123
+#: app/src/ui/hide_my_email.rs:636
 msgid "Create Address"
 msgstr "建立地址"
 
-#: app/src/ui/hide_my_email.rs:82
+#: app/src/ui/hide_my_email.rs:130
 msgid "Hide My Email"
 msgstr "隱藏電子郵件地址"
 
-#: app/src/ui/hide_my_email.rs:130
+#: app/src/ui/hide_my_email.rs:180
 msgid "Created {date}"
 msgstr "建立於 {date}"
 
-#: app/src/ui/hide_my_email.rs:165
+#: app/src/ui/hide_my_email.rs:230
 msgid "No addresses yet"
 msgstr "尚無地址"
 
-#: app/src/ui/hide_my_email.rs:166
+#: app/src/ui/hide_my_email.rs:231
 msgid "Create one with the + button."
 msgstr "請使用 + 按鈕建立地址。"
 
-#: app/src/ui/hide_my_email.rs:186
+#: app/src/ui/hide_my_email.rs:257
+msgid "Loading masked addresses…"
+msgstr "正在載入遮罩地址…"
+
+#: app/src/ui/hide_my_email.rs:305
+msgid "Could not read the masked addresses: {reason}"
+msgstr "無法讀取遮罩地址：{reason}"
+
+#: app/src/ui/hide_my_email.rs:340
 msgid "Off: mail goes to the Trash"
 msgstr "已停用：郵件會移至垃圾桶"
 
-#: app/src/ui/hide_my_email.rs:208 app/src/ui/window/message_menu.rs:137
+#: app/src/ui/hide_my_email.rs:351 app/src/ui/hide_my_email.rs:435
+#: app/src/ui/window/message_menu.rs:137
 msgid "Copy Address"
 msgstr "複製地址"
 
-#: app/src/ui/hide_my_email.rs:209
+#: app/src/ui/hide_my_email.rs:352 app/src/ui/hide_my_email.rs:436
 msgid "Copy {address}"
 msgstr "複製 {address}"
 
-#: app/src/ui/hide_my_email.rs:216 app/src/ui/hide_my_email.rs:451
+#: app/src/ui/hide_my_email.rs:359 app/src/ui/hide_my_email.rs:443
+#: app/src/ui/hide_my_email.rs:754
 msgid "Address copied"
 msgstr "已複製地址"
 
-#: app/src/ui/hide_my_email.rs:224
+#: app/src/ui/hide_my_email.rs:367 app/src/ui/hide_my_email.rs:451
 msgid "Receive Mail"
 msgstr "接收郵件"
 
-#: app/src/ui/hide_my_email.rs:229
+#: app/src/ui/hide_my_email.rs:372 app/src/ui/hide_my_email.rs:456
 msgid "Receive mail at {address}"
 msgstr "接收寄至 {address} 的郵件"
 
-#: app/src/ui/hide_my_email.rs:244
+#: app/src/ui/hide_my_email.rs:387 app/src/ui/hide_my_email.rs:471
 msgid "Mail to this address reaches you again"
 msgstr "寄至此地址的郵件會再次送達"
 
-#: app/src/ui/hide_my_email.rs:247
+#: app/src/ui/hide_my_email.rs:390
 msgid "Mail to this address now goes to the Trash"
 msgstr "寄至此地址的郵件現在會移至垃圾桶"
 
-#: app/src/ui/hide_my_email.rs:251
+#: app/src/ui/hide_my_email.rs:394 app/src/ui/hide_my_email.rs:473
 msgid "Could not change the address: {reason}"
 msgstr "無法變更地址：{reason}"
 
-#: app/src/ui/hide_my_email.rs:262
+#: app/src/ui/hide_my_email.rs:405 app/src/ui/hide_my_email.rs:483
 msgid "Delete Address"
 msgstr "刪除地址"
 
-#: app/src/ui/hide_my_email.rs:264
+#: app/src/ui/hide_my_email.rs:407 app/src/ui/hide_my_email.rs:484
 msgid "Delete {address}"
 msgstr "刪除 {address}"
 
-#: app/src/ui/hide_my_email.rs:281
+#: app/src/ui/hide_my_email.rs:472
+msgid "Mail to this address is now dropped"
+msgstr "寄至此地址的郵件現在會被捨棄"
+
+#: app/src/ui/hide_my_email.rs:499 app/src/ui/hide_my_email.rs:522
 msgid "Delete Address?"
 msgstr "是否刪除地址？"
 
-#: app/src/ui/hide_my_email.rs:284
+#: app/src/ui/hide_my_email.rs:501
+msgid "{address} stops working, and mail sent to it is dropped."
+msgstr "{address} 將停止運作，寄至此地址的郵件會被捨棄。"
+
+#: app/src/ui/hide_my_email.rs:513 app/src/ui/hide_my_email.rs:539
+msgid "Address deleted"
+msgstr "已刪除地址"
+
+#: app/src/ui/hide_my_email.rs:514 app/src/ui/hide_my_email.rs:541
+msgid "Could not delete the address: {reason}"
+msgstr "無法刪除地址：{reason}"
+
+#: app/src/ui/hide_my_email.rs:525
 msgid ""
 "Mail sent to {address} arrives in your inbox again, without the Hide My "
 "Email label. To stop that mail, turn the address off instead."
@@ -7063,23 +7109,30 @@ msgstr ""
 "寄至 {address} 的郵件會再次送達收件匣，且不會帶有 [隱藏電子郵件地址] 標籤。若"
 "要阻擋這些郵件，請改為停用地址。"
 
-#: app/src/ui/hide_my_email.rs:298
-msgid "Address deleted"
-msgstr "已刪除地址"
-
-#: app/src/ui/hide_my_email.rs:300
-msgid "Could not delete the address: {reason}"
-msgstr "無法刪除地址：{reason}"
-
-#: app/src/ui/hide_my_email.rs:315
+#: app/src/ui/hide_my_email.rs:556
 msgid "Allow Hide My Email"
 msgstr "允許隱藏電子郵件地址"
 
-#: app/src/ui/hide_my_email.rs:336 app/src/ui/window.rs:3288
+#: app/src/ui/hide_my_email.rs:577 app/src/ui/window.rs:3288
 msgid "Add an account first"
 msgstr "請先新增帳號"
 
-#: app/src/ui/hide_my_email.rs:340
+#: app/src/ui/hide_my_email.rs:582
+msgid "Account"
+msgstr "帳號"
+
+#: app/src/ui/hide_my_email.rs:595
+msgid "Where Did You Use It?"
+msgstr "使用於何處？"
+
+#: app/src/ui/hide_my_email.rs:609
+msgid ""
+"Your provider makes a new address that delivers to you. Give it to one site "
+"only."
+msgstr ""
+"郵件服務商會建立一個新地址，郵件會送達給你。請只將此地址提供給一個網站。"
+
+#: app/src/ui/hide_my_email.rs:614
 msgid ""
 "You get a new address that ends in your own, such as "
 "name+kite.fern482@gmail.com. Give it to one site only."
@@ -7087,34 +7140,30 @@ msgstr ""
 "新地址會以自己的地址結尾，例如 name+kite.fern482@gmail.com。請只將此地址提供"
 "給一個網站。"
 
-#: app/src/ui/hide_my_email.rs:346
-msgid "Account"
-msgstr "帳號"
+#: app/src/ui/hide_my_email.rs:669
+msgid "It is on your clipboard. Mail sent to it arrives in your inbox."
+msgstr "已複製到剪貼簿。寄至此地址的郵件會送達收件匣。"
 
-#: app/src/ui/hide_my_email.rs:358
-msgid "Where Did You Use It?"
-msgstr "使用於何處？"
-
-#: app/src/ui/hide_my_email.rs:403
+#: app/src/ui/hide_my_email.rs:674 app/src/ui/hide_my_email.rs:698
 msgid "Could not create the address: {reason}"
 msgstr "無法建立地址：{reason}"
 
-#: app/src/ui/hide_my_email.rs:428
-msgid "Your New Address"
-msgstr "新地址"
-
-#: app/src/ui/hide_my_email.rs:443
-msgid "Copy"
-msgstr "複製"
-
-#: app/src/ui/hide_my_email.rs:458
+#: app/src/ui/hide_my_email.rs:687
 msgid ""
 "It is on your clipboard. Mail sent to it gets the Hide My Email label in "
 "Gmail."
 msgstr ""
 "已複製至剪貼簿。寄至此地址的郵件會在 Gmail 中加上 [隱藏電子郵件地址] 標籤。"
 
-#: app/src/ui/hide_my_email.rs:482
+#: app/src/ui/hide_my_email.rs:732
+msgid "Your New Address"
+msgstr "新地址"
+
+#: app/src/ui/hide_my_email.rs:746
+msgid "Copy"
+msgstr "複製"
+
+#: app/src/ui/hide_my_email.rs:782
 msgid "Address Created"
 msgstr "已建立地址"
 
@@ -10266,6 +10315,10 @@ msgstr "此伺服器不會儲存信箱的顏色。"
 #: sync/src/services/jmap/mod.rs:340
 msgid "This server files sent mail itself."
 msgstr "此伺服器會自行歸檔寄出的郵件。"
+
+#: sync/src/services/jmap/mod.rs:433
+msgid "The server made an address Penguin Mail cannot read."
+msgstr "伺服器建立的地址無法由 Penguin Mail 讀取。"
 
 #: sync/src/services/jmap/outgoing.rs:70
 msgid "The server does not let this account send from {address}."

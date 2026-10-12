@@ -2,7 +2,8 @@
 //! `AccountSettings` makes the Gmail filters behind each one and hands
 //! back the address to keep; this module finds the account an address
 //! belongs to and keeps the list. The dialog and the assistant both come
-//! here.
+//! here. An account whose server makes masked addresses, as Fastmail
+//! does, keeps them on the server, so those calls go straight to it.
 
 use std::rc::Rc;
 
@@ -10,6 +11,7 @@ use anyhow::{anyhow, bail};
 use mailrs_domain::AccountId;
 use mailrs_sync::Permitted;
 use mailrs_sync::hidden::{self, HiddenAddress};
+use mailrs_sync::masked::{MaskedAddress, MaskedState};
 
 use super::App;
 use crate::settings::Change;
@@ -90,6 +92,35 @@ impl App {
             self.change_settings(Change::ForgetHiddenAddress(gone));
         }
         Ok(dropped)
+    }
+
+    /// Every masked address of `account_id`, from its server.
+    pub async fn masked_addresses(self: &Rc<Self>, account_id: AccountId) -> anyhow::Result<Vec<MaskedAddress>> {
+        let settings = self.core.gmail_settings();
+        self.core.call(async move { settings.masked_addresses(account_id).await }).await
+    }
+
+    /// A new masked address of `account_id` for `site`, with `note` saying
+    /// where it was given out.
+    pub async fn create_masked_address(
+        self: &Rc<Self>,
+        account_id: AccountId,
+        site: &str,
+        note: &str,
+    ) -> anyhow::Result<MaskedAddress> {
+        let (settings, site, note) = (self.core.gmail_settings(), site.to_string(), note.to_string());
+        self.core.call(async move { settings.create_masked_address(account_id, &site, &note).await }).await
+    }
+
+    /// Turns a masked address on or off, or deletes it.
+    pub async fn set_masked_state(
+        self: &Rc<Self>,
+        account_id: AccountId,
+        id: &str,
+        state: MaskedState,
+    ) -> anyhow::Result<()> {
+        let (settings, id) = (self.core.gmail_settings(), id.to_string());
+        self.core.call(async move { settings.set_masked_state(account_id, &id, state).await }).await
     }
 
     /// The kept alias `address`, and the connected account it belongs to.

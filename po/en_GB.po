@@ -2060,9 +2060,10 @@ msgstr "Mark as Read"
 #: app/src/notify.rs:64 app/src/ui/calendar/manage.rs:292
 #: app/src/ui/calendar/popover.rs:211 app/src/ui/calendar/popover.rs:213
 #: app/src/ui/calendar/popover.rs:713 app/src/ui/calendar/scope.rs:112
-#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:289
-#: app/src/ui/queued.rs:58 app/src/ui/templates.rs:149
-#: app/src/ui/window/arrange.rs:106 app/src/ui/window/organize.rs:204
+#: app/src/ui/conversation.rs:526 app/src/ui/hide_my_email.rs:504
+#: app/src/ui/hide_my_email.rs:530 app/src/ui/queued.rs:58
+#: app/src/ui/templates.rs:149 app/src/ui/window/arrange.rs:106
+#: app/src/ui/window/organize.rs:204
 msgid "Delete"
 msgstr "Delete"
 
@@ -3585,7 +3586,7 @@ msgstr "Mail and calendar for Linux. Your mail stays on your computer."
 msgid "What's New"
 msgstr "What's New"
 
-#: app/src/ui/about.rs:178
+#: app/src/ui/about.rs:178 app/src/ui/hide_my_email.rs:593
 msgid "Website"
 msgstr "Website"
 
@@ -3732,6 +3733,7 @@ msgid "Copy Link"
 msgstr "Copy Link"
 
 #: app/src/ui/add_account.rs:802 app/src/ui/add_account.rs:950
+#: app/src/ui/hide_my_email.rs:318 app/src/ui/hide_my_email.rs:322
 #: app/src/ui/key_import.rs:213
 msgid "Try Again"
 msgstr "Try Again"
@@ -4100,7 +4102,7 @@ msgid "Running"
 msgstr "Running"
 
 #: app/src/ui/assistant.rs:932 app/src/ui/calendar/editor.rs:263
-#: app/src/ui/hide_my_email.rs:467
+#: app/src/ui/hide_my_email.rs:767
 msgid "Done"
 msgstr "Done"
 
@@ -5258,7 +5260,7 @@ msgstr "Could not unsubscribe: {reason}"
 msgid "New Calendar"
 msgstr "New Calendar"
 
-#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:365
+#: app/src/ui/calendar/manage.rs:374 app/src/ui/hide_my_email.rs:626
 #: app/src/ui/rules.rs:439 app/src/ui/smart_editor.rs:146
 #: app/src/ui/templates.rs:235 app/src/ui/window/organize.rs:74
 #: app/src/ui/window/organize.rs:347
@@ -6676,128 +6678,166 @@ msgstr "Previous Match"
 msgid "Next Match"
 msgstr "Next Match"
 
-#: app/src/ui/hide_my_email.rs:22
+#: app/src/ui/hide_my_email.rs:24
 msgid "Gmail delivers mail sent to these addresses to your inbox. Each one shows which site shared your address, and you can turn one off when the spam starts. Your real address is part of each one, so anyone who removes the tag can still reach you, and your replies come from your main address."
 msgstr "Gmail delivers mail sent to these addresses to your inbox. Each one shows which site shared your address, and you can turn one off when the spam starts. Your real address is part of each one, so anyone who removes the tag can still reach you, and your replies come from your main address."
 
-#: app/src/ui/hide_my_email.rs:73 app/src/ui/hide_my_email.rs:75
-#: app/src/ui/hide_my_email.rs:375
+#: app/src/ui/hide_my_email.rs:34
+msgid "Addresses that hide your own. Each one shows which site you gave it to, and you can turn one off when the spam starts."
+msgstr "Addresses that hide your own. Each one shows which site you gave it to, and you can turn one off when the spam starts."
+
+#: app/src/ui/hide_my_email.rs:65
+msgid "Off: mail to it is dropped"
+msgstr "Off: mail to it is dropped"
+
+#: app/src/ui/hide_my_email.rs:66
+msgid "Waiting for its first message"
+msgstr "Waiting for its first message"
+
+#: app/src/ui/hide_my_email.rs:121 app/src/ui/hide_my_email.rs:123
+#: app/src/ui/hide_my_email.rs:636
 msgid "Create Address"
 msgstr "Create Address"
 
-#: app/src/ui/hide_my_email.rs:82
+#: app/src/ui/hide_my_email.rs:130
 msgid "Hide My Email"
 msgstr "Hide My Email"
 
-#: app/src/ui/hide_my_email.rs:130
+#: app/src/ui/hide_my_email.rs:180
 msgid "Created {date}"
 msgstr "Created {date}"
 
-#: app/src/ui/hide_my_email.rs:165
+#: app/src/ui/hide_my_email.rs:230
 msgid "No addresses yet"
 msgstr "No addresses yet"
 
-#: app/src/ui/hide_my_email.rs:166
+#: app/src/ui/hide_my_email.rs:231
 msgid "Create one with the + button."
 msgstr "Create one with the + button."
 
-#: app/src/ui/hide_my_email.rs:186
+#: app/src/ui/hide_my_email.rs:257
+msgid "Loading masked addresses…"
+msgstr "Loading masked addresses…"
+
+#: app/src/ui/hide_my_email.rs:305
+msgid "Could not read the masked addresses: {reason}"
+msgstr "Could not read the masked addresses: {reason}"
+
+#: app/src/ui/hide_my_email.rs:340
 msgid "Off: mail goes to the Trash"
 msgstr "Off: mail goes to the Trash"
 
-#: app/src/ui/hide_my_email.rs:208 app/src/ui/window/message_menu.rs:137
+#: app/src/ui/hide_my_email.rs:351 app/src/ui/hide_my_email.rs:435
+#: app/src/ui/window/message_menu.rs:137
 msgid "Copy Address"
 msgstr "Copy Address"
 
-#: app/src/ui/hide_my_email.rs:209
+#: app/src/ui/hide_my_email.rs:352 app/src/ui/hide_my_email.rs:436
 msgid "Copy {address}"
 msgstr "Copy {address}"
 
-#: app/src/ui/hide_my_email.rs:216 app/src/ui/hide_my_email.rs:451
+#: app/src/ui/hide_my_email.rs:359 app/src/ui/hide_my_email.rs:443
+#: app/src/ui/hide_my_email.rs:754
 msgid "Address copied"
 msgstr "Address copied"
 
-#: app/src/ui/hide_my_email.rs:224
+#: app/src/ui/hide_my_email.rs:367 app/src/ui/hide_my_email.rs:451
 msgid "Receive Mail"
 msgstr "Receive Mail"
 
-#: app/src/ui/hide_my_email.rs:229
+#: app/src/ui/hide_my_email.rs:372 app/src/ui/hide_my_email.rs:456
 msgid "Receive mail at {address}"
 msgstr "Receive mail at {address}"
 
-#: app/src/ui/hide_my_email.rs:244
+#: app/src/ui/hide_my_email.rs:387 app/src/ui/hide_my_email.rs:471
 msgid "Mail to this address reaches you again"
 msgstr "Mail to this address reaches you again"
 
-#: app/src/ui/hide_my_email.rs:247
+#: app/src/ui/hide_my_email.rs:390
 msgid "Mail to this address now goes to the Trash"
 msgstr "Mail to this address now goes to the Trash"
 
-#: app/src/ui/hide_my_email.rs:251
+#: app/src/ui/hide_my_email.rs:394 app/src/ui/hide_my_email.rs:473
 msgid "Could not change the address: {reason}"
 msgstr "Could not change the address: {reason}"
 
-#: app/src/ui/hide_my_email.rs:262
+#: app/src/ui/hide_my_email.rs:405 app/src/ui/hide_my_email.rs:483
 msgid "Delete Address"
 msgstr "Delete Address"
 
-#: app/src/ui/hide_my_email.rs:264
+#: app/src/ui/hide_my_email.rs:407 app/src/ui/hide_my_email.rs:484
 msgid "Delete {address}"
 msgstr "Delete {address}"
 
-#: app/src/ui/hide_my_email.rs:281
+#: app/src/ui/hide_my_email.rs:472
+msgid "Mail to this address is now dropped"
+msgstr "Mail to this address is now dropped"
+
+#: app/src/ui/hide_my_email.rs:499 app/src/ui/hide_my_email.rs:522
 msgid "Delete Address?"
 msgstr "Delete Address?"
 
-#: app/src/ui/hide_my_email.rs:284
-msgid "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
-msgstr "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
+#: app/src/ui/hide_my_email.rs:501
+msgid "{address} stops working, and mail sent to it is dropped."
+msgstr "{address} stops working, and mail sent to it is dropped."
 
-#: app/src/ui/hide_my_email.rs:298
+#: app/src/ui/hide_my_email.rs:513 app/src/ui/hide_my_email.rs:539
 msgid "Address deleted"
 msgstr "Address deleted"
 
-#: app/src/ui/hide_my_email.rs:300
+#: app/src/ui/hide_my_email.rs:514 app/src/ui/hide_my_email.rs:541
 msgid "Could not delete the address: {reason}"
 msgstr "Could not delete the address: {reason}"
 
-#: app/src/ui/hide_my_email.rs:315
+#: app/src/ui/hide_my_email.rs:525
+msgid "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
+msgstr "Mail sent to {address} arrives in your inbox again, without the Hide My Email label. To stop that mail, turn the address off instead."
+
+#: app/src/ui/hide_my_email.rs:556
 msgid "Allow Hide My Email"
 msgstr "Allow Hide My Email"
 
-#: app/src/ui/hide_my_email.rs:336 app/src/ui/window.rs:3288
+#: app/src/ui/hide_my_email.rs:577 app/src/ui/window.rs:3288
 msgid "Add an account first"
 msgstr "Add an account first"
 
-#: app/src/ui/hide_my_email.rs:340
-msgid "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
-msgstr "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
-
-#: app/src/ui/hide_my_email.rs:346
+#: app/src/ui/hide_my_email.rs:582
 msgid "Account"
 msgstr "Account"
 
-#: app/src/ui/hide_my_email.rs:358
+#: app/src/ui/hide_my_email.rs:595
 msgid "Where Did You Use It?"
 msgstr "Where Did You Use It?"
 
-#: app/src/ui/hide_my_email.rs:403
+#: app/src/ui/hide_my_email.rs:609
+msgid "Your provider makes a new address that delivers to you. Give it to one site only."
+msgstr "Your provider makes a new address that delivers to you. Give it to one site only."
+
+#: app/src/ui/hide_my_email.rs:614
+msgid "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
+msgstr "You get a new address that ends in your own, such as name+kite.fern482@gmail.com. Give it to one site only."
+
+#: app/src/ui/hide_my_email.rs:669
+msgid "It is on your clipboard. Mail sent to it arrives in your inbox."
+msgstr "It is on your clipboard. Mail sent to it arrives in your inbox."
+
+#: app/src/ui/hide_my_email.rs:674 app/src/ui/hide_my_email.rs:698
 msgid "Could not create the address: {reason}"
 msgstr "Could not create the address: {reason}"
 
-#: app/src/ui/hide_my_email.rs:428
-msgid "Your New Address"
-msgstr "Your New Address"
-
-#: app/src/ui/hide_my_email.rs:443
-msgid "Copy"
-msgstr "Copy"
-
-#: app/src/ui/hide_my_email.rs:458
+#: app/src/ui/hide_my_email.rs:687
 msgid "It is on your clipboard. Mail sent to it gets the Hide My Email label in Gmail."
 msgstr "It is on your clipboard. Mail sent to it gets the Hide My Email label in Gmail."
 
-#: app/src/ui/hide_my_email.rs:482
+#: app/src/ui/hide_my_email.rs:732
+msgid "Your New Address"
+msgstr "Your New Address"
+
+#: app/src/ui/hide_my_email.rs:746
+msgid "Copy"
+msgstr "Copy"
+
+#: app/src/ui/hide_my_email.rs:782
 msgid "Address Created"
 msgstr "Address Created"
 
@@ -9901,6 +9941,10 @@ msgstr "This server keeps no colours for its mailboxes."
 #: sync/src/services/jmap/mod.rs:340
 msgid "This server files sent mail itself."
 msgstr "This server files sent mail itself."
+
+#: sync/src/services/jmap/mod.rs:433
+msgid "The server made an address Penguin Mail cannot read."
+msgstr "The server made an address Penguin Mail cannot read."
 
 #: sync/src/services/jmap/outgoing.rs:70
 msgid "The server does not let this account send from {address}."
