@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mailrs_jmap::{
-    AddressBook, BodyPart, CORE, Canceled, HELD, HeldSubmission, Hold, MDN, MdnOut, QUOTA, Quota, SubmissionState, max_delayed_send, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
+    AddressBook, BodyPart, CALENDARS, CORE, CalendarEvents, CalendarRights, Canceled, EventWrite, EventsPage, JmapCalendar, HELD, HeldSubmission, Hold, MDN, MdnOut, QUOTA, Quota, SubmissionState, max_delayed_send, CardChanges, CardWrite, CardsPage, ChangesResponse, Email, EmailAddress, EmailQuery, Got, Header,
     Hit, Identity, Imported, JmapError, Listed, MAIL, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, Pushed, Queried,
     SUBMISSION, Saved, Session, SessionAccount, SetError, SetResponse, SieveScript, Submission, Thread, Threads, VacationResponse,
 };
@@ -16,6 +16,7 @@ use serde_json::{Map, Value, json};
 use tokio::sync::Notify;
 
 use crate::services::jmap::JmapApi;
+use crate::services::jmap::jscal::set_path;
 
 type Answer<T> = Result<T, JmapError>;
 
@@ -157,6 +158,16 @@ pub struct JmapState {
     /// The next cancel arrives just after the server sent the hold and
     /// forgot it, so it answers `notFound`.
     pub cancel_races_send: bool,
+    pub calendars: Vec<JmapCalendar>,
+    /// Events by id, as JSCalendar.
+    pub events: BTreeMap<String, Value>,
+    /// Whether the server mails guests itself (`sendSchedulingMessages`).
+    pub schedules: bool,
+    /// Events written with `sendSchedulingMessages`, in order.
+    pub scheduled: Vec<String>,
+    /// How many event writes still answer `stateMismatch`, as when another
+    /// client changed the calendar since the `ifInState` the write named.
+    pub state_mismatches: u32,
     /// How long an upload takes.
     pub upload_delay: std::time::Duration,
     log: Vec<(u64, &'static str, String, Op)>,
@@ -451,6 +462,11 @@ impl FakeJmap {
             hold_failure: None,
             cancel_races_send: false,
             upload_delay: std::time::Duration::ZERO,
+            calendars: Vec::new(),
+            events: BTreeMap::new(),
+            schedules: true,
+            scheduled: Vec::new(),
+            state_mismatches: 0,
             log: Vec::new(),
             state: 0,
             forgotten: 0,
@@ -587,6 +603,48 @@ impl FakeJmap {
             s.session.event_source_url = None;
         });
         self
+    }
+
+    /// A server offering JMAP Calendars in draft 32's shape, with one
+    /// calendar, `cal-1`, the account's default.
+    pub fn with_calendars(self) -> FakeJmap {
+        let fake = self.with_capability(CALENDARS);
+        fake.with(|s| {
+            if let Some(account) = s.session.accounts.get_mut(ACCOUNT) {
+                account.account_capabilities.insert(CALENDARS.into(), json!({
+                    "maxCalendarsPerEvent": null, "minDateTime": "1900-01-01T00:00:00Z", "maxDateTime": "2200-01-01T00:00:00Z",
+                    "maxExpandedQueryDuration": "P366D", "maxParticipantsPerEvent": null, "mayCreateCalendar": true
+                }));
+            }
+            let rights = CalendarRights { may_read_items: true, may_write_all: true, may_write_own: true, may_rsvp: true, may_admin: true, may_delete: true };
+            s.calendars.push(JmapCalendar {
+                id: "cal-1".into(),
+                name: "Personal".into(),
+                color: Some("#e66100".into()),
+                is_default: true,
+                is_visible: true,
+                time_zone: Some("Europe/Lisbon".into()),
+                my_rights: rights,
+            });
+        });
+        fake
+    }
+
+    /// Stores `object` as a new event under a fresh id, as another client
+    /// would, and answers the id.
+    pub fn add_event(&self, mut object: Value) -> String {
+        self.with(|s| {
+            let id = s.id("ev-");
+            object["id"] = json!(id);
+            object["updated"] = json!(format!("rev-{}", s.state + 1));
+            s.events.insert(id.clone(), object);
+            s.record("CalendarEvent", &id, Op::Created);
+            id
+        })
+    }
+
+    pub fn event(&self, id: &str) -> Option<Value> {
+        self.with(|s| s.events.get(id).cloned())
     }
 
     pub fn with_capability(self, capability: &str) -> FakeJmap {
@@ -1195,6 +1253,99 @@ impl JmapApi for FakeJmap {
                 return Err(JmapError::Network("the answer was lost".into()));
             }
             Ok(made)
+        })
+    }
+
+    async fn calendars(&self) -> Answer<Vec<JmapCalendar>> {
+        self.called("Calendar/get");
+        self.with(|s| match s.session.offers(CALENDARS) {
+            true => Ok(s.calendars.clone()),
+            false => Err(JmapError::UnknownCapability(CALENDARS.into())),
+        })
+    }
+
+    async fn calendar_event_changes(&self, since: &str, max: usize) -> Answer<ChangesResponse> {
+        self.called("CalendarEvent/changes");
+        self.with(|s| s.changes("CalendarEvent", since, max))
+    }
+
+    async fn calendar_events(&self, ids: &[String]) -> Answer<CalendarEvents> {
+        self.called("CalendarEvent/get");
+        self.with(|s| {
+            let (found, missing): (Vec<&String>, Vec<&String>) = ids.iter().partition(|id| s.events.contains_key(*id));
+            Ok(CalendarEvents {
+                state: s.state.to_string(),
+                list: found.into_iter().filter_map(|id| s.events.get(id).cloned()).collect(),
+                not_found: missing.into_iter().cloned().collect(),
+            })
+        })
+    }
+
+    /// Filters on `inCalendar` and `uid`; `after` and `before` match
+    /// everything here, which the adapter's tests do not lean on.
+    async fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> Answer<EventsPage> {
+        self.called("CalendarEvent/query");
+        self.with(|s| {
+            let calendar = filter.get("inCalendar").and_then(Value::as_str);
+            let uid = filter.get("uid").and_then(Value::as_str);
+            let matching: Vec<Value> = s
+                .events
+                .values()
+                .filter(|e| calendar.is_none_or(|c| e["calendarIds"][c] == json!(true)))
+                .filter(|e| uid.is_none_or(|u| e["uid"] == json!(u)))
+                .cloned()
+                .collect();
+            let total = matching.len() as u64;
+            let events = matching.into_iter().skip(usize::try_from(position).unwrap_or(usize::MAX)).take(limit).collect();
+            Ok(EventsPage { state: s.state.to_string(), events, total: Some(total) })
+        })
+    }
+
+    async fn set_calendar_event(&self, write: &EventWrite, send: bool) -> Answer<Option<Value>> {
+        self.called("CalendarEvent/set");
+        self.with(|s| {
+            if s.state_mismatches > 0 {
+                s.state_mismatches -= 1;
+                return Err(JmapError::StateMismatch);
+            }
+            let has_guests = |o: &Value| o.get("participants").and_then(Value::as_object).is_some_and(|p| !p.is_empty());
+            let touched = match write {
+                EventWrite::Create(object) => Some(Value::Object(object.clone())),
+                EventWrite::Update { id, .. } | EventWrite::Destroy(id) => s.events.get(id).cloned(),
+            };
+            if send && !s.schedules && touched.as_ref().is_some_and(has_guests) {
+                return Err(JmapError::Method { kind: "noSupportedScheduleMethods".into(), description: String::new() });
+            }
+            let stamp = format!("rev-{}", s.state + 1);
+            let (id, answer) = match write {
+                EventWrite::Create(object) => {
+                    let id = s.id("ev-");
+                    let mut object = Value::Object(object.clone());
+                    object["id"] = json!(id);
+                    object["updated"] = json!(stamp);
+                    s.events.insert(id.clone(), object);
+                    s.record("CalendarEvent", &id, Op::Created);
+                    (id.clone(), Some(json!({ "id": id })))
+                }
+                EventWrite::Update { id, patch } => {
+                    let event = s.events.get_mut(id).ok_or(JmapError::NotFound)?;
+                    for (path, value) in patch {
+                        set_path(event, path, value.clone());
+                    }
+                    event["updated"] = json!(stamp);
+                    s.record("CalendarEvent", id, Op::Updated);
+                    (id.clone(), None)
+                }
+                EventWrite::Destroy(id) => {
+                    s.events.remove(id).ok_or(JmapError::NotFound)?;
+                    s.record("CalendarEvent", id, Op::Destroyed);
+                    (id.clone(), None)
+                }
+            };
+            if send {
+                s.scheduled.push(id);
+            }
+            Ok(answer)
         })
     }
 
@@ -1821,5 +1972,49 @@ mod tests {
         let next = fake.query_after(&query, &first.hits[1].id).await.unwrap();
         assert_eq!(next.hits.len(), 2);
         assert!(ids.contains(&next.hits[0].id));
+    }
+    #[tokio::test]
+    async fn calendars_need_the_capability_in_its_shape() {
+        assert!(!FakeJmap::new().with(|s| s.session.offers(mailrs_jmap::CALENDARS)));
+        let fake = FakeJmap::new().with_calendars();
+        assert!(fake.with(|s| s.session.offers(mailrs_jmap::CALENDARS)));
+        assert_eq!(fake.calendars().await.unwrap()[0].id, "cal-1");
+    }
+
+    #[tokio::test]
+    async fn an_event_write_patches_and_logs_a_change() {
+        let fake = FakeJmap::new().with_calendars();
+        let state = fake.with(|s| s.state.to_string());
+        let id = fake.add_event(json!({"title": "Rota", "calendarIds": {"cal-1": true}, "start": "2026-10-06T09:00:00"}));
+        let mut patch = Map::new();
+        patch.insert("participants/p1/participationStatus".into(), json!("accepted"));
+        fake.set_calendar_event(&mailrs_jmap::EventWrite::Update { id: id.clone(), patch }, false).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["participants"]["p1"]["participationStatus"], "accepted");
+        let changes = fake.calendar_event_changes(&state, 50).await.unwrap();
+        assert_eq!(changes.created, [id]);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_cannot_schedule_refuses_to_mail_guests() {
+        let fake = FakeJmap::new().with_calendars();
+        fake.with(|s| s.schedules = false);
+        let id = fake.add_event(json!({"title": "Rota", "participants": {"p1": {"calendarAddress": "mailto:a@x.example"}}}));
+        let write = mailrs_jmap::EventWrite::Update { id, patch: Map::new() };
+        assert!(matches!(fake.set_calendar_event(&write, true).await, Err(JmapError::Method { ref kind, .. }) if kind == "noSupportedScheduleMethods"));
+        assert!(fake.set_calendar_event(&write, false).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_stale_state_answers_state_mismatch_and_changes_nothing() {
+        let fake = FakeJmap::new().with_calendars();
+        let id = fake.add_event(json!({"title": "Rota"}));
+        fake.with(|s| s.state_mismatches = 1);
+        let mut patch = Map::new();
+        patch.insert("title".into(), json!("Changed"));
+        let write = mailrs_jmap::EventWrite::Update { id: id.clone(), patch };
+        assert_eq!(fake.set_calendar_event(&write, false).await, Err(JmapError::StateMismatch));
+        assert_eq!(fake.event(&id).unwrap()["title"], "Rota");
+        fake.set_calendar_event(&write, false).await.unwrap();
+        assert_eq!(fake.event(&id).unwrap()["title"], "Changed");
     }
 }

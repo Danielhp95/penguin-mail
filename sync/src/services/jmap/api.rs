@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_jmap::{
-    AddressBook, Canceled, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Hold, HeldSubmission, Identity, Imported, JmapClient, JmapError, Listed,
-    MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, SieveScript,
+    AddressBook, CalendarEvents, Canceled, CardChanges, CardWrite, CardsPage, Email, EmailQuery, Got, Hold, HeldSubmission, Identity, Imported, JmapClient, JmapError, Listed,
+    ChangesResponse, EventWrite, EventsPage, JmapCalendar, MailChanges, Mailbox, MailboxWrite, MaskedEmail, MaskedState, MdnOut, Pushed, Queried, Quota, Saved, Session, SetResponse, SieveScript,
     Submission, SubmissionState, Threads, VacationResponse,
 };
 use serde_json::{Map, Value};
@@ -20,6 +20,11 @@ const PUSH_IDLE: Duration = Duration::from_secs(2 * mailrs_jmap::push::PING_SECO
 
 pub trait JmapApi: Send + Sync + 'static {
     fn session(&self) -> impl Future<Output = Answer<Arc<Session>>> + Send;
+    fn calendars(&self) -> impl Future<Output = Answer<Vec<JmapCalendar>>> + Send;
+    fn calendar_event_changes(&self, since: &str, max: usize) -> impl Future<Output = Answer<ChangesResponse>> + Send;
+    fn calendar_events(&self, ids: &[String]) -> impl Future<Output = Answer<CalendarEvents>> + Send;
+    fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> impl Future<Output = Answer<EventsPage>> + Send;
+    fn set_calendar_event(&self, write: &EventWrite, send: bool) -> impl Future<Output = Answer<Option<Value>>> + Send;
     fn mailboxes(&self) -> impl Future<Output = Answer<Listed<Mailbox>>> + Send;
     fn mail_changes(&self, email: &str, mailbox: &str, max: usize) -> impl Future<Output = Answer<MailChanges>> + Send;
     fn email_state(&self) -> impl Future<Output = Answer<String>> + Send;
@@ -62,6 +67,21 @@ pub trait JmapApi: Send + Sync + 'static {
 }
 
 impl JmapApi for JmapClient {
+    async fn calendars(&self) -> Answer<Vec<JmapCalendar>> {
+        JmapClient::calendars(self).await
+    }
+    async fn calendar_event_changes(&self, since: &str, max: usize) -> Answer<ChangesResponse> {
+        JmapClient::calendar_event_changes(self, since, max).await
+    }
+    async fn calendar_events(&self, ids: &[String]) -> Answer<CalendarEvents> {
+        JmapClient::calendar_events(self, ids).await
+    }
+    async fn calendar_events_page(&self, filter: &Value, position: u64, limit: usize) -> Answer<EventsPage> {
+        JmapClient::calendar_events_page(self, filter, position, limit).await
+    }
+    async fn set_calendar_event(&self, write: &EventWrite, send: bool) -> Answer<Option<Value>> {
+        JmapClient::set_calendar_event(self, write, send).await
+    }
     async fn session(&self) -> Answer<Arc<Session>> {
         JmapClient::session(self).await
     }
