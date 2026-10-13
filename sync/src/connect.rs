@@ -506,13 +506,22 @@ pub async fn connect_caldav<P: PasswordStore + 'static>(
     passwords: Arc<P>,
     account: &Account,
 ) -> Result<AccountServices, SyncError> {
+    connect_caldav_within(db, passwords, account, STEP_WAIT).await
+}
+
+pub(crate) async fn connect_caldav_within<P: PasswordStore + 'static>(
+    db: &Db,
+    passwords: Arc<P>,
+    account: &Account,
+    wait: Duration,
+) -> Result<AccountServices, SyncError> {
     let id = account.id;
-    let found = bounded(id, "the mail store", STEP_WAIT, db.read(move |c| mailrs_store::services::load(c, id))).await?;
+    let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
     let server = found.into_iter().find(|f| f.kind == ServiceKind::CalDav && f.confirmed);
-    let password = read_secret(passwords, id, STEP_WAIT).await?;
+    let password = read_secret(passwords, id, wait).await?;
     let (Some(server), Some(password)) = (server, password) else {
         let marked = db.write(move |c| accounts::set_state(c, id, AccountState::NeedsReauth));
-        bounded(id, "the mail store", STEP_WAIT, marked).await?;
+        bounded(id, "the mail store", wait, marked).await?;
         return Err(BackendError::NeedsReauth.into());
     };
     let client = DavClient::new(&server.url, DavKind::Calendar, DavLogin::new(&server.user_name, password))

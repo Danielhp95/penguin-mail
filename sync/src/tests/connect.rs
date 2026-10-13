@@ -781,6 +781,20 @@ async fn signing_a_calendar_account_in_again_keeps_its_calendars_and_ends_needs_
 }
 
 #[tokio::test]
+async fn a_calendar_connect_gives_up_on_a_keyring_that_never_answers() {
+    let (db, _dir) = store().await;
+    let account = calendar_sign_in(&db, at(CLOUD, "robin")).await.unwrap();
+    let (keyring, _release) = silent();
+    let started = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        crate::connect::connect_caldav_within(&db, keyring, &account, SHORT),
+    )
+    .await
+    .expect("the connect gave up by itself");
+    assert!(matches!(started, Err(SyncError::NoAnswer("the keyring"))));
+}
+
+#[tokio::test]
 async fn a_keyring_that_refuses_leaves_no_new_calendar_account_behind() {
     let (db, _dir) = store().await;
     let refused = caldav_signed_in(&Cloud::default(), &db, Arc::new(Refusing), at(CLOUD, "robin"), 7).await;
