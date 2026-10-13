@@ -44,6 +44,7 @@ mod dictionaries;
 mod reminders;
 mod sending;
 mod storage;
+mod tray_feed;
 
 pub use composing::Signature;
 mod updates;
@@ -73,6 +74,9 @@ pub struct App {
     through_browser: RefCell<HashSet<AccountId>>,
     names: RefCell<HashMap<AccountId, String>>,
     tray: Arc<Mutex<Option<ksni::Handle<MailTray>>>>,
+    /// The newest count for the tray, All Inboxes and each account's
+    /// inbox, which the tray takes in order once it is up.
+    tray_unread: tokio::sync::watch::Sender<(i64, Vec<AccountUnread>)>,
     /// What somebody picked on a new-mail notification.
     chosen: async_channel::Sender<notify::Request>,
     /// The new-mail notifications posted this run, by token, so a click
@@ -165,6 +169,7 @@ impl App {
             through_browser: RefCell::default(),
             names: RefCell::new(HashMap::new()),
             tray: Arc::new(Mutex::new(None)),
+            tray_unread: tokio::sync::watch::Sender::new((0, Vec::new())),
             chosen,
             issued: RefCell::default(),
             skip_first_window: Cell::new(background),
@@ -1573,8 +1578,9 @@ impl App {
             icon_theme_path: crate::tray::installed_icons(),
         };
         let slot = Arc::clone(&self.tray);
-        // The icon comes up on the runtime; the count it shows waits for it.
-        let (ready, readied) = async_channel::bounded(1);
+        // The icon comes up on the runtime, then takes the newest count and
+        // each one after it, in order.
+        let counts = self.tray_unread.subscribe();
         // The restart that returns memory execs in place and keeps the pid,
         // so the default name, StatusNotifierItem-<pid>-1, comes back while
         // the AppIndicators extension is still timing out the old owner. When
@@ -1584,18 +1590,21 @@ impl App {
         self.core.spawn(async move {
             match tray.disable_dbus_name(true).spawn().await {
                 Ok(handle) => {
-                    *slot.lock().expect("tray slot poisoned") = Some(handle);
-                    let _ = ready.try_send(());
+                    *slot.lock().expect("tray slot poisoned") = Some(handle.clone());
+                    tray_feed::follow(counts, move |(total, accounts)| {
+                        let handle = handle.clone();
+                        async move {
+                            handle
+                                .update(move |tray: &mut MailTray| {
+                                    tray.unread = total;
+                                    tray.accounts = accounts;
+                                })
+                                .await;
+                        }
+                    })
+                    .await;
                 }
                 Err(err) => tracing::warn!(error = %err, "could not add the tray icon"),
-            }
-        });
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            if readied.recv().await.is_ok()
-                && let Some(app) = weak.upgrade()
-            {
-                app.unread.changed();
             }
         });
         let this = Rc::clone(self);
@@ -1656,9 +1665,6 @@ impl App {
     fn show_unread(&self, counted: &Counted) {
         let total = counted.all_inboxes();
         self.dock_badge.show(total);
-        let Some(handle) = self.tray.lock().expect("tray slot poisoned").clone() else {
-            return;
-        };
         let accounts: Vec<AccountUnread> = self
             .accounts
             .borrow()
@@ -1669,14 +1675,9 @@ impl App {
                 unread: counted.inbox(account.id),
             })
             .collect();
-        self.core.spawn(async move {
-            handle
-                .update(move |tray: &mut MailTray| {
-                    tray.unread = total;
-                    tray.accounts = accounts;
-                })
-                .await;
-        });
+        // One task hands the counts to the tray, so an older one cannot
+        // land after this one, as it could from a task of its own.
+        self.tray_unread.send_replace((total, accounts));
     }
 
     /// The unread counts, for a window to show them too.
