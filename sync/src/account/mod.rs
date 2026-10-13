@@ -22,7 +22,6 @@ pub use listed::Searched;
 pub(crate) use store_mail::StoreMail;
 
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -87,8 +86,9 @@ pub struct AccountSync {
     /// account of the engine.
     raw: Arc<Mutex<RawCache>>,
     /// Counts the changes to this account's mail, so a search kept to
-    /// list a folder can tell it no longer says what the folder holds.
-    mail_changes: AtomicU64,
+    /// list a folder, or a server's unread count, can tell it no longer
+    /// says what the folder holds.
+    mail_changes: tokio::sync::watch::Sender<u64>,
     /// Set once this run has compared its window with the one the stored
     /// mail was loaded for; see `follow_window`.
     window_followed: std::sync::atomic::AtomicBool,
@@ -121,7 +121,7 @@ impl AccountSync {
             listed: Mutex::default(),
             hits: Mutex::default(),
             raw: Arc::new(Mutex::new(RawCache::new(RAW_CACHE_BYTES))),
-            mail_changes: AtomicU64::new(0),
+            mail_changes: tokio::sync::watch::Sender::new(0),
             window_followed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -271,14 +271,21 @@ impl AccountSync {
     /// moving matters: a listing taken at one count is out of date at the
     /// next.
     pub fn mail_changes(&self) -> u64 {
-        self.mail_changes.load(Ordering::Acquire)
+        *self.mail_changes.borrow()
+    }
+
+    /// Wakes at each change to this account's mail, including a write the
+    /// server takes after the store already shows it. It does not keep
+    /// the account alive.
+    pub fn watch_mail_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.mail_changes.subscribe()
     }
 
     /// Marks the account's mail changed. Every event that names changed or
     /// new mail does this, and so does a write once the server has it,
     /// since a search the server answered between the two missed it.
     fn mail_changed(&self) {
-        self.mail_changes.fetch_add(1, Ordering::AcqRel);
+        self.mail_changes.send_modify(|changes| *changes += 1);
     }
 
     fn emit(&self, event: ChangeEvent) {

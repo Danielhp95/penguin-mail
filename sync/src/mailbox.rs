@@ -847,6 +847,7 @@ impl<A: Accounts> Mailboxes<A> {
             let state = Arc::downgrade(&self.unread);
             let changed = self.unread_changed.clone();
             // Each account updates on its own; no network await holds up local badges.
+            let mut moved = sync.watch_mail_changes();
             let task = tokio::spawn(async move {
                 let answer = sync.services().mail.unread_counts().await.unwrap_or_default();
                 // The wait below runs a minute. An account that stops in
@@ -871,10 +872,16 @@ impl<A: Accounts> Mailboxes<A> {
                     return;
                 }
                 changed.send_replace(());
-                // An unopened folder can change without a local mail event.
-                // Wake the window when this server count needs another read.
+                // An unopened folder can change without a local mail event,
+                // and a write the server takes after the store showed it
+                // sends none either, though the answer kept may have come
+                // before the write. Wake the counts when this answer needs
+                // another read.
                 drop(current);
-                tokio::time::sleep(REMOTE_FRESH).await;
+                tokio::select! {
+                    () = tokio::time::sleep(REMOTE_FRESH) => {}
+                    Ok(()) = moved.changed() => {}
+                }
                 let Some(current) = state.upgrade() else { return };
                 let cached = current.lock().expect("unread counts poisoned");
                 if cached.get(&id).is_some_and(|kept| kept.request == request) {
