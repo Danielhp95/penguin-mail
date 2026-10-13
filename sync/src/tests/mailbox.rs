@@ -1330,3 +1330,43 @@ async fn inbox_counts_read_only_the_inboxes_and_start_no_poll() {
     assert_eq!(light.mailboxes[&own], full.mailboxes[&own]);
     assert_eq!(light.mailboxes[&all], full.mailboxes[&all]);
 }
+
+#[tokio::test]
+async fn a_server_count_taken_before_a_write_lands_wakes_the_counts_once_it_lands() {
+    use std::time::Duration;
+
+    let h = super::imap_harness().await;
+    for subject in ["First", "Second"] {
+        h.imap.deliver("INBOX", format!("Subject: {subject}\r\n\r\nHi").into_bytes(), now_millis());
+    }
+    h.bootstrap().await;
+    let service = Mailboxes::new(
+        Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))),
+        h.db.clone(),
+    );
+    let inbox = Mailbox::Standard { account_id: h.account_id, which: Standard::Inbox };
+    let sidebar = std::slice::from_ref(&inbox);
+    assert_eq!(counted_after_server(&service, sidebar, &inbox).await.mailboxes[&inbox], 2);
+
+    // Marked read here while the server has not taken the write, so a
+    // count asked now hears the old number.
+    let thread = h.thread_of("INBOX/1001/1").await.expect("stored");
+    let hold = h.imap.hold_next_store();
+    let sync = Arc::clone(&h.sync);
+    let reading = tokio::spawn(async move {
+        sync.triage_thread(&thread, &crate::TriageAction::MarkRead).await
+    });
+    tokio::time::timeout(Duration::from_secs(2), hold.reached()).await.unwrap();
+    let stale = counted_after_server(&service, sidebar, &inbox).await;
+    assert_eq!(stale.mailboxes[&inbox], 2, "the server still says two");
+
+    let mut changed = service.counts_changed();
+    hold.release();
+    reading.await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(2), changed.changed())
+        .await
+        .expect("the write landing wakes the counts")
+        .unwrap();
+    let after = service.cached_counts(sidebar, &inbox, &view()).await.unwrap();
+    assert_eq!(after.mailboxes[&inbox], 1);
+}
