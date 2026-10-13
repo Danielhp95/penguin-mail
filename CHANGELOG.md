@@ -5,6 +5,10 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ## Unreleased
 
+### New
+
+- Vietnamese translations, chosen in Preferences.
+
 ## 1.0.8 (2026-10-13)
 
 ### New
