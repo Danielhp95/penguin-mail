@@ -147,9 +147,12 @@ pub fn take_off_the_list(
 
 /// Whether an account keeps its heading in the list: not once every
 /// calendar it has is off the list, since the heading would stand over
-/// nothing. Hidden Calendars still brings them back.
+/// nothing. Hidden Calendars still brings them back. A calendar account
+/// keeps its heading all the same: Sign In Again and Remove Account are
+/// nowhere else.
 pub fn shows_heading(account: &SidebarAccount) -> bool {
-    !matches!(&account.reach, CalendarReach::Calendars(list) if list.is_empty() && !account.hidden.is_empty())
+    account.calendar_only
+        || !matches!(&account.reach, CalendarReach::Calendars(list) if list.is_empty() && !account.hidden.is_empty())
 }
 
 /// Whether `change` alters what the next-event card at the foot of the
@@ -1674,6 +1677,15 @@ mod tests {
         let rows = take_off_the_list(rows, &HashMap::from([(1, HashSet::from(["primary".to_string()]))]));
         assert!(!shows_heading(&rows[0]));
         assert_eq!(hidden_count(&rows), 1, "Hidden Calendars still brings it back");
+    }
+
+    #[test]
+    fn a_calendar_account_with_every_calendar_hidden_keeps_its_heading() {
+        let dana = Account { provider: Provider::CalDav, ..account(4, "dana@cloud.example.org") };
+        let rows = sidebar_accounts(&[(dana, Offers::EVERYTHING, Withheld::NONE, vec![calendar("family")])], |_| None);
+        let rows = take_off_the_list(rows, &HashMap::from([(4, HashSet::from(["family".to_string()]))]));
+        assert_eq!(hidden_count(&rows), 1);
+        assert!(shows_heading(&rows[0]), "Sign In Again and Remove Account are nowhere else");
     }
 
     #[test]
