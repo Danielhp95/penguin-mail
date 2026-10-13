@@ -48,6 +48,9 @@ const REQUEST_LIMIT: usize = 8192;
 /// few; more come from something else, and those wait in the backlog.
 const MOST_CONNECTIONS: usize = 16;
 
+/// How long the sign-in listener waits after a failed accept.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(50);
+
 /// Which addresses a call may reach. Production code has only
 /// `HttpsOnly`; the unit tests' mock servers speak http, and only the
 /// tests can name the other variant.
@@ -281,7 +284,8 @@ pub fn authorize_url(
 
 /// Registers a public client with the loopback redirect and answers its
 /// id. A server without a registration endpoint, or with one off https,
-/// refuses.
+/// refuses. Pass the exact redirect the authorize request will name, port
+/// included: Fastmail matches `http://127.0.0.1/` exactly.
 pub async fn register(metadata: &Metadata, redirect_uri: &str, scopes: &[String]) -> Result<String, JmapError> {
     register_over(metadata, redirect_uri, scopes, Transport::HttpsOnly).await
 }
@@ -688,7 +692,8 @@ async fn renew(
 
 /// Receives the redirect on 127.0.0.1, at a port the system picks, during
 /// consent. RFC 8252 section 7.3 has the server take any port on the
-/// loopback for a client registered with it.
+/// loopback, but Fastmail does so only for a redirect registered with a
+/// port, so the client registers `redirect_uri` as it is.
 pub struct Loopback {
     listener: TcpListener,
     pub redirect_uri: String,
@@ -718,8 +723,7 @@ impl Loopback {
                 // connection waits in the backlog until a read ends (at most
                 // `REQUEST_WAIT`) rather than being dropped. Each read holds
                 // at most `REQUEST_LIMIT` bytes.
-                accepted = self.listener.accept(), if reading.len() < MOST_CONNECTIONS => {
-                    let (stream, _) = accepted.map_err(io)?;
+                stream = accept_one(|| self.listener.accept()), if reading.len() < MOST_CONNECTIONS => {
                     reading.spawn(read_request(stream));
                 }
                 Some(read) = reading.join_next() => {
@@ -741,6 +745,27 @@ impl Loopback {
                         return result;
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The next connection `accept` hands over. A failed accept, such as a
+/// connection aborted before it was taken or a moment out of file
+/// handles, is no reason to end a sign-in the browser has yet to finish:
+/// it is logged, and the next try waits `ACCEPT_PAUSE` so a lasting
+/// failure does not spin.
+async fn accept_one<F, Fut>(mut accept: F) -> TcpStream
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::io::Result<(TcpStream, std::net::SocketAddr)>>,
+{
+    loop {
+        match accept().await {
+            Ok((stream, _)) => return stream,
+            Err(err) => {
+                tracing::warn!(kind = %err.kind(), "the sign-in listener could not take a connection");
+                tokio::time::sleep(ACCEPT_PAUSE).await;
             }
         }
     }
@@ -832,6 +857,29 @@ mod tests {
     // The mock servers speak http, which only this module's transport
     // takes.
     const LOCAL: Transport = Transport::LocalHttp;
+
+    /// A connection the kernel aborted before the accept, or a moment out
+    /// of file handles, leaves the sign-in waiting for the browser.
+    #[tokio::test]
+    async fn a_failed_accept_waits_on_for_the_next_connection() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut failures = 2;
+        let accepted = accept_one(|| {
+            let fail = failures > 0;
+            failures -= 1;
+            let listener = &listener;
+            async move {
+                match fail {
+                    true => Err(std::io::Error::from(std::io::ErrorKind::ConnectionAborted)),
+                    false => listener.accept().await,
+                }
+            }
+        });
+        let connect = TcpStream::connect(address);
+        let (accepted, _) = tokio::join!(accepted, connect);
+        assert_eq!(accepted.peer_addr().unwrap().ip(), address.ip());
+    }
 
     async fn serving(server: &MockServer, metadata: Value) {
         Mock::given(method("GET"))
@@ -958,13 +1006,13 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/register"))
             .and(body_string_contains("\"token_endpoint_auth_method\":\"none\""))
-            .and(body_string_contains("http://127.0.0.1/"))
+            .and(body_string_contains("\"redirect_uris\":[\"http://127.0.0.1:5555/\"]"))
             .respond_with(ResponseTemplate::new(201).set_body_json(json!({"client_id": "stateless-123"})))
             .mount(&server)
             .await;
         let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
         assert_eq!(
-            register_over(&found, "http://127.0.0.1/", &oauth_scopes(&found), LOCAL).await.unwrap(),
+            register_over(&found, "http://127.0.0.1:5555/", &oauth_scopes(&found), LOCAL).await.unwrap(),
             "stateless-123"
         );
     }
@@ -1364,6 +1412,79 @@ mod tests {
             .expect(times)
             .mount(server)
             .await;
+    }
+
+    /// A full session on `server`, read with the stale token, whose API
+    /// answers every echo.
+    async fn session_read_while_stale(server: &MockServer) {
+        let base = server.uri();
+        Mock::given(method("GET"))
+            .and(path("/jmap/session"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "capabilities": {"urn:ietf:params:jmap:core": {"maxConcurrentRequests": 4}, "urn:ietf:params:jmap:mail": {}},
+                "accounts": {"A1": {"name": "me", "isPersonal": true, "isReadOnly": false,
+                    "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+                "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"},
+                "username": "me", "apiUrl": format!("{base}/api/"),
+                "downloadUrl": format!("{base}/d/{{blobId}}"), "uploadUrl": format!("{base}/u/"),
+                "eventSourceUrl": format!("{base}/events/"), "state": "s"
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("POST")).and(path("/api/")).respond_with(echoed()).mount(server).await;
+    }
+
+    /// `stale` answers 401 at `at` once; `fresh` gets `answer`.
+    async fn refused_then(server: &MockServer, verb: &str, at: &str, answer: ResponseTemplate) {
+        Mock::given(method(verb))
+            .and(path(at))
+            .and(header("Authorization", "Bearer stale"))
+            .respond_with(ResponseTemplate::new(401))
+            .expect(1)
+            .mount(server)
+            .await;
+        Mock::given(method(verb)).and(path(at)).and(header("Authorization", "Bearer fresh")).respond_with(answer).mount(server).await;
+    }
+
+    #[tokio::test]
+    async fn a_download_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        refused_then(&server, "GET", "/d/B1", ResponseTemplate::new(200).set_body_bytes(b"blob".to_vec())).await;
+        assert_eq!(jmap_with(&server, "stale").download("A1", "B1", "n", "text/plain", 100).await.unwrap(), b"blob");
+    }
+
+    #[tokio::test]
+    async fn an_upload_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        let uploaded = json!({"accountId": "A1", "blobId": "B9", "type": "text/plain", "size": 4});
+        refused_then(&server, "POST", "/u/", ResponseTemplate::new(200).set_body_json(uploaded)).await;
+        let got = jmap_with(&server, "stale").upload("A1", "text/plain", b"blob".to_vec()).await.unwrap();
+        assert_eq!(got.blob_id, "B9");
+        let bodies: Vec<Vec<u8>> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.url.path() == "/u/")
+            .map(|r| r.body)
+            .collect();
+        assert_eq!(bodies, [b"blob".to_vec(), b"blob".to_vec()], "the same bytes go again");
+    }
+
+    #[tokio::test]
+    async fn a_push_stream_refused_for_a_stale_token_is_refreshed_once() {
+        let server = MockServer::start().await;
+        refreshing_to_fresh(&server, 1).await;
+        session_read_while_stale(&server).await;
+        let body = "event: state\ndata: {\"@type\":\"StateChange\",\"changed\":{\"A1\":{\"Email\":\"e2\"}}}\n\n";
+        let stream = ResponseTemplate::new(200).insert_header("Content-Type", "text/event-stream").set_body_string(body);
+        refused_then(&server, "GET", "/events/", stream).await;
+        let pushed = jmap_with(&server, "stale").push(Duration::from_secs(5)).await.unwrap();
+        assert_eq!(pushed, crate::Pushed::Changed);
     }
 
     fn echo() -> Request {

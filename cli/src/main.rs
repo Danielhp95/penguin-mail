@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
+use tokio::io::AsyncWriteExt;
 use mailrs_domain::{Account, AccountId, ChangeEvent, EpochMillis, MailSet, Provider};
 use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize};
 use mailrs_store::threads::{self, ThreadFilter};
@@ -464,12 +465,25 @@ async fn export_mail(
             PathBuf::from(export::file_name(&named.subject, named.date, extension))
         }
     };
-    let mail = match message_id {
-        Some(id) => sync.raw_message(id).await?,
-        None => sync.export_mbox(thread_id, None).await?,
-    };
-    std::fs::write(&path, &mail).with_context(|| format!("could not write {}", path.display()))?;
-    println!("Wrote {} bytes to {}", mail.len(), path.display());
+    // Written beside the target and renamed over it when whole, so a
+    // failed export leaves what was there. `--out /dev/stdout` and other
+    // devices take the bytes as they come.
+    let mut file = export::Replacing::create(&path)
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
+    match message_id {
+        Some(id) => {
+            let raw = sync.raw_message(id).await?;
+            file.file().write_all(&raw).await?;
+        }
+        None => sync.export_mbox_to(thread_id, None, file.file()).await?,
+    }
+    let length = file
+        .finish()
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
+    // On stderr, so an export to stdout stays the mail alone.
+    eprintln!("Wrote {length} bytes to {}", path.display());
     Ok(())
 }
 

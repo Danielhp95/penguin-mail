@@ -15,6 +15,9 @@ use url::Url;
 use mailrs_domain::sign_in_page::Finished;
 
 use crate::GmailError;
+
+/// The most a token endpoint's answer may take; a real one is a few hundred bytes.
+const TOKEN_LIMIT: usize = 64 << 10;
 use crate::calendar::{CALENDAR_LIST_SCOPE, CALENDAR_LIST_WRITE_SCOPE, CALENDAR_SCOPE, CALENDARS_SCOPE};
 use crate::people::{CONTACTS_SCOPE, CONTACTS_WRITE_SCOPE};
 
@@ -347,12 +350,13 @@ impl OAuthClient {
         let response = self.http.post(&self.token_url).form(form).send().await?;
         let status = response.status().as_u16();
         if response.status().is_success() {
-            return response
-                .json()
-                .await
-                .map_err(|e| GmailError::Decode(e.to_string()));
+            let bytes = crate::client::read_capped(response, TOKEN_LIMIT).await?;
+            return serde_json::from_slice(&bytes).map_err(|e| GmailError::Decode(e.to_string()));
         }
-        let body = response.text().await.unwrap_or_default();
+        let body = crate::client::read_capped(response, TOKEN_LIMIT)
+            .await
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default();
         Err(match status {
             400 | 401 if body.contains("invalid_grant") => GmailError::NeedsReauth,
             429 => GmailError::RateLimited { retry_after: None },

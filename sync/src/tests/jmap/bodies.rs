@@ -46,6 +46,22 @@ async fn a_message_past_the_cap_says_it_is_too_large() {
     }
 }
 
+/// Several raw messages in one call hold no more than the call's budget
+/// between them, whatever each may hold alone.
+#[tokio::test]
+async fn raw_messages_asked_together_share_one_budget() {
+    let h = fastmail().await;
+    let ids: Vec<String> = (0..2).map(|n| h.fake.deliver("inbox", &raw(&format!("b{n}@x"), "Budget"), 1_000)).collect();
+    assert_eq!(h.mail().fetch_raw(&ids).await.unwrap().len(), 2);
+    let many: Vec<String> = (0..12).map(|n| h.fake.deliver("inbox", &raw(&format!("m{n}@x"), "Budget"), 1_000)).collect();
+    let one = raw("m0@x", "Budget").len();
+    assert!(one * many.len() > crate::services::jmap::RAWS_BUDGET, "the test messages must pass the budget together");
+    match h.mail().fetch_raw(&many).await {
+        Err(crate::BackendError::Refused(said)) => assert_eq!(said, "This message is too large to open."),
+        other => panic!("{:?}", other.map(|r| r.len())),
+    }
+}
+
 #[tokio::test]
 async fn a_structure_carries_the_text_and_leaves_the_file_on_the_server() {
     let h = fastmail().await;
@@ -108,4 +124,32 @@ fn parts_take_imap_section_numbers() {
     assert_eq!(part.children[1].filename.as_deref(), Some("a.pdf"));
     let single = numbered(&leaf("text/plain", "B9"));
     assert_eq!(single.path, "1");
+}
+
+/// A conversation goes out in batches: one `Email/get` names every
+/// message's blob, rather than one per message, and the file reads as
+/// one message at a time would have written it.
+#[tokio::test]
+async fn a_conversation_exports_its_messages_in_one_batch() {
+    let h = fastmail().await;
+    let first = h.fake.deliver("inbox", &raw("e1@x", "Lunch"), 1_000);
+    let mut ids = vec![first.clone()];
+    for n in 2..=3 {
+        let reply = format!(
+            "From: Ada Lovelace <ada@example.com>\r\nTo: me@example.com\r\nSubject: Re: Lunch\r\nMessage-ID: <e{n}@x>\r\nIn-Reply-To: <e1@x>\r\n\r\nReply {n}\r\n"
+        );
+        ids.push(h.fake.deliver("inbox", reply.as_bytes(), 1_000 + n));
+    }
+    h.bootstrap_all().await;
+    let thread = h.fake.with(|s| s.emails[&first].thread_id.clone());
+    let mut one_by_one = Vec::new();
+    for id in &ids {
+        let raw = h.mail().fetch_raw(std::slice::from_ref(id)).await.unwrap().remove(0);
+        crate::export::append(&mut one_by_one, &raw.bytes);
+    }
+    let gets = |h: &super::Harness| h.fake.with(|s| s.calls.iter().filter(|c| *c == "Email/get").count());
+    let before = gets(&h);
+    let mbox = h.sync.export_mbox(&thread, None).await.unwrap();
+    assert_eq!(String::from_utf8(mbox).unwrap(), String::from_utf8(one_by_one).unwrap());
+    assert_eq!(gets(&h) - before, 1, "one for every message's blob");
 }

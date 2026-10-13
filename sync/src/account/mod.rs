@@ -8,10 +8,9 @@ mod labels;
 mod listed;
 mod muted;
 mod outbox;
-mod pop3;
 mod receipts;
-mod refs;
 mod space;
+mod store_mail;
 mod threads;
 mod window;
 mod writes;
@@ -20,9 +19,9 @@ pub(crate) use outbox::message_id_header;
 pub(crate) use space::quiet;
 
 pub use listed::Searched;
+pub(crate) use store_mail::StoreMail;
 
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -30,7 +29,7 @@ use mailrs_domain::{AccountId, AccountState, ChangeEvent, EpochMillis, MessageMe
 use mailrs_store::{Db, accounts, messages};
 
 use crate::raw_cache::{RAW_CACHE_BYTES, RawCache};
-use crate::{AccountServices, BackendError, MailBackend, RAW_LIMIT, SyncError};
+use crate::{AccountServices, BackendError, RAW_LIMIT, SyncError};
 
 /// Metadata requests in flight per account.
 pub const FETCH_CONCURRENCY: usize = 10;
@@ -58,8 +57,11 @@ pub fn window_longer(days: i64, than: i64) -> bool {
 pub struct AccountSync {
     account_id: AccountId,
     services: AccountServices,
+    /// The mail service of `services`, spoken to in store ids. Mail calls
+    /// go through it, never through `services.mail`.
+    mail: StoreMail,
     db: Db,
-    events: async_channel::Sender<ChangeEvent>,
+    events: crate::events::Outgoing,
     window_days: i64,
     body_cache_bytes: i64,
     retry_max: Duration,
@@ -80,22 +82,13 @@ pub struct AccountSync {
     /// Forever on a row the store lacks knows what to erase.
     hits: Mutex<std::collections::HashMap<String, listed::Hits>>,
     /// The last small messages fetched whole, so a file opened right
-    /// after its message costs no second fetch.
+    /// after its message costs no second fetch. One cache serves every
+    /// account of the engine.
     raw: Arc<Mutex<RawCache>>,
-    /// Taken on a folder server by a write from its first server command
-    /// to the moment its moved messages' refs are recorded, and by every
-    /// look that can delete mail. A look in between would read a moved
-    /// message's old place as expunged and delete it.
-    moving: tokio::sync::Mutex<()>,
-    /// Held for a POP3 account's whole check. Most POP3 servers lock the
-    /// maildrop for one session, so a second check started meanwhile, by
-    /// the timer or by Check for Mail, waits here rather than meeting the
-    /// lock and failing. It keeps what the last clean check found, so a
-    /// check that finds the server as it was can stop at `STAT`.
-    pop3_checking: tokio::sync::Mutex<Option<pop3::Quiet>>,
     /// Counts the changes to this account's mail, so a search kept to
-    /// list a folder can tell it no longer says what the folder holds.
-    mail_changes: AtomicU64,
+    /// list a folder, or a server's unread count, can tell it no longer
+    /// says what the folder holds.
+    mail_changes: tokio::sync::watch::Sender<u64>,
     /// Set once this run has compared its window with the one the stored
     /// mail was loaded for; see `follow_window`.
     window_followed: std::sync::atomic::AtomicBool,
@@ -114,9 +107,10 @@ impl AccountSync {
     ) -> Self {
         AccountSync {
             account_id,
+            mail: StoreMail::new(services.mail.clone(), db.clone(), account_id),
             services,
             db,
-            events,
+            events: crate::events::Outgoing::new(events),
             window_days: DEFAULT_WINDOW_DAYS,
             body_cache_bytes: DEFAULT_BODY_CACHE_BYTES,
             retry_max: Duration::from_secs(8),
@@ -127,9 +121,7 @@ impl AccountSync {
             listed: Mutex::default(),
             hits: Mutex::default(),
             raw: Arc::new(Mutex::new(RawCache::new(RAW_CACHE_BYTES))),
-            moving: tokio::sync::Mutex::new(()),
-            pop3_checking: tokio::sync::Mutex::new(None),
-            mail_changes: AtomicU64::new(0),
+            mail_changes: tokio::sync::watch::Sender::new(0),
             window_followed: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -137,6 +129,13 @@ impl AccountSync {
     pub fn with_limits(mut self, window_days: i64, body_cache_bytes: i64) -> Self {
         self.window_days = window_days;
         self.body_cache_bytes = body_cache_bytes;
+        self
+    }
+
+    /// Shares `cache` with the other accounts, so all of them keep their
+    /// raw messages under one budget.
+    pub fn with_raw_cache(mut self, cache: Arc<Mutex<RawCache>>) -> Self {
+        self.raw = cache;
         self
     }
 
@@ -161,11 +160,9 @@ impl AccountSync {
         if let Some(bytes) = self.cached_raw(message_id) {
             return Ok(bytes);
         }
-        let name = self.remote(message_id).await?;
         let fetched = self
-            .services
             .mail
-            .fetch_raw(&[name])
+            .fetch_raw(&[message_id.to_string()])
             .await?
             .into_iter()
             .next()
@@ -177,11 +174,14 @@ impl AccountSync {
         // real length: Gmail's size estimate can put it under the limit
         // while its bytes come to more, and its files are read from these
         // bytes next.
-        if (bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await? {
+        // A POP3 account's bytes are in the store already, and keeping a
+        // second copy here would double them.
+        let local = self.mail.capabilities().local_mailboxes;
+        if !local && ((bytes.len() as i64) < RAW_LIMIT || self.small(message_id).await?) {
             self.raw
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .put(message_id.to_string(), Arc::clone(&bytes));
+                .put(self.account_id, message_id.to_string(), Arc::clone(&bytes));
         }
         Ok(bytes)
     }
@@ -191,7 +191,7 @@ impl AccountSync {
         self.raw
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(message_id)
+            .get(self.account_id, message_id)
     }
 
     /// Whether `message_id` goes by the raw path: a stored message whose
@@ -206,16 +206,6 @@ impl AccountSync {
         Ok(size.is_some_and(|s| s > 0 && s < RAW_LIMIT))
     }
 
-    /// On a folder server, waits for any write still moving mail and keeps
-    /// others out until the guard drops. A label server names a message
-    /// the same wherever it sits, so nothing there waits.
-    pub(super) async fn hold_moves(&self) -> Option<tokio::sync::MutexGuard<'_, ()>> {
-        match self.renames() {
-            true => Some(self.moving.lock().await),
-            false => None,
-        }
-    }
-
     /// Records that history replay left the store up to date.
     pub(crate) fn mark_caught_up(&self) {
         *self.caught_up.lock().expect("caught up") = Some(Instant::now());
@@ -225,15 +215,27 @@ impl AccountSync {
         self.account_id
     }
 
-    /// The services this account is served by.
+    /// The services this account is served by. Mail goes through
+    /// [`AccountSync::mail`], which speaks in store ids.
     pub fn services(&self) -> &AccountServices {
         &self.services
+    }
+
+    /// The account's mail service, spoken to in store ids.
+    pub(crate) fn mail(&self) -> &StoreMail {
+        &self.mail
+    }
+
+    /// Whether a message on this account's server takes a new name when
+    /// it moves.
+    pub(super) fn renames(&self) -> bool {
+        self.mail.renames()
     }
 
     /// Whether a user action is waiting on this account's server. The
     /// engine reads it between backfill pages and gives way.
     pub(crate) fn foreground_waiting(&self) -> bool {
-        self.services.mail.person_waiting()
+        self.mail.person_waiting()
     }
 
     pub async fn set_state(&self, state: AccountState) -> Result<(), SyncError> {
@@ -269,14 +271,21 @@ impl AccountSync {
     /// moving matters: a listing taken at one count is out of date at the
     /// next.
     pub fn mail_changes(&self) -> u64 {
-        self.mail_changes.load(Ordering::Acquire)
+        *self.mail_changes.borrow()
+    }
+
+    /// Wakes at each change to this account's mail, including a write the
+    /// server takes after the store already shows it. It does not keep
+    /// the account alive.
+    pub fn watch_mail_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.mail_changes.subscribe()
     }
 
     /// Marks the account's mail changed. Every event that names changed or
     /// new mail does this, and so does a write once the server has it,
     /// since a search the server answered between the two missed it.
     fn mail_changed(&self) {
-        self.mail_changes.fetch_add(1, Ordering::AcqRel);
+        self.mail_changes.send_modify(|changes| *changes += 1);
     }
 
     fn emit(&self, event: ChangeEvent) {
@@ -286,8 +295,7 @@ impl AccountSync {
         ) {
             self.mail_changed();
         }
-        // The channel is unbounded, so this only fails when nobody listens.
-        let _ = self.events.try_send(event);
+        self.events.send(event);
     }
 
     fn emit_threads(&self, thread_ids: BTreeSet<String>) {

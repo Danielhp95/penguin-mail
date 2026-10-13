@@ -51,7 +51,30 @@ impl Db {
             .name("mailrs-db-writer".into())
             .spawn(move || {
                 let mut analyzed_at = writer.total_changes();
-                for job in jobs {
+                loop {
+                    let job = match jobs.try_recv() {
+                        Ok(job) => job,
+                        Err(mpsc::TryRecvError::Disconnected) => break,
+                        Err(mpsc::TryRecvError::Empty) => {
+                            // Idle: bring the kept correspondents tally up
+                            // to date, so a read of it counts few rows. A
+                            // failure leaves it as it was, and reads still
+                            // count what it lacks.
+                            // A recount runs in steps, and a write that
+                            // arrives runs between two of them.
+                            let mut queued = None;
+                            while matches!(catch_up_contacts(&mut writer), Ok(true)) {
+                                if let Ok(job) = jobs.try_recv() {
+                                    queued = Some(job);
+                                    break;
+                                }
+                            }
+                            match queued.map_or_else(|| jobs.recv(), Ok) {
+                                Ok(job) => job,
+                                Err(_) => break,
+                            }
+                        }
+                    };
                     job(&mut writer);
                     // Statistics taken while a table was empty would steer
                     // the planner long after a bootstrap filled it.
@@ -147,6 +170,15 @@ impl Db {
         .await
         .map_err(|_| StoreError::Closed)?
     }
+}
+
+/// Runs one step of [`crate::contacts::catch_up_step`] in a transaction of
+/// its own. Returns whether more is left.
+fn catch_up_contacts(writer: &mut Connection) -> Result<bool> {
+    let tx = writer.transaction()?;
+    let more = crate::contacts::catch_up_step(&tx, crate::contacts::STEP_ROWS)?;
+    tx.commit()?;
+    Ok(more)
 }
 
 impl Inner {

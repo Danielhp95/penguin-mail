@@ -130,7 +130,7 @@ impl<J: JmapApi> Jmap<J> {
             }
         };
         let identity = self.identity(&from).await?;
-        let blob = self.api().upload(without_bcc(raw)).await.map_err(backend)?;
+        let blob = self.api().upload(without_bcc(raw).into_owned()).await.map_err(backend)?;
         let submission = Submission { blob_id: blob, identity_id: identity.id, mail_from: from.clone(), rcpt_to: to, drafts, sent };
         let made = self.api().submit(&submission).await.map_err(|e| refused_send(e, &from))?;
         Ok(made.id)

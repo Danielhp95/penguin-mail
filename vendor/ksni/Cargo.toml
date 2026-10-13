@@ -1,0 +1,106 @@
+# ksni 0.3.6 from crates.io, patched in for Penguin Mail. The tray needs
+# the Ayatana label (XAyatanaLabel, XAyatanaLabelGuide, XAyatanaNewLabel)
+# and IconAccessibleDesc on the item's own interface, which ksni has no way
+# to add. The changes are in src/lib.rs, src/dbus_interface.rs and
+# src/service.rs. The upstream tests and examples are left out.
+
+# Its own workspace, so cargo can test it on its own.
+[workspace]
+
+[package]
+edition = "2021"
+rust-version = "1.80"
+name = "ksni"
+version = "0.3.6"
+authors = ["iovxw <iovxw@outlook.com>"]
+build = false
+exclude = [
+    "reference/",
+    "spec/",
+]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = """
+A Rust implementation of the KDE/freedesktop StatusNotifierItem specification
+"""
+keywords = [
+    "systray",
+    "linux",
+    "gui",
+]
+categories = ["api-bindings"]
+license = "Unlicense"
+repository = "https://github.com/iovxw/ksni"
+
+[package.metadata.docs.rs]
+features = ["blocking"]
+
+[features]
+async-io = [
+    "dep:async-io",
+    "dep:async-lock",
+    "dep:async-executor",
+    "dep:futures-lite",
+    "dep:futures-channel",
+    "dep:task-local",
+    "zbus/async-io",
+]
+blocking = []
+default = ["tokio"]
+tokio = [
+    "dep:tokio",
+    "zbus/tokio",
+]
+
+[lib]
+name = "ksni"
+path = "src/lib.rs"
+
+[dependencies.async-executor]
+version = "1"
+optional = true
+
+[dependencies.async-io]
+version = "2"
+optional = true
+
+[dependencies.async-lock]
+version = "3"
+optional = true
+
+[dependencies.futures-channel]
+version = "0.3"
+optional = true
+
+[dependencies.futures-lite]
+version = "2"
+optional = true
+
+[dependencies.futures-util]
+version = "0.3"
+
+[dependencies.pastey]
+version = "0.2"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.task-local]
+version = "0.1"
+optional = true
+
+[dependencies.tokio]
+version = "1"
+features = [
+    "rt",
+    "macros",
+]
+optional = true
+
+[dependencies.zbus]
+version = "5"
+default-features = false

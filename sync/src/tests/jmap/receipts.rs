@@ -109,9 +109,58 @@ async fn a_lost_answer_is_not_asked_again_after_a_restart() {
     let id = asked(&h).await;
     // The server took the receipt but the call that carried it failed here,
     // as when the connection drops before the answer arrives.
-    h.fake.with(|s| s.emails.remove(&id));
+    h.fake.with(|s| s.mdn_failure = Some(mailrs_jmap::JmapError::Network("dropped".into())));
     assert!(h.sync.answer_receipt(&id, true).await.is_err());
     assert!(h.sync.receipt_answered(&id).await.unwrap(), "recorded before the send, so a retry cannot double it");
+    assert!(!h.sync.receipt_open(&id).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_receipt_the_server_refused_can_be_sent_again() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MDN)).await;
+    let id = asked(&h).await;
+    h.fake.with(|s| s.mdn_failure = Some(mailrs_jmap::JmapError::Forbidden(String::new())));
+    assert!(h.sync.answer_receipt(&id, true).await.is_err());
+    assert!(h.sync.receipt_open(&id).await.unwrap(), "nothing went, so the card asks again");
+    h.sync.answer_receipt(&id, true).await.unwrap();
+    assert_eq!(h.fake.with(|s| s.mdns.len()), 1);
+}
+
+/// `serverFail` may follow a receipt the server sent: the answer stays.
+#[tokio::test]
+async fn a_server_failure_keeps_the_answer() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MDN)).await;
+    let id = asked(&h).await;
+    h.fake.with(|s| s.mdn_failure = Some(mailrs_jmap::JmapError::Method { kind: "serverFail".into(), description: String::new() }));
+    assert!(h.sync.answer_receipt(&id, true).await.is_err());
+    assert!(h.sync.receipt_answered(&id).await.unwrap());
+}
+
+#[tokio::test]
+async fn two_answers_at_once_send_one_receipt() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MDN)).await;
+    let id = asked(&h).await;
+    let (first, second) = tokio::join!(h.sync.answer_receipt(&id, true), h.sync.answer_receipt(&id, true));
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(h.fake.with(|s| s.mdns.len()), 1);
+}
+
+#[tokio::test]
+async fn a_decline_and_a_send_at_once_keep_the_first_answer() {
+    let h = over(FakeJmap::new().with_capability(mailrs_jmap::MDN)).await;
+    let id = asked(&h).await;
+    let (declined, sent) = tokio::join!(h.sync.answer_receipt(&id, false), h.sync.answer_receipt(&id, true));
+    declined.unwrap();
+    sent.unwrap();
+    let (account, message) = (h.account_id, id.clone());
+    let kept = h.db.read(move |c| mailrs_store::receipts::answered(c, account, &message)).await.unwrap();
+    let mdns = h.fake.with(|s| s.mdns.len());
+    match kept {
+        Some(mailrs_store::receipts::Answered::Declined) => assert_eq!(mdns, 0, "declined, yet a receipt went"),
+        Some(mailrs_store::receipts::Answered::Sent) => assert_eq!(mdns, 1),
+        None => panic!("no answer kept"),
+    }
 }
 
 /// A message from Ines to `to`, asking for a receipt.

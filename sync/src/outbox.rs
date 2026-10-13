@@ -34,7 +34,7 @@ use mailrs_store::outbox::{self, Queued};
 
 use crate::account::message_id_header;
 use crate::backoff::{MOST_TRIES, retry_delay};
-use crate::{AccountSync, Accounts, BackendError, Claimed, Held, MailBackend, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
+use crate::{AccountSync, Accounts, BackendError, Claimed, Held, SavedDraft, Settled, SyncError, Unheld, Want, now_millis, outbox_id};
 
 /// How long a claim on a waiting message holds. A send that takes longer
 /// than this belongs to a run that died, and the message is free again.
@@ -221,7 +221,8 @@ pub struct Drained {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Cancelled {
     /// Messages the server held and had already sent before the cancel
-    /// reached it. They are in Sent.
+    /// reached it, and ones this computer was sending as the cancel came.
+    /// They are in Sent, or on their way there.
     pub already_sent: usize,
     /// Messages the server holds that it could not be asked about now.
     /// They stay in Send Later, held.
@@ -328,7 +329,7 @@ impl<A: Accounts> Outbox<A> {
         }
         match self.attempt(&message).await {
             Ok(sent) => {
-                self.forget(&message).await?;
+                self.forget_sent(&message).await;
                 Ok(Posted::Sent(sent))
             }
             // An account that is not connected has told us nothing about
@@ -356,6 +357,7 @@ impl<A: Accounts> Outbox<A> {
     /// A server that holds mail itself takes the message, and sends it at
     /// its hour with the laptop shut. The bytes stay here too, since the
     /// server's copy leaves out the Bcc that Send Now and a new hour need.
+    /// A server that will not hold it leaves it to the rest of this.
     ///
     /// Otherwise saves `message` as a Gmail draft and records the hour to
     /// send it. With no way through to Gmail the bytes wait here instead
@@ -399,10 +401,9 @@ impl<A: Accounts> Outbox<A> {
                 return self.put_waiting(message).await;
             }
             Ok(Handed::Kept) => {}
-            Err(err) => {
-                self.drop_written(&message).await?;
-                return Ok(Posted::Refused(err.to_string()));
-            }
+            // As when a hold is taken again: the message stays in Send
+            // Later and goes from this computer at its hour.
+            Err(err) => tracing::info!(error = %quiet_text(err), "the server would not hold the message; the app sends it"),
         }
         match self.save_draft(&message).await {
             Ok(saved) => {
@@ -488,7 +489,7 @@ impl<A: Accounts> Outbox<A> {
                     continue;
                 }
                 Ok(_) => {
-                    self.forget(&message).await?;
+                    self.forget_sent(&message).await;
                     drained.sent.push(message);
                 }
                 Err(err) => {
@@ -706,7 +707,16 @@ impl<A: Accounts> Outbox<A> {
                     Some(here) => here,
                     None => continue,
                 },
-                None => item,
+                // Claimed like a send, so a pass sending it at its hour
+                // cannot send it while it turns into a draft. One already
+                // claimed is going out, and is left to that pass.
+                None => match self.claim(item.id).await? {
+                    Some(claimed) => claimed,
+                    None => {
+                        cancelled.already_sent += 1;
+                        continue;
+                    }
+                },
             };
             // A message Gmail never had goes to Drafts now, so cancelling
             // does not throw away the only copy.
@@ -834,6 +844,13 @@ impl<A: Accounts> Outbox<A> {
             .accounts
             .account(message.account_id)
             .ok_or(SyncError::UnknownAccount(message.account_id))?;
+        // The try counts before anything goes, so one the app never hears
+        // back from, because it stopped, makes the next look in Sent. The
+        // caller counts it again on a failure, which writes the same number.
+        if message.id > 0 {
+            let id = message.id;
+            self.db.write(move |c| outbox::count_try(c, id)).await?;
+        }
         match (&message.raw, &message.draft_id) {
             (Some(raw), draft_id) => {
                 if message.attempts > 0
@@ -891,6 +908,15 @@ impl<A: Accounts> Outbox<A> {
             })
             .await?;
         Ok(())
+    }
+
+    /// Forgets a message that went out. A failure here must not read as a
+    /// failed send, or the message would go again: the row stays claimed,
+    /// counts its try, and the pass after the claim lapses finds it in Sent.
+    async fn forget_sent(&self, message: &Queued) {
+        if let Err(err) = self.forget(message).await {
+            tracing::warn!(account = message.account_id, error = %err, "sent, but could not take the message out of the outbox");
+        }
     }
 
     /// Keeps a message that would not go out, with why and when to try
@@ -1222,7 +1248,7 @@ impl<A: Accounts> Outbox<A> {
         let Some(copy) = message.draft_id.clone() else {
             return true;
         };
-        match sync.services().mail.fetch(vec![Want::message(copy)]).await {
+        match sync.mail().fetch(vec![Want::message(copy)]).await {
             Ok(found) => !found.metas.is_empty() || found.gone.is_empty(),
             Err(err) => {
                 tracing::info!(error = %err, "could not look for a called-back copy");
@@ -1535,6 +1561,8 @@ fn worth_retrying(err: &SyncError) -> bool {
         // would fail the same way on every try.
         SyncError::Mime(_) => false,
         SyncError::NotAnAddress(_) => false,
+        // An export's file; the outbox exports nothing.
+        SyncError::Write(_) => false,
         // The outbox sends nothing to a list's server.
         SyncError::OneClick(_) => false,
         // The keyring's own trouble, not the message's; it usually clears

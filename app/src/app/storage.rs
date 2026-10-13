@@ -18,6 +18,8 @@ const FIRST_LOOK_SECONDS: u32 = 10;
 /// pointer.
 const DEMO_FIRST_LOOK_SECONDS: u32 = 1;
 const EVERY_SECONDS: u32 = 60 * 60;
+/// How long one account's read may take before it counts as failed.
+const READ_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl App {
     pub(super) fn start_storage_checks(self: &Rc<Self>) {
@@ -39,18 +41,19 @@ impl App {
         });
     }
 
+    /// Reads every account at once, so one slow server holds up none of
+    /// the others, and puts the answers on the numbers as they are when
+    /// the last one is in.
     pub(super) fn read_storage(self: &Rc<Self>) {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            let mut found = HashMap::new();
-            for account in this.accounts() {
-                if let Some(last) = this.storage.borrow().get(&account.id) {
-                    found.insert(account.id, *last);
-                }
-                let read = this.read_one(account.id).await;
-                after_read(&mut found, account.id, read);
-            }
-            this.show_storage(found);
+            let ids: Vec<AccountId> = this.accounts().iter().map(|a| a.id).collect();
+            let reads = futures::future::join_all(ids.iter().map(|&id| {
+                let this = Rc::clone(&this);
+                async move { (id, this.read_one(id).await) }
+            }))
+            .await;
+            this.show_storage(merged(this.storage(), &ids, reads));
         });
     }
 
@@ -70,7 +73,13 @@ impl App {
     /// connected, which keeps the last answer.
     async fn read_one(&self, account_id: AccountId) -> Result<Option<Storage>, ()> {
         let sync = self.core.account(account_id).ok_or(())?;
-        self.core.call(async move { sync.storage().await }).await.map_err(|err| {
+        let read = self.core.call(async move {
+            match tokio::time::timeout(READ_WAIT, sync.storage()).await {
+                Ok(read) => read.map_err(anyhow::Error::from),
+                Err(_) => Err(anyhow::anyhow!("no answer in {} seconds", READ_WAIT.as_secs())),
+            }
+        });
+        read.await.map_err(|err| {
             tracing::info!(account = account_id, error = %err, "could not read the account's storage");
         })
     }
@@ -86,6 +95,21 @@ impl App {
     pub fn storage(&self) -> HashMap<AccountId, Storage> {
         self.storage.borrow().clone()
     }
+}
+
+/// `now` with the hourly `reads` put on it, for the accounts in
+/// `accounts` alone. It starts from the numbers as they are when the reads
+/// end, since an account that connected meanwhile read its own.
+fn merged(
+    mut now: HashMap<AccountId, Storage>,
+    accounts: &[AccountId],
+    reads: Vec<(AccountId, Result<Option<Storage>, ()>)>,
+) -> HashMap<AccountId, Storage> {
+    now.retain(|id, _| accounts.contains(id));
+    for (account_id, read) in reads {
+        after_read(&mut now, account_id, read);
+    }
+    now
 }
 
 /// `found` after `account_id`'s read: its numbers, none when the server
@@ -109,7 +133,7 @@ mod tests {
 
     use mailrs_sync::Storage;
 
-    use super::after_read;
+    use super::{after_read, merged};
 
     fn used(n: u64) -> Storage {
         Storage::new(n, 100, None).unwrap()
@@ -122,6 +146,17 @@ mod tests {
         assert_eq!(found, HashMap::from([(1, used(95)), (2, used(20))]));
         after_read(&mut found, 2, Ok(None));
         assert_eq!(found, HashMap::from([(1, used(95))]), "a server that stopped saying has no row");
+    }
+
+    /// The hourly read waits on every account. An account that connected
+    /// meanwhile read its own numbers, and a failed hourly read must not
+    /// put back the older ones it started from. An account that went is
+    /// dropped.
+    #[test]
+    fn the_hourly_reads_land_on_the_numbers_as_they_are_now() {
+        let now = HashMap::from([(1, used(10)), (2, used(96)), (3, used(50))]);
+        let reads = vec![(1, Ok(Some(used(12)))), (2, Err(()))];
+        assert_eq!(merged(now, &[1, 2], reads), HashMap::from([(1, used(12)), (2, used(96))]));
     }
 
     #[test]

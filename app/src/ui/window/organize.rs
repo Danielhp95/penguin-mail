@@ -28,7 +28,7 @@ impl MainWindow {
         if rows.is_empty() {
             return false;
         }
-        let targets: Vec<Target> = rows.iter().map(Target::from_row).collect();
+        let targets: Vec<Target> = rows.iter().map(|row| Target::from_row(row)).collect();
         let open = self.conversation.read(|o| o.among(&targets)) == Some(true);
         let reach = Reach {
             targets,
@@ -219,7 +219,7 @@ impl MainWindow {
                 .await
             {
                 Ok(()) => {
-                    this.change_screen(|screen| screen.label_deleted(account_id, &label_id));
+                    this.listing.change(|screen| screen.label_deleted(account_id, &label_id));
                     this.toast(&fill(&gettext("Deleted “{name}”"), &[("name", &name)]));
                 }
                 Err(err) => this.failed(&filing.delete_failed(), &err),

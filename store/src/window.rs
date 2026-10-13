@@ -4,15 +4,19 @@ use mailrs_domain::{AccountId, EpochMillis};
 use rusqlite::{Connection, params};
 
 use crate::Result;
-use crate::messages::{delete_thread, refresh_thread};
+use crate::deletion::{self, Cause};
+use crate::messages::refresh_thread;
 
 /// Deletes threads whose newest message is older than `cutoff` and that are
-/// not in INBOX. Returns their ids.
+/// not in INBOX. Returns their ids. A POP3 account keeps all its mail.
 pub fn prune_window(
     conn: &Connection,
     account_id: AccountId,
     cutoff: EpochMillis,
 ) -> Result<Vec<String>> {
+    if !deletion::allowed(conn, account_id, Cause::Sync)? {
+        return Ok(Vec::new());
+    }
     let ids: Vec<String> = {
         let mut stmt = conn.prepare(
             "SELECT t.id FROM threads t WHERE t.account_id = ?1 AND t.last_message_at < ?2 \
@@ -24,18 +28,22 @@ pub fn prune_window(
             .collect::<rusqlite::Result<_>>()?
     };
     for id in &ids {
-        delete_thread(conn, account_id, id)?;
+        deletion::delete_thread(conn, account_id, id, Cause::Sync)?;
     }
     Ok(ids)
 }
 
 /// Deletes messages last written in a generation before `generation`, then
-/// refreshes their threads. Returns the touched thread ids, sorted.
+/// refreshes their threads. Returns the touched thread ids, sorted. A POP3
+/// account keeps all its mail.
 pub fn sweep_stale(
     conn: &Connection,
     account_id: AccountId,
     generation: i64,
 ) -> Result<Vec<String>> {
+    if !deletion::allowed(conn, account_id, Cause::Sync)? {
+        return Ok(Vec::new());
+    }
     let threads: Vec<String> = {
         let mut stmt = conn.prepare(
             "SELECT DISTINCT thread_id FROM messages WHERE account_id = ?1 AND sync_gen < ?2 ORDER BY thread_id",

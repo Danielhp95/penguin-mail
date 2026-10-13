@@ -55,6 +55,31 @@ async fn a_send_goes_from_the_chosen_identity_and_a_copy_is_filed_in_sent() {
     assert!(flags[0].flags.iter().any(|f| f == "\\Seen"));
 }
 
+/// The message went, and one failed append to Sent gets a second try.
+#[tokio::test]
+async fn a_copy_sent_mail_could_not_take_at_first_is_filed_on_a_second_try() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    h.imap.fail_on("append Sent", ImapError::Protocol("NO try again".into()));
+    h.sync.send(outgoing(), None, None).await.unwrap();
+    assert_eq!(h.smtp.sent().len(), 1);
+    assert_eq!(undeleted(&h, "Sent").await.len(), 1, "the copy is in Sent");
+    assert!(!h.drain().iter().any(|e| matches!(e, mailrs_domain::ChangeEvent::WriteFailed { .. })));
+}
+
+/// When Sent will not take a copy at all, the person hears so once.
+#[tokio::test]
+async fn a_copy_sent_mail_will_not_take_is_told_once() {
+    let h = imap_harness().await;
+    h.bootstrap().await;
+    h.imap.fail_on("append Sent", ImapError::Protocol("NO full".into()));
+    h.imap.fail_on("append Sent", ImapError::Protocol("NO full".into()));
+    h.sync.send(outgoing(), None, None).await.unwrap();
+    assert_eq!(h.smtp.sent().len(), 1, "sent once all the same");
+    let told = h.drain().into_iter().filter(|e| matches!(e, mailrs_domain::ChangeEvent::WriteFailed { .. })).count();
+    assert_eq!(told, 1);
+}
+
 #[tokio::test]
 async fn a_server_that_files_what_it_sends_gets_no_copy() {
     let settings = ImapSettings {
@@ -74,7 +99,8 @@ async fn a_server_that_files_what_it_sends_gets_no_copy() {
 async fn a_copy_that_fails_to_file_does_not_fail_the_send() {
     let h = imap_harness().await;
     h.bootstrap().await;
-    h.imap.fail_next(ImapError::Network("the server went away".into()));
+    h.imap.fail_on("append Sent", ImapError::Network("the server went away".into()));
+    h.imap.fail_on("append Sent", ImapError::Network("the server went away".into()));
 
     let id = h.sync.send(outgoing(), None, None).await.unwrap();
 

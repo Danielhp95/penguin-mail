@@ -21,6 +21,9 @@ use mailrs_domain::sign_in_page::{self, Finished};
 use crate::error::GraphError;
 use crate::http::Graph;
 
+/// The most a token endpoint's answer may take; a real one is a few hundred bytes.
+const TOKEN_LIMIT: usize = 64 << 10;
+
 pub const AUTHORIZE_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 pub const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 
@@ -338,11 +341,14 @@ impl MicrosoftClient {
             .await
             .map_err(|e| GraphError::Network(e.to_string()))?;
         let status = response.status().as_u16();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|e| GraphError::Network(e.to_string()))?;
-        if (200..300).contains(&status) {
+        let success = (200..300).contains(&status);
+        let body = match crate::http::read_capped(response, TOKEN_LIMIT).await {
+            Ok(body) => body,
+            Err(err) if success => return Err(err),
+            // A refusal too long to read is still a refusal.
+            Err(_) => Vec::new(),
+        };
+        if success {
             let answer: TokenAnswer =
                 serde_json::from_slice(&body).map_err(|e| GraphError::Decode(e.to_string()))?;
             return Ok(answer.tokens());

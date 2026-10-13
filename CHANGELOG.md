@@ -8,6 +8,11 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### New
 
 - Vietnamese translations, chosen in Preferences.
+
+## 1.0.8 (2026-10-13)
+
+### New
+
 - French, German and Spanish translations, chosen in Preferences.
 - Sign in to Gmail with a Google client from your own Google Cloud project, named in two environment variables, when Google blocks Penguin Mail's own client. docs/setup.md says how.
 - Give the outgoing server a password of its own in Server Settings, for an IMAP or POP3 account whose SMTP password differs from its incoming one.
@@ -26,14 +31,29 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### Improved
 
 - The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
+- Sending or saving a message with a large attachment no longer freezes the window, and holds the file in memory once rather than three times.
+- A message that cannot be displayed offers View Source beside the notice, to read it as it arrived or save it as an .eml file.
 
 ### Fixed
 
+- The tray icon with unread mail is as large as the other icons in the panel, where before the penguin was drawn small with a wide margin around it.
+- Delete Forever on an IMAP account removes a message you had moved, such as one in the Trash, from the server too, where before it stayed there.
+- A calendar event deleted right after a change to it stays deleted, on the calendar and on the server, instead of coming back.
 - Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
 - An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
+- The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
+- When Penguin Mail starts in the tray with no window, the tray's unread count includes unread mail on the server older than what this computer keeps.
+- Closing a message while its draft saves no longer leaves two drafts behind, and choosing Discard then leaves none.
+- A read receipt you sent no longer comes back to offer itself again while the message redraws.
 
 ### Fixed
 
+- A message no longer goes out twice when Penguin Mail stops while sending it; the next try finds it in Sent.
+- Exporting mail over a file you already have keeps that file's permissions, and a shortcut (symlink) to it stays a shortcut. The command-line export can also write to standard output.
+- On IMAP and POP3, a sent message whose copy the Sent folder would not take gets a second try, and you hear when it still has no copy there.
+- Canceling a Send Later message at the moment it goes out says it had already gone, instead of also leaving a copy in Drafts.
+- On an Outlook account keeping more than 20,000 messages on this computer, mail no longer disappears from the list when Outlook loses track of what changed; Penguin Mail downloads the mail again instead.
+- A mail list left open while a new account downloads its mail for the first time keeps loading older mail as you scroll, instead of stopping at the first few messages.
 - Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
 - A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
 - On IMAP, mail another device marks as deleted leaves the list at the next check, and comes back if that device restores it. On Outlook, Check for Mail now refreshes every folder at once; until now folders other than the Inbox waited for their regular check, every five minutes while the window is open ([#35](https://github.com/c9dev/penguin-mail/issues/35)).

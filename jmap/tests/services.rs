@@ -234,7 +234,16 @@ async fn an_activation_answered_with_nothing_is_read_back() {
         ["SieveScript/set", {"accountId": "A1", "oldState": "v1", "newState": "v1"}, "c0"]
     ]})).await;
     reading_back(&server, json!([{"id": "S0", "blobId": "B0", "isActive": false}, {"id": "S1", "blobId": "B1", "isActive": true}])).await;
-    client(&server).activate_sieve("S1").await.unwrap();
+    assert_eq!(client(&server).activate_sieve("S1").await, Ok(()));
+    let read: Vec<_> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|r| String::from_utf8_lossy(&r.body).contains("SieveScript/get"))
+        .collect();
+    assert_eq!(read.len(), 1, "the scripts were read back once");
+    assert_eq!(posts(&server).await, 2);
 }
 
 #[tokio::test]

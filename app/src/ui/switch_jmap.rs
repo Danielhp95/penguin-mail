@@ -139,10 +139,10 @@ pub fn present(
     // The wait for the browser, in the button's place: a spinner and its
     // line, with Open Page Again and Cancel under them.
     let again = gtk::Button::builder().label(gettext("Open Page Again")).css_classes(["pill"]).build();
-    let cancel = gtk::Button::builder().label(gettext("Cancel")).css_classes(["pill"]).build();
+    let stop_wait = gtk::Button::builder().label(gettext("Cancel")).css_classes(["pill"]).build();
     let buttons = gtk::Box::builder().spacing(12).halign(gtk::Align::Center).build();
     buttons.append(&again);
-    buttons.append(&cancel);
+    buttons.append(&stop_wait);
     let wait_line = gtk::Box::builder().spacing(10).halign(gtk::Align::Center).css_classes(["switch-progress"]).build();
     wait_line.append(&adw::Spinner::builder().width_request(24).height_request(24).build());
     let provider = add_account::post::short_name(&proposal.provider_name);
@@ -244,8 +244,10 @@ pub fn present(
             this.open_page();
         }
     });
+    // The Cancel under the spinner ends the wait for the browser and
+    // leaves the dialog open; the header's Cancel closes it.
     let weak = Rc::downgrade(&this);
-    cancel.connect_clicked(move |_| {
+    stop_wait.connect_clicked(move |_| {
         if let Some(this) = weak.upgrade() {
             this.browser_cancel.borrow_mut().take();
         }

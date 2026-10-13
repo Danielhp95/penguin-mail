@@ -74,7 +74,13 @@ impl Desk for Ports {
                 message_id: o.only_message.clone(),
                 subject: o.subject.clone(),
             }),
-            selected: self.0.list.selected_rows(),
+            selected: self
+                .0
+                .list
+                .selected_rows()
+                .iter()
+                .map(|row| ThreadSummary::clone(row))
+                .collect(),
         }
     }
 
@@ -195,12 +201,12 @@ impl Effects for Ports {
 
     fn relist(&self) {
         self.0.refresh_counts();
-        self.0.reload_list();
+        self.0.listing.reload();
     }
 
     fn categories_moved(&self) {
         self.0.core.forget_remote();
-        self.0.reload_folder();
+        self.0.listing.reload_remote();
         self.0.refresh_counts();
     }
 

@@ -571,7 +571,7 @@ async fn send_later_keeps_a_saved_drafts_blind_copy_and_files() {
     written.attachments = vec![crate::compose::OutgoingAttachment {
         filename: "ferns.txt".into(),
         mime_type: "text/plain".into(),
-        data: b"Three ferns.".to_vec(),
+        data: b"Three ferns.".to_vec().into(),
         content_id: None,
     }];
     let raw = crate::compose::build_mime(&written, 0, "<d1@example.com>").expect("a draft");

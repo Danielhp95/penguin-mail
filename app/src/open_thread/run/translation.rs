@@ -11,8 +11,12 @@
 
 use mailrs_domain::translate::{fill, gettext};
 
+use std::sync::Arc;
+
+use mailrs_domain::MessageBody;
+
 use super::ThreadRun;
-use crate::open_thread::Cleaned;
+use crate::open_thread::{OpenThread, ToClean};
 use crate::translation::{self, Language, Prose, Reading, Translation};
 
 /// What the translation card shows.
@@ -43,13 +47,14 @@ impl ThreadRun {
     /// translated here keeps its card, whatever a second reading of the
     /// words would say about it.
     pub(super) fn translation_offer(&self) -> Card {
-        let Some((message_id, prose)) = self.desk.prose() else {
+        let Some((message_id, prose)) = self.find(OpenThread::prose) else {
             return Card::Hidden;
         };
-        if let Some((from, cut, shown)) = self.desk.translation_of(&message_id) {
+        if let Some((from, cut, shown)) = self.find(|open| open.translation_of(&message_id)) {
             return Card::Done { from, cut, shown };
         }
-        let Some(into) = self.desk.translation_language() else {
+        let preferences = self.desk.preferences();
+        let Some(into) = preferences.translation_language else {
             return Card::Hidden;
         };
         let Reading::Other(from) = self.read_message(&message_id, &prose, &into) else {
@@ -58,9 +63,8 @@ impl ThreadRun {
         // A language the app cannot name is never on the list, so its
         // card still comes up.
         if let Some(language) = from
-            && self
-                .desk
-                .never_translate()
+            && preferences
+                .never_translate
                 .iter()
                 .any(|code| code == language.code)
         {
@@ -78,7 +82,7 @@ impl ThreadRun {
         let Some(wanted) = self.on_screen() else {
             return;
         };
-        if let Some(into) = self.desk.translation_language() {
+        if let Some(into) = self.desk.preferences().translation_language {
             wanted.on_screen(|effects| effects.keep_translations(&into));
         }
         let card = self.translation_offer();
@@ -88,7 +92,10 @@ impl ThreadRun {
     /// The language of the message on screen, with its writer's other
     /// messages in the thread to fall back on.
     fn read_message(&self, message_id: &str, prose: &Prose, into: &str) -> Reading {
-        translation::read_for(&prose.sample(), &self.desk.same_writer(message_id), into)
+        let same_writer = self
+            .thread(|open| open.same_writer(message_id))
+            .unwrap_or_default();
+        translation::read_for(&prose.sample(), &same_writer, into)
     }
 
     /// The card's button: translate the message on screen, or turn over
@@ -97,13 +104,14 @@ impl ThreadRun {
         let Some(wanted) = self.on_screen() else {
             return;
         };
-        let Some((message_id, prose)) = self.desk.prose() else {
+        let Some((message_id, prose)) = self.find(OpenThread::prose) else {
             return;
         };
-        let Some(into) = self.desk.translation_language() else {
+        let preferences = self.desk.preferences();
+        let Some(into) = preferences.translation_language else {
             return;
         };
-        let revision = self.desk.translation_revision();
+        let revision = preferences.translation_revision;
         wanted.on_screen(|effects| effects.keep_translations(&into));
         if wanted.on_screen(|effects| effects.turn_translation(&message_id)) == Some(true) {
             return;
@@ -129,7 +137,7 @@ impl ThreadRun {
             .collect();
         // The translation is built on the body as it is now, which is the
         // body the prose came from.
-        let Some((arrived, pictures)) = self.desk.arrived(&message_id) else {
+        let Some((arrived, pictures)) = self.find(|open| open.arrived(&message_id)) else {
             return;
         };
         wanted.on_screen(|effects| effects.translation_card(Card::Working));
@@ -139,8 +147,9 @@ impl ThreadRun {
             .anyway(|effects| effects.translate(into.clone(), asked))
             .await;
         // A settings change can outlive a request, even in the same conversation.
-        if self.desk.translation_revision() != revision
-            || self.desk.translation_language().as_deref() != Some(into.as_str())
+        let now = self.desk.preferences();
+        if now.translation_revision != revision
+            || now.translation_language.as_deref() != Some(into.as_str())
         {
             return;
         }
@@ -164,14 +173,27 @@ impl ThreadRun {
             }
         };
         let rebuilt = prose.rebuild(&said);
-        let mut body = arrived;
         // Model output is cleaned like any other mail HTML before it
-        // reaches the page.
-        let clean = match body.html.as_deref().is_some_and(|h| !h.trim().is_empty()) {
-            true => Some(Cleaned::new(&rebuilt, &pictures)),
+        // reaches the page, and through the same port.
+        let (body, clean) = match arrived.html.as_deref().is_some_and(|h| !h.trim().is_empty()) {
+            true => {
+                let html = ToClean::words(message_id.clone(), rebuilt, pictures);
+                let Some(mut cleaned) = wanted.wait(|effects| effects.clean(html)).await else {
+                    return;
+                };
+                let Some(clean) = cleaned.remove(&message_id).filter(|clean| !clean.is_failed()) else {
+                    let card = self.translation_offer();
+                    wanted.on_screen(|effects| effects.translation_card(card));
+                    return;
+                };
+                (arrived, Some(clean))
+            }
             false => {
-                body.text = Some(rebuilt);
-                None
+                let body = MessageBody {
+                    text: Some(rebuilt),
+                    ..MessageBody::clone(&arrived)
+                };
+                (Arc::new(body), None)
             }
         };
         let translation = Translation {

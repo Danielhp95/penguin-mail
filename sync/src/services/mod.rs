@@ -25,6 +25,7 @@ pub mod microsoft;
 pub mod pop3;
 pub(crate) mod local;
 mod pacing;
+mod setup;
 mod sieve;
 
 pub use caldav::CalDav;
@@ -40,6 +41,7 @@ pub use microsoft::{GraphApi, Microsoft, MicrosoftSettings};
 pub use pop3::{Pop3, Pop3Settings};
 pub use pacing::{Priority, background, priority};
 pub use sieve::SieveRules;
+pub(crate) use setup::{Beside, FoundServer};
 
 /// Where an account's rules run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +52,7 @@ pub enum RulesPlace {
     ThisComputer,
 }
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
@@ -171,6 +173,32 @@ impl SyncState {
 pub struct Changes {
     pub changes: Vec<RemoteChange>,
     pub state: SyncState,
+}
+
+/// How one look for new mail went, as the mail service answers it.
+#[derive(Debug)]
+pub enum Look {
+    /// The service has no look of its own: the caller replays the server's
+    /// changes since the stored sync state, through [`MailBackend::changes`].
+    Replay,
+    /// The service looked and stored what it found.
+    Done(Looked),
+}
+
+/// What a look the service made itself stored, for the caller to announce.
+/// A look that fails partway still hands back what it stored before the
+/// failure, since that mail stays stored.
+#[derive(Debug, Default)]
+pub struct Looked {
+    /// The threads the stored messages went into.
+    pub threads: BTreeSet<String>,
+    /// The stored messages to announce as new mail.
+    pub new_mail: Vec<String>,
+    /// The account's menu changed: a download that keeps failing joined
+    /// it, or one left it.
+    pub menu_changed: bool,
+    /// Why the look stopped early, if it did.
+    pub failed: Option<BackendError>,
 }
 
 /// One change the server reports. A new message comes without its
@@ -419,8 +447,9 @@ impl AccountServices {
     }
 
     /// An account on a JMAP server: its mail and the addresses it sends
-    /// as. `connect_jmap` adds the calendar, contacts, rules and automatic
-    /// reply its session and its found servers offer.
+    /// as, and nothing else. [`AccountServices::jmap_from`] adds the
+    /// calendar, contacts, rules and automatic reply its session and its
+    /// found servers offer.
     pub fn jmap(jmap: impl Into<AnyJmap>, settings: JmapSettings) -> Self {
         let adapter = Jmap::new(Arc::new(jmap.into()), settings);
         AccountServices {
@@ -434,8 +463,10 @@ impl AccountServices {
     }
 
     /// The in-memory JMAP server, as a Fastmail account, for tests and the
-    /// demo. Its rules run nowhere, as the tests that need rules give it
-    /// some.
+    /// demo, set up as the connector sets up a real one from what the
+    /// session offers. With no store beside it, its rules run nowhere
+    /// unless the session runs Sieve; the tests that need other rules give
+    /// it some.
     #[cfg(any(test, feature = "fake"))]
     pub fn fake_jmap(fake: Arc<FakeJmap>) -> Self {
         let settings = JmapSettings {
@@ -446,34 +477,8 @@ impl AccountServices {
             capabilities: fake.with(|s| s.session.capabilities.keys().filter(|c| s.session.offers(c)).cloned().collect()),
             auto_reply_needs_sign_in: false,
         };
-        let offers_calendar = fake.with(|s| s.session.offers(mailrs_jmap::CALENDARS));
-        let offers_contacts = fake.with(|s| s.session.offers(mailrs_jmap::CONTACTS));
-        let offers_reply = fake.with(|s| s.session.offers(mailrs_jmap::VACATION));
-        let adapter = Jmap::new(Arc::new(AnyJmap::from(fake)), settings);
-        let mut services = AccountServices {
-            mail: AnyMail::Jmap(adapter.clone()),
-            calendar: None,
-            contacts: None,
-            rules: None,
-            auto_reply: None,
-            identities: AnyIdentities::Jmap(adapter),
-        };
-        if offers_calendar
-            && let AnyMail::Jmap(adapter) = &services.mail
-        {
-            services.calendar = Some(AnyCalendar::Jmap(adapter.clone()));
-        }
-        if offers_contacts
-            && let AnyMail::Jmap(adapter) = &services.mail
-        {
-            services.contacts = Some(AnyContacts::Jmap(adapter.clone()));
-        }
-        if offers_reply
-            && let AnyMail::Jmap(adapter) = &services.mail
-        {
-            services.auto_reply = Some(AnyAutoReply::Jmap(adapter.clone()));
-        }
-        services
+        let beside = Beside::nothing(&settings.address, &settings.provider_name);
+        AccountServices::jmap_from(fake, settings, beside)
     }
 
     /// A Microsoft account: every service over the one Graph client.
@@ -1054,6 +1059,14 @@ pub trait MailBackend: Send + Sync + 'static {
     /// A server that never says so never resolves this.
     fn watch(&self) -> impl Future<Output = ()> + Send;
 
+    /// One look at the server for new mail, at the engine's poll. A
+    /// service whose mail lives only in the store, as a POP3 account's
+    /// does, downloads and stores it here and answers [`Look::Done`].
+    /// Every other service answers [`Look::Replay`].
+    fn look_for_mail(&self) -> impl Future<Output = Look> + Send {
+        async { Look::Replay }
+    }
+
     /// The keywords of the window's messages in `mailbox` with a UID in
     /// `uids`, as they stand on the server now, for a
     /// [`RemoteChange::CompareKeywords`]. It answers the lowest part of
@@ -1096,7 +1109,9 @@ pub trait MailBackend: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Backfill, BackendError>> + Send;
 
     /// Every message in the sync window, or the ones of it in `mailbox`,
-    /// ids only.
+    /// ids only. A backend that caps its listings answers `Unsupported`
+    /// past the cap rather than a cut list, which a caller would read as
+    /// mail gone from the server.
     fn window_ids(
         &self,
         days: i64,

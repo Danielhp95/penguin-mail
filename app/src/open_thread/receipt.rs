@@ -34,13 +34,28 @@ impl OpenThread {
     }
 
     /// Puts the card up on a message, marks it at work, or takes it down.
-    /// The next [`Self::page`] patches the article it sits in.
+    /// The next [`Self::page`] patches the article it sits in. A card
+    /// taken down while at work was answered, and is noted so.
     pub fn take_receipt_card(&mut self, card: ReceiptCard) {
         self.receipt_card = match card {
-            ReceiptCard::Hidden => None,
-            ReceiptCard::Asked { message_id, .. } => Some((message_id, false)),
+            ReceiptCard::Hidden => {
+                if let Some((id, true)) = self.receipt_card.take() {
+                    self.receipts_answered.insert(id);
+                }
+                None
+            }
+            ReceiptCard::Asked { message_id, .. } => {
+                self.receipts_answered.remove(&message_id);
+                Some((message_id, false))
+            }
             ReceiptCard::Working => self.receipt_card.take().map(|(id, _)| (id, true)),
         };
+    }
+
+    /// Whether the card on `message_id` was answered since the thread
+    /// opened.
+    pub fn receipt_answered_here(&self, message_id: &str) -> bool {
+        self.receipts_answered.contains(message_id)
     }
 
     /// The message the card asks about, while its buttons press.

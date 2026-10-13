@@ -6,8 +6,10 @@
 //! mail programs.
 //!
 //! A receipt goes out at most once. The record is written before the send,
-//! so a lost answer or a restart cannot send a second one; the cost is that
-//! a send that failed is not retried. A receipt also goes only to the
+//! and only by the first answer, so a lost answer, a restart or a second
+//! click cannot send a second one. A send the server refused outright
+//! takes the record back, so the person can try again; one that may have
+//! gone keeps it. A receipt also goes only to the
 //! sender's own address: one to anyone else tells a stranger the mail was
 //! opened.
 
@@ -22,7 +24,7 @@ use mailrs_store::receipts::{self, Answered};
 use mailrs_store::{accounts, bodies, messages};
 
 use super::AccountSync;
-use crate::{AnyMail, BackendError, IdentityService, MailBackend, MailOp, ReceiptOut, SyncError, now_millis};
+use crate::{AnyMail, BackendError, IdentityService, MailOp, ReceiptOut, SyncError, now_millis};
 
 /// "Read: Allotment rota".
 fn receipt_subject(subject: &str) -> String {
@@ -61,6 +63,24 @@ fn receipt_mail(receipt: &ReceiptOut, original: Option<&str>, now: EpochMillis) 
         ))
         .write_to_vec()
         .map_err(|err| err.to_string())
+}
+
+/// Whether a failed send of a receipt proves it never reached the server:
+/// a refusal, or a sign-in or permission the server turned down before it
+/// acted. A lost connection proves nothing, since the request may have
+/// gone.
+fn nothing_went(err: &SyncError) -> bool {
+    matches!(
+        err,
+        SyncError::Backend(
+            BackendError::Refused(_)
+                | BackendError::NeedsReauth
+                | BackendError::NeedsPermission
+                | BackendError::NotFound
+                | BackendError::RateLimited(_)
+                | BackendError::Unsupported
+        )
+    )
 }
 
 impl AccountSync {
@@ -112,7 +132,7 @@ impl AccountSync {
             Ok(listed) => mine.extend(listed.into_iter().map(|a| a.email)),
             Err(_) => tracing::info!(account, "could not list the account's addresses for a receipt"),
         }
-        if let AnyMail::Jmap(jmap) = &self.services.mail
+        if let AnyMail::Jmap(jmap) = self.mail.untranslated()
             && jmap.masked_email()
         {
             match jmap.masked_addresses().await {
@@ -155,38 +175,57 @@ impl AccountSync {
         };
         let answered = if send { Answered::Sent } else { Answered::Declined };
         let (id, now) = (message_id.to_string(), now_millis());
-        self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await?;
-        let remote = self.remote(message_id).await?;
+        // Only the answer this call keeps goes on: a second click, or the
+        // card and the assistant at once, find the first one kept.
+        if !self.db.write(move |c| receipts::record(c, account, &id, answered, now)).await? {
+            return Ok(());
+        }
         if send {
             let receipt = ReceiptOut {
-                message_id: remote.clone(),
+                message_id: message_id.to_string(),
                 from: me.clone(),
                 to,
                 subject: receipt_subject(&meta.subject),
                 text: receipt_text(&me),
             };
-            match self.services.mail.send_receipt(&receipt).await {
-                Ok(()) => {}
-                Err(BackendError::Unsupported) => {
-                    let raw = receipt_mail(&receipt, meta.rfc822_msgid.as_deref(), now_millis()).map_err(|_| no_receipt())?;
-                    self.send(raw, None, None).await?;
+            let sent = match self.mail.send_receipt(&receipt).await {
+                Err(SyncError::Backend(BackendError::Unsupported)) => {
+                    match receipt_mail(&receipt, meta.rfc822_msgid.as_deref(), now_millis()) {
+                        Ok(raw) => self.send(raw, None, None).await.map(drop),
+                        Err(_) => Err(no_receipt().into()),
+                    }
                 }
-                Err(err) => return Err(err.into()),
+                sent => sent,
+            };
+            if let Err(err) = sent {
+                // A failure that proves nothing went leaves the question
+                // open, so the person can send it again. Any other may
+                // follow a receipt that went, and the answer stays.
+                if nothing_went(&err) {
+                    let id = message_id.to_string();
+                    self.db.write(move |c| receipts::withdraw(c, account, &id)).await?;
+                }
+                return Err(err);
             }
         }
-        self.mark_mdn_sent(&remote).await;
+        self.mark_mdn_sent(message_id).await;
         Ok(())
     }
 
     /// `$mdnsent` on the server, on IMAP and JMAP, for the person's other
     /// mail programs. Gmail and Outlook keep no such keyword. The record on
     /// this computer is what this app reads, so a refusal only goes to the log.
-    async fn mark_mdn_sent(&self, remote: &str) {
-        if !matches!(self.services.mail, AnyMail::Imap(_) | AnyMail::Jmap(_)) {
+    async fn mark_mdn_sent(&self, message_id: &str) {
+        if !matches!(self.mail.untranslated(), AnyMail::Imap(_) | AnyMail::Jmap(_)) {
             return;
         }
         let op = MailOp::SetKeyword { keyword: MDN_SENT.to_string(), on: true };
-        if self.services.mail.apply(&[remote.to_string()], &[op]).await.is_err() {
+        let moves = self.mail.hold_moves().await;
+        let marked = match moves.named(&[message_id.to_string()]).await {
+            Ok(named) => moves.apply(&named, &[op]).await.is_ok(),
+            Err(_) => false,
+        };
+        if !marked {
             // No server text, address or message id in the log.
             tracing::info!(account = self.account_id, "could not mark a message $mdnsent");
         }

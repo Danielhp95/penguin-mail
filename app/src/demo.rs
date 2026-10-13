@@ -911,9 +911,6 @@ impl mailrs_sync::Accounts for Seeding {
     }
 }
 
-/// The rules demo account `index` has at Gmail. The Fernwood account
-/// gets two the Rules form shows whole and one made in Gmail's own
-/// settings, whose forward the form has no field for.
 /// The first account nearly full, so the demo shows the banner; the
 /// second with room; the third says nothing, and has no row.
 fn demo_storage(index: usize) -> Option<mailrs_gmail::DriveStorage> {
@@ -925,6 +922,9 @@ fn demo_storage(index: usize) -> Option<mailrs_gmail::DriveStorage> {
     }
 }
 
+/// The rules demo account `index` has at Gmail. The Fernwood account
+/// gets two the Rules form shows whole and one made in Gmail's own
+/// settings, whose forward the form has no field for.
 fn demo_rules(index: usize) -> Vec<Filter> {
     if index != 1 {
         return Vec::new();

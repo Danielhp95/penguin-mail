@@ -1,4 +1,4 @@
-use crate::export::{append, file_name};
+use crate::export::{Replacing, append, file_name};
 
 /// A message with the headers an mbox separator is built from.
 fn message(from: &str, body: &str) -> Vec<u8> {
@@ -118,6 +118,90 @@ fn a_subject_of_nothing_still_names_a_file() {
 }
 
 /// A whole conversation, and one message of it, as the app exports them.
+#[tokio::test]
+async fn a_file_written_in_full_takes_the_place_of_the_old_one() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert_eq!(std::fs::read(&path).unwrap(), b"new mail");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no part file left");
+}
+
+#[tokio::test]
+async fn a_file_given_up_part_way_leaves_the_old_one() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"half").await.unwrap();
+    drop(file);
+    assert_eq!(std::fs::read(&path).unwrap(), b"old");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no part file left");
+}
+
+/// A link to the file is written through: the file it names takes the new
+/// bytes, and the link stays a link.
+#[tokio::test]
+async fn a_link_to_the_file_is_written_through() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("kept.mbox");
+    std::fs::write(&real, b"old").unwrap();
+    let link = dir.path().join("Lunch.mbox");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut file = Replacing::create(&link).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read(&real).unwrap(), b"new mail");
+}
+
+/// A device or a pipe, such as /dev/stdout, takes the bytes as they come.
+#[tokio::test]
+async fn a_special_file_is_written_straight_to() {
+    use tokio::io::AsyncWriteExt;
+    let mut file = Replacing::create(std::path::Path::new("/dev/null")).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    assert_eq!(file.finish().await.unwrap(), 8);
+    assert!(!std::path::Path::new("/dev/null.part").exists());
+}
+
+#[tokio::test]
+async fn the_new_file_keeps_the_old_one_s_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    std::fs::write(&path, b"old").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    file.finish().await.unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+}
+
+/// A part file already there, even a link someone planted, is no file to
+/// write into: it goes, and a new one is made.
+#[tokio::test]
+async fn a_part_file_already_there_is_never_written_through() {
+    use tokio::io::AsyncWriteExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lunch.mbox");
+    let victim = dir.path().join("victim");
+    std::fs::write(&victim, b"keep me").unwrap();
+    std::os::unix::fs::symlink(&victim, dir.path().join("Lunch.mbox.part")).unwrap();
+    let mut file = Replacing::create(&path).await.unwrap();
+    file.file().write_all(b"new mail").await.unwrap();
+    file.finish().await.unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep me");
+    assert_eq!(std::fs::read(&path).unwrap(), b"new mail");
+}
+
 mod conversations {
     use mailrs_gmail::cost;
 
@@ -172,6 +256,67 @@ mod conversations {
         h.fake.seed(meta("one", "t1", DAY, &["INBOX"]));
         h.sync.export_mbox("t1", None).await.unwrap();
         assert_eq!(h.fake.with(|s| s.usage.units), cost::THREAD + cost::GET);
+    }
+
+    #[tokio::test]
+    async fn the_raw_message_is_handed_out_not_copied() {
+        let h = harness().await;
+        h.fake.seed(meta("one", "t1", DAY, &["INBOX"]));
+        let raw = h.sync.raw_message("one").await.unwrap();
+        let cached = h.sync.cached_raw("one").expect("a small message stays cached");
+        assert!(std::sync::Arc::ptr_eq(&raw, &cached));
+    }
+
+    /// Collects each write the exporter makes, so a test can see how the
+    /// file was fed.
+    #[derive(Default)]
+    struct Writes(Vec<Vec<u8>>);
+
+    impl tokio::io::AsyncWrite for Writes {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            self.0.push(buf.to_vec());
+            std::task::Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_conversation_streams_to_a_writer_one_message_at_a_time() {
+        let h = harness().await;
+        h.fake.seed(meta("second", "t1", 2 * DAY, &["INBOX"]));
+        h.fake.seed(meta("first", "t1", DAY, &["INBOX"]));
+        // Fixed bytes, since the fake's own messages carry a random boundary.
+        h.fake.with(|s| {
+            for id in ["first", "second"] {
+                s.raws.insert(
+                    id.into(),
+                    format!("From: ann@example.com\r\nDate: Mon, 5 Jan 2026 09:07:03 +0000\r\n\r\nFrom {id}\r\n").into_bytes(),
+                );
+            }
+        });
+        let whole = String::from_utf8(h.sync.export_mbox("t1", None).await.unwrap()).unwrap();
+        let mut writes = Writes::default();
+        h.sync.export_mbox_to("t1", None, &mut writes).await.unwrap();
+        assert_eq!(writes.0.len(), 2, "one write per message");
+        assert!(writes.0.iter().all(|w| w.starts_with(b"From ")));
+        assert_eq!(String::from_utf8(writes.0.concat()).unwrap(), whole);
     }
 
     /// Without a `Date` header every entry would sit at the epoch, which

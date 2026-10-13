@@ -19,6 +19,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 
 use crate::blob::expand;
@@ -215,7 +216,7 @@ impl JmapClient {
     /// Starts the task that opens the stream and reads it, and marks the
     /// stream open from now on: a call stalled behind a stream that is
     /// still opening can close it too.
-    async fn open_events(&self, template: &str) -> Result<EventStream, JmapError> {
+    async fn open_events(&self, template: &str, refused: Option<&HeaderValue>) -> Result<(EventStream, HeaderValue), JmapError> {
         let ping = PING_SECONDS.to_string();
         let url = match template.contains("{types}") {
             true => {
@@ -228,14 +229,15 @@ impl JmapClient {
                 url
             }
         };
-        let request = self.authorized(reqwest::Method::GET, url).await?.header(reqwest::header::ACCEPT, "text/event-stream");
+        let (request, header) = self.authorized(reqwest::Method::GET, url, refused).await?;
+        let request = request.header(reqwest::header::ACCEPT, "text/event-stream");
         // A few chunks ahead at most: the reader waits for the watch.
         let (to, reads) = tokio::sync::mpsc::channel(4);
         let reader = tokio::spawn(read_stream(request, to)).abort_handle();
         self.set_probing(true);
         self.set_streaming(true);
         self.keep_reader(reader.clone());
-        Ok(EventStream { reads, reader, pending: Vec::new(), parser: Parser::new() })
+        Ok((EventStream { reads, reader, pending: Vec::new(), parser: Parser::new() }, header))
     }
 
     /// Waits until the server says the mail account changed. The stream
@@ -265,19 +267,29 @@ impl JmapClient {
             self.set_streaming(false);
             self.stopped_by(err)
         };
+        // The header a stream was refused with, so the next one opens on a
+        // refreshed token. One refresh a watch, as for any other call.
+        let mut refused: Option<HeaderValue> = None;
         loop {
             if self.push_off() || self.push_paused().is_some() {
                 return close(&mut held, JmapError::Network("push was turned off".into()));
             }
             if held.is_none() {
-                let stream = held.insert(self.open_events(&template).await?);
+                let (stream, header) = self.open_events(&template, refused.as_ref()).await?;
+                let stream = held.insert(stream);
                 // A stall between the check above and the reader's
                 // registration could not reach this reader.
                 if self.push_off() || self.push_paused().is_some() {
                     continue;
                 }
-                if let Err(err) = stream.opened(idle).await {
-                    return close(&mut held, err);
+                match stream.opened(idle).await {
+                    Err(JmapError::Unauthorized) if refused.is_none() && self.refreshes() => {
+                        *held = None;
+                        refused = Some(header);
+                        continue;
+                    }
+                    Err(err) => return close(&mut held, err),
+                    Ok(()) => {}
                 }
                 match self.answers_beside_a_stream().await {
                     Ok(true) => self.set_probing(false),

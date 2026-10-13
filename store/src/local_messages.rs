@@ -62,11 +62,3 @@ pub fn open<'c>(
         .map(|row| conn.blob_open(MAIN_DB, c"local_messages", c"raw", row, true))
         .transpose()?)
 }
-
-pub fn delete(conn: &Connection, account_id: AccountId, message_id: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM local_messages WHERE account_id = ?1 AND message_id = ?2",
-        params![account_id, message_id],
-    )?;
-    Ok(())
-}

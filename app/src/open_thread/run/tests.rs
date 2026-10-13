@@ -48,7 +48,7 @@ async fn opening_shows_the_stored_copy_then_the_bodies_gmail_sent() {
     assert!(at(Step::Ensure) < at(Step::Bodies));
     assert!(at(Step::Bodies) < at(Step::BodiesArrived));
     let text = window
-        .open(|open| open.bodies["m1"].clone().ok()?.text)
+        .open(|open| open.bodies["m1"].clone().ok()?.text.clone())
         .flatten();
     assert_eq!(text.as_deref(), Some("Hello"));
 }
@@ -962,6 +962,97 @@ async fn an_html_body_is_drawn_cleaned() {
     assert!(!drawn.contains("steal()"), "{drawn}");
 }
 
+/// Every cleaning goes through the port, which does it on another thread
+/// than the one that draws.
+fn cleaned_away(window: &FakeWindow) -> bool {
+    let here = std::thread::current().id();
+    let cleaners = window.0.borrow().cleaners.clone();
+    !cleaners.is_empty() && cleaners.iter().all(|worker| *worker != here)
+}
+
+#[tokio::test]
+async fn gmail_s_html_is_cleaned_through_the_port_before_it_is_drawn() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Bodies) < at(Step::Clean) && at(Step::Clean) < at(Step::BodiesArrived));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window), [["m1"]], "loading, then the body in one patch");
+    assert!(page(&window).contains("<p>Hi Ann</p>"));
+}
+
+/// The stored copy goes on screen whole, its HTML already cleaned.
+#[tokio::test]
+async fn the_stored_copy_is_cleaned_before_it_goes_on_screen() {
+    let window = FakeWindow::new();
+    window.with(|screen| {
+        screen.messages = vec![meta("m1", false)];
+        if let Some(stored) = screen.stored.get_mut(THREAD) {
+            stored.messages = vec![meta("m1", false)];
+            stored
+                .bodies
+                .insert("m1".to_string(), html_body("<p>Kites at ten</p>"));
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Clean) < at(Step::Show));
+    assert!(cleaned_away(&window));
+    let first = window.0.borrow().loads.first().cloned().unwrap_or_default();
+    assert!(first.contains("<p>Kites at ten</p>"), "{first}");
+}
+
+/// A body an engine opened says it is loading until the port has cleaned
+/// it, and nothing cleans it on the way to the page.
+#[tokio::test]
+async fn an_opened_html_body_is_cleaned_through_the_port() {
+    let window = FakeWindow::new();
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    let before_patches = patches(&window).len();
+    window
+        .run()
+        .engine_answered(target(None), "m1".to_string(), opened(html_body("<p>Under the mat</p>")))
+        .await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(window.took(Step::Cleaned));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window)[before_patches..], [["m1"], ["m1"]]);
+    assert!(page(&window).contains("<p>Under the mat</p>"));
+}
+
+/// A body the cleaner fails on ends in a fallback line, not in "Loading…"
+/// for good, and is not sent out to be cleaned again.
+#[tokio::test]
+async fn a_body_that_fails_to_clean_ends_in_the_fallback_not_in_loading() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.with(|screen| screen.clean_fails = true);
+    window.run().open(row(THREAD)).await;
+    let drawn = page(&window);
+    assert!(drawn.contains("This message could not be displayed"), "{drawn}");
+    assert!(!drawn.contains("Loading…"), "{drawn}");
+    let asked = window.steps().iter().filter(|step| **step == Step::Clean).count();
+    assert_eq!(asked, 1, "cleaned once");
+}
+
+/// A model's HTML is mail like any other: cleaned through the port.
+#[tokio::test]
+async fn a_translated_html_message_is_cleaned_through_the_port() {
+    let window = FakeWindow::with_body(html_body(
+        "<p>Olá Ana, a reunião de amanhã fica para as dez horas. Não te esqueças de \
+         trazer os documentos que eu te pedi, para podermos ver tudo com calma \
+         antes de falar com o banco. Um abraço e até amanhã.</p>",
+    ));
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    window.run().translate().await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(cleaned_away(&window));
+    assert!(page(&window).contains("Hello Ana"), "{}", page(&window));
+}
+
 #[tokio::test]
 async fn a_shown_translation_is_what_the_page_draws() {
     let window = FakeWindow::with_body(portuguese());
@@ -1273,11 +1364,11 @@ async fn a_failed_send_puts_the_question_back() {
         window.with(|s| s.receipt_cards.last().cloned()),
         Some(ReceiptCard::Asked { .. })
     ));
-    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Could not send the receipt: offline")));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "The receipt was not sent, and you can try again: offline")));
 }
 
-/// The answer is kept before the receipt goes, so a send that failed
-/// after that is not tried again, and the card does not offer it.
+/// A send that may have gone keeps its answer, so it is not tried again,
+/// and the card does not offer it.
 #[tokio::test]
 async fn a_failed_send_already_recorded_takes_the_card_down() {
     let window = FakeWindow::with_body(asking());
@@ -1291,7 +1382,7 @@ async fn a_failed_send_already_recorded_takes_the_card_down() {
         window.with(|s| s
             .toasts
             .iter()
-            .any(|t| t == "The receipt was not sent, and Penguin Mail will not try again: offline")),
+            .any(|t| t == "The receipt may have gone out, so Penguin Mail will not send it again: offline")),
         "{:?}",
         window.with(|s| s.toasts.clone())
     );
@@ -1367,6 +1458,24 @@ async fn a_redraw_while_the_answer_goes_out_keeps_the_buttons_waiting() {
     run.engine_answered(target(None), "m1".into(), opened(asking())).await;
     assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Working));
     assert!(!window.page().contains("mailrs:receipt/"), "{}", window.page());
+}
+
+/// A redraw that asked the store before the answer was kept hears "not
+/// answered" after the receipt went. The card stays down, so a second
+/// press cannot say a receipt was sent when none was.
+#[tokio::test]
+async fn a_stale_redraw_does_not_bring_the_card_back_after_sending() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    let (release, held) = futures::channel::oneshot::channel();
+    window.with(|s| s.receipt_hold = Some(held));
+    futures::join!(run.account_ready(ACCOUNT), async {
+        run.answer_receipt("m1".into(), true).await;
+        let _ = release.send(());
+    });
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(!window.page().contains("mailrs:receipt/send"), "{}", window.page());
 }
 
 /// An account still connecting cannot say whether the receipt was

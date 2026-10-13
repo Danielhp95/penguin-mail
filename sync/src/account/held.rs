@@ -6,13 +6,13 @@
 use mailrs_domain::EpochMillis;
 
 use super::AccountSync;
-use crate::{BackendError, Claimed, Held, MailBackend, Settled, SyncError, Unheld};
+use crate::{BackendError, Claimed, Held, Settled, SyncError, Unheld};
 
 impl AccountSync {
     /// Hands `raw` to the server to send at `at`. `None` when the server
     /// cannot hold it, which leaves the message to the outbox.
     pub async fn hold(&self, raw: &[u8], at: EpochMillis) -> Result<Option<Held>, SyncError> {
-        match self.services.mail.schedule(raw, at).await {
+        match self.mail.schedule(raw, at).await {
             Ok(held) => {
                 self.held_draft(&held).await;
                 Ok(Some(held))
@@ -25,7 +25,7 @@ impl AccountSync {
     /// The server's hold on the message whose `Message-ID` header is
     /// `message_id`, for a hold whose answer never came back.
     pub async fn find_hold(&self, message_id: &str) -> Result<Option<Held>, SyncError> {
-        let found = self.services.mail.find_hold(message_id).await?;
+        let found = self.mail.find_hold(message_id).await?;
         if let Some(held) = &found {
             self.held_draft(held).await;
         }
@@ -35,8 +35,7 @@ impl AccountSync {
     /// The hold whose copy is the stored message `copy`, for a hold another
     /// install made. See [`MailBackend::hold_of_copy`].
     pub async fn hold_of_copy(&self, copy: &str) -> Result<Option<Claimed>, SyncError> {
-        let name = self.remote(copy).await?;
-        let found = self.services.mail.hold_of_copy(&name).await?;
+        let found = self.mail.hold_of_copy(copy).await?;
         if let Some(Claimed::Held { held, .. }) = &found {
             self.held_draft(held).await;
         }
@@ -46,12 +45,12 @@ impl AccountSync {
     /// Calls the hold `handle` back. `message_id` and `at` are the copy and
     /// the hour the outbox row keeps for it.
     pub async fn release_hold(&self, handle: &str, message_id: &str, at: EpochMillis) -> Result<Unheld, SyncError> {
-        Ok(self.services.mail.unschedule(handle, message_id, at).await?)
+        Ok(self.mail.unschedule(handle, message_id, at).await?)
     }
 
     /// Where the hold `handle` stands, with the row's copy and hour.
     pub async fn settle_hold(&self, handle: &str, message_id: &str, at: EpochMillis) -> Result<Settled, SyncError> {
-        Ok(self.services.mail.settle(handle, message_id, at).await?)
+        Ok(self.mail.settle(handle, message_id, at).await?)
     }
 
     /// The copy in Drafts is the draft the message reopens from.

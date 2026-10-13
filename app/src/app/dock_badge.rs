@@ -11,7 +11,5 @@ pub(super) struct Badge {}
 
 #[cfg(not(target_os = "macos"))]
 impl Badge {
-    pub(super) fn watch(&self, _app: &std::rc::Rc<super::App>) {}
-
-    pub(super) fn recount(&self) {}
+    pub(super) fn show(&self, _unread: i64) {}
 }

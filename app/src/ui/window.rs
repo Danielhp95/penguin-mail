@@ -17,7 +17,7 @@ use mailrs_domain::{
 };
 use mailrs_sync::sign_in::{Browser, Wanted};
 use mailrs_sync::{
-    History, Listing, Loaded, MailAction, MovedFrom, Offers, Permitted, Reopened, Scope, TriageAction,
+    History, MailAction, MovedFrom, Offers, Permitted, Reopened, Scope, TriageAction,
     View, Withheld,
 };
 
@@ -26,7 +26,6 @@ use super::calendar::{CalendarView, Hooks};
 use super::confirm::{Tone, confirm};
 use super::contact_card;
 use super::conversation::{Action, ConversationView};
-use super::list_feed::{Coalesce, Refresh, Splice, Ticket};
 use super::permission;
 use super::sidebar::Sidebar;
 use super::thread_list::{Picked, ThreadList};
@@ -39,9 +38,11 @@ use crate::offered::Filing;
 use crate::open_thread::OpenThread;
 use crate::permission::{Occasion, Permission};
 use crate::settings::{Change, Effect, Settings};
+use crate::unread::Counted;
 use aftermath::Cause;
 use futures::FutureExt;
 use futures::future::{LocalBoxFuture, Shared};
+use listing::ListingRun;
 use on_screen::{OnScreen, Redraw};
 use press::{Press, PressEffects, Pressed, Question};
 use reach::Reach;
@@ -59,6 +60,7 @@ mod followup;
 mod hide_my_email;
 mod images;
 mod invitation;
+mod listing;
 mod message_menu;
 mod notice;
 mod on_screen;
@@ -89,17 +91,6 @@ pub use notice::Notice;
 /// Bodies fetched at once when a thread opens. Each one is a 5-unit Gmail
 /// call and an account may spend 250 units a second.
 pub(super) const BODY_FETCHES: usize = 10;
-
-/// What the thread list shows while a server search lists the mailbox.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Waiting {
-    /// A mailbox just put on screen: its rows are not there yet.
-    Spinner,
-    /// The mailbox on screen listed again after a change: its rows stay
-    /// until the new ones replace them, rather than blinking out after
-    /// every action.
-    KeepRows,
-}
 
 /// Whether a refresh should list the mailbox again. Listing a folder or a
 /// search means a Gmail search for every account on screen, so the window
@@ -165,11 +156,9 @@ pub struct MainWindow {
     sidebar: Rc<Sidebar>,
     list: Rc<ThreadList>,
     conversation: Rc<ConversationView>,
-    /// The mailbox on screen, the one a search goes back to, the inbox
-    /// category, and what the thread list loads next.
-    screen: RefCell<OnScreen>,
-    /// Requests for the sidebar counts, which share one count.
-    counts: RefCell<on_screen::Counts>,
+    /// The mailbox on screen and everything that lists it: the feed, the
+    /// search field's typing and the server search still out.
+    listing: Rc<ListingRun>,
     /// The accounts read in flight, which a redraw of the row colours
     /// waits for, since the colours come with it.
     accounts_read: RefCell<Option<Shared<LocalBoxFuture<'static, ()>>>>,
@@ -193,19 +182,6 @@ pub struct MainWindow {
     detached: RefCell<Vec<detached::Detached>>,
     /// The scratch copies of attachments this window opened.
     previews: previews::Previews,
-    /// The server mailboxes this window has already asked each account to
-    /// follow, so a reload does not fetch a folder's window again: the
-    /// slow poll covers it from here. Cleared for an account that stops.
-    followed: RefCell<HashMap<AccountId, HashSet<String>>>,
-    /// The search field between keys: when a pause runs a search, and how
-    /// far it reaches.
-    typing: RefCell<crate::search::typing::Typing>,
-    /// The search the field last ran, which says how far the listing of
-    /// that search reaches.
-    searched: RefCell<Option<crate::search::typing::Run>>,
-    /// The server search in flight and the ticket it lists under, stopped
-    /// once a key or a newer search makes its answer stale.
-    search_stop: RefCell<Option<(Ticket, mailrs_sync::Stop)>>,
     /// Undo Send: the sends waiting out their delay, and what calls each
     /// one back.
     undo_sends: RefCell<scheduled::UndoSends>,
@@ -864,8 +840,11 @@ impl MainWindow {
                 sidebar,
                 list,
                 conversation,
-                screen: RefCell::new(OnScreen::new(app.settings_with(|s| s.default_category))),
-                counts: RefCell::new(on_screen::Counts::default()),
+                listing: Rc::new(ListingRun::new(
+                    app.settings_with(|s| s.default_category),
+                    Rc::new(searching::ListPane(weak.clone())),
+                    Rc::new(searching::CoreLists(Rc::clone(&app.core))),
+                )),
                 accounts_read: RefCell::new(None),
                 authorizing: Cell::new(false),
                 assistant,
@@ -880,10 +859,6 @@ impl MainWindow {
                 image_senders: RefCell::new(Vec::new()),
                 detached: RefCell::new(Vec::new()),
                 previews: previews::Previews::default(),
-                followed: RefCell::new(HashMap::new()),
-                typing: RefCell::default(),
-                searched: RefCell::new(None),
-                search_stop: RefCell::new(None),
                 undo_sends: RefCell::new(scheduled::UndoSends::default()),
                 next_up: RefCell::new(None),
                 next_card: across::next_card(weak.clone()),
@@ -934,6 +909,18 @@ impl MainWindow {
                 room.rearrange();
             }
         });
+        // Rows ask for photos as they bind and redraw themselves; an open
+        // conversation is drawn again once its senders' photos arrive.
+        let photos = app.photos();
+        window.list.set_photos(Rc::clone(&photos));
+        let weak = Rc::downgrade(&window);
+        photos.on_uri(move |_| match weak.upgrade() {
+            Some(win) => {
+                win.reopen_for_photos();
+                true
+            }
+            None => false,
+        });
         let weak = Rc::downgrade(&window);
         window.list.connect_open(move |row| {
             if let Some(win) = weak.upgrade() {
@@ -943,7 +930,7 @@ impl MainWindow {
         let weak = Rc::downgrade(&window);
         window.list.connect_more(move || {
             if let Some(win) = weak.upgrade() {
-                win.load_more();
+                win.listing.scrolled_to_end();
             }
         });
         window.install_actions();
@@ -984,13 +971,6 @@ impl MainWindow {
         window.install_keys();
         window.install_spaces();
         let weak = Rc::downgrade(&window);
-        window.list.search_button.connect_toggled(move |button| {
-            let Some(win) = weak.upgrade() else { return };
-            if !button.is_active() {
-                win.change_screen(OnScreen::search_closed);
-            }
-        });
-        let weak = Rc::downgrade(&window);
         window.list.banner.connect_button_clicked(move |_| {
             let Some(win) = weak.upgrade() else { return };
             let account = win
@@ -1008,14 +988,8 @@ impl MainWindow {
         window
             .conversation
             .set_zoom(app.settings_with(|s| s.text_size.zoom()));
-        let mut counts_changed = window.core.lists().counts_changed();
-        let weak = Rc::downgrade(&window);
-        glib::spawn_future_local(async move {
-            while counts_changed.changed().await.is_ok() {
-                let Some(window) = weak.upgrade() else { break };
-                window.refresh_counts();
-            }
-        });
+        app.unread()
+            .show_in(Box::new(ShownCounts(Rc::downgrade(&window))));
         window.refresh_accounts(Reload::Yes);
         window.reload_image_senders();
         window.check_keyring_plug();
@@ -1101,10 +1075,9 @@ impl MainWindow {
                 thread_ids,
             } => {
                 let changed = thread_ids.iter().map(|id| (*account_id, id.clone()));
-                let coalesce = self.screen.borrow_mut().feed().changed(changed.collect());
-                self.coalesce(coalesce);
+                self.listing.changed(changed.collect());
             }
-            ChangeEvent::NewMail { .. } => self.queue_refresh(),
+            ChangeEvent::NewMail { .. } => self.listing.everything(),
             ChangeEvent::WriteFailed { message, .. } => self.toast(message),
             // Gmail can hold a bulk change up for the best part of a
             // minute. Say so, or the window looks stuck and the reader
@@ -1122,30 +1095,14 @@ impl MainWindow {
         }
     }
 
-    /// Refreshes the counts and loads the whole list again.
-    fn queue_refresh(self: &Rc<Self>) {
-        let coalesce = self.screen.borrow_mut().feed().everything();
-        self.coalesce(coalesce);
-    }
-
-    /// Waits 150 ms so that a burst of change events costs one refresh.
-    /// The feed decides whether that refresh lists the mailbox again or
-    /// re-reads the named threads on their own, which keeps a change
-    /// event off the 10,000-row query.
-    fn coalesce(self: &Rc<Self>, coalesce: Coalesce) {
-        if coalesce == Coalesce::Joined {
-            return;
-        }
-        let weak = Rc::downgrade(self);
-        glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
-            let Some(win) = weak.upgrade() else { return };
-            let refresh = win.screen.borrow_mut().feed().fire();
-            win.refresh_counts();
-            // A conversation the events did not name has nothing new.
-            win.refresh_open_threads(|account_id, thread_id| refresh.names(account_id, thread_id));
-            match refresh {
-                Refresh::Reload => win.reload_list(),
-                Refresh::Splice(ticket, changed) => win.splice_changed(ticket, changed),
+    /// The network came back: an IMAP account looked at offline gets its
+    /// look for a JMAP session now. The sidebar is built again only when
+    /// one turned up, since a rebuild closes any menu open in it.
+    pub(crate) fn network_back(self: &Rc<Self>) {
+        let (looker, accounts) = (Rc::clone(self), self.accounts());
+        glib::spawn_future_local(async move {
+            if looker.core.look_for_jmap(accounts).await {
+                looker.refresh_accounts(Reload::No);
             }
         });
     }
@@ -1182,12 +1139,14 @@ impl MainWindow {
         };
         self.stack.set_visible_child_name(page);
         let live: HashSet<AccountId> = data.iter().map(|(a, _)| a.id).collect();
-        self.followed.borrow_mut().retain(|id, _| live.contains(id));
+        self.listing.accounts_live(&live);
         // A label deleted elsewhere, by the assistant or in the browser,
         // leaves the window on a mailbox that is no longer there, so the
         // inbox takes over as it does for a signed-out account.
         let still_there = still_there(&self.shown(), &data);
-        let vanished = self.screen.borrow_mut().accounts_read(still_there);
+        let vanished = self
+            .listing
+            .transition(|screen| screen.accounts_read(still_there));
         let settings = self.settings();
         let not_downloading = self
             .core
@@ -1255,11 +1214,11 @@ impl MainWindow {
         }
         match vanished {
             // Showing the inbox lists it, so it is not listed again below.
-            Some(redraw) => self.redraw(redraw),
+            Some(redraw) => self.listing.carry(redraw),
             None => {
                 self.follow_categories();
                 if reload == Reload::Yes {
-                    self.reload_list();
+                    self.listing.reload();
                 }
             }
         }
@@ -1370,57 +1329,33 @@ impl MainWindow {
                 .button_label(gettext("Grant Access"))
                 .revealed(true)
                 .build();
-            let (this, account_id) = (Rc::clone(self), account.id);
-            banner.connect_button_clicked(move |_| this.grant_access(account_id));
+            // A weak reference: the banner lives in the window, and a
+            // strong one would keep a closed window and its WebView alive.
+            let (weak, account_id) = (Rc::downgrade(self), account.id);
+            banner.connect_button_clicked(move |_| {
+                if let Some(win) = weak.upgrade() {
+                    win.grant_access(account_id);
+                }
+            });
             self.grant_banners.append(&banner);
             widgets.insert(account.id, banner);
         }
     }
 
-    /// What the sidebar and the category switcher show. Grouped
-    /// queries replace the one-per-mailbox counting this used to do, and
-    /// every request made before they start shares them.
+    /// Asks the app's unread counts again; they come back through
+    /// `show_counts` with the tray's and the Dock's.
     fn refresh_counts(self: &Rc<Self>) {
-        if self.counts.borrow_mut().ask() == on_screen::Count::Joined {
-            return;
+        if let Some(app) = self.app.upgrade() {
+            app.unread().changed();
         }
-        let this = Rc::clone(self);
-        glib::idle_add_local_once(move || this.count_now());
     }
 
-    fn count_now(self: &Rc<Self>) {
-        self.counts.borrow_mut().start();
-        let mailboxes = self.sidebar.mailboxes();
-        let shown = self.shown();
-        let view = self.view();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let lists = this.core.lists();
-            let counted = this
-                .core
-                .call(async move { lists.counts(&mailboxes, &shown, &view).await })
-                .await;
-            if let Ok(counts) = counted {
-                this.sidebar.set_counts(&counts.mailboxes);
-                let unread = counts
-                    .mailboxes
-                    .get(&Mailbox::Unified(crate::ui::Standard::Inbox))
-                    .copied()
-                    .unwrap_or(0);
-                this.sidebar.set_unread(unread);
-                let waiting = counts
-                    .mailboxes
-                    .get(&Mailbox::FollowUp)
-                    .copied()
-                    .unwrap_or(0);
-                this.set_follow_up_count(waiting as usize);
-                this.set_category_counts(&counts.categories);
-            }
-            let again = this.counts.borrow_mut().done();
-            if again.is_some() {
-                glib::idle_add_local_once(move || this.count_now());
-            }
-        });
+    /// What the sidebar, the space badge and the category switcher show.
+    fn show_counts(&self, counted: &Counted) {
+        self.sidebar.set_counts(&counted.counts.mailboxes);
+        self.sidebar.set_unread(counted.all_inboxes());
+        self.set_follow_up_count(counted.of(&Mailbox::FollowUp) as usize);
+        self.set_category_counts(&counted.counts.categories);
     }
 
     // ---- Mailboxes and the thread list ---------------------------------
@@ -1430,11 +1365,15 @@ impl MainWindow {
         Scope::over(self.accounts())
     }
 
-    /// The settings that change what a mailbox lists.
+    /// The settings that change what the mailbox on screen lists.
     fn view(&self) -> View {
-        let category = self
-            .shows_categories(&self.shown())
-            .then(|| self.screen.borrow().category());
+        self.view_of(&self.shown(), self.listing.category())
+    }
+
+    /// The settings that change what `mailbox` lists, with `category`
+    /// chosen in the inbox.
+    fn view_of(&self, mailbox: &Mailbox, category: Category) -> View {
+        let category = self.shows_categories(mailbox).then_some(category);
         self.settings_with(|settings| View {
             threading: settings.threading,
             category,
@@ -1446,7 +1385,7 @@ impl MainWindow {
 
     /// The mailbox on screen.
     fn shown(&self) -> Mailbox {
-        self.screen.borrow().mailbox().clone()
+        self.listing.mailbox()
     }
 
     /// Puts one account's inbox on screen and selects its sidebar row.
@@ -1462,21 +1401,13 @@ impl MainWindow {
     /// Puts `mailbox` on screen.
     fn show_mailbox(self: &Rc<Self>, mailbox: Mailbox) {
         let search_open = self.list.search_open();
-        self.change_screen(|screen| Some(screen.show(mailbox, search_open)));
+        self.listing
+            .change(|screen| Some(screen.show(mailbox, search_open)));
     }
 
-    /// Makes one change to the mailbox on screen and redraws what it left
-    /// stale. The borrow ends before the redraw, which can close the
-    /// search bar and so come back here.
-    fn change_screen(self: &Rc<Self>, change: impl FnOnce(&mut OnScreen) -> Option<Redraw>) {
-        let redraw = change(&mut self.screen.borrow_mut());
-        if let Some(redraw) = redraw {
-            self.redraw(redraw);
-        }
-    }
-
-    /// Carries out what a change to the mailbox on screen left stale.
-    fn redraw(self: &Rc<Self>, redraw: Redraw) {
+    /// Carries out what a change to the mailbox on screen left stale,
+    /// apart from listing it, which the listing run does.
+    fn redraw(self: &Rc<Self>, redraw: &Redraw) {
         match &redraw.sidebar {
             Some(on_screen::Sidebar::Select(mailbox)) => self.sidebar.select(mailbox),
             Some(on_screen::Sidebar::Clear) => self.sidebar.clear_selection(),
@@ -1508,174 +1439,14 @@ impl MainWindow {
             self.place_storage_banners();
         }
         if redraw.category {
-            let category = self.screen.borrow().category();
+            let category = self.listing.category();
             self.categories.show_names(category);
             self.focus.show_names(category);
         }
-        if let Some(ticket) = redraw.list {
-            self.list_first_page(ticket, Waiting::Spinner);
-        }
-    }
-
-    /// Lists a folder, a smart mailbox or a search, which the server
-    /// answers, again.
-    fn reload_folder(self: &Rc<Self>) {
-        if self.shown().is_remote() {
-            self.reload_list();
-        }
-    }
-
-    /// Loads the first page of the mailbox on screen.
-    fn reload_list(self: &Rc<Self>) {
-        let ticket = self.screen.borrow_mut().feed().reload();
-        self.list_first_page(ticket, Waiting::KeepRows);
-    }
-
-    /// Lists the first page under `ticket`, which the feed dropped all
-    /// earlier requests for.
-    fn list_first_page(self: &Rc<Self>, ticket: Ticket, waiting: Waiting) {
-        let mailbox = self.shown().clone();
-        if let Some(account_id) = mailbox.account()
-            && let Some((account_id, server_mailbox)) = follows(&mailbox, self.offers(account_id))
-            && newly_followed(&mut self.followed.borrow_mut(), account_id, server_mailbox.clone())
-        {
-            self.follow_mailbox(account_id, server_mailbox);
-        }
-        if let Mailbox::Search { query, account_id } = &mailbox {
-            let spinner = waiting == Waiting::Spinner;
-            return self.search_first_page(ticket, query.clone(), *account_id, spinner);
-        }
-        if mailbox.is_remote() && waiting == Waiting::Spinner {
-            self.list.show_loading();
-        }
-        let (scope, view) = (self.scope(), self.view());
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let lists = this.core.lists();
-            let loaded = this
-                .core
-                .call(async move { lists.list(&mailbox, &scope, &view, Loaded::nothing()).await })
-                .await;
-            let landed = this.screen.borrow_mut().feed().first_page(ticket, &loaded);
-            let Some(landed) = landed else {
-                return;
-            };
-            match loaded {
-                Ok(listing) => this.show_listing(listing),
-                Err(err) => this.toast(&load_failed(&err)),
-            }
-            if let Some((account_id, thread_id, then)) = landed.reveal {
-                this.select_revealed(account_id, thread_id, then);
-            }
-        });
-    }
-
-    /// Keeps `server_mailbox` of `account_id` in step from now on, as
-    /// [`follows`] decided when it landed on screen. This never touches
-    /// the window: a failure only logs, and the listing on screen, which
-    /// came from the store already, stays as it is.
-    fn follow_mailbox(&self, account_id: AccountId, server_mailbox: String) {
-        let Some(account) = self.core.account(account_id) else {
-            return;
-        };
-        self.core.spawn(async move {
-            if let Err(err) = account.follow_mailbox(&server_mailbox).await {
-                tracing::warn!(
-                    account = account_id,
-                    mailbox = %server_mailbox,
-                    error = %err,
-                    "could not follow the folder opened on screen"
-                );
-            }
-        });
-    }
-
-    /// Puts a freshly loaded page on screen.
-    fn show_listing(self: &Rc<Self>, listing: Listing) {
-        for notice in &listing.notices {
-            self.toast(notice);
-        }
-        let rows = listing.rows.into_iter().map(Rc::new).collect();
-        self.list.set_empty_description(&listing.empty.description);
-        self.list
-            .set_rows(rows, &listing.empty.title, listing.empty.icon);
-        self.follow_selection();
-        self.list.set_title(&listing.title, &listing.subtitle);
-    }
-
-    /// Loads the next page once the user scrolls near the end.
-    fn load_more(self: &Rc<Self>) {
-        let ticket = self.screen.borrow_mut().feed().scrolled_to_end();
-        let Some(ticket) = ticket else {
-            return;
-        };
-        let mailbox = self.shown().clone();
-        // The page starts after the last row on screen rather than after
-        // as many rows as the list holds, so mail that arrived or left since
-        // the list loaded neither repeats a row nor skips one.
-        let (scope, view, held) = (self.scope(), self.view(), self.list.loaded());
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let lists = this.core.lists();
-            let loaded = this
-                .core
-                .call(async move { lists.list(&mailbox, &scope, &view, held).await })
-                .await;
-            let current = this.screen.borrow_mut().feed().next_page(ticket, &loaded);
-            if !current {
-                return;
-            }
-            match loaded {
-                Ok(listing) => {
-                    this.list
-                        .append(listing.rows.into_iter().map(Rc::new).collect());
-                }
-                Err(err) => this.toast(&load_failed(&err)),
-            }
-        });
-    }
-
-    /// Re-reads the threads a change event named and puts them back in the
-    /// list in place, instead of listing the whole mailbox again.
-    fn splice_changed(self: &Rc<Self>, ticket: Ticket, changed: Vec<(AccountId, String)>) {
-        let mailbox = self.shown().clone();
-        let view = self.view();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let (lists, named) = (this.core.lists(), changed.clone());
-            let fresh = this
-                .core
-                .call(async move { lists.changed(&mailbox, &named, &view).await })
-                .await
-                .unwrap_or(None);
-            let prunes = this.shown().folder().is_some();
-            let splice = this.screen.borrow_mut().feed().spliced(ticket, fresh, prunes);
-            match splice {
-                Splice::Stale => {}
-                Splice::Put(fresh) => {
-                    let title = this.shown().title();
-                    this.list.replace_threads(&changed, fresh.rows);
-                    this.follow_selection();
-                    this.list.set_title(&title, &fresh.subtitle);
-                }
-                // A folder lists through the server. The store says which
-                // changed rows left it, so they go at once; mail moved into
-                // it shows once the action that moved it is done (see
-                // `Aftermath`), when the server has it.
-                Splice::Prune => {
-                    let targets = changed
-                        .iter()
-                        .map(|(account_id, thread_id)| Target::thread(*account_id, thread_id))
-                        .collect::<Vec<_>>();
-                    this.prune_folder(&targets);
-                }
-                Splice::Reload => this.reload_list(),
-            }
-        });
     }
 
     fn search(self: &Rc<Self>, query: String) {
-        self.change_screen(|screen| Some(screen.search(query)));
+        self.listing.search(query);
     }
 
     // ---- Opening threads -------------------------------------------------
@@ -1715,7 +1486,7 @@ impl MainWindow {
         match picked {
             // A queued message has no Gmail thread; the thread run shows
             // it from what the outbox kept.
-            Picked::One(row) => self.open_thread(row),
+            Picked::One(row) => self.open_thread(Rc::unwrap_or_clone(row)),
             Picked::Many(rows) => {
                 self.conversation.show_many(
                     rows.len(),
@@ -1768,6 +1539,7 @@ impl MainWindow {
             Action::SaveAllAttachments { message_id } => {
                 self.save_all_attachments_from(view, message_id)
             }
+            Action::ViewSource { message_id } => self.view_source_of(view, Some(message_id)),
             Action::Mailto(address) => {
                 if let Some(app) = self.app.upgrade() {
                     app.new_message(self.account_in_view(), &address);
@@ -2105,40 +1877,11 @@ impl MainWindow {
         });
     }
 
-    /// Hands the list the contact photos that are now on disk, so rows
-    /// show faces instead of initials.
+    /// Draws the rows and open conversations again once the contact photos
+    /// on disk are known, so they show faces instead of initials.
     fn contacts_loaded(self: &Rc<Self>) {
-        let Some(app) = self.app.upgrade() else {
-            return;
-        };
-        self.list.set_photos(&app.photos());
+        self.list.photos_changed();
         self.reopen_for_photos();
-    }
-
-    /// Drops rows that no longer belong in the Gmail folder on screen. The
-    /// local store cannot list these folders, so rows go one by one.
-    fn prune_folder(self: &Rc<Self>, targets: &[Target]) {
-        let Some(folder) = self.shown().folder() else {
-            return;
-        };
-        let targets = targets.to_vec();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let actions = this.core.actions();
-            let gone = this
-                .core
-                .call(async move { actions.gone_from(folder, &targets).await })
-                .await
-                .unwrap_or_default();
-            if gone.is_empty() {
-                return;
-            }
-            this.list
-                .retain(|row| !gone.contains(&Target::from_row(row)));
-            if this.conversation.read(|o| o.among(&gone)) == Some(true) {
-                this.conversation.clear();
-            }
-        });
     }
 
     /// Runs `action` on the targets, as mail picked from no one place. See
@@ -2701,7 +2444,7 @@ impl MainWindow {
                 None => {
                     let s = sync.clone();
                     match this.core.call(async move { s.raw_message(&source).await }).await {
-                        Ok(raw) => raw,
+                        Ok(raw) => raw.as_ref().clone(),
                         Err(err) => {
                             return this.toast(&with_reason(
                                 &gettext("Could not open the draft: {reason}"),
@@ -3077,11 +2820,18 @@ impl MainWindow {
             // The server sends what it holds whether or not the account is
             // here, so those messages are called back first.
             let (outbox, account_id) = (this.core.outbox(), account.id);
-            let held = this
-                .core
-                .call(async move { outbox.held_count(account_id).await })
-                .await
-                .unwrap_or_default();
+            // Not knowing is not zero: removing the account then would
+            // leave the server to send what it holds.
+            let held = match this.core.call(async move { outbox.held_count(account_id).await }).await {
+                Ok(held) => held,
+                Err(err) => {
+                    return this.toast(&with_reason(
+                        &gettext("Could not check for messages the server holds to send later, so {account} stays: {reason}"),
+                        &err,
+                        &[("account", &account.email)],
+                    ));
+                }
+            };
             let mut body = crate::offered::remove_account_body(&account, remove);
             if let Some(line) = crate::offered::held_back_line(held) {
                 body = format!("{body}\n\n{line}");
@@ -3448,16 +3198,7 @@ impl MainWindow {
     pub fn reveal(self: &Rc<Self>, account_id: AccountId, thread_id: String, then: Reveal) {
         // Selecting a row before the list's rows land finds nothing, so
         // the feed holds the thread until the first page is on screen.
-        let (redraw, now) = self
-            .screen
-            .borrow_mut()
-            .reveal((account_id, thread_id, then));
-        if let Some(redraw) = redraw {
-            self.redraw(redraw);
-        }
-        if let Some((account_id, thread_id, then)) = now {
-            self.select_revealed(account_id, thread_id, then);
-        }
+        self.listing.reveal((account_id, thread_id, then));
     }
 
     /// Selects a thread [`MainWindow::reveal`] asked for, now that the
@@ -3731,7 +3472,7 @@ impl MainWindow {
     fn apply_effect(self: &Rc<Self>, effect: Effect) {
         let settings = self.settings();
         match effect {
-            Effect::ListShape => self.change_screen(|screen| Some(screen.list_shape())),
+            Effect::ListShape => self.listing.change(|screen| Some(screen.list_shape())),
             Effect::Accounts => self.refresh_accounts(Reload::Yes),
             Effect::RowColors => {
                 // Rows carry account colours, which come with the accounts
@@ -3745,7 +3486,7 @@ impl MainWindow {
                 });
             }
             Effect::SmartMailboxes => {
-                self.change_screen(|screen| screen.smart_saved(&settings.smart_mailboxes));
+                self.listing.change(|screen| screen.smart_saved(&settings.smart_mailboxes));
             }
             Effect::Vips => {
                 for view in self.views() {
@@ -3754,12 +3495,12 @@ impl MainWindow {
             }
             Effect::FollowUps => {
                 if !settings.suggest_follow_ups {
-                    self.change_screen(OnScreen::follow_ups_off);
+                    self.listing.change(OnScreen::follow_ups_off);
                 }
                 self.refresh_counts();
             }
             Effect::Categories => {
-                self.change_screen(|screen| Some(screen.categories_changed()));
+                self.listing.change(|screen| Some(screen.categories_changed()));
             }
             Effect::Assistant => {
                 self.assistant.refresh();
@@ -3772,9 +3513,7 @@ impl MainWindow {
                 }
             }
             Effect::Contacts => {
-                if let Some(app) = self.app.upgrade() {
-                    self.list.set_photos(&app.photos());
-                }
+                self.list.photos_changed();
                 self.reopen_for_photos();
             }
             // The app follows the light or dark choice; no window to redraw.
@@ -3816,8 +3555,6 @@ impl MainWindow {
         shortcuts::dialog(Filing::of(offers)).present(Some(&self.window));
     }
 
-    /// The messages a POP3 account's server would not hand over after
-    /// three tries, each with the server's words.
     /// Opens Switch to JMAP for `account`, when a look found its session.
     fn switch_to_jmap(self: &Rc<Self>, account: Account) {
         let Some(found) = self.core.offer_of(&account) else {
@@ -3856,6 +3593,8 @@ impl MainWindow {
         self.refresh_accounts(Reload::Yes);
     }
 
+    /// The messages a POP3 account's server would not hand over after
+    /// three tries, each with the server's words.
     fn show_not_downloading(self: &Rc<Self>, account: Account) {
         let win = Rc::clone(self);
         glib::spawn_future_local(async move {
@@ -4012,6 +3751,27 @@ impl reveal::Waiting for Replying {
     }
 }
 
+/// The main window as the app's unread counts see it: the mailboxes its
+/// sidebar shows, and where each count goes.
+struct ShownCounts(Weak<MainWindow>);
+
+impl crate::unread::Shows for ShownCounts {
+    fn wanted(&self) -> Option<crate::unread::Wanted> {
+        let window = self.0.upgrade()?;
+        Some(crate::unread::Wanted {
+            mailboxes: window.sidebar.mailboxes(),
+            shown: window.shown(),
+            view: window.view(),
+        })
+    }
+
+    fn show(&self, counted: &Counted) {
+        if let Some(window) = self.0.upgrade() {
+            window.show_counts(counted);
+        }
+    }
+}
+
 pub(super) fn read_cached_body(
     c: &rusqlite::Connection,
     account_id: AccountId,
@@ -4074,18 +3834,6 @@ fn follows(mailbox: &Mailbox, offers: Offers) -> Option<(AccountId, String)> {
         } if !offers.labels => Some((*account_id, label_id.clone())),
         _ => None,
     }
-}
-
-/// Whether asking to follow `server_mailbox` of `account_id` needs to
-/// reach the account at all: `false` once `followed` already holds the
-/// pair, so a reload of the folder on screen does not fetch its window
-/// again. The slow poll covers it from the first time.
-fn newly_followed(
-    followed: &mut HashMap<AccountId, HashSet<String>>,
-    account_id: AccountId,
-    server_mailbox: String,
-) -> bool {
-    followed.entry(account_id).or_default().insert(server_mailbox)
 }
 
 /// Whether `mailbox` is still there once the accounts read as `data`. A
@@ -4188,21 +3936,6 @@ mod tests {
         for mailbox in [&standard, &unified, &smart] {
             assert_eq!(follows(mailbox, offers), None, "{mailbox:?}");
         }
-    }
-
-    #[test]
-    fn a_mailbox_followed_once_is_not_followed_again() {
-        let mut followed = HashMap::new();
-        assert!(newly_followed(&mut followed, 1, "Work".to_string()));
-        assert!(!newly_followed(&mut followed, 1, "Work".to_string()));
-        assert!(
-            newly_followed(&mut followed, 1, "Travel".to_string()),
-            "a different mailbox of the same account still follows"
-        );
-        assert!(
-            newly_followed(&mut followed, 2, "Work".to_string()),
-            "the same mailbox name on a different account still follows"
-        );
     }
 
     #[test]

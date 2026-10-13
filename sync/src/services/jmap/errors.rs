@@ -12,6 +12,8 @@ pub(crate) fn backend(err: JmapError) -> BackendError {
     match err {
         JmapError::Unauthorized | JmapError::BadCredential | JmapError::UnknownClient => BackendError::NeedsReauth,
         JmapError::Network(detail) => BackendError::Offline(detail),
+        // Not a refusal: a retry looks in Sent before it sends again.
+        JmapError::SubmitUnknown => BackendError::Offline(JmapError::SubmitUnknown.to_string()),
         JmapError::RateLimited { retry_after } => BackendError::RateLimited(retry_after),
         JmapError::NotFound => BackendError::NotFound,
         JmapError::CannotCalculateChanges => BackendError::StateLost,

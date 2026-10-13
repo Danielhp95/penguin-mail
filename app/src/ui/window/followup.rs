@@ -135,7 +135,7 @@ impl MainWindow {
     pub(super) fn follow_ups_changed(self: &Rc<Self>) {
         self.refresh_counts();
         if self.shown() == Mailbox::FollowUp {
-            self.reload_list();
+            self.listing.reload();
         }
     }
 }

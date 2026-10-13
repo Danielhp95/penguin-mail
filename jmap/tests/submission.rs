@@ -232,24 +232,38 @@ async fn a_dropped_connection_after_the_request_is_an_unknown_outcome() {
 }
 
 #[tokio::test]
-async fn an_import_without_an_id_is_a_decode_error() {
+async fn an_import_without_an_id_is_unknown() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
         ["Email/import", {"accountId": "A1", "created": {"m": {"threadId": "T9"}}}, "c0"],
         ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"id": "S1"}}}, "c1"]
     ]})).await;
-    assert!(matches!(client(&server).hold(&hold()).await, Err(JmapError::Decode(_))));
+    assert_eq!(client(&server).hold(&hold()).await.unwrap_err(), JmapError::HoldUnknown);
 }
 
+/// The server made the submission; only its id is missing, so the copy
+/// waits on the server and must stay.
 #[tokio::test]
-async fn a_submission_without_an_id_destroys_the_copy_and_is_a_decode_error() {
+async fn a_submission_without_an_id_keeps_the_copy_and_is_unknown() {
     let server = MockServer::start().await;
     answering(&server, json!({"sessionState": "s1", "methodResponses": [
         ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "threadId": "T9"}}}, "c0"],
         ["EmailSubmission/set", {"accountId": "A1", "created": {"s": {"undoStatus": "pending"}}}, "c1"]
     ]})).await;
-    assert!(matches!(client(&server).hold(&hold()).await, Err(JmapError::Decode(_))));
-    assert_eq!(posts(&server).await[1]["methodCalls"][0][1]["destroy"], json!(["M9"]));
+    assert_eq!(client(&server).hold(&hold()).await.unwrap_err(), JmapError::HoldUnknown);
+    assert_eq!(posts(&server).await.len(), 1, "no destroy");
+}
+
+/// `serverFail` may follow a submission the server queued.
+#[tokio::test]
+async fn a_server_failure_on_the_hold_keeps_the_copy_and_is_unknown() {
+    let server = MockServer::start().await;
+    answering(&server, json!({"sessionState": "s1", "methodResponses": [
+        ["Email/import", {"accountId": "A1", "created": {"m": {"id": "M9", "threadId": "T9"}}}, "c0"],
+        ["error", {"type": "serverFail"}, "c1"]
+    ]})).await;
+    assert_eq!(client(&server).hold(&hold()).await.unwrap_err(), JmapError::HoldUnknown);
+    assert_eq!(posts(&server).await.len(), 1, "no destroy");
 }
 
 #[tokio::test]

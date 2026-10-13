@@ -9,6 +9,7 @@ pub mod calendar_list;
 pub mod contact_offers;
 pub mod contacts;
 mod db;
+mod deletion;
 pub mod drafts;
 mod error;
 pub mod event_reminders;

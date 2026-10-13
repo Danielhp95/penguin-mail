@@ -586,7 +586,7 @@ async fn json_of<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, 
 
 /// The body, read a chunk at a time and refused once it passes `limit`,
 /// so a large answer never sits whole in memory before it is refused.
-async fn read_capped(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, GraphError> {
+pub(crate) async fn read_capped(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, GraphError> {
     if response.content_length().is_some_and(|n| n > limit as u64) {
         return Err(GraphError::TooLarge { limit });
     }

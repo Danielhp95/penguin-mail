@@ -15,7 +15,11 @@ use crate::services::{Backfill, Found, RemoteRef, Want};
 const PAGE: usize = 200;
 
 /// The most ids a window or inbox listing returns.
-const MOST_IDS: usize = 20_000;
+#[cfg(not(test))]
+pub(crate) const MOST_IDS: usize = 20_000;
+/// Small in tests, so a listing past the cap costs a few hundred messages.
+#[cfg(test)]
+pub(crate) const MOST_IDS: usize = 300;
 
 /// Ids one call of an id listing asks for.
 const IDS_PER_CALL: usize = 1000;
@@ -236,16 +240,20 @@ impl<J: JmapApi> Jmap<J> {
         Ok(Backfill { refs, next: None })
     }
 
-    /// Every id `filter` matches, up to `most`, `IDS_PER_CALL` a call.
+    /// Every id `filter` matches, `IDS_PER_CALL` a call, refused as
+    /// `Unsupported` past `most`. A cut list would read as mail gone from
+    /// the server to a caller that sweeps what it lacks.
     async fn every_id(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, BackendError> {
-        self.every_id_of(filter, most).await.map_err(backend)
+        self.every_id_of(filter, most).await.map_err(backend)?.ok_or(BackendError::Unsupported)
     }
 
-    async fn every_id_of(&self, filter: Option<Value>, most: usize) -> Result<Vec<RemoteRef>, JmapError> {
+    /// Every id `filter` matches, or `None` when there are more than `most`.
+    async fn every_id_of(&self, filter: Option<Value>, most: usize) -> Result<Option<Vec<RemoteRef>>, JmapError> {
         let mut out: Vec<RemoteRef> = Vec::new();
         let mut mark = Mark::default();
-        while out.len() < most {
-            let limit = IDS_PER_CALL.min(most - out.len());
+        // One past `most` tells a full list from a cut one.
+        while out.len() <= most {
+            let limit = IDS_PER_CALL.min(most + 1 - out.len());
             let (hits, next) = self.page_after(&filter, &mark, limit).await?;
             if hits.is_empty() {
                 break;
@@ -255,9 +263,9 @@ impl<J: JmapApi> Jmap<J> {
             // the last `OVERLAP` hits named.
             let recent = out.len().saturating_sub(OVERLAP as usize);
             let fresh: Vec<Hit> = hits.into_iter().filter(|h| !out[recent..].iter().any(|r| r.id == h.id)).collect();
-            out.extend(fresh.into_iter().take(most - out.len()).map(remote_ref));
+            out.extend(fresh.into_iter().take(most + 1 - out.len()).map(remote_ref));
         }
-        Ok(out)
+        Ok((out.len() <= most).then_some(out))
     }
 
     /// The ids the window holds, in `mailbox` when given. The Inbox is held
@@ -273,9 +281,6 @@ impl<J: JmapApi> Jmap<J> {
                 let mut out = Vec::new();
                 for filter in days.map_or_else(|| vec![None], |days| window_filters(days, inbox.as_deref())) {
                     let left = MOST_IDS - out.len();
-                    if left == 0 {
-                        break;
-                    }
                     out.extend(self.every_id(filter, left).await?);
                 }
                 return Ok(out);
@@ -294,7 +299,7 @@ impl<J: JmapApi> Jmap<J> {
             match self.every_id_of(Some(both), left).await {
                 Err(JmapError::Method { kind, .. }) if kind == "unsupportedFilter" => self.known().one_mailbox_a_filter = true,
                 listed => {
-                    out.extend(listed.map_err(backend)?);
+                    out.extend(listed.map_err(backend)?.ok_or(BackendError::Unsupported)?);
                     return Ok(out);
                 }
             }

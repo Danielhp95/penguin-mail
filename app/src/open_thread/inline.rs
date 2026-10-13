@@ -125,13 +125,13 @@ impl OpenThread {
     /// The bodies that name a picture by `cid:` and whose pictures have
     /// not arrived. A body the store kept counts as much as one Gmail just
     /// sent: the store keeps no pictures.
-    pub fn wanting_images(&self) -> Vec<(String, MessageBody)> {
+    pub fn wanting_images(&self) -> Vec<(String, Arc<MessageBody>)> {
         self.bodies
             .iter()
             .filter(|(id, _)| !self.inline_images.contains_key(*id))
             .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)))
             .filter(|(_, body)| body.html.as_deref().is_some_and(|h| h.contains("cid:")))
-            .map(|(id, body)| (id.clone(), body.clone()))
+            .map(|(id, body)| (id.clone(), Arc::clone(body)))
             .collect()
     }
 

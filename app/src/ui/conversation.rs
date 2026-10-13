@@ -81,6 +81,11 @@ pub enum Action {
     SaveAllAttachments {
         message_id: String,
     },
+    /// Show one message as it arrived, from where it could save it as an
+    /// .eml file: the way out for a body the page could not draw.
+    ViewSource {
+        message_id: String,
+    },
     Mailto(String),
     /// The card for one sender, asked for by clicking their name.
     ShowContact(String),
@@ -1356,6 +1361,13 @@ impl ConversationView {
         self.render(false);
     }
 
+    /// Cleaned copies of the bodies the page said were loading, and the
+    /// redraw that puts them in place.
+    pub fn cleaned(&self, cleaned: HashMap<String, crate::open_thread::Cleaned>) {
+        self.change(|open| open.take_cleaned(cleaned));
+        self.render(false);
+    }
+
     /// The pictures the bodies name, which the page has been waiting for.
     /// They change no article: the requests waiting for them are answered,
     /// and WebKit draws each where it belongs.
@@ -1373,7 +1385,7 @@ impl ConversationView {
 
     /// The senders' photos, and the redraw that puts them in the message
     /// headers.
-    pub fn set_photos(&self, photos: HashMap<String, String>) {
+    pub fn set_photos(&self, photos: crate::render::Photos) {
         self.change(|open| open.photos = photos);
         self.render(false);
     }
@@ -1435,9 +1447,7 @@ impl ConversationView {
     /// and the redraw that puts the translated words in the page.
     pub fn translated(&self, message_id: String, translation: Translation) {
         let (from, cut) = (translation.from, translation.cut);
-        let kept = self.change(|open| {
-            open.translations.insert(message_id, translation);
-        });
+        let kept = self.change(|open| open.take_translation(message_id, translation));
         if kept.is_none() {
             return;
         }
@@ -1500,30 +1510,34 @@ impl ConversationView {
     /// Brings the page up to date with the open thread, for example after
     /// its bodies arrive: a whole load when the open thread asks for one,
     /// and otherwise the articles that changed, in place.
+    ///
+    /// The thread is read in one short borrow and the page and the header
+    /// are changed after it ends: WebKit and GTK calls can emit signals
+    /// whose handlers read or change the thread again.
     pub fn render(&self, scroll: bool) {
-        let mut open = self.open.borrow_mut();
-        let Some(open) = open.as_mut() else { return };
-        let blocks = self.filter.borrow();
-        self.webview
-            .set_filter(blocks.as_ref().filter(|_| !open.images_allowed));
-        drop(blocks);
-        let style = adw::StyleManager::default();
-        let theme = Theme {
-            dark: style.is_dark(),
-            accent: style.accent_color_rgba().to_str().to_string(),
-            accent_text: style
-                .accent_color()
-                .to_standalone_rgba(style.is_dark())
-                .to_str()
-                .to_string(),
-            // A conversation in its own window has no assistant beside it.
-            summarize: self.summarize.get() && !self.detached.get(),
-            font: gtk::Settings::default()
-                .and_then(|settings| settings.gtk_font_name())
-                .map(|name| crate::render::css_family(&name))
-                .unwrap_or_default(),
+        let theme = self.theme();
+        let drawn = {
+            let mut open = self.open.borrow_mut();
+            let Some(open) = open.as_mut() else { return };
+            let page = open.page(&theme);
+            let first_open = (scroll && open.messages.len() > 2).then(|| {
+                open.messages
+                    .iter()
+                    .find(|m| open.expanded.contains(&m.id))
+                    .map(|m| script_id(&m.id))
+            });
+            Drawn {
+                page,
+                first_open,
+                images_allowed: open.images_allowed,
+                remote: open.has_remote_images(),
+                card: open.card().cloned(),
+                header: Header::of(open),
+            }
         };
-        let page = open.page(&theme);
+        let blocks = self.filter.borrow().clone();
+        self.webview
+            .set_filter(blocks.as_ref().filter(|_| !drawn.images_allowed));
         let background = if theme.dark {
             // #1e1e21, the view colour style.css sets for dark windows.
             gdk::RGBA::new(30.0 / 255.0, 30.0 / 255.0, 33.0 / 255.0, 1.0)
@@ -1531,14 +1545,10 @@ impl ConversationView {
             gdk::RGBA::WHITE
         };
         self.webview.set_background(&background);
-        match page {
+        match drawn.page {
             Page::Whole(document) => {
-                if scroll && open.messages.len() > 2 {
-                    *self.scroll_to.borrow_mut() = open
-                        .messages
-                        .iter()
-                        .find(|m| open.expanded.contains(&m.id))
-                        .map(|m| script_id(&m.id));
+                if let Some(first_open) = drawn.first_open {
+                    *self.scroll_to.borrow_mut() = first_open;
                 }
                 // The new page holds everything a waiting patch would put
                 // in it.
@@ -1557,13 +1567,34 @@ impl ConversationView {
                 false => self.waiting.borrow_mut().extend(patch),
             },
         }
-        match open.card() {
+        match &drawn.card {
             Some(mark) => self.seal.show(mark),
             None => self.seal.hide(),
         }
         self.banner
-            .set_revealed(!open.images_allowed && open.has_remote_images());
-        self.update_buttons(open);
+            .set_revealed(!drawn.images_allowed && drawn.remote);
+        self.show_header(drawn.header);
+    }
+
+    /// What the page is drawn in now: the light or dark style, the accent,
+    /// the desktop's font, and whether the head offers Summarize.
+    fn theme(&self) -> Theme {
+        let style = adw::StyleManager::default();
+        Theme {
+            dark: style.is_dark(),
+            accent: style.accent_color_rgba().to_str().to_string(),
+            accent_text: style
+                .accent_color()
+                .to_standalone_rgba(style.is_dark())
+                .to_str()
+                .to_string(),
+            // A conversation in its own window has no assistant beside it.
+            summarize: self.summarize.get() && !self.detached.get(),
+            font: gtk::Settings::default()
+                .and_then(|settings| settings.gtk_font_name())
+                .map(|name| crate::render::css_family(&name))
+                .unwrap_or_default(),
+        }
     }
 
     /// The page from load number `load` is parsed. What waited for it goes
@@ -1597,7 +1628,7 @@ impl ConversationView {
     fn patch(&self, patch: Vec<Article>) {
         let pairs: Vec<(&str, &str)> = patch
             .iter()
-            .map(|article| (article.message_id.as_str(), article.html.as_str()))
+            .map(|article| (article.message_id.as_str(), &*article.html))
             .collect();
         let Ok(json) = serde_json::to_string(&pairs) else {
             return;
@@ -1670,8 +1701,8 @@ impl ConversationView {
 
     /// Updates the header buttons after label changes, without redrawing.
     pub fn render_buttons(&self) {
-        if let Some(open) = self.open.borrow().as_ref() {
-            self.update_buttons(open);
+        if let Some(header) = self.read(Header::of) {
+            self.show_header(header);
         }
     }
 
@@ -1690,10 +1721,10 @@ impl ConversationView {
         self.remind.append_section(None, &custom);
     }
 
-    fn update_buttons(&self, open: &OpenThread) {
+    fn show_header(&self, header: Header) {
         // A queued message is not in Gmail yet, so the mail buttons have
         // nothing to act on. The card above it carries what does.
-        if let Some(unsent) = &open.queued {
+        if let Some(unsent) = &header.queued {
             self.apply_toolbar(Holds::Nothing);
             self.list_banner.set_revealed(false);
             self.queued.show(unsent);
@@ -1701,14 +1732,13 @@ impl ConversationView {
         }
         self.queued.hide();
         self.refresh_remind_menu();
-        self.apply_toolbar(if open.is_draft() {
+        self.apply_toolbar(if header.draft {
             Holds::Draft
         } else {
             Holds::Message
         });
-        self.list_banner
-            .set_revealed(!open.unsubscribed && open.list_unsubscribe().is_some());
-        let starred = open.starred();
+        self.list_banner.set_revealed(header.unsubscribe);
+        let starred = header.starred;
         let star = &self.buttons.star;
         star.set_icon_name(if starred {
             "penguin-mail-flag-symbolic"
@@ -1721,7 +1751,7 @@ impl ConversationView {
         if starred {
             star.add_css_class(&format!(
                 "flag-{}",
-                open.flag_color.unwrap_or(FlagColor::Red).as_str()
+                header.flag_color.unwrap_or(FlagColor::Red).as_str()
             ));
         }
         let said = match starred {
@@ -1730,8 +1760,8 @@ impl ConversationView {
         };
         star.set_tooltip_text(Some(&said));
         name_with_shortcut(star, &said);
-        self.set_muted(open.muted());
-        let unread = open.unread();
+        self.set_muted(header.muted);
+        let unread = header.unread;
         self.buttons.read.set_icon_name(if unread {
             "mail-read-symbolic"
         } else {
@@ -1771,9 +1801,8 @@ impl ConversationView {
         if self.showing_many() {
             return self.apply_toolbar(Holds::Many);
         }
-        let open = self.open.borrow();
-        match open.as_ref() {
-            Some(open) => self.update_buttons(open),
+        match self.read(Header::of) {
+            Some(header) => self.show_header(header),
             None => self.apply_toolbar(Holds::Nothing),
         }
     }
@@ -1844,6 +1873,10 @@ impl ConversationView {
                     y,
                 });
             }
+        } else if let Some(message_id) = crate::render::source_of(uri) {
+            actions(Action::ViewSource {
+                message_id: message_id.to_string(),
+            });
         } else if let Some(address) = uri.strip_prefix("mailrs:contact/") {
             actions(Action::ShowContact(address.to_string()));
         } else if uri == "mailrs:summarize" {
@@ -1933,6 +1966,45 @@ impl ConversationView {
 
 /// The flag button's menu: seven colours in a row, then Clear Flag.
 /// The arrow half of a split button, a menu button among its children.
+/// What one render read off the open thread, to change the page and the
+/// header with once the thread is let go.
+struct Drawn {
+    page: Page,
+    /// Set when a whole load scrolls: the first open message to scroll to,
+    /// if any.
+    first_open: Option<Option<String>>,
+    images_allowed: bool,
+    remote: bool,
+    card: Option<protection::Mark>,
+    header: Header,
+}
+
+/// What the header buttons show for the open thread.
+struct Header {
+    queued: Option<Unsent>,
+    draft: bool,
+    /// Whether the list banner offers to unsubscribe.
+    unsubscribe: bool,
+    starred: bool,
+    flag_color: Option<FlagColor>,
+    muted: bool,
+    unread: bool,
+}
+
+impl Header {
+    fn of(open: &OpenThread) -> Header {
+        Header {
+            queued: open.queued.clone(),
+            draft: open.is_draft(),
+            unsubscribe: !open.unsubscribed && open.list_unsubscribe().is_some(),
+            starred: open.starred(),
+            flag_color: open.flag_color,
+            muted: open.muted(),
+            unread: open.unread(),
+        }
+    }
+}
+
 fn arrow_of(split: &adw::SplitButton) -> Option<gtk::MenuButton> {
     let mut child = split.first_child();
     while let Some(widget) = child {

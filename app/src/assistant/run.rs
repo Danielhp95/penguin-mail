@@ -45,7 +45,7 @@ use mailrs_domain::translate::{date_locale, fill, fill_plural, gettext};
 mod calendar;
 mod catalog;
 #[cfg(test)]
-mod fake;
+pub(crate) mod fake;
 mod mail;
 mod manage;
 mod queue;

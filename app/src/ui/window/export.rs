@@ -95,7 +95,7 @@ impl MainWindow {
                 .core
                 .call(async move {
                     let raw = actions.export_message(account_id, &message_id).await?;
-                    tokio::task::spawn_blocking(move || std::fs::write(&path, &raw)).await??;
+                    tokio::task::spawn_blocking(move || std::fs::write(&path, raw.as_slice())).await??;
                     Ok::<(), anyhow::Error>(())
                 })
                 .await;
@@ -152,8 +152,7 @@ impl MainWindow {
             let written = this
                 .core
                 .call(async move {
-                    let mbox = actions.export_mbox(&wanted).await?;
-                    tokio::task::spawn_blocking(move || std::fs::write(&path, &mbox)).await??;
+                    actions.export_mbox_file(&wanted, &path).await?;
                     Ok::<(), anyhow::Error>(())
                 })
                 .await;

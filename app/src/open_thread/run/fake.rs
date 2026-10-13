@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use futures::channel::oneshot;
 use mailrs_domain::invitation::Invitation;
@@ -21,11 +22,14 @@ use mailrs_domain::{
 use mailrs_store::outbox::Queued;
 use mailrs_sync::{Opened, Spot};
 
-use super::{Answer, Card, Desk, Effects, Fetched, InlinePictures, ReceiptCard, Stored, ThreadRun};
-use crate::open_thread::{Document, InlineImage, OpenThread, Page, ToClean, Unsent};
+use super::{
+    Answer, Card, Desk, Effects, Fetched, InlinePictures, Preferences, ReceiptCard, Stored,
+    ThreadRun,
+};
+use crate::open_thread::{Cleaned, Document, InlineImage, OpenThread, Page, ToClean, Unsent};
 use crate::protection::Read;
 use crate::render::Theme;
-use crate::translation::{Language, Prose, Translation};
+use crate::translation::Translation;
 use crate::ui::invitation::strip::{Strip, Verdict};
 use crate::ui::invitation::{AddTo, Showing};
 use crate::wanted::Screen as OnScreen;
@@ -46,6 +50,8 @@ pub enum Step {
     MessagesArrived,
     Bodies,
     BodiesArrived,
+    Clean,
+    Cleaned,
     Images,
     ImagesArrived,
     Replace,
@@ -162,6 +168,9 @@ pub struct Screen {
     pub offers_receipts: bool,
     /// What the store says about whether a receipt was answered.
     pub receipt_answered: Result<bool, String>,
+    /// Holds the next answer to whether a receipt was answered until the
+    /// test lets go.
+    pub receipt_hold: Option<oneshot::Receiver<()>>,
     /// How sending or declining a receipt ends.
     pub receipt_answer: Result<(), String>,
     pub receipt_cards: Vec<ReceiptCard>,
@@ -170,6 +179,10 @@ pub struct Screen {
     /// The Message-IDs the person's Sent mail holds, with each message's
     /// recipients.
     pub sent: Vec<(String, Vec<String>)>,
+    /// The threads that cleaned HTML, one for each time it was asked.
+    pub cleaners: Vec<std::thread::ThreadId>,
+    /// Cleaning fails, as it does when the worker panics.
+    pub clean_fails: bool,
 }
 
 pub struct FakeWindow(pub RefCell<Screen>);
@@ -393,7 +406,6 @@ impl FakeWindow {
         let stored = Stored {
             messages: vec![meta("m1", true)],
             bodies: HashMap::new(),
-            cleaned: HashMap::new(),
             left: false,
         };
         Rc::new(FakeWindow(RefCell::new(Screen {
@@ -449,10 +461,13 @@ impl FakeWindow {
             document: None,
             offers_receipts: true,
             receipt_answered: Ok(false),
+            receipt_hold: None,
             receipt_answer: Ok(()),
             receipt_cards: Vec::new(),
             receipt_answers: Vec::new(),
             sent: Vec::new(),
+            cleaners: Vec::new(),
+            clean_fails: false,
         })))
     }
 
@@ -562,8 +577,10 @@ impl OnScreen for FakeWindow {
 }
 
 impl Desk for FakeWindow {
-    fn target(&self) -> Option<Target> {
-        self.open(OpenThread::target)
+    fn open_thread(&self, read: &mut dyn FnMut(&OpenThread)) {
+        if let Some(open) = self.0.borrow().open.as_ref() {
+            read(open);
+        }
     }
 
     fn start_loading(&self) -> u64 {
@@ -585,7 +602,7 @@ impl Desk for FakeWindow {
         false
     }
 
-    fn photos(&self, _senders: &[String]) -> HashMap<String, String> {
+    fn photos(&self, _senders: &[String]) -> crate::render::Photos {
         HashMap::new()
     }
 
@@ -593,80 +610,22 @@ impl Desk for FakeWindow {
         email == "ann@example.com"
     }
 
-    fn mark_read_delay(&self) -> Option<u32> {
-        self.with(|screen| screen.delay)
-    }
-
-    fn unread(&self) -> bool {
-        self.read(OpenThread::unread)
-    }
-
     fn invitation_off_calendar(&self) -> Option<Invitation> {
         self.with(|screen| screen.off_calendar.clone())
-    }
-
-    fn invitation(&self) -> Option<(String, String)> {
-        self.open(|open| {
-            open.invitation()
-                .map(|(meta, ics)| (meta.id.clone(), ics.to_string()))
-        })
-        .flatten()
-    }
-
-    fn wanting_thumbnails(&self) -> Vec<(String, MessageBody)> {
-        self.read(OpenThread::wanting_thumbnails)
-    }
-
-    fn wanting_images(&self) -> Vec<(String, MessageBody)> {
-        self.read(OpenThread::wanting_images)
-    }
-
-    fn prose(&self) -> Option<(String, Prose)> {
-        self.open(OpenThread::prose).flatten()
-    }
-
-    fn same_writer(&self, message_id: &str) -> String {
-        self.read(|open| open.same_writer(message_id))
-    }
-
-    fn translation_of(&self, message_id: &str) -> Option<(Option<Language>, bool, bool)> {
-        self.open(|open| open.translation_of(message_id)).flatten()
-    }
-
-    fn arrived(&self, message_id: &str) -> Option<(MessageBody, String)> {
-        self.open(|open| open.arrived(message_id)).flatten()
-    }
-
-    fn translation_language(&self) -> Option<String> {
-        self.with(|screen| screen.language.clone())
-    }
-
-    fn translation_revision(&self) -> Option<u64> {
-        Some(self.with(|screen| screen.language_revision))
     }
 
     fn translation_destination(&self) -> Result<String, String> {
         self.with(|screen| screen.destination.clone())
     }
 
-    fn never_translate(&self) -> Vec<String> {
-        self.with(|screen| screen.never.clone())
-    }
-
-    fn asks_receipt(&self) -> Option<(String, String)> {
-        self.open(OpenThread::asks_receipt).flatten()
-    }
-
-    fn offers_receipts(&self) -> bool {
-        self.with(|screen| screen.offers_receipts)
-    }
-
-    fn receipt_working(&self) -> bool {
-        self.read(OpenThread::receipt_working)
-    }
-
-    fn unchecked_reports(&self) -> Vec<(String, String, String)> {
-        self.read(OpenThread::unchecked_reports)
+    fn preferences(&self) -> Preferences {
+        self.with(|screen| Preferences {
+            mark_read_delay: screen.delay,
+            translation_language: screen.language.clone(),
+            translation_revision: Some(screen.language_revision),
+            never_translate: screen.never.clone(),
+            offers_receipts: screen.offers_receipts,
+        })
     }
 }
 
@@ -710,7 +669,11 @@ impl Effects for FakeWindow {
         Box::pin(async move { Ok(messages) })
     }
 
-    fn bodies(&self, _account_id: AccountId, message_ids: Vec<String>) -> Answer<'_, Fetched> {
+    fn bodies(
+        &self,
+        _account_id: AccountId,
+        message_ids: Vec<String>,
+    ) -> Answer<'_, Vec<(String, Result<MessageBody, String>)>> {
         self.reached(Step::Bodies);
         let bodies: Vec<(String, Result<MessageBody, String>)> = self.with(|screen| {
             message_ids
@@ -721,18 +684,33 @@ impl Effects for FakeWindow {
                 })
                 .collect()
         });
-        // The window cleans on a worker thread; here it is done at once.
-        let arrived = bodies
-            .iter()
-            .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)));
-        let cleaned = ToClean::of(ACCOUNT, arrived).clean();
-        Box::pin(async move { Fetched { bodies, cleaned } })
+        Box::pin(async move { bodies })
+    }
+
+    /// Cleans on a thread of its own, as the window cleans on a worker,
+    /// and notes which thread did it.
+    fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
+        self.reached(Step::Clean);
+        if self.with(|screen| screen.clean_fails) {
+            let failed = html.stand_ins().failures();
+            return Box::pin(async move { failed });
+        }
+        let (done, cleaned) = oneshot::channel();
+        std::thread::spawn(move || {
+            let made = (std::thread::current().id(), html.clean());
+            let _ = done.send(made);
+        });
+        Box::pin(async move {
+            let (worker, cleaned) = cleaned.await.unwrap_or_else(|_| (std::thread::current().id(), HashMap::new()));
+            self.with(|screen| screen.cleaners.push(worker));
+            cleaned
+        })
     }
 
     fn inline_images(
         &self,
         _account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, InlinePictures> {
         self.reached(Step::Images);
         let found = self.with(|screen| {
@@ -750,7 +728,7 @@ impl Effects for FakeWindow {
     fn thumbnails(
         &self,
         _account_id: AccountId,
-        _bodies: Vec<(String, MessageBody)>,
+        _bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, HashMap<String, String>> {
         self.reached(Step::Thumbnails);
         let found = self.with(|screen| screen.thumbnails.clone());
@@ -867,8 +845,13 @@ impl Effects for FakeWindow {
 
     fn receipt_answered(&self, _account_id: AccountId, _message_id: String) -> Answer<'_, Result<bool, String>> {
         self.reached(Step::ReceiptAnswered);
-        let answered = self.with(|screen| screen.receipt_answered.clone());
-        Box::pin(async move { answered })
+        let (answered, held) = self.with(|screen| (screen.receipt_answered.clone(), screen.receipt_hold.take()));
+        Box::pin(async move {
+            if let Some(held) = held {
+                let _ = held.await;
+            }
+            answered
+        })
     }
 
     fn answer_receipt(&self, _account_id: AccountId, message_id: String, send: bool) -> Answer<'_, Result<(), String>> {
@@ -911,6 +894,11 @@ impl Effects for FakeWindow {
         self.change(Step::BodiesArrived, |open| {
             open.take_bodies(fetched.bodies, fetched.cleaned)
         });
+        self.draw();
+    }
+
+    fn cleaned(&self, cleaned: HashMap<String, Cleaned>) {
+        self.change(Step::Cleaned, |open| open.take_cleaned(cleaned));
         self.draw();
     }
 
@@ -1005,7 +993,7 @@ impl Effects for FakeWindow {
             shown: true,
         };
         self.change(Step::Translated, |open| {
-            open.translations.insert(message_id, translation);
+            open.take_translation(message_id, translation)
         });
         self.with(|screen| screen.cards.push(card));
         self.draw();

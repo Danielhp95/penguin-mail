@@ -154,6 +154,21 @@ async fn an_inbox_too_large_to_list_is_not_compared() {
     assert_eq!(h.fake.with(|s| s.meta_fetches.len()), before, "nothing fetched again");
 }
 
+/// A cut window listing would read as mail gone to a relist that sweeps
+/// what it lacks.
+#[tokio::test]
+async fn a_window_too_large_to_list_is_refused_rather_than_cut() {
+    use crate::MailBackend;
+    let h = outlook().await;
+    let inbox = h.fake.folder_id("inbox");
+    for i in 0..20_001 {
+        h.fake.deliver(&inbox, FakeMail { at: now_millis() - i, ..FakeMail::default() });
+    }
+    h.sync.services().mail.mailboxes().await.unwrap();
+    let listed = h.sync.services().mail.window_ids(30, None).await;
+    assert!(matches!(listed, Err(crate::BackendError::Unsupported)), "{:?}", listed.map(|l| l.len()));
+}
+
 #[tokio::test]
 async fn a_long_backlog_carries_on_at_the_next_look() {
     let h = outlook().await;

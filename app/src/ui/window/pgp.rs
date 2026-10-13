@@ -59,6 +59,7 @@ impl Effects for Ports {
             self.core
                 .call(async move { sync.raw_message(&message_id).await })
                 .await
+                .map(|raw| raw.as_ref().clone())
                 .map_err(|err| err.to_string())
         })
     }

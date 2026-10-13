@@ -5,6 +5,7 @@
 //! widget.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use mailrs_domain::{AccountId, Address, FlagColor, MessageBody, MessageMeta, Role, Target};
 
@@ -46,7 +47,9 @@ pub struct OpenThread {
     pub subject: String,
     pub messages: Vec<MessageMeta>,
     /// Missing entries are still loading; `Err` holds why a body failed.
-    pub bodies: HashMap<String, Result<MessageBody, String>>,
+    /// A body is shared with whoever reads it, and its identity says
+    /// whether a cleaned copy or an article was made from it.
+    pub bodies: HashMap<String, Result<Arc<MessageBody>, String>>,
     pub expanded: HashSet<String>,
     pub images_allowed: bool,
     /// Set when the view shows one message of the thread, not all of it.
@@ -69,9 +72,9 @@ pub struct OpenThread {
     /// The messages that arrived encrypted and were opened here. A reply
     /// to one starts encrypted.
     pub sealed: HashSet<String>,
-    /// Contact photos by lower-case sender address, as `data:` URIs. A
-    /// sender with none keeps the initials avatar.
-    pub photos: HashMap<String, String>,
+    /// Contact photos by lower-case sender address, as `data:` URIs shared
+    /// with the photo cache. A sender with none keeps the initials avatar.
+    pub photos: crate::render::Photos,
     /// Set once the user unsubscribed from this thread's list.
     pub unsubscribed: bool,
     /// What the engine made of each protected message in this thread, by
@@ -98,14 +101,18 @@ pub struct OpenThread {
     /// The message the receipt card asks about, and whether its answer is
     /// on its way. `None` while the card is down.
     receipt_card: Option<(String, bool)>,
+    /// The messages whose receipt card was answered while this thread
+    /// was open. A store read that started before the answer was kept
+    /// still says "not answered", and must not bring the card back.
+    receipts_answered: HashSet<String>,
     /// The read receipts in the thread checked against the person's Sent
     /// mail, by message id: true for one that answers a message there.
     /// Only those draw as a line.
     reports: HashMap<String, bool>,
     /// The cleaned HTML of each body the page draws, by message id.
     cleaned: HashMap<String, page::Cleaned>,
-    /// What the page on screen holds, or `None` before the first draw.
-    drawn: Option<page::Drawn>,
+    /// The articles last built, and what the page on screen holds.
+    drawn: page::Drawn,
 }
 
 impl OpenThread {
@@ -134,7 +141,7 @@ impl OpenThread {
             messages,
             bodies: bodies
                 .into_iter()
-                .map(|(id, body)| (id, Ok(body)))
+                .map(|(id, body)| (id, Ok(Arc::new(body))))
                 .collect(),
             expanded,
             images_allowed: false,
@@ -154,9 +161,10 @@ impl OpenThread {
             queued: None,
             invitation_at: None,
             receipt_card: None,
+            receipts_answered: HashSet::new(),
             reports: HashMap::new(),
             cleaned: HashMap::new(),
-            drawn: None,
+            drawn: page::Drawn::default(),
         }
     }
 
@@ -269,7 +277,7 @@ impl OpenThread {
             let Some(Ok(body)) = self.bodies.get(&message_id) else {
                 continue;
             };
-            let body = body.clone();
+            let body = MessageBody::clone(body);
             self.asked.insert(message_id.clone());
             claimed.push(Claimed {
                 target: target.clone(),
@@ -352,7 +360,7 @@ impl OpenThread {
             body.one_click_unsubscribe,
             body.html.as_deref(),
         )
-        .map(|_| (target, body))
+        .map(|_| (target, &**body))
     }
 
     /// Takes in the thread's messages as the store now has them, and
@@ -398,11 +406,20 @@ impl OpenThread {
     /// the GTK thread. The pictures they name come later.
     pub fn take_bodies(
         &mut self,
-        bodies: Vec<(String, Result<MessageBody, String>)>,
+        bodies: Vec<(String, Result<Arc<MessageBody>, String>)>,
         cleaned: HashMap<String, Cleaned>,
     ) {
-        self.bodies.extend(bodies);
+        for (id, body) in bodies {
+            self.cleaned.remove(&id);
+            self.bodies.insert(id, body);
+        }
         self.take_cleaned(cleaned);
+    }
+
+    /// One message's translation, which the page shows in place of what
+    /// arrived.
+    pub fn take_translation(&mut self, message_id: String, translation: Translation) {
+        self.translations.insert(message_id, translation);
     }
 
     /// What the engine made of the protected message: the mark for the
@@ -419,7 +436,10 @@ impl OpenThread {
         if read.sealed {
             self.sealed.insert(message_id.clone());
         }
-        self.bodies.insert(message_id.clone(), Ok(body));
+        // The copy cleaned from what came before goes with it; the new
+        // body says it is loading until its own copy is cleaned.
+        self.cleaned.remove(&message_id);
+        self.bodies.insert(message_id.clone(), Ok(Arc::new(body)));
         let pictures = queued::pictures(self, &message_id, &read.files);
         self.replace_images(&message_id, pictures);
         if !read.files.is_empty() {
@@ -490,15 +510,15 @@ impl OpenThread {
 
     /// A message's body as it arrived, which is what a translation is
     /// built from, with the start of the address of each picture it names.
-    pub fn arrived(&self, message_id: &str) -> Option<(MessageBody, String)> {
-        let body = self.bodies.get(message_id)?.as_ref().ok()?.clone();
+    pub fn arrived(&self, message_id: &str) -> Option<(Arc<MessageBody>, String)> {
+        let body = Arc::clone(self.bodies.get(message_id)?.as_ref().ok()?);
         Some((body, self.picture_prefix(message_id)))
     }
 
     /// The bodies with a picture attached that has no thumbnail yet. Every
     /// body counts, not only the ones just fetched: a message read before
     /// is already in the store, and its pictures are as worth showing.
-    pub fn wanting_thumbnails(&self) -> Vec<(String, MessageBody)> {
+    pub fn wanting_thumbnails(&self) -> Vec<(String, Arc<MessageBody>)> {
         self.bodies
             .iter()
             .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)))
@@ -511,7 +531,7 @@ impl OpenThread {
                         && !crate::render::shown_in_body(a, body)
                 })
             })
-            .map(|(id, body)| (id.clone(), body.clone()))
+            .map(|(id, body)| (id.clone(), Arc::clone(body)))
             .collect()
     }
 }
@@ -573,9 +593,10 @@ mod tests {
             queued: None,
             invitation_at: None,
             receipt_card: None,
+            receipts_answered: HashSet::new(),
             reports: HashMap::new(),
             cleaned: HashMap::new(),
-            drawn: None,
+            drawn: super::page::Drawn::default(),
         }
     }
 
@@ -586,7 +607,7 @@ mod tests {
 
         let mut open = thread(vec![message("m1", false)]);
         open.bodies
-            .insert("m1".to_string(), Ok(MessageBody::default()));
+            .insert("m1".to_string(), Ok(MessageBody::default().into()));
         // What Gmail fetched for the message as it arrived, including a
         // picture from a part nobody signed.
         let stranger = crate::open_thread::InlineImage {

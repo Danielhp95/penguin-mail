@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::future::Future;
 use std::time::Duration;
 
-use mailrs_dav::{DavClient, Kind as DavKind, Login as DavLogin};
 use mailrs_discover::{Security, Server, UserName};
 use mailrs_domain::{Account, AccountId, AccountState, Provider};
 use mailrs_gmail::{Granted, GmailClient, GmailError, OAuthClient, TokenStore};
@@ -10,7 +9,6 @@ use mailrs_graph::MicrosoftClient;
 use mailrs_imap::{ImapClient, Login, SmtpClient};
 use mailrs_jmap::oauth::OAuthSession;
 use mailrs_pop3::Pop3Client;
-use mailrs_sieve::client::{Login as SieveLogin, ManageSieveClient};
 use mailrs_store::servers::{self, Pop3Servers, Saved, Servers};
 use mailrs_store::services::{FoundService, Miss, ServiceKind};
 use mailrs_store::{Db, accounts};
@@ -19,9 +17,10 @@ use crate::config::Config;
 use crate::passwords::{PasswordError, PasswordStore, Secrets};
 use crate::sign_in::account_client;
 use crate::sign_in::own_client::{self, OwnClient, OwnClientError};
+use crate::services::{Beside, FoundServer};
 use crate::{
-    AccountClient, AccountServices, AnyAutoReply, AnyCalendar, AnyContacts, AnyDav, AnyMail, AnyRules, AnySieve, BackendError,
-    CalDav, CardDav, ImapSettings, JmapSettings, LocalRules, MicrosoftSettings, Pop3Settings, SieveRules, SyncError,
+    AccountClient, AccountServices, BackendError, ImapSettings, JmapSettings, LocalRules, MicrosoftSettings, Pop3Settings,
+    SyncError,
 };
 
 /// How long starting an account waits on one step, such as a keyring
@@ -389,7 +388,7 @@ pub(crate) async fn connect_imap_within<P: PasswordStore + 'static>(
         &smtp_login(&saved.smtp.user_name, password, outgoing),
     )
     .map_err(BackendError::from)?;
-    let mut services = AccountServices::imap(
+    let services = AccountServices::imap(
         imap,
         smtp,
         ImapSettings {
@@ -399,15 +398,16 @@ pub(crate) async fn connect_imap_within<P: PasswordStore + 'static>(
             window_days,
         },
     );
-    let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
-    // The password goes only to a server the person confirmed.
-    for service in found.into_iter().filter(|f| f.confirmed) {
-        services = attach(services, &service, &secret, None, account, &provider_name);
-    }
-    if services.rules.is_none() {
-        services = services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), id)));
-    }
-    Ok(services)
+    let found = confirmed(db, id, &secret, wait).await?;
+    let beside = Beside {
+        account_id: id,
+        address: account.email.clone(),
+        provider_name,
+        found,
+        local: Some(LocalRules::new(db.clone(), id)),
+        local_kept: false,
+    };
+    Ok(services.with_beside(beside))
 }
 
 /// The services for a POP3 account, from the servers the store keeps for
@@ -450,7 +450,7 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
         &smtp_login(&saved.smtp.user_name, password, outgoing),
     )
     .map_err(BackendError::from)?;
-    let mut services = AccountServices::pop3(
+    let services = AccountServices::pop3(
         db.clone(),
         id,
         client,
@@ -460,12 +460,21 @@ pub(crate) async fn connect_pop3_within<P: PasswordStore + 'static>(
             provider_name: provider_name.clone(),
         },
     );
+    // Its rules are kept on this computer from the start.
+    let found = confirmed(db, id, &secret, wait).await?;
+    let beside = Beside { account_id: id, address: account.email.clone(), provider_name, found, local: None, local_kept: false };
+    Ok(services.with_beside(beside))
+}
+
+/// The servers found for the account that the person confirmed, each to
+/// sign in with `password`, which goes to no other server.
+async fn confirmed(db: &Db, id: AccountId, password: &str, wait: Duration) -> Result<Vec<FoundServer>, SyncError> {
     let found = bounded(id, "the mail store", wait, db.read(move |c| mailrs_store::services::load(c, id))).await?;
-    // The password goes only to a server the person confirmed.
-    for service in found.into_iter().filter(|f| f.confirmed) {
-        services = attach(services, &service, &secret, None, account, &provider_name);
-    }
-    Ok(services)
+    Ok(found
+        .into_iter()
+        .filter(|f| f.confirmed)
+        .map(|service| FoundServer { service, secret: password.to_string(), bearer: None })
+        .collect())
 }
 
 /// The credentials a saved JMAP account signs in with, for a password or
@@ -486,15 +495,13 @@ pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: Str
 /// This run's OAuth sessions, one per JMAP account, so a restart of the
 /// account reuses the tokens the last start holds. Two sessions with one
 /// refresh token could each rotate it, and Fastmail revokes a grant whose
-/// old refresh token comes back. Also the accounts whose kept client did
-/// not bring the browser back. Clones share both.
+/// old refresh token comes back. Clones share them.
 #[derive(Clone, Default)]
 pub struct JmapSessions(Arc<std::sync::Mutex<SessionsHeld>>);
 
 #[derive(Default)]
 struct SessionsHeld {
     sessions: std::collections::HashMap<AccountId, HeldSession>,
-    unanswered: std::collections::HashSet<AccountId>,
 }
 
 struct HeldSession {
@@ -539,28 +546,11 @@ impl JmapSessions {
     /// it saves nothing more over the new token or under a gone account.
     /// Answers the newest refresh token the session held.
     pub async fn forget(&self, id: AccountId) -> Option<String> {
-        let kept = {
-            let mut held = self.held_state();
-            held.unanswered.remove(&id);
-            held.sessions.remove(&id)
-        };
+        let kept = self.held_state().sessions.remove(&id);
         match kept {
             Some(kept) => Some(kept.session.retire().await),
             None => None,
         }
-    }
-
-    /// Records that a sign-in with the account's kept client ran out or
-    /// was canceled: the server may no longer know that client and show
-    /// its own page rather than come back.
-    pub(crate) fn kept_client_unanswered(&self, id: AccountId) {
-        self.held_state().unanswered.insert(id);
-    }
-
-    /// Whether the next sign-in should register a new client rather than
-    /// try the kept one again.
-    pub(crate) fn kept_client_failed(&self, id: AccountId) -> bool {
-        self.held_state().unanswered.contains(&id)
     }
 }
 
@@ -747,9 +737,6 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         }
     };
     let client = mailrs_jmap::JmapClient::new(&saved.session_url, auth).map_err(crate::services::jmap::backend)?;
-    // The adapter and the Sieve rules share one client: clones share the
-    // session, the pool and the permits.
-    let jmap_api = Arc::new(crate::AnyJmap::from(client.clone()));
     let token = saved.auth == mailrs_store::jmap::JmapAuth::Bearer;
     let table_says_no_reply = mailrs_discover::jmap_named(account.provider_name())
         .is_some_and(|p| p.token_lacks.iter().any(|c| c == mailrs_jmap::VACATION));
@@ -761,28 +748,7 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         capabilities: saved.capabilities.clone(),
         auto_reply_needs_sign_in: token && table_says_no_reply && !saved.offers(mailrs_jmap::VACATION) && !saved.offers(mailrs_jmap::SIEVE),
     };
-    let mut services = AccountServices::jmap(client, settings);
     let app_password = read_secret(dav, id, wait).await?;
-    if saved.offers(mailrs_jmap::CONTACTS)
-        && let AnyMail::Jmap(adapter) = services.mail.clone()
-    {
-        services = services.with_contacts(AnyContacts::Jmap(adapter));
-    }
-    if saved.offers(mailrs_jmap::CALENDARS)
-        && let AnyMail::Jmap(adapter) = services.mail.clone()
-    {
-        services = services.with_calendar(AnyCalendar::Jmap(adapter));
-    }
-    // On a server that runs Sieve, the automatic reply goes in the rules
-    // script. Stalwart keeps JMAP's own reply as a script of its own, and
-    // only one script runs, so the two would turn each other off.
-    if saved.offers(mailrs_jmap::SIEVE) {
-        let api = Arc::new(crate::JmapSieve::new(Arc::clone(&jmap_api)));
-        let server_reply = saved.offers(mailrs_jmap::VACATION).then_some(crate::SERVER_REPLY_SCRIPT);
-        let rules = SieveRules::new(api, services.mail.clone(), account.email.clone(), account.provider_name().to_string())
-            .beside_server_reply(server_reply);
-        services = services.with_rules(AnyRules::JmapSieve(rules.clone())).with_auto_reply(AnyAutoReply::JmapSieve(rules));
-    }
     let read = db.read(move |c| {
         let refused = mailrs_store::services::all_misses(c)?
             .into_iter()
@@ -792,34 +758,29 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         let local = !mailrs_store::local_rules::list(c, id)?.is_empty();
         Ok((mailrs_store::services::load(c, id)?, refused, local))
     });
-    let (found, refused, local) = bounded(id, "the mail store", wait, read).await?;
-    // Local rules a switch from IMAP could not move into the script go on
-    // running here, beside it, and the Rules dialog lists both.
-    if local && let Some(AnyRules::JmapSieve(server)) = services.rules.clone() {
-        services = services.with_rules(AnyRules::Beside(crate::RulesBeside::new(server, LocalRules::new(db.clone(), id))));
-    }
-    for (service, sign) in dav_plan(found, &saved, bearer.is_some(), app_password, basic_password, &refused) {
-        services = match (sign, &bearer) {
-            (DavSign::Password(password), _) => attach(services, &service, &password, None, account, account.provider_name()),
+    let (found, refused, local_kept) = bounded(id, "the mail store", wait, read).await?;
+    let found = dav_plan(found, &saved, bearer.is_some(), app_password, basic_password, &refused)
+        .into_iter()
+        .filter_map(|(service, sign)| match (sign, &bearer) {
+            (DavSign::Password(secret), _) => Some(FoundServer { service, secret, bearer: None }),
             (DavSign::Bearer, Some(tokens)) => {
                 let source = dav_bearer(Arc::clone(tokens), db.clone(), id, service.kind);
-                attach(services, &service, "", Some(source), account, account.provider_name())
+                Some(FoundServer { service, secret: String::new(), bearer: Some(source) })
             }
-            (DavSign::Bearer, None) => services,
-        };
-    }
-    // A ManageSieve server brings its own automatic reply with its rules;
-    // JMAP's own reply wins where the session offers it and no Sieve.
-    if saved.offers(mailrs_jmap::VACATION)
-        && !saved.offers(mailrs_jmap::SIEVE)
-        && let AnyMail::Jmap(adapter) = services.mail.clone()
-    {
-        services = services.with_auto_reply(AnyAutoReply::Jmap(adapter));
-    }
-    if services.rules.is_none() {
-        services = services.with_rules(AnyRules::Local(LocalRules::new(db.clone(), id)));
-    }
-    Ok(services)
+            (DavSign::Bearer, None) => None,
+        })
+        .collect();
+    let beside = Beside {
+        account_id: id,
+        address: account.email.clone(),
+        provider_name: account.provider_name().to_string(),
+        found,
+        local: Some(LocalRules::new(db.clone(), id)),
+        // Local rules a switch from IMAP could not move into the script
+        // go on running here, beside it, and the Rules dialog lists both.
+        local_kept,
+    };
+    Ok(AccountServices::jmap_from(client, settings, beside))
 }
 
 /// How a CalDAV, CardDAV or ManageSieve server beside a JMAP session
@@ -923,65 +884,6 @@ pub(crate) async fn try_the_token_again(db: &Db, account: AccountId) -> Result<(
     })
     .await?;
     Ok(())
-}
-
-/// `services` with the server `service` names put behind the service it
-/// offers. A server that cannot be set up is logged and left out, so the
-/// account keeps its mail. A Sieve row is passed over for an account whose
-/// folders live on this computer, as a POP3 account's do: its mail never
-/// reaches server rules. A CalDAV or CardDAV server given `bearer` sends
-/// its token in place of the password.
-fn attach(
-    services: AccountServices,
-    service: &FoundService,
-    secret: &str,
-    bearer: Option<Arc<dyn mailrs_dav::TokenSource>>,
-    account: &Account,
-    provider_name: &str,
-) -> AccountServices {
-    let id = account.id;
-    let with_bearer = |client: DavClient| match &bearer {
-        Some(source) => client.with_bearer(Arc::clone(source)),
-        None => client,
-    };
-    match service.kind {
-        ServiceKind::CalDav => {
-            match DavClient::new(&service.url, DavKind::Calendar, DavLogin::new(&service.user_name, secret)).map(with_bearer) {
-                Ok(client) => {
-                    let calendar = CalDav::new(Arc::new(AnyDav::from(client)), services.mail.clone(), vec![account.email.clone()]);
-                    services.with_calendar(AnyCalendar::Dav(calendar))
-                }
-                Err(err) => {
-                    tracing::warn!(account = id, %err, "could not set up the calendar server");
-                    services
-                }
-            }
-        }
-        ServiceKind::CardDav => {
-            match DavClient::new(&service.url, DavKind::AddressBook, DavLogin::new(&service.user_name, secret)).map(with_bearer) {
-                Ok(client) => services.with_contacts(AnyContacts::Dav(CardDav::new(Arc::new(AnyDav::from(client))))),
-                Err(err) => {
-                    tracing::warn!(account = id, %err, "could not set up the contacts server");
-                    services
-                }
-            }
-        }
-        ServiceKind::Sieve if services.capabilities().local_mailboxes => services,
-        ServiceKind::Sieve => {
-            let (host, port) = match service.url.rsplit_once(':') {
-                Some((host, port)) => (host, port.parse().unwrap_or(mailrs_sieve::PORT)),
-                None => (service.url.as_str(), mailrs_sieve::PORT),
-            };
-            let client = ManageSieveClient::new(host, port, SieveLogin::new(&service.user_name, secret));
-            let rules = SieveRules::new(
-                Arc::new(AnySieve::from(client)),
-                services.mail.clone(),
-                account.email.clone(),
-                provider_name.to_string(),
-            );
-            services.with_rules(AnyRules::Sieve(rules.clone())).with_auto_reply(AnyAutoReply::Sieve(rules))
-        }
-    }
 }
 
 /// The servers to keep for an account that logged in as `imap_user` on

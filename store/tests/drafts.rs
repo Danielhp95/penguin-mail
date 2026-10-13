@@ -37,7 +37,7 @@ fn a_message_that_stopped_being_a_draft_answers_nothing() {
     store(&conn, &[meta(id, "m2", "t2", 200, &["DRAFT"])]);
     drafts::remember(&conn, id, "d2", "m2").unwrap();
     // Deleting it elsewhere takes the message.
-    let delete = Change::Delete {
+    let delete = Change::Gone {
         message_id: "m2".into(),
     };
     messages::apply(&conn, id, &[delete]).unwrap();

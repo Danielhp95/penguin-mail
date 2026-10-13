@@ -84,6 +84,9 @@ pub struct ImapState {
     pub hold_move: Option<Arc<Hold>>,
     /// One STATUS call waits until the test releases it.
     pub hold_unread: Option<Arc<Hold>>,
+    /// The next STORE waits here before it changes any flag, as a server
+    /// that has not taken the write yet.
+    pub hold_store: Option<Arc<Hold>>,
     /// What GETQUOTAROOT answers, for any mailbox.
     pub quota: Vec<mailrs_imap::QuotaUse>,
     /// SELECT leaves UIDNEXT out, as RFC 3501 lets a server do.
@@ -269,6 +272,7 @@ impl FakeImap {
                 overflow_idle: false,
                 hold_move: None,
                 hold_unread: None,
+                hold_store: None,
                 quota: Vec::new(),
                 omit_uidnext: false,
                 answered: 0,
@@ -413,6 +417,14 @@ impl FakeImap {
     pub fn hold_next_move(&self) -> Arc<Hold> {
         let hold = Arc::new(Hold::default());
         self.with(|s| s.hold_move = Some(Arc::clone(&hold)));
+        hold
+    }
+
+    /// Holds the next STORE before it changes anything, until the test
+    /// calls [`Hold::release`].
+    pub fn hold_next_store(&self) -> Arc<Hold> {
+        let hold = Arc::new(Hold::default());
+        self.with(|s| s.hold_store = Some(Arc::clone(&hold)));
         hold
     }
 
@@ -838,6 +850,9 @@ impl ImapApi for FakeImap {
         }
         check_flags(flags)?;
         check_name(mailbox)?;
+        if let Some(hold) = self.with(|s| s.hold_store.take()) {
+            hold.wait().await;
+        }
         let sign = if add { '+' } else { '-' };
         self.change(
             format!("store {mailbox} {uids} {sign} {}", flags.join(" ")),
