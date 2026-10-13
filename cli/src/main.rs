@@ -300,7 +300,7 @@ async fn run_sync(db: &Db, dir: &Path, config: &Config) -> Result<()> {
         .filter(|account| account.provider.serves_mail())
         .collect();
     if all.is_empty() {
-        bail!("no accounts; run `penguin-mail-cli account add` first");
+        bail!("no mail accounts; run `penguin-mail-cli account add` first");
     }
     let (engine, events) = SyncEngine::new(db.clone(), config.engine_config());
     let connector = connector(db, config);
