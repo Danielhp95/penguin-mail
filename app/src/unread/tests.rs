@@ -378,3 +378,143 @@ async fn with_no_window_each_account_asks_its_server_once_when_it_starts() {
         })
         .await;
 }
+
+/// The only unread thread of `h`'s account.
+async fn the_unread_thread(h: &Harness) -> String {
+    let account_id = h.account_id;
+    h.db
+        .read(move |c| {
+            Ok(c.query_row(
+                "SELECT id FROM threads WHERE account_id = ?1 AND unread = 1",
+                [account_id],
+                |row| row.get::<_, String>(0),
+            )?)
+        })
+        .await
+        .expect("one unread thread")
+}
+
+/// A window that shows All Inboxes until the test closes it.
+struct Closable(Rc<std::cell::Cell<bool>>);
+
+impl Shows for Closable {
+    fn wanted(&self) -> Option<Wanted> {
+        self.0.get().then(|| Wanted {
+            mailboxes: vec![ALL_INBOXES],
+            shown: ALL_INBOXES,
+            view: View::default(),
+        })
+    }
+
+    fn show(&self, _: &Counted) {}
+}
+
+/// The tray shows one unread, the person reads it here, with the window
+/// open when `window` says so and closed after, and the tray shows none,
+/// a minute on as well.
+async fn the_tray_goes_to_none_once_read(h: Harness, window: bool) {
+    let lists = Arc::new(h.lists());
+    let account_id = h.account_id;
+    let sync = h.sync();
+    let thread = the_unread_thread(&h).await;
+    tokio::task::LocalSet::new()
+        .run_until(async move {
+            let unread = Unread::new(Arc::clone(&lists));
+            let mut answers = lists.counts_changed();
+            let weak = Rc::downgrade(&unread);
+            tokio::task::spawn_local(async move {
+                while answers.changed().await.is_ok() {
+                    let Some(unread) = weak.upgrade() else { break };
+                    unread.answered();
+                }
+            });
+            let tray = Rc::new(RefCell::new(Vec::new()));
+            let into_tray = Rc::clone(&tray);
+            unread.listen(Box::new(move |counted| {
+                into_tray
+                    .borrow_mut()
+                    .push((counted.all_inboxes(), counted.inbox(account_id)));
+            }));
+            started(&unread);
+            unread.set_accounts(vec![account_id]);
+            unread.started(account_id);
+            for _ in 0..5 {
+                settle().await;
+            }
+            assert_eq!(tray.borrow().last(), Some(&(1, 1)), "{:?}", tray.borrow());
+
+            let open = Rc::new(std::cell::Cell::new(window));
+            if window {
+                unread.show_in(Box::new(Closable(Rc::clone(&open))));
+                settle().await;
+            }
+            sync.triage_thread(&thread, &mailrs_sync::TriageAction::MarkRead)
+                .await
+                .unwrap();
+            unread.heard(&mailrs_domain::ChangeEvent::ThreadsChanged {
+                account_id,
+                thread_ids: vec![thread.clone()],
+            });
+            for _ in 0..5 {
+                settle().await;
+            }
+            assert_eq!(tray.borrow().last(), Some(&(0, 0)), "{:?}", tray.borrow());
+            // The window closes once the counts have asked the servers again.
+            tokio::time::sleep(REFRESH_GAP).await;
+            for _ in 0..5 {
+                settle().await;
+            }
+            open.set(false);
+            unread.changed();
+            for _ in 0..5 {
+                settle().await;
+            }
+            assert_eq!(tray.borrow().last(), Some(&(0, 0)), "{:?}", tray.borrow());
+            tokio::time::sleep(Duration::from_secs(61)).await;
+            for _ in 0..5 {
+                settle().await;
+            }
+            assert_eq!(tray.borrow().last(), Some(&(0, 0)), "{:?}", tray.borrow());
+        })
+        .await;
+}
+
+async fn gmail_with_one_unread() -> Harness {
+    let now = now_millis();
+    Harness::with(vec![mailrs_sync::fake::meta("m1", "t1", now, &["INBOX", "UNREAD"])]).await
+}
+
+async fn imap_with_one_unread() -> Harness {
+    let imap = Arc::new(FakeImap::new());
+    let now = now_millis();
+    imap.deliver_flagged("INBOX", &raw_message("one", "One", now, None), &[], now);
+    Harness::on_imap(imap).await
+}
+
+async fn jmap_with_one_unread() -> Harness {
+    let jmap = Arc::new(mailrs_sync::fake::FakeJmap::new());
+    let now = now_millis();
+    jmap.deliver("inbox", &raw_message("one", "One", now, None), now);
+    Harness::with_services(move |_, services| {
+        *services = mailrs_sync::AccountServices::fake_jmap(jmap);
+    })
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tray_goes_to_none_once_read_on_gmail() {
+    the_tray_goes_to_none_once_read(gmail_with_one_unread().await, false).await;
+    the_tray_goes_to_none_once_read(gmail_with_one_unread().await, true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tray_goes_to_none_once_read_on_imap() {
+    the_tray_goes_to_none_once_read(imap_with_one_unread().await, false).await;
+    the_tray_goes_to_none_once_read(imap_with_one_unread().await, true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tray_goes_to_none_once_read_on_jmap() {
+    the_tray_goes_to_none_once_read(jmap_with_one_unread().await, false).await;
+    the_tray_goes_to_none_once_read(jmap_with_one_unread().await, true).await;
+}
