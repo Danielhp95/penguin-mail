@@ -107,6 +107,12 @@ pub(super) struct Known {
     /// The Mailbox state the last listing read.
     pub mailbox_state: String,
     pub listed: bool,
+    /// Mail writes made here, and how many of them the last listing was
+    /// asked after. A write moves the unread counts on the server, and
+    /// only the feed lists again, so the counts kept would stay as they
+    /// were before it.
+    pub writes: u64,
+    pub listed_after: u64,
     pub window_open: bool,
     pub identities: Vec<Identity>,
     /// The server refused two mailbox conditions in one filter, as Apache
@@ -234,11 +240,18 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
     }
 
     async fn unread_counts(&self) -> Result<HashMap<MailSet, i64>, BackendError> {
-        self.listed().await?;
+        let stale = {
+            let known = self.known();
+            !known.listed || known.listed_after != known.writes
+        };
+        if stale {
+            self.list_mailboxes().await?;
+        }
         let known = self.known();
         let mut counts = HashMap::new();
         for (id, mailbox) in &known.mailboxes {
-            let unread = i64::try_from(mailbox.unread_emails).unwrap_or(i64::MAX);
+            // Threads, as the sidebar and the list count them.
+            let unread = i64::try_from(mailbox.unread_threads).unwrap_or(i64::MAX);
             counts.insert(MailSet::Mailbox(id.clone()), unread);
             if let Some(role) = known.roles.iter().find(|(_, m)| *m == id).map(|(r, _)| *r) {
                 counts.insert(MailSet::Role(role), unread);
@@ -366,7 +379,11 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
     }
 
     async fn apply(&self, messages: &[String], ops: &[MailOp]) -> Result<Vec<Relocated>, Unapplied> {
-        self.write(messages, ops).await
+        let written = self.write(messages, ops).await;
+        // Counted after the server answers, taken or refused, so a listing
+        // asked while the write was on its way does not count as after it.
+        self.known().writes += 1;
+        written
     }
 
     async fn send(&self, raw: &[u8], _thread_id: Option<&str>) -> Result<String, BackendError> {

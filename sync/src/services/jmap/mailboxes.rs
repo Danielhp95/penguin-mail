@@ -48,6 +48,7 @@ impl<J: JmapApi> Jmap<J> {
     /// Every mailbox with its role and path. Refreshes what the adapter
     /// knows, the counts included.
     pub(super) async fn list_mailboxes(&self) -> Result<Vec<RemoteMailbox>, BackendError> {
+        let writes = self.known().writes;
         let listed = self.api().mailboxes().await.map_err(backend)?;
         let labels = self.settings().labels;
         let by_id: HashMap<String, &Mailbox> = listed.list.iter().map(|m| (m.id.clone(), m)).collect();
@@ -78,6 +79,7 @@ impl<J: JmapApi> Jmap<J> {
         known.mailboxes = listed.list.into_iter().map(|m| (m.id.clone(), m)).collect();
         known.mailbox_state = listed.state;
         known.listed = true;
+        known.listed_after = known.listed_after.max(writes);
         Ok(out)
     }
 

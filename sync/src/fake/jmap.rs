@@ -938,7 +938,8 @@ impl JmapApi for FakeJmap {
                 .iter()
                 .map(|(id, m)| {
                     let inside: Vec<&FakeEmail> = s.emails.values().filter(|e| e.mailbox_ids.contains(id)).collect();
-                    let unread = inside.iter().filter(|e| !e.keywords.contains("$seen")).count() as u64;
+                    let unseen: Vec<&&FakeEmail> = inside.iter().filter(|e| !e.keywords.contains("$seen")).collect();
+                    let unread = unseen.len() as u64;
                     Mailbox {
                         id: id.clone(),
                         name: m.name.clone(),
@@ -947,7 +948,7 @@ impl JmapApi for FakeJmap {
                         total_emails: s.total_override.as_ref().filter(|(m, _)| m == id).map_or(inside.len() as u64, |(_, n)| *n),
                         unread_emails: unread,
                         total_threads: inside.iter().map(|e| &e.thread_id).collect::<BTreeSet<_>>().len() as u64,
-                        unread_threads: unread,
+                        unread_threads: unseen.iter().map(|e| &e.thread_id).collect::<BTreeSet<_>>().len() as u64,
                         is_subscribed: true,
                         ..Mailbox::default()
                     }
