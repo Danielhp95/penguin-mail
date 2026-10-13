@@ -177,8 +177,8 @@ uses a tool from outside the app, and it is off until you pick a model.
 - **Apple Mail's shortcuts on Linux** with Ctrl in place of Command, plus Gmail's
   single keys.
 - **American English, British English, French, German, Spanish, European
-  Portuguese and Traditional Chinese (Taiwan)**, chosen in Preferences, with the window's controls named
-  for screen readers.
+  Portuguese, Traditional Chinese (Taiwan) and Vietnamese**, chosen in Preferences,
+  with the window's controls named for screen readers.
 
 ## Screenshots
 
