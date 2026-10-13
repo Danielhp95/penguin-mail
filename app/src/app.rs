@@ -795,7 +795,9 @@ impl App {
         *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
-        self.unread.set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
+        // A calendar account has no inbox for the tray and the Dock to count.
+        let with_mail = loaded.iter().filter(|(a, _)| a.provider.serves_mail());
+        self.unread.set_accounts(with_mail.map(|(a, _)| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -1678,6 +1680,7 @@ impl App {
             .accounts
             .borrow()
             .iter()
+            .filter(|account| account.provider.serves_mail())
             .map(|account| AccountUnread {
                 id: account.id,
                 email: account.email.clone(),
