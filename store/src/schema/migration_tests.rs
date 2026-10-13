@@ -13,6 +13,15 @@ use crate::StoreError;
 
 const TO_MAILBOXES: &str = include_str!("26-mailboxes.sql");
 
+/// `put_body` writes the receipt columns migration 57 adds, which a store
+/// held back to an older version lacks. This gives it the columns for the
+/// write, then takes them away so the migration finds the store as it was.
+fn put_body_before_57(conn: &Connection, message_id: &str, body: &mailrs_domain::MessageBody) {
+    conn.execute_batch("ALTER TABLE bodies ADD COLUMN receipt_to TEXT; ALTER TABLE bodies ADD COLUMN read_report TEXT;").unwrap();
+    crate::bodies::put_body(conn, 1, message_id, body, 1).unwrap();
+    conn.execute_batch("ALTER TABLE bodies DROP COLUMN receipt_to; ALTER TABLE bodies DROP COLUMN read_report;").unwrap();
+}
+
 /// Two accounts. Messages carry each role label, both keyword labels,
 /// UNREAD, two categories, a person's label that is listed, one that is
 /// not, and CHAT, which Gmail puts on mail but never lists. `t3` starts
@@ -392,8 +401,8 @@ fn a_body_read_as_two_text_attachments_is_fetched_again() {
         text: Some("fine".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "li", &empty, 1).unwrap();
-    bodies::put_body(&conn, 1, "ok", &fine, 1).unwrap();
+    put_body_before_57(&conn, "li", &empty);
+    put_body_before_57(&conn, "ok", &fine);
     drop(conn);
 
     let conn = open_with(&path, MIGRATIONS).unwrap();
@@ -434,9 +443,9 @@ fn a_body_decoded_in_the_wrong_charset_is_fetched_again() {
         text: Some("Direção de Recuperação de Crédito, «café» às três".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "html", &garbled_html, 1).unwrap();
-    bodies::put_body(&conn, 1, "text", &garbled_text, 1).unwrap();
-    bodies::put_body(&conn, 1, "ok", &fine, 1).unwrap();
+    put_body_before_57(&conn, "html", &garbled_html);
+    put_body_before_57(&conn, "text", &garbled_text);
+    put_body_before_57(&conn, "ok", &fine);
     drop(conn);
 
     let conn = open_with(&path, MIGRATIONS).unwrap();
@@ -453,7 +462,6 @@ fn a_body_decoded_in_the_wrong_charset_is_fetched_again() {
 fn an_invitation_read_without_its_calendar_is_fetched_again() {
     use mailrs_domain::{Attachment, MessageBody};
 
-    use crate::bodies;
 
     let ics = |mime: &str| Attachment {
         part_id: "1".into(),
@@ -487,17 +495,21 @@ fn an_invitation_read_without_its_calendar_is_fetched_again() {
         text: Some("hello".into()),
         ..MessageBody::default()
     };
-    bodies::put_body(&conn, 1, "missed", &missed, 1).unwrap();
-    bodies::put_body(&conn, 1, "read", &read, 1).unwrap();
-    bodies::put_body(&conn, 1, "plain", &plain, 1).unwrap();
+    put_body_before_57(&conn, "missed", &missed);
+    put_body_before_57(&conn, "read", &read);
+    put_body_before_57(&conn, "plain", &plain);
     drop(conn);
 
     // Up to migration 28 alone: a later one drops every body with a file,
     // the invitation that was read among them.
     let conn = open_with(&path, &MIGRATIONS[..28]).unwrap();
-    assert!(bodies::get_body(&conn, 1, "missed", 2).unwrap().is_none());
-    assert!(bodies::get_body(&conn, 1, "read", 2).unwrap().is_some());
-    assert!(bodies::get_body(&conn, 1, "plain", 2).unwrap().is_some());
+    // Read with plain SQL: `get_body` selects columns migration 57 adds.
+    let kept = |id: &str| -> bool {
+        conn.query_row("SELECT COUNT(*) FROM bodies WHERE message_id = ?1", [id], |r| r.get::<_, i64>(0)).unwrap() > 0
+    };
+    assert!(!kept("missed"));
+    assert!(kept("read"));
+    assert!(kept("plain"));
 }
 
 /// Migration 30 adds local threading's table and column without touching a
@@ -1085,4 +1097,180 @@ fn migration_52_turns_stored_over_size_words_into_a_reason() {
         conn.execute("UPDATE pop3_failures SET reason = 'tired'", []).is_err(),
         "a reason is one of the codes"
     );
+}
+
+/// Migration 56 keeps a JMAP account's session URL, how it signs in, its
+/// Basic user name, whether its mail takes labels and what its session
+/// offered. The row goes with the account.
+#[test]
+fn migration_56_adds_jmap_accounts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider, provider_name) VALUES (3, 'me@fastmail.com', 0, 'jmap', 'Fastmail');
+         INSERT INTO jmap_accounts (account_id, session_url, auth, user_name, labels, capabilities)
+             VALUES (3, 'https://api.fastmail.com/jmap/session', 'bearer', NULL, 1, '[\"urn:ietf:params:jmap:mail\"]');",
+    )
+    .unwrap();
+    assert!(conn.execute("UPDATE jmap_accounts SET auth = 'digest' WHERE account_id = 3", []).is_err());
+    conn.execute("DELETE FROM accounts WHERE id = 3", []).unwrap();
+    let left: i64 = conn.query_row("SELECT COUNT(*) FROM jmap_accounts", [], |r| r.get(0)).unwrap();
+    assert_eq!(left, 0);
+}
+
+/// Migration 58 lets a JMAP account sign in with OAuth and keeps its
+/// client id and token endpoint; rows from before keep what they held.
+#[test]
+fn migration_58_takes_oauth_jmap_accounts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, &MIGRATIONS[..57]).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (4, 'me@stalwart.test', 0, 'jmap');
+         INSERT INTO jmap_accounts (account_id, session_url, auth, labels, capabilities) VALUES (4, 'https://s/jmap/session', 'basic', 1, '[]');",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
+    let auth: String = conn.query_row("SELECT auth FROM jmap_accounts WHERE account_id = 4", [], |r| r.get(0)).unwrap();
+    assert_eq!(auth, "basic");
+    conn.execute(
+        "UPDATE jmap_accounts SET auth = 'oauth', oauth_client_id = 'c1', oauth_token_url = 'https://s/token' WHERE account_id = 4",
+        [],
+    )
+    .unwrap();
+}
+
+/// Migration 59 indexes every message's Message-ID, so finding the Sent copy
+/// a read receipt names no longer walks the whole Sent mailbox.
+#[test]
+fn migration_59_finds_a_message_by_its_message_id_through_an_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
+    let plan: Vec<String> = conn
+        .prepare("EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = 1 AND rfc822_msgid IN ('a@x', '<a@x>')")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(plan.iter().any(|step| step.contains("messages_by_msgid")), "{plan:?}");
+}
+
+/// Migration 60 indexes events by account and lower-case UID, so an
+/// invitation finds its event without walking the account's calendars.
+#[test]
+fn migration_60_finds_an_event_by_its_uid_through_an_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_with(&dir.path().join("mail.db"), MIGRATIONS).unwrap();
+    for sql in [
+        "SELECT id FROM events WHERE account_id = 1 AND lower(uid) = lower('A@x')",
+        "SELECT e.id FROM events e JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar \
+         WHERE e.account_id = 1 AND c.shown = 1 AND lower(e.uid) = lower('A@x')",
+    ] {
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("events_by_uid")), "{plan:?}");
+    }
+}
+
+/// Migration 61 keeps the correspondents tally in the store. It starts
+/// empty and stale, so the first catch-up counts every message, and a
+/// change to a row it counted makes it stale again.
+#[test]
+fn migration_61_keeps_the_correspondents_tally_in_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mail.db");
+    let conn = open_with(&path, &MIGRATIONS[..60]).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
+    )
+    .unwrap();
+    drop(conn);
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    let marks = |conn: &Connection| -> (bool, i64) {
+        conn.query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    assert_eq!(marks(&conn), (true, 0));
+    crate::contacts::catch_up(&conn).unwrap();
+    assert_eq!(marks(&conn), (false, 1));
+    let kept: i64 = conn.query_row("SELECT COUNT(*) FROM correspondents", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 1);
+    conn.execute("UPDATE messages SET from_addr = 'bo@example.org' WHERE id = 'm1'", []).unwrap();
+    assert_eq!(marks(&conn), (true, 0));
+}
+
+/// Migration 64 narrows the trigger on a filing that moves: only a move
+/// into or out of a Sent folder changes what the tally counts.
+#[test]
+fn migration_64_marks_the_tally_stale_only_for_a_move_into_or_out_of_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = open_with(&dir.path().join("mail.db"), MIGRATIONS).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO mailboxes (account_id, id, name, kind, role) VALUES
+             (1, 'INBOX', 'Inbox', 'system', 'inbox'),
+             (1, 'ARCHIVE', 'Archive', 'system', 'archive'),
+             (1, 'SENT', 'Sent', 'system', 'sent');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);
+         INSERT INTO message_mailboxes (account_id, message_id, mailbox)
+             SELECT 1, 'm1', key FROM mailboxes WHERE id = 'INBOX';",
+    )
+    .unwrap();
+    let marks = |conn: &Connection| -> (bool, i64) {
+        conn.query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    let move_to = |id: &str| {
+        conn.execute(
+            "UPDATE message_mailboxes SET mailbox = (SELECT key FROM mailboxes WHERE id = ?1) WHERE message_id = 'm1'",
+            [id],
+        )
+        .unwrap();
+    };
+    crate::contacts::catch_up(&conn).unwrap();
+    assert_eq!(marks(&conn), (false, 1));
+    move_to("ARCHIVE");
+    assert_eq!(marks(&conn), (false, 1), "a move between two folders that are not Sent");
+    move_to("SENT");
+    assert_eq!(marks(&conn), (true, 0), "a move into Sent");
+}
+
+/// The safety copy is a VACUUM, which may renumber the rowids the tally
+/// counts by, so a store put back from it starts a recount.
+#[test]
+fn a_store_put_back_after_a_failed_migration_recounts_its_correspondents() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mailrs.db");
+    let conn = open_with(&path, MIGRATIONS).unwrap();
+    conn.execute_batch(
+        "INSERT INTO accounts (id, email, added_at, provider) VALUES (1, 'me@example.com', 0, 'gmail');
+         INSERT INTO messages (account_id, id, thread_id, from_addr, to_addrs, cc_addrs, subject, date, snippet, size, has_attachments, sync_gen)
+             VALUES (1, 'm1', 't1', 'theo@example.org', '[]', '[]', 'Hi', 1, '', 1, 0, 1);",
+    )
+    .unwrap();
+    crate::contacts::catch_up(&conn).unwrap();
+    drop(conn);
+    let mut failing = MIGRATIONS.to_vec();
+    failing.push("CREATE TABLE halfway (x INTEGER); INSERT INTO nowhere VALUES (1);");
+
+    open_with(&path, &failing).unwrap_err();
+
+    let back = open_with(&path, MIGRATIONS).unwrap();
+    let marks: (bool, i64) = back
+        .query_row("SELECT stale, counted_row FROM contact_marks", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap();
+    assert_eq!(marks, (true, 0));
 }

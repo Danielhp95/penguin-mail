@@ -35,7 +35,7 @@ fn a_raw_copy_goes_with_its_message() {
     messages::apply(
         &conn,
         id,
-        &[Change::Delete {
+        &[Change::Erase {
             message_id: "pop3/u1".into(),
         }],
     )

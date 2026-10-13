@@ -94,10 +94,12 @@ pub struct Settings {
     /// The send-as address each account last sent from, so the composer
     /// opens where the writer left it.
     pub last_sender: BTreeMap<String, String>,
-    /// Every address each account may send as, as Gmail last reported them,
-    /// keyed by the account's own address. Kept here so the composer opens
-    /// without waiting on the network; the app refreshes it in the
-    /// background.
+    /// The storage banners the person took down, by the account's address:
+    /// whether the account was full then. One stays down until the
+    /// account's level changes.
+    pub storage_dismissed: BTreeMap<String, bool>,
+    /// Send-as addresses keyed by the account's own address. Gmail refreshes
+    /// its list in the background; SMTP accounts keep the owner's choices.
     pub send_as: BTreeMap<String, Vec<crate::compose::SendAsAddress>>,
     /// When Gmail last reported each account's send-as addresses, in
     /// milliseconds since the epoch, keyed as `send_as` is. The app asks
@@ -107,6 +109,9 @@ pub struct Settings {
     pub compose_format: ComposeFormat,
     /// Ask before sending a message that promises a file and carries none.
     pub check_attachments: bool,
+    /// Whether a message that asks for a read receipt shows the card that
+    /// offers to send one. Never ask leaves every such request unanswered.
+    pub read_receipts: ReadReceipts,
     /// Open the composer with Sign on. It does nothing without a gpg.
     pub sign_by_default: bool,
     /// Turn Encrypt on as soon as gpg holds a key for every recipient.
@@ -294,6 +299,11 @@ impl Use {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiSettings {
+    /// Language of answers, summaries and translations. Empty follows the interface.
+    pub language: String,
+    /// Invalidates in-flight translations without persisting a request lifetime.
+    #[serde(skip)]
+    pub language_revision: u64,
     /// The assistant's connection.
     pub provider: AiProvider,
     /// The local server's API address, ending in `/v1`.
@@ -322,6 +332,8 @@ pub struct AiSettings {
 impl Default for AiSettings {
     fn default() -> Self {
         AiSettings {
+            language: String::new(),
+            language_revision: 0,
             provider: AiProvider::Off,
             base_url: "http://localhost:1234/v1".into(),
             local_model: String::new(),
@@ -468,10 +480,12 @@ impl Default for Settings {
             spell_languages: BTreeMap::new(),
             spell_words: Vec::new(),
             last_sender: BTreeMap::new(),
+            storage_dismissed: BTreeMap::new(),
             send_as: BTreeMap::new(),
             send_as_checked: BTreeMap::new(),
             compose_format: ComposeFormat::Rich,
             check_attachments: true,
+            read_receipts: ReadReceipts::Ask,
             sign_by_default: false,
             encrypt_when_possible: false,
             contacts: false,
@@ -584,6 +598,24 @@ impl Choice for RemoteImages {
         match self {
             RemoteImages::Ask => gettext("Ask each time"),
             RemoteImages::Always => gettext("Always load"),
+        }
+    }
+}
+
+/// Whether to offer the read receipts senders ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReadReceipts {
+    Ask,
+    Never,
+}
+
+impl Choice for ReadReceipts {
+    const ALL: &'static [Self] = &[ReadReceipts::Ask, ReadReceipts::Never];
+    fn label(self) -> String {
+        match self {
+            ReadReceipts::Ask => gettext("Ask each time"),
+            ReadReceipts::Never => gettext("Never ask"),
         }
     }
 }
@@ -736,14 +768,40 @@ pub fn poll_choices() -> Vec<(i64, String)> {
     ]
 }
 
-/// How many days of mail stay on this computer.
+/// How many days of mail stay on this computer, the last choice all of it.
 pub fn window_choices() -> Vec<(i64, String)> {
     vec![
         (14, gettext("2 weeks")),
         (30, gettext("30 days")),
         (90, gettext("90 days")),
         (365, gettext("1 year")),
+        (730, gettext("2 years")),
+        (1825, gettext("5 years")),
+        (mailrs_sync::ALL_MAIL, gettext("All mail")),
     ]
+}
+
+/// The index of the window choice closest to `days`. All mail reaches
+/// further than any count of days, so a short count is not taken for it.
+pub fn nearest_window(choices: &[(i64, String)], days: i64) -> u32 {
+    let reach = |days: i64| mailrs_sync::window_reach(days).unwrap_or(i64::MAX);
+    let wanted = reach(days);
+    choices
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, (choice, _))| reach(*choice).abs_diff(wanted))
+        .map_or(0, |(i, _)| i as u32)
+}
+
+/// The line under the window row: what all mail costs, or what any other
+/// window keeps besides the days it names.
+pub fn window_note(days: i64) -> String {
+    match mailrs_sync::window_reach(days) {
+        None => gettext(
+            "Every message stays on this computer. A large account takes a lot of disk space and memory, and its older mail downloads in the background.",
+        ),
+        Some(_) => gettext("Everything in your inbox stays too, and older mail remains searchable"),
+    }
 }
 
 /// Body cache limit in megabytes.
@@ -923,12 +981,18 @@ impl Settings {
         if !written.is_empty() {
             return written;
         }
-        self.send_as
-            .get(&account.to_lowercase())
-            .into_iter()
-            .flatten()
-            .find(|a| a.email.eq_ignore_ascii_case(email))
-            .map_or("", |a| a.signature.as_str())
+        let Some(senders) = self.send_as.get(&account.to_lowercase()) else {
+            return "";
+        };
+        let Some(sender) = crate::compose::sender_for(senders, email) else {
+            return "";
+        };
+        let base = self.signature(&sender.email);
+        if base.is_empty() {
+            &sender.signature
+        } else {
+            base
+        }
     }
 
     /// Whether the account's send-as addresses are a day old or were
@@ -973,6 +1037,66 @@ impl Settings {
         addresses
     }
 
+    /// Keeps locally configured addresses separate from credentials and server setup.
+    pub fn save_sender(
+        &mut self,
+        account: &str,
+        was: Option<&str>,
+        mut sender: crate::compose::SendAsAddress,
+    ) -> bool {
+        sender.email = sender.email.trim().to_string();
+        if !crate::compose::sender_address(&sender.email)
+            || sender
+                .name
+                .as_ref()
+                .is_some_and(|n| n.contains(['\r', '\n']))
+            || was.is_some_and(|old| {
+                old.eq_ignore_ascii_case(account) && !sender.email.eq_ignore_ascii_case(account)
+            })
+        {
+            return false;
+        }
+        let mut senders = self.senders(account);
+        if senders.iter().any(|a| {
+            a.email.eq_ignore_ascii_case(&sender.email)
+                && !was.is_some_and(|old| old.eq_ignore_ascii_case(&a.email))
+        }) {
+            return false;
+        }
+        if let Some(old) = was {
+            let Some(at) = senders
+                .iter()
+                .position(|a| a.email.eq_ignore_ascii_case(old))
+            else {
+                return false;
+            };
+            senders.remove(at);
+        }
+        sender.name = sender
+            .name
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty());
+        if sender.default {
+            for other in &mut senders {
+                other.default = false;
+            }
+        }
+        senders.push(sender);
+        ensure_default(&mut senders, account);
+        self.send_as.insert(account.to_lowercase(), senders);
+        true
+    }
+
+    pub fn remove_sender(&mut self, account: &str, email: &str) {
+        if account.eq_ignore_ascii_case(email) {
+            return;
+        }
+        let mut senders = self.senders(account);
+        senders.retain(|a| !a.email.eq_ignore_ascii_case(email));
+        ensure_default(&mut senders, account);
+        self.send_as.insert(account.to_lowercase(), senders);
+    }
+
     pub fn set_signature(&mut self, email: &str, signature: &str) {
         let key = email.to_lowercase();
         if signature.trim().is_empty() {
@@ -984,12 +1108,70 @@ impl Settings {
     }
 }
 
+fn ensure_default(senders: &mut [crate::compose::SendAsAddress], account: &str) {
+    if !senders.iter().any(|s| s.default)
+        && let Some(own) = senders
+            .iter_mut()
+            .find(|s| s.email.eq_ignore_ascii_case(account))
+    {
+        own.default = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // The category bar itself cannot be tested here: the harness gives
     // every test its own thread, GTK refuses a second init from a
     // different one, and `richbuffer` already spends this binary's one
     // GTK test. So what is tested is the setting the bar is built from.
+    #[test]
+    fn local_senders_keep_defaults_suffixes_and_signatures_across_restarts() {
+        use crate::compose::{SendAsAddress, Suffixes};
+        let mut settings = Settings::default();
+        let own = "user@example.com";
+        let extra = SendAsAddress {
+            email: "user@second.example".into(),
+            name: Some("User".into()),
+            default: true,
+            suffixes: Suffixes {
+                plus: true,
+                dot: true,
+            },
+            ..Default::default()
+        };
+        assert!(settings.save_sender(own, None, extra.clone()));
+        assert_eq!(settings.senders(own)[0], extra);
+        assert_eq!(
+            settings.senders(own).iter().filter(|s| s.default).count(),
+            1
+        );
+        assert!(
+            !settings.save_sender(own, None, extra.clone()),
+            "no duplicates"
+        );
+        assert!(
+            !settings.save_sender(own, Some(own), extra.clone()),
+            "cannot rename the account address"
+        );
+        settings.set_signature(&extra.email, "Second domain");
+        assert_eq!(
+            settings.signature_for(own, "user+Shop@second.example"),
+            "Second domain"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        settings.save(&path).unwrap();
+        assert_eq!(Settings::load(&path), settings);
+        settings.remove_sender(own, own);
+        assert_eq!(settings.senders(own).len(), 2);
+        settings.remove_sender(own, &extra.email);
+        assert_eq!(settings.senders(own).len(), 1);
+        assert!(settings.senders(own)[0].default);
+        let legacy: SendAsAddress =
+            serde_json::from_str(r#"{"email":"user@example.com"}"#).unwrap();
+        assert!(!legacy.suffixes.enabled());
+    }
+
     #[test]
     fn the_inbox_opens_on_everything_until_somebody_says_otherwise() {
         assert_eq!(Settings::default().default_category, Category::All);
@@ -1269,6 +1451,35 @@ mod tests {
     }
 
     #[test]
+    fn the_window_reaches_two_years_five_years_and_all_mail() {
+        let days: Vec<i64> = window_choices().iter().map(|(days, _)| *days).collect();
+        assert_eq!(days, [14, 30, 90, 365, 730, 1825, mailrs_sync::ALL_MAIL]);
+        assert_eq!(window_choices()[6].1, "All mail");
+    }
+
+    #[test]
+    fn a_window_value_picks_its_row_and_all_mail_is_furthest() {
+        let choices = window_choices();
+        assert_eq!(nearest_window(&choices, 0), 6);
+        assert_eq!(nearest_window(&choices, -1), 6, "any count below one day is all mail");
+        assert_eq!(nearest_window(&choices, 5), 0, "five days is near two weeks, not all mail");
+        assert_eq!(nearest_window(&choices, 800), 4);
+        assert_eq!(nearest_window(&choices, 100_000), 5);
+    }
+
+    #[test]
+    fn all_mail_says_what_it_costs() {
+        assert_eq!(
+            window_note(mailrs_sync::ALL_MAIL),
+            "Every message stays on this computer. A large account takes a lot of disk space and memory, and its older mail downloads in the background."
+        );
+        assert_eq!(
+            window_note(30),
+            "Everything in your inbox stays too, and older mail remains searchable"
+        );
+    }
+
+    #[test]
     fn a_new_copy_shows_three_buttons_with_reply_among_them() {
         use crate::notify::Button;
         let buttons = Settings::default().notification_buttons;
@@ -1376,12 +1587,14 @@ mod tests {
                     name: Some("Dana".into()),
                     signature: "Dana".into(),
                     default: true,
+                    ..Default::default()
                 },
                 crate::compose::SendAsAddress {
                     email: "sales@example.com".into(),
                     name: Some("Sales".into()),
                     signature: "The Sales Desk".into(),
                     default: false,
+                    ..Default::default()
                 },
             ],
         );

@@ -82,6 +82,27 @@ async fn mail_erased_elsewhere_leaves_the_store() {
     assert!(!h.stored(&id).await);
 }
 
+/// While the window is open, a look between slow polls reads the Inbox
+/// alone; Check for Mail reads every synced folder at once, so mail
+/// erased elsewhere from the Archive leaves the list then, not five
+/// minutes later.
+#[tokio::test]
+async fn check_for_mail_reads_every_folder_before_the_slow_poll_is_due() {
+    let h = outlook().await;
+    h.sync.services().mail.set_window_open(true);
+    let id = h.fake.deliver(&h.fake.folder_id("archive"), fresh());
+    h.bootstrap_all().await;
+    h.look().await;
+    h.fake.delete(&id);
+    h.look().await;
+    assert!(h.stored(&id).await, "the Archive waits for the slow poll");
+
+    h.sync.services().mail.check_now();
+    h.look().await;
+
+    assert!(!h.stored(&id).await);
+}
+
 #[tokio::test]
 async fn marks_changed_elsewhere_come_back_whole() {
     let h = outlook().await;
@@ -131,6 +152,21 @@ async fn an_inbox_too_large_to_list_is_not_compared() {
     let before = h.fake.with(|s| s.meta_fetches.len());
     h.sync.reconcile_inbox().await.unwrap();
     assert_eq!(h.fake.with(|s| s.meta_fetches.len()), before, "nothing fetched again");
+}
+
+/// A cut window listing would read as mail gone to a relist that sweeps
+/// what it lacks.
+#[tokio::test]
+async fn a_window_too_large_to_list_is_refused_rather_than_cut() {
+    use crate::MailBackend;
+    let h = outlook().await;
+    let inbox = h.fake.folder_id("inbox");
+    for i in 0..20_001 {
+        h.fake.deliver(&inbox, FakeMail { at: now_millis() - i, ..FakeMail::default() });
+    }
+    h.sync.services().mail.mailboxes().await.unwrap();
+    let listed = h.sync.services().mail.window_ids(30, None).await;
+    assert!(matches!(listed, Err(crate::BackendError::Unsupported)), "{:?}", listed.map(|l| l.len()));
 }
 
 #[tokio::test]

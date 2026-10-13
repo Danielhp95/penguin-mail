@@ -886,3 +886,42 @@ async fn an_api_switched_off_in_the_project_says_which_and_where() {
         other => panic!("unexpected result: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn an_answer_over_the_json_cap_is_refused_not_read_whole() {
+    let server = MockServer::start().await;
+    mount_token(&server, 1).await;
+    let padding = "x".repeat(17 << 20);
+    Mock::given(method("GET"))
+        .and(path(format!("{API}/profile")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"emailAddress": padding, "historyId": "1"})))
+        .mount(&server)
+        .await;
+    let err = client(&server).profile().await.unwrap_err();
+    assert!(matches!(err, GmailError::TooLarge { .. }), "{err:?}");
+}
+
+#[tokio::test]
+async fn a_contact_photo_over_the_cap_is_refused() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/photo"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 9 << 20]))
+        .mount(&server)
+        .await;
+    let url = format!("{}/photo", server.uri());
+    let err = client(&server).contact_photo(&url).await.unwrap_err();
+    assert!(matches!(err, GmailError::TooLarge { .. }), "{err:?}");
+}
+
+#[tokio::test]
+async fn a_photo_under_the_cap_comes_back_whole() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/photo"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7u8; 100_000]))
+        .mount(&server)
+        .await;
+    let url = format!("{}/photo", server.uri());
+    assert_eq!(client(&server).contact_photo(&url).await.unwrap().len(), 100_000);
+}

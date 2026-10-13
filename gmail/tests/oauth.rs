@@ -289,3 +289,31 @@ async fn invalid_grant_means_the_account_needs_reauthorizing() {
         Err(GmailError::NeedsReauth)
     ));
 }
+
+#[tokio::test]
+async fn a_token_answer_past_the_cap_is_refused() {
+    let server = MockServer::start().await;
+    let padding = "a".repeat(200 << 10);
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"access_token": "at", "expires_in": 3599, "junk": padding})),
+        )
+        .mount(&server)
+        .await;
+    let result = client_for(&server).refresh("rt").await;
+    assert!(matches!(result, Err(GmailError::TooLarge { .. })), "{result:?}");
+}
+
+#[tokio::test]
+async fn a_refusal_with_an_enormous_body_is_not_read_whole() {
+    let server = MockServer::start().await;
+    let padding = format!("invalid_grant {}", "a".repeat(200 << 10));
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(400).set_body_string(padding))
+        .mount(&server)
+        .await;
+    let result = client_for(&server).refresh("rt").await;
+    assert!(matches!(result, Err(GmailError::Http { status: 400, .. })), "{result:?}");
+}

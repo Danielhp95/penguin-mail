@@ -2,7 +2,7 @@
 //! content filter, identities, and the engine event loop.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -12,11 +12,11 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use ksni::TrayMethods;
 use mailrs_domain::translate::{fill, gettext};
-use mailrs_domain::{Account, AccountId, Address, ChangeEvent, Label, MailSet, Provider, Role};
-use mailrs_store::{accounts, labels, messages, threads};
+use mailrs_domain::{Account, AccountId, Address, ChangeEvent, Label, Provider, Role};
+use mailrs_store::{accounts, labels, messages};
 use mailrs_sync::{History, MovedFrom};
 
-use crate::app::announce::still_news;
+use crate::app::announce::{announced, still_news};
 use crate::compose::Identity;
 use crate::core::Core;
 use crate::notify;
@@ -26,6 +26,8 @@ use crate::tray::{AccountUnread, MailTray, TrayCommand};
 use crate::ui::autocomplete::Contacts;
 use crate::ui::composer::spell;
 use crate::ui::window::{MainWindow, Notice, Reveal};
+use crate::unread::{Ask, Counted, Counter, Unread};
+use mailrs_sync::mailbox::Counts;
 
 const BLOCK_REMOTE_RULES: &str = r#"[
   {"trigger": {"url-filter": "^https?:"}, "action": {"type": "block"}},
@@ -36,10 +38,13 @@ const BLOCK_REMOTE_RULES: &str = r#"[
 mod announce;
 mod calendar_file;
 mod composing;
+mod dock_badge;
 mod hidden;
-mod photos;
+mod dictionaries;
 mod reminders;
 mod sending;
+mod storage;
+mod tray_feed;
 
 pub use composing::Signature;
 mod updates;
@@ -64,8 +69,14 @@ pub struct App {
     /// Each account's consent, read in the same pass as `accounts` so the
     /// Grant Access banner never waits on a round trip of its own.
     consent: RefCell<HashMap<AccountId, accounts::Consent>>,
+    /// The JMAP accounts that signed in through the browser, as
+    /// `reload_accounts` last read them, so signing in again says where.
+    through_browser: RefCell<HashSet<AccountId>>,
     names: RefCell<HashMap<AccountId, String>>,
     tray: Arc<Mutex<Option<ksni::Handle<MailTray>>>>,
+    /// The newest count for the tray, All Inboxes and each account's
+    /// inbox, which the tray takes in order once it is up.
+    tray_unread: tokio::sync::watch::Sender<(i64, Vec<AccountUnread>)>,
     /// What somebody picked on a new-mail notification.
     chosen: async_channel::Sender<notify::Request>,
     /// The new-mail notifications posted this run, by token, so a click
@@ -82,8 +93,9 @@ pub struct App {
     /// activation.
     pending_file: RefCell<Option<std::path::PathBuf>>,
     tray_started: Cell<bool>,
-    /// Holds the tray's recount while a burst of changes goes by.
-    tray_recount: crate::tray::Burst,
+    /// The unread counts the sidebar, the tray and the Dock badge share.
+    unread: Rc<Unread<CoreCounts>>,
+    dock_badge: dock_badge::Badge,
     /// Accounts whose waiting rule would replace a script of the person's
     /// own and were asked about it this run, so the minute timer asks once.
     asked_to_replace: RefCell<std::collections::HashSet<AccountId>>,
@@ -98,19 +110,20 @@ pub struct App {
     /// list reloads only after new mail arrives.
     contacts: Contacts,
     pub(crate) contacts_stale: Cell<bool>,
-    /// Contact photos on disk, by lower-case address. Rows and the open
-    /// conversation read it; it is filled whenever the suggestions load.
-    photos: RefCell<HashMap<String, PathBuf>>,
-    /// The photos open conversations asked for, read into `data:` URIs.
-    photo_data: RefCell<photos::PhotoCache>,
+    /// Contact photos, read from disk as rows and conversations ask. The
+    /// files on disk are known whenever the suggestions load.
+    photos: Rc<crate::photos::ContactPhotos>,
     /// Messages waiting out the Undo Send delay.
     pending_sends: Cell<usize>,
     /// Hunspell dictionaries already read, by the languages they cover.
-    /// Every composer shares them, because reading one is slow.
-    dictionaries: RefCell<HashMap<Vec<String>, Rc<spell::Dictionaries>>>,
+    /// Every open composer shares them, because reading one is slow; they
+    /// go when the last composer using them closes.
+    dictionaries: dictionaries::Shared<spell::Dictionaries>,
     /// Which languages a dictionary is installed for, read once.
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
+    /// How full each account's server said it was, read hourly.
+    storage: RefCell<HashMap<AccountId, mailrs_sync::Storage>>,
     /// The timer for the next event reminder check. Each check replaces
     /// it with one set for the next reminder due, at most a minute away.
     reminder_wake: RefCell<Option<glib::SourceId>>,
@@ -142,6 +155,7 @@ impl App {
             Settings::default_path()
         };
         let opened = Settings::open(&settings_path);
+        let counted_by = Rc::clone(&core);
         let app = Rc::new(App {
             gio: gio_app.clone(),
             core,
@@ -152,8 +166,10 @@ impl App {
             labels: RefCell::new(HashMap::new()),
             label_order: RefCell::new(HashMap::new()),
             consent: RefCell::new(HashMap::new()),
+            through_browser: RefCell::default(),
             names: RefCell::new(HashMap::new()),
             tray: Arc::new(Mutex::new(None)),
+            tray_unread: tokio::sync::watch::Sender::new((0, Vec::new())),
             chosen,
             issued: RefCell::default(),
             skip_first_window: Cell::new(background),
@@ -163,7 +179,8 @@ impl App {
             pending_compose: RefCell::new(compose),
             pending_file: RefCell::new(calendar_file),
             tray_started: Cell::new(false),
-            tray_recount: crate::tray::Burst::default(),
+            unread: Unread::new(CoreCounts(counted_by)),
+            dock_badge: dock_badge::Badge::default(),
             asked_to_replace: RefCell::default(),
             settings: RefCell::new(Settings {
                 // The demo's contacts are already in its throwaway store,
@@ -175,12 +192,12 @@ impl App {
             settings_broken: RefCell::new(opened.broken),
             contacts: Rc::new(RefCell::new(Rc::new(Vec::new()))),
             contacts_stale: Cell::new(true),
-            photos: RefCell::new(HashMap::new()),
-            photo_data: RefCell::new(photos::PhotoCache::default()),
+            photos: Rc::new(crate::photos::ContactPhotos::new()),
             pending_sends: Cell::new(0),
-            dictionaries: RefCell::new(HashMap::new()),
+            dictionaries: dictionaries::Shared::default(),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
+            storage: RefCell::new(HashMap::new()),
             reminder_wake: RefCell::new(None),
             reminders_running: Cell::new(false),
             updater: crate::update::Updater::for_this_copy(core_demo).map(Rc::new),
@@ -189,6 +206,7 @@ impl App {
         crate::locale_time::set_week_start_setting(app.settings.borrow().week_start);
         app.install_actions();
         app.listen();
+        app.count_unread();
         app.listen_for_notifications(picked);
         // The tray's Quit and a session logout can end the process
         // through the application without ever calling `App::quit`, so
@@ -219,6 +237,9 @@ impl App {
             app.core.set_network(available);
             if let Some(window) = app.window() {
                 window.calendar.network_changed();
+                if available {
+                    window.network_back();
+                }
             }
             if available {
                 // The folder on screen may have changed on Gmail while
@@ -233,6 +254,7 @@ impl App {
         });
         app.load_accounts();
         app.start_scheduler();
+        app.start_storage_checks();
         app.start_event_reminders();
         app.watch_contacts();
         app.watch_calendars();
@@ -512,10 +534,14 @@ impl App {
 
     /// The address and display name mail from this account is sent as.
     fn identity(&self, account_id: AccountId) -> Address {
-        Address {
-            name: self.names.borrow().get(&account_id).cloned(),
-            email: self.account_email(account_id),
-        }
+        self.identities()
+            .into_iter()
+            .find(|identity| identity.account_id == account_id)
+            .map(|identity| identity.address)
+            .unwrap_or_else(|| Address {
+                name: None,
+                email: self.account_email(account_id),
+            })
     }
 
     /// Every address every account may send from, accounts in sidebar order
@@ -541,6 +567,7 @@ impl App {
                         .flatten()
                 });
                 identities.push(Identity {
+                    suffixes: sender.suffixes,
                     account_id: account.id,
                     account_email: email.to_string(),
                     signature: settings.signature_for(email, &sender.email).to_string(),
@@ -549,6 +576,10 @@ impl App {
                         email: sender.email.clone(),
                     },
                     default: sender.default,
+                    masks: self
+                        .core
+                        .account(account.id)
+                        .is_some_and(|sync| sync.services().offers().masked_email),
                 });
             }
         }
@@ -556,12 +587,21 @@ impl App {
     }
 
     /// The addresses one account sends as, for picking a reply's sender.
-    pub fn my_addresses(&self, account_id: AccountId) -> Vec<Address> {
-        self.identities()
-            .into_iter()
-            .filter(|i| i.account_id == account_id)
-            .map(|i| i.address)
-            .collect()
+    pub fn my_addresses(
+        &self,
+        account_id: AccountId,
+        original: &mailrs_domain::MessageMeta,
+    ) -> Vec<Address> {
+        let account = self.account_email(account_id);
+        let mut senders = self.settings.borrow().senders(&account);
+        for sender in &mut senders {
+            if sender.name.is_none() && sender.email.eq_ignore_ascii_case(&account) {
+                sender.name = self.names.borrow().get(&account_id).cloned();
+            }
+        }
+        let mail = self.core.account(account_id).map(|sync| sync.services().mail.clone());
+        let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+        crate::compose::reply_addresses(&senders, original, masked)
     }
 
     /// The dictionaries a composer for `account_id` should check against.
@@ -569,7 +609,8 @@ impl App {
     /// Reading a Hunspell dictionary takes long enough to stutter a window,
     /// so this hands back a future: the composer opens straight away and the
     /// squiggles appear a moment later. Every composer that asks for the same
-    /// languages gets the same dictionaries back.
+    /// languages while another still holds them gets the same dictionaries
+    /// back.
     fn dictionaries(
         self: &Rc<Self>,
         account_id: AccountId,
@@ -588,8 +629,7 @@ impl App {
                 settings.spell_words.clone(),
             )
         };
-        if let Some(loaded) = self.dictionaries.borrow().get(&languages) {
-            let loaded = Rc::clone(loaded);
+        if let Some(loaded) = self.dictionaries.get(&languages) {
             for word in &words {
                 loaded.remember(word);
             }
@@ -602,9 +642,7 @@ impl App {
                 .await
                 .map(Rc::new)
                 .unwrap_or_else(|_| Rc::new(spell::Dictionaries::load(&[], &[])));
-            this.dictionaries
-                .borrow_mut()
-                .insert(key, Rc::clone(&loaded));
+            this.dictionaries.keep(key, &loaded);
             loaded
         })
     }
@@ -649,6 +687,7 @@ impl App {
                         name: a.name,
                         signature: a.signature,
                         default: a.default,
+                        ..Default::default()
                     })
                     .collect();
                 if addresses.is_empty() {
@@ -731,23 +770,32 @@ impl App {
     /// shown up as a stray unnamed control to a screen reader already
     /// walking the page.
     pub async fn reload_accounts(self: &Rc<Self>) -> anyhow::Result<Vec<(Account, Vec<Label>)>> {
-        let (loaded, order, consent) = self
+        let (loaded, order, consent, through_browser) = self
             .core
             .read(|c| {
                 let mut out: Vec<(Account, Vec<Label>)> = Vec::new();
                 let mut order = HashMap::new();
+                let mut through_browser = HashSet::new();
                 for account in accounts::list_accounts(c)? {
                     let account_labels = labels::list_labels(c, account.id)?;
                     order.insert(account.id, labels::positions(c, account.id)?);
+                    if account.provider == Provider::Jmap
+                        && mailrs_store::jmap::load(c, account.id)?
+                            .is_some_and(|saved| saved.auth == mailrs_store::jmap::JmapAuth::OAuth)
+                    {
+                        through_browser.insert(account.id);
+                    }
                     out.push((account, account_labels));
                 }
                 let consent = accounts::all_consent(c)?;
-                Ok((out, order, consent))
+                Ok((out, order, consent, through_browser))
             })
             .await?;
         *self.label_order.borrow_mut() = order;
+        *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
+        self.unread.set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -760,6 +808,12 @@ impl App {
             .collect();
         self.remember_accounts(&arrived);
         Ok(loaded)
+    }
+
+    /// Whether `account_id` is a JMAP account that signed in through the
+    /// browser, as `reload_accounts` last read it.
+    pub fn signs_in_through_browser(&self, account_id: AccountId) -> bool {
+        self.through_browser.borrow().contains(&account_id)
     }
 
     /// Every account's consent, as `reload_accounts` last read it: whether
@@ -799,7 +853,28 @@ impl App {
             });
         }
         self.refresh_send_as(arrived);
-        self.update_tray();
+        self.list_masked(arrived);
+    }
+
+    /// Lists the masked addresses of each account in `arrived` whose server
+    /// makes them, so a reply to mail sent to one goes out from it. The
+    /// account's adapter keeps the list. Until it has one, or when the
+    /// listing fails, a reply comes from the account's own address.
+    fn list_masked(self: &Rc<Self>, arrived: &[Account]) {
+        for account in arrived {
+            let Some(sync) = self.core.account(account.id) else {
+                continue;
+            };
+            if !sync.services().offers().masked_email {
+                continue;
+            }
+            let (core, settings, id) = (Rc::clone(&self.core), self.core.gmail_settings(), account.id);
+            glib::spawn_future_local(async move {
+                if core.call(async move { settings.masked_addresses(id).await }).await.is_err() {
+                    tracing::warn!(account = id, "could not list the masked addresses");
+                }
+            });
+        }
     }
 
     fn load_accounts(self: &Rc<Self>) {
@@ -853,56 +928,40 @@ impl App {
                 .iter()
                 .filter_map(|p| Some((p.email.clone(), p.photo_file.clone()?)))
                 .collect();
-            let on_disk = gio::spawn_blocking(move || photos::on_disk(dir, files))
+            let on_disk = gio::spawn_blocking(move || crate::photos::on_disk(dir, files))
                 .await
                 .unwrap_or_default();
-            *this.photos.borrow_mut() = on_disk;
-            this.photo_data.borrow_mut().clear();
+            this.photos.set_files(on_disk);
             *this.contacts.borrow_mut() = Rc::new(found);
             this.tell_window(Notice::ContactsLoaded);
         });
     }
 
-    /// Every contact photo on disk, by lower-case address.
-    pub fn photos(&self) -> HashMap<String, PathBuf> {
-        self.photos.borrow().clone()
+    /// The contact photos rows and conversations show.
+    pub fn photos(&self) -> Rc<crate::photos::ContactPhotos> {
+        Rc::clone(&self.photos)
     }
 
     /// The photo of `email`, when a contact has one on this computer.
     pub fn photo(&self, email: &str) -> Option<PathBuf> {
-        self.photos
-            .borrow()
-            .get(&email.trim().to_lowercase())
-            .cloned()
+        self.photos.path(email)
     }
 
-    /// The contact photos of `addresses`, as `data:` URIs by lower-case
-    /// address. The conversation page loads nothing from disk or the
-    /// network, so a photo travels inline or not at all. A photo not read
-    /// yet is read off the main thread, and the open conversations are
-    /// drawn again once it arrives.
+    /// The contact photos of `addresses` already in memory, as `data:`
+    /// URIs by lower-case address. The conversation page loads nothing
+    /// from disk or the network, so a photo travels inline or not at all.
+    /// The rest are read off the main thread, and the window hears when
+    /// they arrive.
     pub fn sender_photos(
-        self: &Rc<Self>,
+        &self,
         addresses: impl Iterator<Item = String>,
-    ) -> HashMap<String, String> {
-        let lookup = self
-            .photo_data
-            .borrow_mut()
-            .lookup(addresses, |key| self.photo(key));
-        if !lookup.to_read.is_empty() {
-            let (this, files) = (Rc::clone(self), lookup.to_read);
-            glib::spawn_future_local(async move {
-                let Ok(read) = gio::spawn_blocking(move || photos::read(files)).await else {
-                    return;
-                };
-                let any = read.iter().any(|(_, data)| data.is_some());
-                this.photo_data.borrow_mut().store(read);
-                if any {
-                    this.tell_window(Notice::ContactsLoaded);
-                }
-            });
-        }
-        lookup.found
+    ) -> HashMap<String, Rc<str>> {
+        addresses
+            .filter_map(|address| {
+                let uri = self.photos.uri(&address)?;
+                Some((address.trim().to_lowercase(), uri))
+            })
+            .collect()
     }
 
     /// Deletes one account's contacts and photos from this computer and
@@ -927,8 +986,7 @@ impl App {
             {
                 tracing::warn!(error = %err, "could not delete the stored contacts");
             }
-            this.photos.borrow_mut().clear();
-            this.photo_data.borrow_mut().clear();
+            this.photos.set_files(HashMap::new());
             this.contacts_stale.set(true);
             this.reload_contacts();
         });
@@ -1219,18 +1277,15 @@ impl App {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             while let Ok(event) = this.core.events.recv().await {
+                this.unread.heard(&event);
                 this.tell_window(Notice::Engine(&event));
-                match &event {
-                    ChangeEvent::NewMail {
-                        account_id,
-                        message_ids,
-                    } => {
-                        this.contacts_stale.set(true);
-                        this.after_rules(*account_id, message_ids.clone());
-                    }
-                    ChangeEvent::ThreadsChanged { .. }
-                    | ChangeEvent::AccountStateChanged { .. } => this.update_tray(),
-                    _ => {}
+                if let ChangeEvent::NewMail {
+                    account_id,
+                    message_ids,
+                } = &event
+                {
+                    this.contacts_stale.set(true);
+                    this.after_rules(*account_id, message_ids.clone());
                 }
             }
         });
@@ -1399,7 +1454,7 @@ impl App {
             .accounts
             .borrow()
             .iter()
-            .filter(|a| matches!(a.provider, Provider::Imap | Provider::Pop3))
+            .filter(|a| matches!(a.provider, Provider::Imap | Provider::Pop3 | Provider::Jmap))
             .map(|a| a.id)
             .collect();
         let this = Rc::clone(self);
@@ -1481,19 +1536,7 @@ impl App {
         glib::spawn_future_local(async move {
             let found = this
                 .core
-                .read(move |c| {
-                    let mut found = Vec::new();
-                    for id in &message_ids {
-                        if let Some(thread) = messages::thread_id_of(c, account_id, id)? {
-                            found.extend(
-                                messages::thread_messages(c, account_id, &thread)?
-                                    .into_iter()
-                                    .filter(|m| &m.id == id),
-                            );
-                        }
-                    }
-                    Ok(found)
-                })
+                .read(move |c| announced(c, account_id, &message_ids))
                 .await;
             let found = found.map(|found| {
                 found
@@ -1541,9 +1584,12 @@ impl App {
             commands,
             can_update: self.updater.is_some(),
             update: None,
-            pixmaps: crate::tray::pixmaps(),
+            icon_theme_path: crate::tray::installed_icons(),
         };
         let slot = Arc::clone(&self.tray);
+        // The icon comes up on the runtime, then takes the newest count and
+        // each one after it, in order.
+        let counts = self.tray_unread.subscribe();
         // The restart that returns memory execs in place and keeps the pid,
         // so the default name, StatusNotifierItem-<pid>-1, comes back while
         // the AppIndicators extension is still timing out the old owner. When
@@ -1552,7 +1598,21 @@ impl App {
         // and the icon stays gone. A unique connection name never repeats.
         self.core.spawn(async move {
             match tray.disable_dbus_name(true).spawn().await {
-                Ok(handle) => *slot.lock().expect("tray slot poisoned") = Some(handle),
+                Ok(handle) => {
+                    *slot.lock().expect("tray slot poisoned") = Some(handle.clone());
+                    tray_feed::follow(counts, move |(total, accounts)| {
+                        let handle = handle.clone();
+                        async move {
+                            handle
+                                .update(move |tray: &mut MailTray| {
+                                    tray.unread = total;
+                                    tray.accounts = accounts;
+                                })
+                                .await;
+                        }
+                    })
+                    .await;
+                }
                 Err(err) => tracing::warn!(error = %err, "could not add the tray icon"),
             }
         });
@@ -1581,55 +1641,70 @@ impl App {
         });
     }
 
-    /// Counts each account's unread mail for the tray, once per burst of
-    /// changes rather than once per change.
-    fn update_tray(self: &Rc<Self>) {
-        let shown = self.tray.lock().expect("tray slot poisoned").is_some();
-        if !shown || !self.tray_recount.claim() {
-            return;
-        }
-        let this = Rc::clone(self);
-        glib::timeout_add_local_once(crate::tray::RECOUNT_AFTER, move || {
-            this.tray_recount.start();
-            this.count_for_tray();
+    /// Starts the unread counts, wakes them on each server answer and on
+    /// each account that starts, and hands every count to the tray and the
+    /// Dock badge.
+    fn count_unread(self: &Rc<Self>) {
+        glib::spawn_future_local(self.unread.start(glib::timeout_future));
+        let mut answers = self.core.lists().counts_changed();
+        let weak = Rc::downgrade(&self.unread);
+        glib::spawn_future_local(async move {
+            while answers.changed().await.is_ok() {
+                let Some(unread) = weak.upgrade() else { break };
+                unread.answered();
+            }
         });
+        let (started, weak) = (self.core.started.clone(), Rc::downgrade(&self.unread));
+        glib::spawn_future_local(async move {
+            while let Ok(account_id) = started.recv().await {
+                let Some(unread) = weak.upgrade() else { break };
+                unread.started(account_id);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.unread.listen(Box::new(move |counted| {
+            if let Some(app) = weak.upgrade() {
+                app.show_unread(counted);
+            }
+        }));
     }
 
-    fn count_for_tray(self: &Rc<Self>) {
-        let Some(handle) = self.tray.lock().expect("tray slot poisoned").clone() else {
-            return;
-        };
-        let accounts = self.accounts.borrow().clone();
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let counts = this
-                .core
-                .read(move |c| {
-                    let mut counts = Vec::new();
-                    for account in accounts {
-                        let unread = threads::unread_threads(
-                            c,
-                            &threads::ThreadFilter::account(account.id, MailSet::Role(Role::Inbox)),
-                        )?;
-                        counts.push(AccountUnread {
-                            id: account.id,
-                            email: account.email,
-                            unread,
-                        });
-                    }
-                    Ok(counts)
-                })
-                .await;
-            let Ok(counts) = counts else { return };
-            this.core.spawn(async move {
-                handle
-                    .update(move |tray: &mut MailTray| {
-                        tray.unread = counts.iter().map(|a| a.unread).sum();
-                        tray.accounts = counts;
-                    })
-                    .await;
-            });
-        });
+    /// Puts a count on the tray and the Dock badge: All Inboxes, and each
+    /// account's inbox on its line of the tray menu.
+    fn show_unread(&self, counted: &Counted) {
+        let total = counted.all_inboxes();
+        self.dock_badge.show(total);
+        let accounts: Vec<AccountUnread> = self
+            .accounts
+            .borrow()
+            .iter()
+            .map(|account| AccountUnread {
+                id: account.id,
+                email: account.email.clone(),
+                unread: counted.inbox(account.id),
+            })
+            .collect();
+        // One task hands the counts to the tray, so an older one cannot
+        // land after this one, as it could from a task of its own.
+        self.tray_unread.send_replace((total, accounts));
+    }
+
+    /// The unread counts, for a window to show them too.
+    pub(crate) fn unread(&self) -> &Rc<Unread<CoreCounts>> {
+        &self.unread
+    }
+}
+
+/// The unread counts, read through the core's runtime.
+pub(crate) struct CoreCounts(Rc<Core>);
+
+impl Counter for CoreCounts {
+    async fn count(&self, ask: Ask) -> Result<Counts, String> {
+        let lists = self.0.lists();
+        self.0
+            .call(async move { crate::unread::read(&lists, ask).await })
+            .await
+            .map_err(|err| err.to_string())
     }
 }
 

@@ -45,7 +45,7 @@ use mailrs_domain::translate::{date_locale, fill, fill_plural, gettext};
 mod calendar;
 mod catalog;
 #[cfg(test)]
-mod fake;
+pub(crate) mod fake;
 mod mail;
 mod manage;
 mod queue;
@@ -1720,15 +1720,34 @@ impl<A: Accounts> Tools<A> {
         })
     }
 
+    /// Why Hide My Email cannot work for `account`, naming its provider.
+    fn hides_nothing(account: &Account) -> Value {
+        json!({"unavailable": fill(
+            &gettext("Hide My Email needs masked addresses or labels, and {provider} offers neither on this account."),
+            &[("provider", account.provider_name())],
+        )})
+    }
+
+    /// Makes a hidden address: a masked address on a server that makes
+    /// them, as Fastmail's does, or else a plus address with a rule.
     async fn hidden_create(&self, input: &Value) -> ToolResult {
         let (account, settings) = self.settings_for(&required(input, "account")?)?;
+        let note = text(input, "note").unwrap_or_default();
+        if self.offers(account.id).masked_email {
+            let site = text(input, "site").unwrap_or_default();
+            let account_id = account.id;
+            let made = self
+                .call(async move { settings.create_masked_address(account_id, &site, &note).await })
+                .await?;
+            self.effects.copy(&made.email);
+            return Ok(json!({"address": made.email, "masked": true, "copied": true}));
+        }
         if let Some(answer) = self.unavailable(&account, Missing::Rules) {
             return Ok(answer);
         }
         if !crate::offered::hides_addresses(self.offers(account.id)) {
-            return Ok(json!({"unavailable": gettext("Hide My Email works with Gmail accounts.")}));
+            return Ok(Self::hides_nothing(&account));
         }
-        let note = text(input, "note").unwrap_or_default();
         let taken = self.desk.settings().hidden_addresses;
         let (account_id, email) = (account.id, account.email.clone());
         let made = self
@@ -1763,8 +1782,7 @@ impl<A: Accounts> Tools<A> {
             return Ok(Plan::without_asking(std::future::ready(Ok(answer))));
         }
         if !crate::offered::hides_addresses(self.offers(account.id)) {
-            let answer =
-                json!({"unavailable": gettext("Hide My Email works with Gmail accounts.")});
+            let answer = Self::hides_nothing(&account);
             return Ok(Plan::without_asking(std::future::ready(Ok(answer))));
         }
         let question = match active {

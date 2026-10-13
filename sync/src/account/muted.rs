@@ -7,7 +7,7 @@ use mailrs_store::threads;
 
 use super::AccountSync;
 use crate::ops::ops_for;
-use crate::{MailBackend, SyncError, TriageAction};
+use crate::{SyncError, TriageAction};
 
 impl AccountSync {
     /// Takes the replies to muted threads out of `new_mail` and answers
@@ -35,7 +35,7 @@ impl AccountSync {
         if muted.is_empty() {
             return new_mail;
         }
-        if !self.services.mail.capabilities().files_muted_replies {
+        if !self.mail.capabilities().files_muted_replies {
             let targets: Vec<Target> = muted
                 .iter()
                 .map(|(id, thread)| Target {
@@ -57,7 +57,7 @@ impl AccountSync {
     /// Marks `targets` read, then mutes them as the Mute button does. The
     /// marks go first: they travel with an IMAP move.
     async fn file_as_muted(&self, targets: &[Target]) -> Result<(), SyncError> {
-        let mail = &self.services.mail;
+        let mail = &self.mail;
         let (caps, roles, tags) = (mail.capabilities(), self.roles(), self.tags().await?);
         let set_of = |id: &str| mail.set_of(id);
         let mut ops = ops_for(&TriageAction::MarkRead, &caps, &roles, &tags, set_of)?;

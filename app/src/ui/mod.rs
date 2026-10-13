@@ -14,6 +14,7 @@ pub mod autocomplete;
 pub mod calendar;
 pub mod card_place;
 pub mod combo_value;
+pub mod copied;
 pub mod composer;
 pub mod confirm;
 pub mod contact_card;
@@ -31,12 +32,14 @@ pub mod narrow_header;
 pub mod permission;
 pub mod pgp;
 pub mod preferences;
+pub mod sender_prefs;
 pub mod queued;
 pub mod roving;
 pub mod rules;
 pub mod search_suggest;
 pub mod sidebar;
 pub mod smart_editor;
+pub mod switch_jmap;
 pub mod templates;
 pub mod texture;
 pub mod thread_list;
@@ -268,15 +271,30 @@ pub fn name_menu_items_of(button: &impl IsA<gtk::Widget>) {
 
 /// Names the items of a menu open under `widget` that another library
 /// built, such as the one WebKitGTK shows on a right click in a page.
+///
+/// WebKit adds that menu's popover after its `context-menu` signal
+/// returns, and a busy machine can run the first idle turn before it has.
+/// The naming is tried again a little later, until a menu has been
+/// named, so the items never stay without a name.
 #[cfg(target_os = "linux")]
 pub fn name_menu_items_under(widget: &impl IsA<gtk::Widget>) {
-    name_model_buttons(widget.as_ref());
+    const LATER_MS: [u64; 5] = [0, 40, 120, 300, 800];
+    fn attempt(widget: gtk::Widget, step: usize) {
+        if name_model_buttons(&widget) > 0 || step + 1 >= LATER_MS.len() {
+            return;
+        }
+        let wait = std::time::Duration::from_millis(LATER_MS[step + 1] - LATER_MS[step]);
+        glib::timeout_add_local_once(wait, move || attempt(widget, step + 1));
+    }
+    attempt(widget.as_ref().clone(), 0);
 }
 
 /// Names every menu item GTK built from a model under `widget`, the
-/// pages of submenus included. `GtkModelButton` is private to GTK, so it
-/// is found by its type name and read through its `text` property.
-fn name_model_buttons(widget: &gtk::Widget) {
+/// pages of submenus included, and gives back how many it named.
+/// `GtkModelButton` is private to GTK, so it is found by its type name
+/// and read through its `text` property.
+fn name_model_buttons(widget: &gtk::Widget) -> usize {
+    let mut named = 0;
     let mut child = widget.first_child();
     while let Some(item) = child {
         if item.type_().name() == "GtkModelButton" {
@@ -287,11 +305,13 @@ fn name_model_buttons(widget: &gtk::Widget) {
                 // one GTK set has to go before the name is heard.
                 item.reset_relation(gtk::AccessibleRelation::LabelledBy);
                 name(&item, &spoken);
+                named += 1;
             }
         }
-        name_model_buttons(&item);
+        named += name_model_buttons(&item);
         child = item.next_sibling();
     }
+    named
 }
 
 /// Names every row a `ComboRow` shows after the text it shows, both the

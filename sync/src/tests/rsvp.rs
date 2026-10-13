@@ -68,6 +68,7 @@ async fn read_standup(h: &Harness) -> CalendarCopy<Connected> {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }]
     });
     h.fake.put_calendar_event(standup());
@@ -274,6 +275,7 @@ async fn proposal_sequence(copy_sequence: i64, mail: Option<i64>) -> String {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }]
     });
     h.fake.put_calendar_event(Event { sequence: copy_sequence, ..standup() });

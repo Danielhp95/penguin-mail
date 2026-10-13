@@ -188,6 +188,31 @@ async fn a_label_deleted_on_the_web_leaves_its_mail() {
     assert_eq!(h.labels_of("m1").await, ["INBOX"]);
 }
 
+/// A POP3 account's folders live only in the store, so a listing that no
+/// longer names one keeps it, and nothing changed to tell the window of.
+#[tokio::test]
+async fn a_kept_folder_tells_the_window_nothing() {
+    let h = harness().await;
+    h.bootstrap_all().await;
+    let account_id = h.account_id;
+    h.db.write(move |c| {
+        c.execute(
+            "UPDATE accounts SET provider = ?1 WHERE id = ?2",
+            rusqlite::params![mailrs_domain::Provider::Pop3.as_str(), account_id],
+        )?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    label_events(&h);
+    h.fake.with(|s| s.labels.retain(|l| l.id != "Label_1"));
+
+    assert!(!h.sync.refresh_labels().await.unwrap(), "the folder stays");
+
+    assert!(stored(&h).await.iter().any(|(id, _, _)| id == "Label_1"));
+    assert_eq!(label_events(&h), 0);
+}
+
 /// History naming a label the store has never seen means one was made
 /// elsewhere, so the replay lists the labels once.
 #[tokio::test]

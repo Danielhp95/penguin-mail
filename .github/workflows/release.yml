@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# One release at a time per tag or branch, and a running one is never
+# cancelled half-published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   version:
     name: Read the version
@@ -19,6 +25,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Read the version
         id: version
         env:
@@ -45,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 105
     permissions:
-      actions: read
+      actions: read # reads CI's runs on this commit
     steps:
       - name: Wait for CI
         env:
@@ -70,32 +78,28 @@ jobs:
           echo "::error::CI on $SHA had not finished after 100 minutes"
           exit 1
 
+  # The package jobs build without the Actions cache. Another run wrote
+  # whatever a cache holds, and a poisoned entry would go out inside a
+  # signed release.
   build:
     name: Build the packages
     needs: version
     runs-on: ubuntu-latest
-    container: ubuntu:26.04
+    container: ubuntu:26.04@sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7
     timeout-minutes: 90
     env:
-      # The same as CI's gate. rust-cache puts CARGO_ variables into its
-      # key, so a different value here would miss CI's cache.
       CARGO_TERM_COLOR: always
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: scripts/ci-deps.sh
       - name: Put cargo on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # Starts from the cache CI's gate saved on main: the crates it
-      # downloaded and whatever of its build a release build can use. Only
-      # the same tag could read a tag's own cache, so this job saves none.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: ubuntu-26.04
-          save-if: false
       # The project's Google and Microsoft clients go into the binaries at
       # compile time. A run without the secrets builds a copy that cannot
       # add a Google account, and says so when someone tries.
@@ -125,7 +129,7 @@ jobs:
     # The oldest Fedora with GTK 4.20 and libadwaita 1.8. rpm requires the
     # libraries the binaries link against, so an rpm built here installs on
     # this release and the ones after it.
-    container: fedora:43
+    container: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
     timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
@@ -134,28 +138,30 @@ jobs:
       - name: Install git
         run: dnf install -y git
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: scripts/ci-deps.sh
       - name: Put cargo on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # Nothing on main builds on Fedora, so only a trial run from main
-      # saves this cache where a later tag can read it.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: fedora-43
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The apt repository's key signs the rpm too. A pushed release must
-      # go out signed, since the .repo file it installs turns on gpgcheck;
-      # a trial run without the secret builds an unsigned rpm and says so.
-      # The private key lives in a keyring of its own for this step only
-      # and is gone before the next step starts the app.
-      - name: Build, pack and sign
+      # The build sees the OAuth clients it compiles in and nothing else:
+      # no step that runs cargo, and so no build script or proc macro,
+      # ever has the signing key in its environment.
+      - name: Build and pack
         env:
-          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-          EVENT: ${{ github.event_name }}
           PENGUIN_MAIL_GOOGLE_CLIENT_ID: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_ID }}
           PENGUIN_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_SECRET }}
           PENGUIN_MAIL_MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+        run: scripts/package-rpm.sh "$VERSION" dist
+      # The apt repository's key signs the rpm too. A pushed release must
+      # go out signed, since the .repo file it installs turns on gpgcheck;
+      # a trial run without the secret keeps the rpm unsigned and says so.
+      # The private key lives in a keyring of its own for this step only
+      # and is gone before the next step starts the app.
+      - name: Sign
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          EVENT: ${{ github.event_name }}
         run: |
           if [ -z "$APT_SIGNING_KEY" ]; then
             if [ "$EVENT" = push ]; then
@@ -163,14 +169,15 @@ jobs:
               exit 1
             fi
             echo "::warning::APT_SIGNING_KEY is not set; the rpm is unsigned"
-            scripts/package-rpm.sh "$VERSION" dist
             exit 0
           fi
           signing=$(mktemp -d)
           trap 'gpgconf --homedir "$signing" --kill all; rm -rf "$signing"' EXIT
           printf '%s\n' "$APT_SIGNING_KEY" | GNUPGHOME=$signing gpg --batch --import
-          GNUPGHOME=$signing RPM_SIGN_KEY=FE3C3B6E699AF939DC4670DCF3A853035C3E2B8E \
-              scripts/package-rpm.sh "$VERSION" dist
+          GNUPGHOME=$signing rpmsign --addsign \
+              --define "_gpg_name FE3C3B6E699AF939DC4670DCF3A853035C3E2B8E" \
+              --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ''" \
+              "dist/penguin-mail-$VERSION-1.x86_64.rpm" >/dev/null
           echo "RPM_SIGNED=1" >> "$GITHUB_ENV"
       # Installs the rpm the way a person would and starts it on a virtual
       # display, which catches a library the rpm forgot to require.
@@ -195,8 +202,10 @@ jobs:
     runs-on: ubuntu-latest
     # Arch has no numbered releases to pin to the way Fedora does: pacman
     # and the libraries it installs move together, so "latest" is the same
-    # container as building on an up-to-date Arch install.
-    container: archlinux:latest
+    # container as building on an up-to-date Arch install. The digest pins
+    # the starting image, and the job's first step brings it up to date
+    # with pacman -Syu.
+    container: archlinux:latest@sha256:4e77cf2ea5f410e6f8be5abf93ccf17ce2436e87a138c167208356711a405dbd
     timeout-minutes: 90
     env:
       CARGO_TERM_COLOR: always
@@ -205,16 +214,12 @@ jobs:
       - name: Install git
         run: pacman -Syu --noconfirm --needed git ca-certificates
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: scripts/ci-deps.sh
       - name: Put cargo on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # Nothing on main builds on Arch, so only a trial run from main
-      # saves this cache where a later tag can read it.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          shared-key: archlinux
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build and pack
         env:
           PENGUIN_MAIL_GOOGLE_CLIENT_ID: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_ID }}
@@ -239,13 +244,15 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51@sha256:78d969b18225ae107ca29497bf09c4a3f791e5f1838a9a912a529d0024fb6210
       options: --privileged
     timeout-minutes: 90
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The checked-in manifest leaves these empty. A tagged release must
       # include the Google client, just as the .deb and rpm do.
       - name: Put the Google and Microsoft clients into the manifest
@@ -307,6 +314,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The snap builds inside its own container, where these secrets do
       # not reach, so they go into the recipe it builds from. The recipe
       # in the repository keeps empty values. A run without the secrets,
@@ -353,8 +362,19 @@ jobs:
 
   macos:
     name: Build the macOS apps
-    uses: ./.github/workflows/macos.yml
-    secrets: inherit
+    # zizmor suggests the $/ form for a workflow in this repository. It
+    # needs a runner from 2.336.0 on and has not been tried here, and a
+    # call that fails would stop a release, so ./ stays.
+    uses: ./.github/workflows/macos.yml # zizmor: ignore[self-repository]
+    secrets:
+      PENGUIN_MAIL_GOOGLE_CLIENT_ID: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_ID }}
+      PENGUIN_MAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.PENGUIN_MAIL_GOOGLE_CLIENT_SECRET }}
+      MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
   publish:
     name: Publish the release
@@ -364,12 +384,13 @@ jobs:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # creates the release and uploads its files
     steps:
       # Only the public key, to check the signature below against the key
       # the app has compiled in.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: packaging/apt
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -403,21 +424,39 @@ jobs:
           gpgv --homedir "$signing" \
               --keyring "$GITHUB_WORKSPACE/packaging/apt/penguin-mail-archive-keyring.gpg" \
               SHA256SUMS.asc SHA256SUMS
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          name: Penguin Mail ${{ needs.version.outputs.version }}
-          body_path: dist/notes.md
-          make_latest: "true"
-          fail_on_unmatched_files: true
-          files: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.pkg.tar.zst
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.flatpak
-            dist/SHA256SUMS
-            dist/SHA256SUMS.asc
+      # A re-run after a failed upload finds the release already there,
+      # and then replaces its files and notes rather than stopping.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s failglob
+          files=(dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.tar.gz dist/*.zip \
+              dist/*.flatpak dist/SHA256SUMS dist/SHA256SUMS.asc)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release edit "$TAG" --title "Penguin Mail $VERSION" \
+                  --notes-file dist/notes.md --latest
+              gh release upload "$TAG" --clobber "${files[@]}"
+              # A file the first run uploaded and this one did not build,
+              # say under an old name, would stay downloadable beside the
+              # new sums, so it goes.
+              declare -A keep
+              for file in "${files[@]}"; do keep[$(basename "$file")]=1; done
+              gh release view "$TAG" --json assets --jq '.assets[].name' |
+                  while IFS= read -r name; do
+                      if [ -z "${keep[$name]:-}" ]; then
+                          echo "Removing $name, which this run did not build"
+                          gh release delete-asset "$TAG" "$name" --yes
+                      fi
+                  done
+          else
+              gh release create "$TAG" --verify-tag --title "Penguin Mail $VERSION" \
+                  --notes-file dist/notes.md --latest "${files[@]}"
+          fi
 
   # Every release goes to the snap's edge channel once the GitHub release
   # is out, so edge never carries a version whose other packages failed.

@@ -16,7 +16,7 @@ use mailrs_store::outbox::Queued;
 use mailrs_sync::{Posted, now_millis};
 
 use super::{App, Signature};
-use crate::compose::{Built, Draft, SendWhen, build, build_protected, new_message_id};
+use crate::compose::{Built, Draft, SendWhen, build, build_protected, new_message_id, off_thread};
 use crate::format::future_date;
 use crate::protection::{self, Addressees, Standard};
 use crate::ui::window::Notice;
@@ -165,7 +165,13 @@ impl App {
                 &[("reason", what)],
             )
         };
-        let part = match prepared(draft, built, date, &message_id).map_err(|err| failed(&err))? {
+        // Building base64-encodes every file, so it runs on a worker
+        // thread; the copy shares the files' bytes.
+        let (kept, id) = (draft.clone(), message_id.clone());
+        let prepared = off_thread(move || prepared(&kept, built, date, &id))
+            .await
+            .and_then(|prepared| prepared);
+        let part = match prepared.map_err(|err| failed(&err))? {
             Built::Message(raw) => return Ok(raw),
             Built::Body(part) => part,
         };
@@ -232,7 +238,11 @@ impl App {
                 false => fill(&gettext("Not signed, so not sent: {reason}"), &values),
             }
         })?;
-        build_protected(draft, date, &message_id, entity).map_err(|err| failed(&err))
+        let kept = draft.clone();
+        off_thread(move || build_protected(&kept, date, &message_id, entity))
+            .await
+            .and_then(|built| built)
+            .map_err(|err| failed(&err))
     }
 
     /// Sends at once, or puts the message in the outbox when it cannot go,
@@ -247,12 +257,17 @@ impl App {
                 Ok(raw) => raw,
                 Err(problem) => return this.reopen(draft, &problem),
             };
-            let outbox = this.core.outbox();
-            let message = queued(&draft, raw, now_millis());
-            let posted = this
-                .core
-                .call(async move { outbox.post(message).await })
-                .await;
+            let (outbox, kept, at) = (this.core.outbox(), draft.clone(), now_millis());
+            // Writing the draft down encodes its files, so it happens on a
+            // thread of its own, not the GTK thread or the runtime.
+            let item = match off_thread(move || queued(&kept, raw, at)).await {
+                Ok(item) => item,
+                Err(problem) => {
+                    let said = fill(&gettext("Not sent: {reason}"), &[("reason", &problem)]);
+                    return this.reopen(draft, &said);
+                }
+            };
+            let posted = this.core.call(async move { outbox.post(item).await }).await;
             match posted {
                 Ok(Posted::Sent(_)) => {
                     this.contacts_stale.set(true);
@@ -298,12 +313,15 @@ impl App {
                 Ok(raw) => raw,
                 Err(problem) => return this.reopen(draft, &problem),
             };
-            let outbox = this.core.outbox();
-            let message = queued(&draft, raw, at);
-            let posted = this
-                .core
-                .call(async move { outbox.schedule(message).await })
-                .await;
+            let (outbox, kept) = (this.core.outbox(), draft.clone());
+            let item = match off_thread(move || queued(&kept, raw, at)).await {
+                Ok(item) => item,
+                Err(problem) => {
+                    let said = fill(&gettext("Not scheduled: {reason}"), &[("reason", &problem)]);
+                    return this.reopen(draft, &said);
+                }
+            };
+            let posted = this.core.call(async move { outbox.schedule(item).await }).await;
             match posted {
                 Ok(Posted::Refused(problem)) => this.reopen(
                     draft,

@@ -961,7 +961,7 @@ mod fuzz {
         let mut depths = Vec::new();
         let mut rest = bytes;
         while !rest.is_empty() {
-            match async_imap::imap_proto::parser::parse_response(rest) {
+            match async_imap::imap_proto::Response::parse(rest) {
                 Ok((after, response)) => {
                     depths.push(response_depth(&response));
                     rest = after;

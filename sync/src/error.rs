@@ -112,6 +112,9 @@ pub enum SyncError {
     MadeInGoogle(String),
     #[error("could not write the message: {0}")]
     Mime(String),
+    /// A file or stream an export writes to refused the bytes.
+    #[error("could not write the export: {0}")]
+    Write(String),
     #[error("{0} is not an email address")]
     NotAnAddress(String),
     /// A label name Gmail keeps for one of its own labels. Gmail would
@@ -130,6 +133,13 @@ pub enum SyncError {
     /// screen, and a tray-only process has no window to show one over.
     #[error("{0} did not answer in time")]
     NoAnswer(&'static str),
+}
+
+impl SyncError {
+    /// An export's write failed.
+    pub(crate) fn io(err: std::io::Error) -> Self {
+        Self::Write(err.to_string())
+    }
 }
 
 /// Lets `?` take a Gmail error where a sync error is due.

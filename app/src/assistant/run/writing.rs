@@ -428,10 +428,25 @@ impl<A: Accounts> Tools<A> {
             let found = self
                 .read(move |c| messages::thread_messages(c, account.id, &key))
                 .await?;
-            let parent = found
-                .iter()
-                .rev()
-                .find(|m| !m.in_role(Role::Drafts));
+            let parent = found.iter().rev().find(|m| !m.in_role(Role::Drafts));
+            if let Some(parent) = parent {
+                let mail = self.modules.accounts.services(account.id).map(|s| s.mail);
+                let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+                let mine = compose::reply_addresses(&self.desk.settings().senders(&account.email), parent, masked);
+                if let Some(from) = compose::reply_from(&mine, parent) {
+                    draft.from = from.clone();
+                }
+                draft.to.retain(|to| {
+                    !mine
+                        .iter()
+                        .any(|own| own.email.eq_ignore_ascii_case(&to.email))
+                });
+                draft.cc.retain(|cc| {
+                    !mine
+                        .iter()
+                        .any(|own| own.email.eq_ignore_ascii_case(&cc.email))
+                });
+            }
             draft.thread_id = Some(thread_id);
             draft.in_reply_to = parent.and_then(|m| m.rfc822_msgid.clone());
             draft.references = found
@@ -558,7 +573,7 @@ impl<A: Accounts> Tools<A> {
             files.push(OutgoingAttachment {
                 filename: found.filename,
                 mime_type: found.mime_type,
-                data,
+                data: data.into(),
                 content_id: None,
             });
         }
@@ -588,7 +603,7 @@ impl<A: Accounts> Tools<A> {
             files.push(OutgoingAttachment {
                 filename,
                 mime_type,
-                data,
+                data: data.into(),
                 content_id: None,
             });
         }
@@ -753,7 +768,7 @@ impl<A: Accounts> Tools<A> {
             let (s, id) = (Arc::clone(&sync), message_id.clone());
             let raw = self.call(async move { s.raw_message(&id).await }).await?;
             let blank = self.effects.new_draft(account.id)?;
-            let mut draft = self.effects.reopen_draft(raw, blank).await?;
+            let mut draft = self.effects.reopen_draft(raw.as_ref().clone(), blank).await?;
             draft.draft_id = Some(draft_id);
             draft.thread_id = (thread.len() > 1).then_some(stored.thread_id.clone());
             let missing = self.apply(&mut draft, edits).await?;

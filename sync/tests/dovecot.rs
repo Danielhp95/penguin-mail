@@ -16,7 +16,8 @@ use mailrs_domain::{AccountId, ChangeEvent, Target};
 use mailrs_imap::{ImapClient, Login, SmtpClient};
 use mailrs_store::{Db, accounts};
 use mailrs_sync::{
-    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, EngineConfig, ImapSettings, SyncEngine,
+    AccountServices, AccountSync, DEFAULT_BODY_CACHE_BYTES, EngineConfig, ImapSettings, MailBackend,
+    SyncEngine,
     TriageAction,
 };
 use mailrs_testmail::{Certs, Dovecot, Mailpit, Profile, Submission};
@@ -185,6 +186,24 @@ async fn stored_in(db: &Db, account_id: AccountId, message_id: &str) -> Option<S
             },
         )
         .optional()?)
+    })
+    .await
+    .expect("the store answers")
+}
+
+/// Whether the store lists the message whose Message-ID is `message_id`
+/// in the Inbox.
+async fn in_inbox(db: &Db, account_id: AccountId, message_id: &str) -> bool {
+    let message_id = message_id.to_string();
+    db.read(move |c| {
+        Ok(c.query_row(
+            "SELECT COUNT(*) FROM messages m
+             JOIN remote_refs r ON r.account_id = m.account_id AND r.message_id = m.id
+             WHERE m.account_id = ?1 AND m.rfc822_msgid IN (?2, '<' || ?2 || '>')
+               AND r.mailbox = 'INBOX'",
+            rusqlite::params![account_id, message_id],
+            |row| row.get::<_, i64>(0),
+        )? > 0)
     })
     .await
     .expect("the store answers")
@@ -382,6 +401,8 @@ impl<'a> Run<'a> {
         self.the_window_is_in_the_store().await;
         self.a_body_opens().await;
         self.another_clients_changes_arrive().await;
+        self.a_move_elsewhere_takes_mail_out_of_the_inbox().await;
+        self.mail_marked_deleted_elsewhere_leaves_and_comes_back().await;
         self.flags_reach_the_server().await;
         self.a_move_keeps_the_message_its_id().await;
         self.archive_files_the_thread().await;
@@ -391,6 +412,7 @@ impl<'a> Run<'a> {
         self.a_send_reaches_the_sink_and_sent().await;
         self.search_finds_mail_past_the_window().await;
         self.a_new_uidvalidity_keeps_ids_and_bodies().await;
+        self.storage_comes_from_the_quota_root().await;
         self.idle_brings_new_mail().await;
     }
 
@@ -423,7 +445,7 @@ impl<'a> Run<'a> {
             None,
         )
         .await;
-        for name in ["invoice", "erase", "vanish"] {
+        for name in ["invoice", "erase", "vanish", "trashed", "struck"] {
             let body = format!("The {name} body");
             d.save(
                 ADDRESS,
@@ -568,6 +590,58 @@ impl<'a> Run<'a> {
             "a message expunged elsewhere leaves the store"
         );
         self.must("late").await;
+    }
+
+    /// A phone's Delete on a server with MOVE: the message moves to another
+    /// mailbox, which expunges it from the Inbox, while this client's
+    /// connection holds the Inbox selected. The next look reselects it and
+    /// takes the message out of the Inbox (by VANISHED (EARLIER) under
+    /// QRESYNC, by the UID search otherwise).
+    async fn a_move_elsewhere_takes_mail_out_of_the_inbox(&self) {
+        let trashed = self
+            .on_server("INBOX", "trashed")
+            .await
+            .expect("the message to move");
+        assert!(in_inbox(&self.db, self.account_id, &self.id("trashed")).await);
+        self.dovecot
+            .move_to(ADDRESS, "INBOX", trashed.uid, "Receipts")
+            .await;
+
+        self.sync.incremental().await.expect("incremental");
+
+        assert!(
+            !in_inbox(&self.db, self.account_id, &self.id("trashed")).await,
+            "a message moved away elsewhere leaves the Inbox"
+        );
+    }
+
+    /// A phone that deletes by setting `\Deleted` and leaves the expunge
+    /// for later: the message leaves the store, and comes back when the
+    /// flag is taken off again.
+    async fn mail_marked_deleted_elsewhere_leaves_and_comes_back(&self) {
+        let struck = self
+            .on_server("INBOX", "struck")
+            .await
+            .expect("the message to mark");
+        self.must("struck").await;
+
+        self.dovecot
+            .add_flags(ADDRESS, "INBOX", struck.uid, "\\Deleted")
+            .await;
+        self.sync.incremental().await.expect("incremental");
+        assert!(
+            self.stored("struck").await.is_none(),
+            "a message marked deleted elsewhere leaves the store"
+        );
+
+        self.dovecot
+            .remove_flags(ADDRESS, "INBOX", struck.uid, "\\Deleted")
+            .await;
+        self.sync.incremental().await.expect("incremental");
+        assert!(
+            in_inbox(&self.db, self.account_id, &self.id("struck")).await,
+            "a message undeleted elsewhere comes back to the Inbox"
+        );
     }
 
     async fn flags_reach_the_server(&self) {
@@ -859,6 +933,18 @@ impl<'a> Run<'a> {
         );
     }
 
+    async fn storage_comes_from_the_quota_root(&self) {
+        let storage = self.sync.services().mail.storage().await.expect("a storage answer");
+        match self.profile {
+            Profile::Full | Profile::Sieve => {
+                let storage = storage.expect("Dovecot reports the 1 GiB quota");
+                assert_eq!(storage.limit, 1 << 30, "{:?}", self.profile);
+                assert!(storage.used > 0, "the seeded mail counts");
+            }
+            _ => assert_eq!(storage, None, "{:?} lists no QUOTA", self.profile),
+        }
+    }
+
     async fn idle_brings_new_mail(self) {
         let Run {
             profile,
@@ -906,13 +992,40 @@ impl<'a> Run<'a> {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
-        let connections = dovecot.connections(ADDRESS).await;
-        engine.shutdown();
-
         let arrived = arrived.unwrap_or_else(|| {
+            engine.shutdown();
             panic!("new mail was not in the store 20 s after the server took it, with the poll {NO_POLL:?} away")
         });
         eprintln!("{profile:?}: new mail reached the store {arrived:?} after the server took it");
+
+        // A phone's Delete while the loop waits in IDLE: the server tells
+        // the waiting connection (VANISHED under QRESYNC, EXPUNGE
+        // otherwise), and only that can wake the loop in time.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let pushed = dovecot
+            .find(ADDRESS, "INBOX", &message_id)
+            .await
+            .expect("the pushed message on the server");
+        dovecot
+            .move_to(ADDRESS, "INBOX", pushed.uid, "Receipts")
+            .await;
+        let moved_at = Instant::now();
+        let left = loop {
+            if !in_inbox(&db, account_id, &message_id).await {
+                break Some(moved_at.elapsed());
+            }
+            if moved_at.elapsed() > Duration::from_secs(20) {
+                break None;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+        let connections = dovecot.connections(ADDRESS).await;
+        engine.shutdown();
+
+        let left = left.unwrap_or_else(|| {
+            panic!("mail moved away elsewhere was still in the Inbox 20 s later, with the poll {NO_POLL:?} away")
+        });
+        eprintln!("{profile:?}: mail moved away elsewhere left the Inbox {left:?} after the move");
         assert!(
             connections <= 3,
             "{connections} connections, over the limit of 3"

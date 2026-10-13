@@ -332,3 +332,31 @@ async fn sharing_a_file_makes_the_guest_a_reader_without_mailing_them() {
         .await;
     client(&server).share_file("1abc", "ana@example.com").await.unwrap();
 }
+
+#[tokio::test]
+async fn storage_comes_from_drives_about() {
+    let server = MockServer::start().await;
+    mount_token(&server).await;
+    Mock::given(method("GET"))
+        .and(path(format!("{DRIVE}/about")))
+        .and(query_param("fields", "storageQuota"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "storageQuota": {"limit": "16106127360", "usage": "2254857830", "usageInDrive": "1000"}
+        })))
+        .mount(&server)
+        .await;
+    let storage = client(&server).drive_storage().await.unwrap();
+    assert_eq!((storage.usage, storage.limit), (2_254_857_830, Some(16_106_127_360)));
+}
+
+#[tokio::test]
+async fn an_account_with_no_limit_says_so() {
+    let server = MockServer::start().await;
+    mount_token(&server).await;
+    Mock::given(method("GET"))
+        .and(path(format!("{DRIVE}/about")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"storageQuota": {"usage": "12"}})))
+        .mount(&server)
+        .await;
+    assert_eq!(client(&server).drive_storage().await.unwrap().limit, None);
+}

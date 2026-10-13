@@ -10,6 +10,7 @@
 //! and its pacing are neutral.
 
 mod any;
+mod beside;
 mod caldav;
 mod carddav;
 mod clients;
@@ -19,25 +20,30 @@ mod google;
 
 pub use google::withheld as withheld_by_grant;
 pub mod imap;
+pub mod jmap;
 pub mod microsoft;
 mod no_mail;
 pub mod pop3;
 pub(crate) mod local;
 mod pacing;
+mod setup;
 mod sieve;
 
 pub use caldav::CalDav;
 pub use any::{AnyAutoReply, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules};
 pub use carddav::CardDav;
-pub use clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyPop3, AnySieve, AnySmtp};
+pub use clients::{AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp};
+pub use beside::RulesBeside;
 pub use local::LocalRules;
 pub use google::{Google, ID_PAGE_SIZE, LIST_PAGE_SIZE, is_workspace};
 pub use imap::{Imap, ImapApi, ImapSettings, Submit};
+pub use jmap::{Jmap, JmapApi, JmapSettings, JmapSieve, SERVER_REPLY_SCRIPT};
 pub use microsoft::{GraphApi, Microsoft, MicrosoftSettings};
 pub use no_mail::NoMail;
 pub use pop3::{Pop3, Pop3Settings};
 pub use pacing::{Priority, background, priority};
 pub use sieve::SieveRules;
+pub(crate) use setup::{Beside, FoundServer};
 
 /// Where an account's rules run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +54,7 @@ pub enum RulesPlace {
     ThisComputer,
 }
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
@@ -67,7 +73,7 @@ use mailrs_store::threading::Links;
 
 use crate::api::{DraftRef, SavedDraft};
 #[cfg(any(test, feature = "fake"))]
-use crate::fake::{FakeGmail, FakeGraph, FakeImap, FakeSmtp};
+use crate::fake::{FakeGmail, FakeGraph, FakeImap, FakeJmap, FakeSmtp};
 use crate::{BackendError, MailOp};
 
 /// One address an account may send mail as: its own, or an alias whose
@@ -169,6 +175,32 @@ impl SyncState {
 pub struct Changes {
     pub changes: Vec<RemoteChange>,
     pub state: SyncState,
+}
+
+/// How one look for new mail went, as the mail service answers it.
+#[derive(Debug)]
+pub enum Look {
+    /// The service has no look of its own: the caller replays the server's
+    /// changes since the stored sync state, through [`MailBackend::changes`].
+    Replay,
+    /// The service looked and stored what it found.
+    Done(Looked),
+}
+
+/// What a look the service made itself stored, for the caller to announce.
+/// A look that fails partway still hands back what it stored before the
+/// failure, since that mail stays stored.
+#[derive(Debug, Default)]
+pub struct Looked {
+    /// The threads the stored messages went into.
+    pub threads: BTreeSet<String>,
+    /// The stored messages to announce as new mail.
+    pub new_mail: Vec<String>,
+    /// The account's menu changed: a download that keeps failing joined
+    /// it, or one left it.
+    pub menu_changed: bool,
+    /// Why the look stopped early, if it did.
+    pub failed: Option<BackendError>,
 }
 
 /// One change the server reports. A new message comes without its
@@ -446,6 +478,41 @@ impl AccountServices {
         self
     }
 
+    /// An account on a JMAP server: its mail and the addresses it sends
+    /// as, and nothing else. [`AccountServices::jmap_from`] adds the
+    /// calendar, contacts, rules and automatic reply its session and its
+    /// found servers offer.
+    pub fn jmap(jmap: impl Into<AnyJmap>, settings: JmapSettings) -> Self {
+        let adapter = Jmap::new(Arc::new(jmap.into()), settings);
+        AccountServices {
+            mail: AnyMail::Jmap(adapter.clone()),
+            calendar: None,
+            contacts: None,
+            rules: None,
+            auto_reply: None,
+            identities: AnyIdentities::Jmap(adapter),
+        }
+    }
+
+    /// The in-memory JMAP server, as a Fastmail account, for tests and the
+    /// demo, set up as the connector sets up a real one from what the
+    /// session offers. With no store beside it, its rules run nowhere
+    /// unless the session runs Sieve; the tests that need other rules give
+    /// it some.
+    #[cfg(any(test, feature = "fake"))]
+    pub fn fake_jmap(fake: Arc<FakeJmap>) -> Self {
+        let settings = JmapSettings {
+            address: "me@example.com".into(),
+            provider_name: "Fastmail".into(),
+            window_days: crate::DEFAULT_WINDOW_DAYS,
+            labels: fake.with(|s| s.session.mailboxes_per_email() != Some(1)),
+            capabilities: fake.with(|s| s.session.capabilities.keys().filter(|c| s.session.offers(c)).cloned().collect()),
+            auto_reply_needs_sign_in: false,
+        };
+        let beside = Beside::nothing(&settings.address, &settings.provider_name);
+        AccountServices::jmap_from(fake, settings, beside)
+    }
+
     /// A Microsoft account: every service over the one Graph client.
     pub fn microsoft(graph: impl Into<AnyGraph>, settings: MicrosoftSettings) -> Self {
         let adapter = Microsoft::new(Arc::new(graph.into()), settings);
@@ -542,6 +609,7 @@ impl AccountServices {
             contacts: self.contacts.is_some() && !refused.contacts,
             rules: self.rules.is_some() && !refused.rules,
             auto_reply: self.auto_reply.is_some() && !refused.auto_reply,
+            auto_reply_needs_sign_in: self.auto_reply.is_none() && self.mail.auto_reply_needs_sign_in(),
             auto_reply_subject: self.auto_reply.as_ref().is_some_and(AutoReplyService::keeps_subject),
             auto_reply_contacts_only: self.auto_reply.as_ref().is_some_and(AutoReplyService::limits_to_contacts),
             // Gmail, IMAP and Graph search on the server. A POP3 account's
@@ -558,6 +626,7 @@ impl AccountServices {
             out_of_office: features.out_of_office,
             focus_time: features.focus_time,
             declines: features.declines,
+            masked_email: self.mail.masked_email(),
         }
     }
 }
@@ -629,6 +698,21 @@ impl CalendarFeatures {
         focus_time: false,
         declines: false,
     };
+    /// JMAP Calendars: an event moves by its `calendarIds`, and a change
+    /// can go without mailing anyone (`sendSchedulingMessages`). No files,
+    /// and no edits to the calendar list here.
+    const JMAP: CalendarFeatures = CalendarFeatures {
+        event_files: false,
+        moves_events: true,
+        calendar_list: false,
+        subscriptions: false,
+        hides: false,
+        quiet_changes: true,
+        out_of_office: false,
+        focus_time: false,
+        declines: false,
+    };
+
     /// CalDAV keeps no files, moves an event by copying its resource, which
     /// the queue must not rely on, and lists the calendars its server
     /// holds without letting the app edit the list.
@@ -665,6 +749,7 @@ impl CalendarFeatures {
             // its calendar, but it lists, makes and changes calendars.
             Some(AnyCalendar::Microsoft(_)) => CalendarFeatures::MICROSOFT,
             Some(AnyCalendar::Dav(_)) => CalendarFeatures::CALDAV,
+            Some(AnyCalendar::Jmap(_)) => CalendarFeatures::JMAP,
         }
     }
 }
@@ -725,6 +810,9 @@ pub struct Offers {
     pub contacts: bool,
     pub rules: bool,
     pub auto_reply: bool,
+    /// The server keeps an automatic reply that this sign-in cannot reach,
+    /// as a Fastmail API token cannot. Preferences says why.
+    pub auto_reply_needs_sign_in: bool,
     /// The automatic reply has a subject of its own. Outlook keeps only
     /// the message.
     pub auto_reply_subject: bool,
@@ -761,6 +849,8 @@ pub struct Offers {
     /// Out of office and focus time keep which meetings they decline and
     /// a message, so the editor offers both.
     pub declines: bool,
+    /// The account makes masked addresses on its server, as Fastmail does.
+    pub masked_email: bool,
 }
 
 impl Offers {
@@ -774,6 +864,7 @@ impl Offers {
         contacts: true,
         rules: true,
         auto_reply: true,
+        auto_reply_needs_sign_in: false,
         auto_reply_subject: true,
         auto_reply_contacts_only: true,
         search: true,
@@ -789,6 +880,7 @@ impl Offers {
         out_of_office: false,
         focus_time: false,
         declines: false,
+        masked_email: false,
     };
 
     /// What the account lacks, in the order Preferences lists it.
@@ -819,6 +911,98 @@ pub enum Missing {
     Categories,
 }
 
+/// A message the server holds to send at its hour. `handle` calls the
+/// hold back; `message_id` is the copy waiting in Drafts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Held {
+    pub handle: String,
+    pub message_id: String,
+    pub thread_id: String,
+}
+
+/// A hold found by the copy it left in Drafts, which another install of
+/// the app may have made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Claimed {
+    /// The server still holds it: the hold, the hour it goes, and the
+    /// message as it goes out, blind copies and all.
+    Held { held: Held, send_at: EpochMillis, raw: Vec<u8> },
+    /// It went, or someone called it back. The copy is filed as such: in
+    /// Sent, or back in Drafts as an ordinary draft.
+    Settled,
+    /// No submission sends it any more and the copy cannot say whether it
+    /// went.
+    Unknown,
+}
+
+/// What calling a hold back left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unheld {
+    /// The server will not send it; the copy is an ordinary draft now.
+    InDrafts,
+    /// The server sent it before the call arrived, and it is filed in Sent.
+    AlreadySent,
+    /// The server no longer knows the hold, and its copy cannot say whether
+    /// it went. Nothing may send it again; the person checks Sent.
+    Unknown,
+}
+
+/// Where a hold stands once its hour came.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settled {
+    /// Still waiting; the server sends it at this time.
+    Waiting(EpochMillis),
+    /// Sent, and filed in Sent.
+    Sent,
+    /// Called back elsewhere; the copy is a draft.
+    Canceled,
+    /// The server no longer knows the hold, and its copy cannot say whether
+    /// it went. Nothing may send it again; the person checks Sent.
+    Unknown,
+}
+
+/// How much of the account's space on its server its mail takes, in
+/// bytes, and where the server starts warning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Storage {
+    pub used: u64,
+    pub limit: u64,
+    pub warn: Option<u64>,
+}
+
+impl Storage {
+    /// `None` for a limit of 0, which says nothing a person can act on.
+    pub fn new(used: u64, limit: u64, warn: Option<u64>) -> Option<Storage> {
+        (limit > 0).then_some(Storage { used, limit, warn })
+    }
+
+    /// How full, from 0 to 100; past the limit reads as 100.
+    pub fn percent(self) -> u64 {
+        (self.used.saturating_mul(100) / self.limit).min(100)
+    }
+
+    pub fn full(self) -> bool {
+        self.used >= self.limit
+    }
+
+    /// Past the server's own warning mark, or 90 % when it names none.
+    pub fn past_warning(self) -> bool {
+        self.warn.is_some_and(|warn| self.used >= warn)
+            || self.used.saturating_mul(10) >= self.limit.saturating_mul(9)
+    }
+}
+
+/// A read receipt for the message `message_id` (the server's id), from
+/// the account's address `from` to `to`, in the person's language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReceiptOut {
+    pub message_id: String,
+    pub from: String,
+    pub to: String,
+    pub subject: String,
+    pub text: String,
+}
+
 /// Listing, reading, changing and sending mail.
 pub trait MailBackend: Send + Sync + 'static {
     fn capabilities(&self) -> MailCapabilities;
@@ -840,6 +1024,13 @@ pub trait MailBackend: Send + Sync + 'static {
     /// change naming such a mailbox the store has not listed means the
     /// mailbox list changed.
     fn made_by_person(&self, id: &str) -> bool;
+
+    /// Whole-mailbox unread message counts where the local window is incomplete.
+    fn unread_counts(
+        &self,
+    ) -> impl Future<Output = Result<HashMap<MailSet, i64>, BackendError>> + Send {
+        async { Ok(HashMap::new()) }
+    }
 
     /// Every mailbox the server lists.
     fn mailboxes(&self) -> impl Future<Output = Result<Vec<RemoteMailbox>, BackendError>> + Send;
@@ -889,6 +1080,9 @@ pub trait MailBackend: Send + Sync + 'static {
     /// often it looks at mail nobody is watching.
     fn set_window_open(&self, open: bool);
 
+    /// Makes the next check include every mailbox the backend keeps in step.
+    fn check_now(&self) {}
+
     /// How long the engine waits between looks at the change feed. `None`
     /// keeps the engine's own interval.
     fn poll_interval(&self) -> Option<Duration>;
@@ -897,6 +1091,14 @@ pub trait MailBackend: Send + Sync + 'static {
     /// something changed there, or its watch failed and a minute passed.
     /// A server that never says so never resolves this.
     fn watch(&self) -> impl Future<Output = ()> + Send;
+
+    /// One look at the server for new mail, at the engine's poll. A
+    /// service whose mail lives only in the store, as a POP3 account's
+    /// does, downloads and stores it here and answers [`Look::Done`].
+    /// Every other service answers [`Look::Replay`].
+    fn look_for_mail(&self) -> impl Future<Output = Look> + Send {
+        async { Look::Replay }
+    }
 
     /// The keywords of the window's messages in `mailbox` with a UID in
     /// `uids`, as they stand on the server now, for a
@@ -940,7 +1142,9 @@ pub trait MailBackend: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Backfill, BackendError>> + Send;
 
     /// Every message in the sync window, or the ones of it in `mailbox`,
-    /// ids only.
+    /// ids only. A backend that caps its listings answers `Unsupported`
+    /// past the cap rather than a cut list, which a caller would read as
+    /// mail gone from the server.
     fn window_ids(
         &self,
         days: i64,
@@ -1049,6 +1253,65 @@ pub trait MailBackend: Send + Sync + 'static {
 
     /// Every draft in the account, each with the message inside it.
     fn list_drafts(&self) -> impl Future<Output = Result<Vec<DraftRef>, BackendError>> + Send;
+
+    /// Hands `raw` to the server to send at `at`, for a server that holds
+    /// mail itself. `Unsupported` leaves the message to the app's queue.
+    ///
+    /// The error says what the caller may assume. `Refused` means the
+    /// server did not take the hold. `Offline` means no answer came back,
+    /// so the server may hold the message anyway (the JMAP adapter maps
+    /// `JmapError::HoldUnknown` here); look in Drafts before queueing a
+    /// second copy locally.
+    fn schedule(&self, raw: &[u8], at: EpochMillis) -> impl Future<Output = Result<Held, BackendError>> + Send {
+        let _ = (raw, at);
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// The hold the server keeps for the message whose `Message-ID` header
+    /// is `message_id`, for a `schedule` whose answer never came back.
+    /// `None` when the server holds no copy of it. An error that is not
+    /// transient means the server's answer cannot settle whether it holds
+    /// the message.
+    fn find_hold(&self, message_id: &str) -> impl Future<Output = Result<Option<Held>, BackendError>> + Send {
+        let _ = message_id;
+        async { Ok(None) }
+    }
+
+    /// The hold whose copy in Drafts is the message `email_id`, found by
+    /// the copy alone, for a hold this install has no row for. `None` when
+    /// the server holds nothing for it.
+    fn hold_of_copy(&self, email_id: &str) -> impl Future<Output = Result<Option<Claimed>, BackendError>> + Send {
+        let _ = email_id;
+        async { Ok(None) }
+    }
+
+    /// Calls the hold `handle` back. `message_id` is the copy the hold
+    /// left in Drafts and `send_at` the hour it was held for, which say
+    /// what happened once the server forgets the hold.
+    fn unschedule(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> impl Future<Output = Result<Unheld, BackendError>> + Send {
+        let _ = (handle, message_id, send_at);
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// Where the hold `handle` stands now, with its copy and hour as for
+    /// `unschedule`. A sent one is filed in Sent.
+    fn settle(&self, handle: &str, message_id: &str, send_at: EpochMillis) -> impl Future<Output = Result<Settled, BackendError>> + Send {
+        let _ = (handle, message_id, send_at);
+        async { Err(BackendError::Unsupported) }
+    }
+
+    /// How full the account's space on its server is, `None` when the
+    /// server does not say.
+    fn storage(&self) -> impl Future<Output = Result<Option<Storage>, BackendError>> + Send {
+        async { Ok(None) }
+    }
+
+    /// Sends `receipt` the server's own way. `Unsupported` has it go as
+    /// ordinary mail instead.
+    fn send_receipt(&self, receipt: &ReceiptOut) -> impl Future<Output = Result<(), BackendError>> + Send {
+        let _ = receipt;
+        async { Err(BackendError::Unsupported) }
+    }
 }
 
 /// The account's calendar, as the local copy reads and writes it. Every
@@ -1264,6 +1527,52 @@ mod tests {
 
     use super::*;
     use crate::fake::FakeGmail;
+
+    #[test]
+    fn a_zero_limit_reads_as_no_storage() {
+        assert_eq!(Storage::new(10, 0, None), None);
+        let full = Storage::new(12, 10, None).unwrap();
+        assert_eq!(full.percent(), 100, "usage past the limit reads as full, not past it");
+        assert!(full.full() && full.past_warning());
+    }
+
+    #[test]
+    fn the_warning_comes_at_the_servers_mark_or_at_ninety_percent() {
+        assert!(!Storage::new(89, 100, None).unwrap().past_warning());
+        assert!(Storage::new(90, 100, None).unwrap().past_warning());
+        assert!(Storage::new(80, 100, Some(75)).unwrap().past_warning());
+        assert!(!Storage::new(10, 100, Some(75)).unwrap().past_warning());
+    }
+
+    #[tokio::test]
+    async fn gmail_storage_comes_from_drive_and_needs_its_permission() {
+        let fake = FakeGmail::new();
+        fake.with(|s| s.drive_storage = Some(mailrs_gmail::DriveStorage { usage: 90, limit: Some(100) }));
+        let services = AccountServices::google(Arc::new(fake));
+        assert_eq!(services.mail.storage().await.unwrap(), Storage::new(90, 100, None));
+
+        let withheld = FakeGmail::new();
+        withheld.with(|s| s.drive_storage = Some(mailrs_gmail::DriveStorage { usage: 90, limit: Some(100) }));
+        withheld.withhold(mailrs_gmail::DRIVE_FILE_SCOPE);
+        let services = AccountServices::google(Arc::new(withheld));
+        assert_eq!(services.mail.storage().await.unwrap(), None, "no Drive permission, no number");
+    }
+
+    #[tokio::test]
+    async fn an_adapter_that_holds_nothing_says_so() {
+        let services = AccountServices::google(Arc::new(FakeGmail::new()));
+        assert!(matches!(services.mail.schedule(b"raw", 0).await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.unschedule("S1", "M1", 0).await, Err(BackendError::Unsupported)));
+        assert!(matches!(services.mail.settle("S1", "M1", 0).await, Err(BackendError::Unsupported)));
+        let receipt = ReceiptOut {
+            message_id: "m".into(),
+            from: "a@x".into(),
+            to: "b@x".into(),
+            subject: "s".into(),
+            text: "t".into(),
+        };
+        assert!(matches!(services.mail.send_receipt(&receipt).await, Err(BackendError::Unsupported)));
+    }
 
     #[test]
     fn a_google_account_has_every_service() {

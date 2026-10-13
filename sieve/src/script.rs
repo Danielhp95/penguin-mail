@@ -245,8 +245,14 @@ pub fn write(script: &Script, address: &str, folder: &dyn Fn(&MailSet) -> Option
         }
     }
     for rule in &script.rules {
-        let statement = rule_statement(rule, folder, ext, &mut needs)?;
         let json = serde_json::to_string(rule).unwrap_or_default();
+        // A rule that is off keeps its comment and runs nothing, as a reply
+        // that is off does.
+        if rule.off {
+            blocks.push(format!("{RULE}{OFF} {json}"));
+            continue;
+        }
+        let statement = rule_statement(rule, folder, ext, &mut needs)?;
         blocks.push(format!("{RULE}{} {json}\n{statement}", hash(&statement)));
     }
     if script.include.is_some() {
@@ -367,16 +373,21 @@ pub fn read(text: &str) -> Script {
             script.include = Some(name.to_string());
             continue;
         }
-        // An "off" reply has no statement, so its comment can sit in the
-        // same piece as the next block's.
+        // An "off" reply or rule has no statement, so its comment can sit
+        // in the same piece as the next block's.
         for comment in &piece.comments {
             let off = comment.strip_prefix(VACATION).and_then(|r| r.strip_prefix(OFF)).and_then(|j| serde_json::from_str::<Vacation>(j.trim()).ok());
             if off.is_some() {
                 script.vacation = off;
             }
+            let off_rule = comment.strip_prefix(RULE).and_then(|r| r.strip_prefix(OFF)).and_then(|j| serde_json::from_str::<Filter>(j.trim()).ok());
+            if let Some(rule) = off_rule {
+                script.rules.push(Filter { read_only: false, off: true, ..rule });
+            }
         }
-        let off_prefix = format!("{VACATION}{OFF} ");
-        let mine = piece.comments.iter().rev().find(|c| (c.starts_with(RULE) || c.starts_with(VACATION)) && !c.starts_with(&off_prefix));
+        let off_prefixes = [format!("{VACATION}{OFF} "), format!("{RULE}{OFF} ")];
+        let is_off = |c: &str| off_prefixes.iter().any(|p| c.starts_with(p.as_str()));
+        let mine = piece.comments.iter().rev().find(|c| (c.starts_with(RULE) || c.starts_with(VACATION)) && !is_off(c));
         let ours = mine.and_then(|comment| {
             let (kind, rest) = comment.strip_prefix(RULE).map(|r| ("rule", r)).or_else(|| comment.strip_prefix(VACATION).map(|r| ("vacation", r)))?;
             let (mark, json) = rest.split_once(' ')?;

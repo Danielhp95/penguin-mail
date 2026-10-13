@@ -24,6 +24,13 @@ fn turned_down_words(turned_down: &TurnedDown) -> String {
             &[("title", &turned_down.title), ("file", file)],
         );
     }
+    if !turned_down.kept_theirs.is_empty() {
+        let parts: Vec<&str> = turned_down.kept_theirs.iter().map(String::as_str).collect();
+        return fill(
+            &gettext("Someone else changed {field} on “{title}” at the same time; their version was kept"),
+            &[("field", &crate::protection::joined(&parts)), ("title", &turned_down.title)],
+        );
+    }
     match &turned_down.reason {
         None => fill(
             &gettext("Your change to “{title}” was not saved because it changed elsewhere"),
@@ -293,7 +300,22 @@ mod tests {
             title: "Dentist".into(),
             reason: reason.map(str::to_string),
             left_out: None,
+            kept_theirs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_save_that_kept_another_app_s_part_names_it() {
+        let one = TurnedDown { kept_theirs: vec!["the time".into()], ..turned_down(None) };
+        assert_eq!(
+            turned_down_words(&one),
+            "Someone else changed the time on “Dentist” at the same time; their version was kept"
+        );
+        let two = TurnedDown { kept_theirs: vec!["the title".into(), "the time".into()], ..turned_down(None) };
+        assert_eq!(
+            turned_down_words(&two),
+            "Someone else changed the title and the time on “Dentist” at the same time; their version was kept"
+        );
     }
 
     #[test]

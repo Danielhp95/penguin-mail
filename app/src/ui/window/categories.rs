@@ -244,7 +244,7 @@ impl MainWindow {
             let weak = Rc::downgrade(self);
             bar.connect_chosen(move |category| {
                 let Some(win) = weak.upgrade() else { return };
-                win.change_screen(|screen| screen.choose_category(category));
+                win.listing.change(|screen| screen.choose_category(category));
             });
             bar.set_phone(self.nav.is_collapsed());
         }
@@ -306,11 +306,11 @@ impl MainWindow {
             .set_visible(bar == Some(InboxBar::Categories));
         self.focus.bar.set_visible(bar == Some(InboxBar::Focus));
         let Some(bar) = bar else { return };
-        let current = self.screen.borrow().category();
+        let current = self.listing.category();
         let default = self.settings_with(|s| s.default_category);
         let next = crate::offered::category_after(bar, current, default);
         if next != current {
-            self.change_screen(|screen| screen.choose_category(next));
+            self.listing.change(|screen| screen.choose_category(next));
         }
         match bar {
             InboxBar::Categories => self.categories.show_names(next),
@@ -377,7 +377,7 @@ impl MainWindow {
             // Moving mail between categories can add rows to a Gmail
             // folder, and only a fresh search shows them.
             this.core.forget_remote();
-            this.reload_folder();
+            this.listing.reload_remote();
             let name = category.name();
             let values = [("sender", who.as_str()), ("category", name.as_str())];
             match sorted {

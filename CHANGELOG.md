@@ -8,6 +8,78 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 ### New
 
 - Add a calendar from a CalDAV server, such as Nextcloud, without a mail account: Add Account, then Add a calendar without mail.
+- Vietnamese translations, chosen in Preferences.
+
+## 1.0.8 (2026-10-13)
+
+### New
+
+- French, German and Spanish translations, chosen in Preferences.
+- Sign in to Gmail with a Google client from your own Google Cloud project, named in two environment variables, when Google blocks Penguin Mail's own client. docs/setup.md says how.
+- Give the outgoing server a password of its own in Server Settings, for an IMAP or POP3 account whose SMTP password differs from its incoming one.
+- The tray icon shows how many messages are unread in an orange badge, and "99+" past 99.
+- Keep 2 years, 5 years or all of your mail on this computer. Older mail downloads in the background while new mail keeps arriving, and a shorter choice frees the space at once.
+- Show the unread All Inboxes count on the macOS Dock icon, at startup and while the main window is closed.
+- Add a JMAP account, such as Fastmail, signing in through the browser, which also reaches its calendar and contacts, or with an API token, or Stalwart with your password: mail arrives as soon as the server says so, and the server files what you send in Sent. The addresses and names you set up on the server appear in the From menu, each with its own signature. Contacts kept on the server sync both ways, and so does the automatic reply when the server offers one. A server that runs Sieve, such as Stalwart or Cyrus, keeps the reply in the same script as your rules, so each keeps working while the other is on.
+- A JMAP account brings its contacts and rules from its server. Its calendar comes from JMAP when the server offers JMAP Calendars, as Stalwart and Cyrus do, with no separate calendar password; otherwise from CalDAV, and Fastmail's calendar takes an app password beside the API token.
+- Send Later on a JMAP server that can hold mail, such as Fastmail, leaves the message with the server, which sends it at its hour even with Penguin Mail closed. Such a message shows "On the server" in Send Later, and Cancel Send says when the server had already sent it, when another app canceled it, or when Penguin Mail could not find out and you should check Sent. Going back to an older Penguin Mail while a message waits on the server can send it twice.
+- Make, turn off and delete Fastmail masked addresses from Hide My Email, and write from a new one with the shield button on the composer's From row. A reply to mail sent to a masked address comes from that address, and the assistant makes masked addresses on such an account.
+- Switch an IMAP account to JMAP from its menu when its server speaks both, keeping its reminders, flags, rules and drafts.
+- Ask for a read receipt from the composer's More menu. It stays off unless you turn it on for a message.
+- When a sender asks for a read receipt, the message offers to send one, and nothing goes until you choose. Set Read Receipts to Never ask in Preferences to stop the question. A receipt for mail you sent shows as one line that says who read it and when.
+- See how full each account's space on its server is in Preferences › Sync, with a banner once it nears its limit. Gmail, and IMAP and JMAP servers that report a quota, say how full they are.
+
+### Improved
+
+- The assistant's question box wraps a long question and grows to six lines, so you can read all of it before you send it. Shift+Enter starts a new line, and you can write your next question while the assistant answers.
+- Sending or saving a message with a large attachment no longer freezes the window, and holds the file in memory once rather than three times.
+- A message that cannot be displayed offers View Source beside the notice, to read it as it arrived or save it as an .eml file.
+
+### Fixed
+
+- The tray icon with unread mail is as large as the other icons in the panel, where before the penguin was drawn small with a wide margin around it.
+- Delete Forever on an IMAP account removes a message you had moved, such as one in the Trash, from the server too, where before it stayed there.
+- A calendar event deleted right after a change to it stays deleted, on the calendar and on the server, instead of coming back.
+- Rules on a server that runs Sieve follow a folder you rename. A rule whose folder is deleted turns off and says so in Rules, where before every later rule change failed.
+- An automatic reply whose last day is the day the clocks go back answers until midnight, not an hour less.
+- The tray's unread count matches the sidebar's for every account, including mail on an IMAP or JMAP server that has not reached this computer yet.
+- When Penguin Mail starts in the tray with no window, the tray's unread count includes unread mail on the server older than what this computer keeps.
+- Closing a message while its draft saves no longer leaves two drafts behind, and choosing Discard then leaves none.
+- A read receipt you sent no longer comes back to offer itself again while the message redraws.
+
+### Fixed
+
+- A message no longer goes out twice when Penguin Mail stops while sending it; the next try finds it in Sent.
+- Exporting mail over a file you already have keeps that file's permissions, and a shortcut (symlink) to it stays a shortcut. The command-line export can also write to standard output.
+- On IMAP and POP3, a sent message whose copy the Sent folder would not take gets a second try, and you hear when it still has no copy there.
+- Canceling a Send Later message at the moment it goes out says it had already gone, instead of also leaving a copy in Drafts.
+- On an Outlook account keeping more than 20,000 messages on this computer, mail no longer disappears from the list when Outlook loses track of what changed; Penguin Mail downloads the mail again instead.
+- A mail list left open while a new account downloads its mail for the first time keeps loading older mail as you scroll, instead of stopping at the first few messages.
+- Copy buttons show that they copied: the button says "Copied" with a check mark for two seconds.
+- A Send Later message on Outlook, Yahoo Mail, AOL Mail or Zoho Mail no longer goes out twice when the connection drops just as it is sent.
+- On IMAP, mail another device marks as deleted leaves the list at the next check, and comes back if that device restores it. On Outlook, Check for Mail now refreshes every folder at once; until now folders other than the Inbox waited for their regular check, every five minutes while the window is open ([#35](https://github.com/c9dev/penguin-mail/issues/35)).
+
+## 1.0.7 (2026-10-10)
+
+### Fixed
+
+- Reorder folders with mixed-case Inbox paths without renaming them, and reject moving a folder into its own descendants.
+- Keep Inbox subfolders beside their parent when path casing differs, including with a custom folder order.
+- Keep children under nested system folders when the server mixes Inbox and INBOX in their paths.
+- Restart pending folder counts when mail changes so unopened folders get fresh unread counts.
+- Show local unread counts while IMAP servers are answering, and keep completed folder counts if a request times out.
+- Show nested folders under their own Inbox or other parent mailbox, including servers that mix Inbox and INBOX, and unread counts beside folders, including unopened IMAP folders.
+- Discard pending translations after changing the AI language, even when changing back before the answer arrives.
+- Proton Mail Bridge connections work with its local TLS certificate when you pin that certificate in Penguin Mail.
+- Pictures embedded in IMAP messages appear in the message again.
+- Check for Mail checks Sent and other IMAP folders at once, even if their regular check is not due yet.
+
+### New
+
+- Traditional Chinese (zh_TW, Taiwan) language support.
+- Open the sponsor page from the main menu or About Penguin Mail.
+- Choose a language for AI answers, summaries and translations without changing the interface language.
+- Add sender addresses to IMAP and POP3 accounts, use optional + or . suffixes, and reply from the address a message was sent to.
 
 ## 1.0.6 (2026-10-09)
 

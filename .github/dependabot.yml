@@ -1,11 +1,36 @@
-# Keeps the actions the workflows pin by commit on their latest release.
+# Keeps the actions the workflows pin by commit, and the crates in
+# Cargo.lock, on their latest releases. A release must be a week old before
+# Dependabot proposes it, which leaves time for a compromised or broken
+# release to be yanked first.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
+    labels: [build]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      # Compatible updates arrive as one pull request; each breaking one
+      # gets its own, to read its changelog.
+      crates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Held at 1.4.7. cc 1.8 puts the Flatpak SDK's CFLAGS after aws-lc-sys's
+      # per-file -O0 for jitterentropy, which then refuses to compile, and
+      # only the Flatpak build fails. Lift this once aws-lc-sys or cc fixes it.
+      - dependency-name: cc
     labels: [build]

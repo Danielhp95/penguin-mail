@@ -5,12 +5,14 @@
 use std::sync::Arc;
 
 use mailrs_domain::translate::{fill, gettext};
-use mailrs_domain::{Account, Provider};
-use mailrs_gmail::{GMAIL_API_BASE, GmailError, Granted, SIGN_IN_SCOPES};
+use mailrs_domain::{Account, Provider, SignInClient};
+use mailrs_gmail::{GMAIL_API_BASE, GmailError, Granted, OAuthClient, SIGN_IN_SCOPES};
 use mailrs_graph::GraphError;
+use mailrs_jmap::JmapError;
 
-use super::{MicrosoftSignInError, NewMicrosoft, SignInError, google_signed_in, microsoft_signed_in};
-use crate::{AccountServices, Connector, SyncError, connect_account, connect_microsoft, now_millis};
+use super::own_client::OwnClientError;
+use super::{JmapSignInError, MicrosoftSignInError, NewMicrosoft, SignInError, google_signed_in, microsoft_signed_in};
+use crate::{AccountServices, Clients, Connector, SyncError, connect_account, connect_microsoft, now_millis};
 
 /// A sign-in that runs on the provider's page in the browser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +29,7 @@ impl Browser {
         match provider {
             Provider::Gmail => Some(Browser::Google),
             Provider::Microsoft => Some(Browser::Microsoft),
-            Provider::Imap | Provider::Pop3 | Provider::CalDav => None,
+            Provider::Imap | Provider::Pop3 | Provider::Jmap | Provider::CalDav => None,
         }
     }
 }
@@ -87,8 +89,29 @@ pub enum BrowserSignInError {
     Kept(#[from] SignInError),
     #[error(transparent)]
     KeptMicrosoft(#[from] MicrosoftSignInError),
+    /// A JMAP server's sign-in failed.
+    #[error("{0}")]
+    Jmap(JmapError),
+    #[error(transparent)]
+    KeptJmap(#[from] JmapSignInError),
+    /// The JMAP server publishes no sign-in a browser can run.
+    #[error("{}", gettext("This server does not offer a sign-in in the browser."))]
+    NotOffered,
+    /// The JMAP server signed in without a refresh token, so the account
+    /// could not stay signed in.
+    #[error("{}", gettext("The server did not let Penguin Mail stay signed in. Sign in with a password or a token instead."))]
+    NoRefreshToken,
+    /// Nobody came back from the browser within the wait.
+    #[error("{}", gettext("Gave up waiting for the browser after ten minutes."))]
+    GaveUp,
+    /// The person canceled the wait for the browser.
+    #[error("{}", gettext("Canceled."))]
+    Canceled,
     #[error(transparent)]
     Connect(#[from] SyncError),
+    /// The environment names half an own Google client.
+    #[error(transparent)]
+    OwnClient(#[from] OwnClientError),
 }
 
 fn no_client(browser: Browser) -> String {
@@ -154,13 +177,33 @@ pub async fn in_browser(
     }
 }
 
+/// The client a new Google sign-in goes through, and which kind it is:
+/// the own client the environment names, over the build's. Half an own
+/// client is an error rather than a quiet fall back to the build's,
+/// which the person set the variables to avoid.
+pub fn google_sign_in(clients: &Clients) -> Result<(OAuthClient, SignInClient), BrowserSignInError> {
+    match &clients.own_google {
+        Some(Ok(own)) => Ok((own.oauth(), SignInClient::Own)),
+        Some(Err(half)) => Err(half.clone().into()),
+        None => clients
+            .google
+            .clone()
+            .map(|built_in| (built_in, SignInClient::BuiltIn))
+            .ok_or(BrowserSignInError::NoClient(Browser::Google)),
+    }
+}
+
 async fn with_google(
     connector: &Connector,
     wanted: Wanted,
     open: impl FnOnce(&str),
 ) -> Result<SignedIn, BrowserSignInError> {
     let Connector { db, clients, secrets, .. } = connector;
-    let oauth = clients.google.clone().ok_or(BrowserSignInError::NoClient(Browser::Google))?;
+    let (oauth, _) = google_sign_in(clients)?;
+    let own = match &clients.own_google {
+        Some(Ok(own)) => Some(own),
+        _ => None,
+    };
     let authorized = mailrs_gmail::authorize(&oauth, GMAIL_API_BASE, open)
         .await
         .map_err(BrowserSignInError::Google)?;
@@ -168,12 +211,13 @@ async fn with_google(
     let granted = authorized.granted.as_ref().map(Granted::to_scope);
     let account = google_signed_in(
         db,
-        Arc::clone(&secrets.google),
+        secrets,
         &authorized.email,
         &authorized.refresh_token,
         now_millis(),
         granted.as_deref(),
         &SIGN_IN_SCOPES.join(" "),
+        own,
     )
     .await?;
     let client = connect_account(oauth, Arc::clone(&secrets.google), &account, db).await?;

@@ -810,6 +810,7 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
         }
         fake.with(|s| s.calendars = demo_calendars(index));
         fake.with(|s| s.filters = demo_rules(index));
+        fake.with(|s| s.drive_storage = demo_storage(index));
         for event in demo_events(index, now) {
             fake.put_calendar_event(event);
         }
@@ -929,6 +930,17 @@ impl mailrs_sync::Accounts for Seeding {
     }
 }
 
+/// The first account nearly full, so the demo shows the banner; the
+/// second with room; the third says nothing, and has no row.
+fn demo_storage(index: usize) -> Option<mailrs_gmail::DriveStorage> {
+    const GIB: u64 = 1 << 30;
+    match index {
+        0 => Some(mailrs_gmail::DriveStorage { usage: 143 * GIB / 10, limit: Some(15 * GIB) }),
+        1 => Some(mailrs_gmail::DriveStorage { usage: 21 * GIB / 10, limit: Some(30 * GIB) }),
+        _ => None,
+    }
+}
+
 /// The rules demo account `index` has at Gmail. The Fernwood account
 /// gets two the Rules form shows whole and one made in Gmail's own
 /// settings, whose forward the form has no field for.
@@ -997,6 +1009,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 // A common choice on Google's side; lets a run of the
                 // demo show a reminder for the call with Rita below.
                 reminders: vec![Reminder { minutes: 10, method: ReminderMethod::Notification }],
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: FAMILY.into(),
@@ -1008,6 +1021,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: HOLIDAYS_PT.into(),
@@ -1019,6 +1033,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
         ],
         1 => vec![
@@ -1032,6 +1047,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: DESIGN_TEAM.into(),
@@ -1043,6 +1059,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: true,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
             CalendarModel {
                 id: MARKETING.into(),
@@ -1054,6 +1071,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
                 shown: false,
                 hidden: false,
                 reminders: Vec::new(),
+                all_day_reminders: None,
             },
         ],
         _ => vec![CalendarModel {
@@ -1066,6 +1084,7 @@ fn demo_calendars(index: usize) -> Vec<CalendarModel> {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }],
     }
 }
@@ -1730,6 +1749,40 @@ fn letters() -> [Letter; 6] {
     ]
 }
 
+/// A letter that asks for a read receipt, and a receipt for the letter
+/// Dana sent about the water butts, so the demo shows the card and the
+/// one-line receipt.
+fn receipt_samples(now: EpochMillis) -> [(Vec<u8>, i64); 2] {
+    let date = |minutes: i64| {
+        chrono::DateTime::from_timestamp_millis(now - minutes * 60 * 1000)
+            .unwrap_or_default()
+            .to_rfc2822()
+    };
+    let asks = format!(
+        "From: Ines Duarte <ines@allotment.example>\r\nTo: {name} <{FASTMAIL}>\r\nSubject: Seed order\r\n\
+         Date: {}\r\nMessage-ID: <seed-order@allotment.example>\r\n\
+         Disposition-Notification-To: Ines Duarte <ines@allotment.example>\r\nMIME-Version: 1.0\r\n\
+         Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n\
+         Hi Dana,\r\n\r\nI sent the seed order to Hollin this morning: two kinds of broad bean, \
+         the frost-hardy peas and a tray of leeks. Could you check the list against your notes?\r\n\r\nInês\r\n",
+        date(40),
+        name = DANA.0,
+    );
+    let receipt = format!(
+        "From: Ines Duarte <ines@allotment.example>\r\nTo: {name} <{FASTMAIL}>\r\n\
+         Subject: Read: Water butts\r\nDate: {}\r\nMessage-ID: <butts-read@allotment.example>\r\n\
+         MIME-Version: 1.0\r\n\
+         Content-Type: multipart/report; report-type=disposition-notification; boundary=\"r\"\r\n\r\n\
+         --r\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nYour message was shown.\r\n\
+         --r\r\nContent-Type: message/disposition-notification\r\n\r\n\
+         Final-Recipient: rfc822; ines@allotment.example\r\nOriginal-Message-ID: <butts-1@fastmail.example>\r\n\
+         Disposition: manual-action/MDN-sent-manually; displayed\r\n--r--\r\n",
+        date(20),
+        name = DANA.0,
+    );
+    [(asks.into_bytes(), 40), (receipt.into_bytes(), 20)]
+}
+
 impl Letter {
     fn at(&self, now: EpochMillis) -> EpochMillis {
         now - self.minutes_ago * 60 * 1000
@@ -1861,6 +1914,9 @@ async fn seed_fastmail(
             imap.remote_flag(letter.mailbox, uid, flag, true);
         }
     }
+    for (raw, minutes) in receipt_samples(now) {
+        imap.deliver("INBOX", raw, now - minutes * 60 * 1000);
+    }
     let smtp = Arc::new(FakeSmtp::default());
     let dav = Arc::new(FakeDav::new());
     dav.add_collection("/cal/personal/", DavKind::Calendar, "Personal", Some("#e66100"));
@@ -1979,6 +2035,7 @@ async fn queue_samples(
              Street takes bookings for eight.\n\nDana",
             Some("Could not reach Gmail"),
             now + 20 * 60 * 1000,
+            None,
         ),
         (
             "Book club in October",
@@ -1987,9 +2044,21 @@ async fn queue_samples(
              at seven.\n\nDana",
             None,
             tomorrow_at_eight(now),
+            None,
+        ),
+        // A message the server holds. The demo's account never settles a
+        // hold, so it sits three days out, past any demo session.
+        (
+            "Seeds for the spring beds",
+            "Ines Duarte <ines@allotment.example>",
+            "Ines,\n\nI ordered the broad beans and the peas. They arrive on the first of \
+             the month.\n\nDana",
+            None,
+            tomorrow_at_eight(now) + 3 * 24 * 60 * 60 * 1000,
+            Some("demo-hold"),
         ),
     ];
-    for (subject, to, words, problem, send_at) in letters {
+    for (subject, to, words, problem, send_at, held) in letters {
         let mut draft = Draft::new(
             account_id,
             Address {
@@ -2015,6 +2084,7 @@ async fn queue_samples(
             composer: serde_json::to_string(&draft).unwrap_or_default(),
             attempts: u32::from(problem.is_some()) * 3,
             problem: problem.map(str::to_string),
+            held: held.map(str::to_string),
             ..Queued::default()
         };
         db.write(move |c| outbox::put(c, &queued)).await?;
@@ -2869,8 +2939,31 @@ mod tests {
         let inbox = demo
             .threads(ThreadFilter::account(id, MailSet::Role(Role::Inbox)))
             .await;
-        assert_eq!(inbox.len(), 1);
-        assert_eq!(inbox[0].message_count, 2);
+        let rota = inbox
+            .iter()
+            .find(|t| t.subject.contains("Allotment rota"))
+            .expect("the rota thread");
+        assert_eq!(rota.message_count, 2);
+        // The letter that asks for a receipt and the receipt itself stand
+        // alone beside it.
+        assert_eq!(inbox.len(), 3);
+    }
+
+    /// The demo's receipt answers a letter in Sent, so it draws as one line.
+    #[tokio::test]
+    async fn the_fastmail_receipt_answers_a_letter_in_sent() {
+        let demo = demo().await;
+        let id = demo.fastmail().await;
+        let found = demo
+            .db
+            .read(move |c| {
+                let bracketed = mailrs_store::pop3::sent_with(c, id, "<butts-1@fastmail.example>")?;
+                let bare = mailrs_store::pop3::sent_with(c, id, "butts-1@fastmail.example")?;
+                Ok(bracketed.or(bare))
+            })
+            .await
+            .unwrap();
+        assert!(found.is_some());
     }
 
     #[tokio::test]

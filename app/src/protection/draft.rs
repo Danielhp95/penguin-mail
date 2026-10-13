@@ -94,7 +94,11 @@ pub async fn sealed(
     message_id: &str,
 ) -> Result<Vec<u8>, String> {
     let failed = |reason: &str| fill(&gettext("Draft not saved: {reason}"), &[("reason", reason)]);
-    let part = compose::build_saved_body_part(draft).map_err(|err| failed(&err))?;
+    let kept = draft.clone();
+    let part = compose::off_thread(move || compose::build_saved_body_part(&kept))
+        .await
+        .and_then(|built| built)
+        .map_err(|err| failed(&err))?;
     let order = match preferred {
         Standard::Pgp => [Standard::Pgp, Standard::Smime],
         Standard::Smime => [Standard::Smime, Standard::Pgp],
@@ -152,18 +156,25 @@ pub async fn save(
             kept.encrypt = true;
             sealed(core, &kept, standard, date, &message_id).await?
         }
-        false => compose::build_saved_draft(draft, date, &message_id)
-            .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?,
+        false => {
+            // The copy shares the files' bytes.
+            let (kept, id) = (draft.clone(), message_id.clone());
+            compose::off_thread(move || compose::build_saved_draft(&kept, date, &id))
+                .await
+                .and_then(|built| built)
+                .map_err(|err| fill(&gettext("Could not save: {reason}"), &[("reason", &err)]))?
+        }
     };
     let (thread, draft_id) = (draft.thread_id.clone(), draft.draft_id.clone());
+    let draft_id_was = draft_id.clone();
     let saved = core
         .call(async move { account.save_draft(raw, thread, draft_id).await })
         .await
         .map_err(|err| with_reason(&gettext("Draft not saved: {reason}"), &err, &[]))?;
     // A Send Later message waiting on this draft now names its new message.
-    let (outbox, account_id, kept) = (core.outbox(), draft.account_id, saved.clone());
+    let (outbox, account_id, kept, old) = (core.outbox(), draft.account_id, saved.clone(), draft_id_was);
     core.spawn(async move {
-        if let Err(err) = outbox.draft_saved(account_id, kept).await {
+        if let Err(err) = outbox.draft_saved(account_id, old, kept).await {
             tracing::warn!(error = %err, "could not update the store");
         }
     });
@@ -279,6 +290,16 @@ fn take_saved(raw: &[u8], body: &MessageBody, files: Vec<Vec<u8>>, draft: &mut D
         draft.cc = addresses(parsed.cc());
         draft.bcc = addresses(parsed.bcc());
         draft.subject = parsed.subject().unwrap_or_default().to_string();
+        // The composer asks for a receipt to the address the message comes
+        // from. A header naming anyone else came from another program, and
+        // ticking the box would send the receipts to the sender instead.
+        let sender = addresses(parsed.from()).into_iter().next();
+        draft.receipt = sender.is_some_and(|sender| {
+            unfolded(headers, "disposition-notification-to").is_some_and(|asked| {
+                let asked = compose::parse_recipients(&asked);
+                matches!(asked.as_slice(), [only] if only.email.eq_ignore_ascii_case(&sender.email))
+            })
+        });
     }
     draft.in_reply_to = unfolded(headers, "in-reply-to");
     draft.references = unfolded(headers, "references")
@@ -292,7 +313,7 @@ fn take_saved(raw: &[u8], body: &MessageBody, files: Vec<Vec<u8>>, draft: &mut D
         .map(|(found, data)| OutgoingAttachment {
             filename: found.filename.clone(),
             mime_type: found.mime_type.clone(),
-            data,
+            data: data.into(),
             content_id: found.content_id.clone(),
         })
         .collect();
@@ -341,7 +362,7 @@ mod tests {
         written.attachments = vec![OutgoingAttachment {
             filename: "plan.txt".into(),
             mime_type: "text/plain".into(),
-            data: b"Under the mat.".to_vec(),
+            data: b"Under the mat.".to_vec().into(),
             content_id: None,
         }];
         let raw =
@@ -360,5 +381,32 @@ mod tests {
         assert_eq!(reopened.references, written.references);
         assert_eq!(reopened.attachments, written.attachments);
         assert!(!reopened.encrypt);
+    }
+
+    fn saved_with_receipt() -> Vec<u8> {
+        let mut written = Draft::new(1, address(Some("Ann"), "ann@example.test"));
+        written.to = vec![address(None, "bo@example.test")];
+        written.subject = "Six".into();
+        written.receipt = true;
+        compose::build_mime(&written, 1_757_000_000, "<id@example.test>").expect("a draft")
+    }
+
+    #[test]
+    fn a_draft_that_asked_for_a_receipt_reopens_still_asking() {
+        let mut reopened = Draft::new(1, address(Some("Ann"), "ann@example.test"));
+        reopen_plain(&saved_with_receipt(), &mut reopened);
+        assert!(reopened.receipt);
+    }
+
+    #[test]
+    fn a_receipt_header_naming_someone_else_leaves_the_tick_off() {
+        let raw = String::from_utf8(saved_with_receipt()).unwrap().replace(
+            "Disposition-Notification-To: \"Ann\" <ann@example.test>",
+            "Disposition-Notification-To: <tracker@elsewhere.test>",
+        );
+        assert!(raw.contains("tracker@elsewhere.test"), "{raw}");
+        let mut reopened = Draft::new(1, address(Some("Ann"), "ann@example.test"));
+        reopen_plain(raw.as_bytes(), &mut reopened);
+        assert!(!reopened.receipt);
     }
 }

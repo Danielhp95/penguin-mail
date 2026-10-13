@@ -222,3 +222,26 @@ async fn a_large_write_leaves_statistics_behind() {
     let tables = db.read(|c| Ok(analyzed(c))).await.unwrap();
     assert!(tables.contains(&"messages".to_string()), "{tables:?}");
 }
+
+#[tokio::test]
+async fn the_idle_writer_counts_new_mail_into_the_kept_correspondents() {
+    let (db, _dir) = open();
+    db.write(|c| {
+        let id = accounts::insert_account(c, "me@example.com", 0)?;
+        store(c, &[meta(id, "m1", "t1", 100, &["INBOX"])]);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    for _ in 0..200 {
+        let counted: i64 = db
+            .read(|c| Ok(c.query_row("SELECT counted_row FROM contact_marks WHERE stale = 0", [], |r| r.get(0))?))
+            .await
+            .unwrap_or(0);
+        if counted > 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the writer never counted the new message");
+}

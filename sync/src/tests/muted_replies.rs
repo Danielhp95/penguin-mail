@@ -104,13 +104,13 @@ fn pop3_reply(n: u32) -> Vec<u8> {
 #[tokio::test]
 async fn a_pop3_reply_to_a_muted_thread_goes_to_the_archive_read_and_unannounced() {
     let h = pop3_harness(FakePop3::default().with_message("u1", &pop3_mail(1)), RemoveSetting::Never).await;
-    h.sync.pop3_check().await.unwrap();
+    h.sync.look_for_mail().await.unwrap();
     let thread = [Target::thread(h.account_id, h.thread_of("pop3/u1").await)];
     h.sync.triage_all(&thread, &TriageAction::Mute, None).await.unwrap();
     std::iter::from_fn(|| h.events.try_recv().ok()).for_each(drop);
 
     h.fake.add("u2", &pop3_reply(2));
-    h.sync.pop3_check().await.unwrap();
+    h.sync.look_for_mail().await.unwrap();
 
     assert_eq!(h.thread_of("pop3/u2").await, thread[0].thread_id, "the reply threads with the first");
     assert!(h.ids_in(MailSet::Role(Role::Inbox)).await.is_empty(), "the Inbox stays empty");
@@ -122,7 +122,7 @@ async fn a_pop3_reply_to_a_muted_thread_goes_to_the_archive_read_and_unannounced
     h.sync.triage_all(&thread, &TriageAction::Unmute, None).await.unwrap();
     std::iter::from_fn(|| h.events.try_recv().ok()).for_each(drop);
     h.fake.add("u3", &pop3_reply(3));
-    h.sync.pop3_check().await.unwrap();
+    h.sync.look_for_mail().await.unwrap();
 
     assert!(h.ids_in(MailSet::Role(Role::Inbox)).await.contains(&"pop3/u3".to_string()));
     let events: Vec<ChangeEvent> = std::iter::from_fn(|| h.events.try_recv().ok()).collect();

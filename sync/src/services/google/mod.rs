@@ -9,6 +9,7 @@ mod fetch;
 mod writes;
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::ops::RangeInclusive;
 use std::time::Duration;
@@ -30,7 +31,7 @@ use mailrs_mime::html::html_to_text;
 use super::{
     AutoReplyService, Backfill, CalendarService, Changes, ContactsService, Found, IdentityService,
     KeywordsPage, MailBackend, MailCapabilities, Priority, RawMessage, Relocated, RemoteRef,
-    RulesService, SearchQuery, SendAsAddress, SyncState, Unapplied, Want, Withheld, priority,
+    RulesService, SearchQuery, SendAsAddress, Storage, SyncState, Unapplied, Want, Withheld, priority,
 };
 use crate::api::{DraftRef, GmailApi, SavedDraft};
 use crate::{BackendError, MailOp};
@@ -53,7 +54,13 @@ pub struct Google<G> {
     handles: Arc<Mutex<Handles>>,
     /// Capabilities that replace Gmail's, set only on a fake account.
     capabilities: Option<MailCapabilities>,
+    /// Whether only the tray runs, which slows the history polls.
+    tray_only: Arc<AtomicBool>,
 }
+
+/// How often the history is read while only the tray runs. With the window
+/// open the engine's own interval paces it.
+const POLL_TRAY: Duration = Duration::from_secs(5 * 60);
 
 /// What Gmail's mail service can do.
 const GMAIL: MailCapabilities = MailCapabilities {
@@ -80,6 +87,7 @@ impl<G> Google<G> {
             gmail,
             handles: Arc::new(Mutex::new(Handles::default())),
             capabilities: None,
+            tray_only: Arc::default(),
         }
     }
 
@@ -115,6 +123,7 @@ impl<G> Clone for Google<G> {
             gmail: Arc::clone(&self.gmail),
             handles: Arc::clone(&self.handles),
             capabilities: self.capabilities,
+            tray_only: Arc::clone(&self.tray_only),
         }
     }
 }
@@ -207,6 +216,20 @@ pub fn withheld(granted: Option<&Granted>) -> Withheld {
 impl<G: GmailApi> MailBackend for Google<G> {
     fn capabilities(&self) -> MailCapabilities {
         self.capabilities.unwrap_or(GMAIL)
+    }
+
+    /// The Google account's whole storage, which Gmail shares with Drive
+    /// and Photos. It needs the Drive permission; without it, or when
+    /// Google refuses, the account says nothing rather than failing.
+    async fn storage(&self) -> Result<Option<Storage>, BackendError> {
+        if self.withheld().drive {
+            return Ok(None);
+        }
+        match self.gmail.drive_storage().await {
+            Ok(found) => Ok(found.limit.and_then(|limit| Storage::new(found.usage, limit, None))),
+            Err(GmailError::MissingScope | GmailError::Http { status: 403, .. }) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn provider_name(&self) -> &str {
@@ -469,12 +492,14 @@ impl<G: GmailApi> MailBackend for Google<G> {
         false
     }
 
-    /// The engine's own interval paces Gmail whether the window is open or
-    /// not.
-    fn set_window_open(&self, _open: bool) {}
+    /// With the window open the engine's own interval paces Gmail; with
+    /// only the tray running the history is read less often.
+    fn set_window_open(&self, open: bool) {
+        self.tray_only.store(!open, Ordering::Relaxed);
+    }
 
     fn poll_interval(&self) -> Option<Duration> {
-        None
+        self.tray_only.load(Ordering::Relaxed).then_some(POLL_TRAY)
     }
 
     /// Gmail pushes nothing to a desktop client, so the engine's poll is

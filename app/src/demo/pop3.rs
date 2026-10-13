@@ -151,7 +151,7 @@ pub async fn seed_pop3(
     let sync = Arc::new(AccountSync::new(account_id, server.services(db, account_id), db.clone(), events));
     sync.refresh_labels().await?;
     for _ in 0..3 {
-        sync.pop3_check().await?;
+        sync.look_for_mail().await?;
     }
     let folder = sync.create_label(FOLDER).await?;
     let moved: Vec<Change> = CLUB

@@ -249,13 +249,13 @@ mod tests {
             OutgoingAttachment {
                 filename: "kite.png".to_string(),
                 mime_type: "image/png".to_string(),
-                data: vec![1, 2, 3],
+                data: vec![1, 2, 3].into(),
                 content_id: Some("kite1".to_string()),
             },
             OutgoingAttachment {
                 filename: "plan.txt".to_string(),
                 mime_type: "text/plain".to_string(),
-                data: b"Fly at ten".to_vec(),
+                data: b"Fly at ten".to_vec().into(),
                 content_id: None,
             },
         ];

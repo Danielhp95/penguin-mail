@@ -940,6 +940,16 @@ async fn erasing_one_message_leaves_the_rest_of_its_thread_consistent() {
     );
 }
 
+/// Waits until the writer has gone idle once, so the contacts tally it
+/// brings up to date when idle has committed. The first empty write can
+/// slip in ahead of that catch-up while the writer is still busy; the
+/// second can only run after it.
+async fn settled(h: &Harness) {
+    for _ in 0..2 {
+        h.db.write(|_| Ok(())).await.expect("an empty write");
+    }
+}
+
 /// Transactions committed to the harness's database so far, counted from
 /// the commit frames in its write-ahead log. The log only grows in a test
 /// this small, so the count only goes up.
@@ -989,9 +999,11 @@ async fn a_flag_or_reminder_on_many_conversations_writes_the_store_once() {
         },
         MailAction::DismissFollowUp,
     ] {
+        settled(&h).await;
         let before = commits(&h);
         let outcome = actions.run(&targets, action.clone(), History::Record).await;
         assert_eq!(outcome.done.len(), 10, "{action:?}");
+        settled(&h).await;
         let label_change = usize::from(!matches!(action, MailAction::DismissFollowUp));
         assert_eq!(
             commits(&h) - before,

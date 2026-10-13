@@ -26,9 +26,13 @@ impl From<MessageRef> for RemoteRef {
 }
 
 /// Gmail's search for the sync window: recent mail plus everything in the
-/// inbox.
+/// inbox, or for all mail no search at all, which lists every message
+/// outside Spam and Trash.
 pub(super) fn window_query(days: i64) -> String {
-    format!("{{newer_than:{days}d in:inbox}}")
+    match crate::window_reach(days) {
+        Some(days) => format!("{{newer_than:{days}d in:inbox}}"),
+        None => String::new(),
+    }
 }
 
 /// One call to Gmail.

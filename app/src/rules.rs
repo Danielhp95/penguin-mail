@@ -19,6 +19,16 @@ pub fn place_line(place: RulesPlace, provider: &str) -> String {
     }
 }
 
+/// What the Rules dialog says while there are none: what a rule does,
+/// then where the rules run.
+pub fn empty_line(place: RulesPlace, provider: &str) -> String {
+    format!(
+        "{} {}",
+        gettext("A rule moves, labels or marks mail from a sender or with a subject."),
+        place_line(place, provider)
+    )
+}
+
 /// The line that says the rules server is not answering.
 pub fn waiting_line(provider: &str) -> String {
     fill(
@@ -319,6 +329,15 @@ mod tests {
         assert_eq!(
             waiting_line("mailbox.org"),
             "mailbox.org is not answering. Changes wait here and go out when it does."
+        );
+    }
+
+    #[test]
+    fn an_empty_list_says_what_a_rule_does_and_where_it_runs() {
+        assert_eq!(
+            empty_line(RulesPlace::Server, "Gmail"),
+            "A rule moves, labels or marks mail from a sender or with a subject. \
+             Gmail runs these on new mail as it arrives, even when this computer is off."
         );
     }
 

@@ -1,59 +1,40 @@
-//! Mail search as the person types. A pause in typing runs the search
-//! over the mail on this computer, and from three letters on over the
-//! servers too, with the stored rows on screen while the servers answer.
-//! `search::typing` decides when a search runs and how far it reaches.
-//! Every answer lands through the list feed's ticket, so a search that a
-//! newer one replaced never reaches the list, and a key stops the server
-//! search still out, so the servers hear nothing more of it.
+//! The window behind the listing run. `listing` decides what the thread
+//! list lists and when; this file is the adapter that answers its reads
+//! from the window, makes its store and server calls through the core,
+//! and hands its rows to the thread list. It also wires the search field
+//! to the run: a pause in typing runs the search over the mail on this
+//! computer, and from three letters on over the servers too.
 
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+use std::time::Duration;
 
 use adw::prelude::*;
 use gtk::glib;
-use mailrs_domain::AccountId;
-use mailrs_sync::{Listing, Loaded, Stop};
+use mailrs_domain::{AccountId, Category, Folder, Target, ThreadSummary};
+use mailrs_sync::{Changed, Listing, Loaded, Scope, Stop, View};
 
-use super::on_screen::OnScreen;
-use super::{MainWindow, load_failed};
-use crate::search::typing::{self, Reach, Run, Typed};
+use super::listing::{Answer, Lists, Pane, Work};
+use super::on_screen::{Redraw, Revealed};
+use super::{MainWindow, follows, load_failed};
+use crate::core::Core;
 use crate::ui::Mailbox;
-use crate::ui::list_feed::Ticket;
+use crate::ui::list_feed::{Named, Refresh};
 
 impl MainWindow {
-    /// Runs the search the field holds once typing pauses, and puts the
-    /// mailbox back when the field empties.
+    /// Hands the search field's keys and the search bar closing to the
+    /// listing run.
     pub(super) fn install_search_typing(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         self.list.search_entry.connect_changed(move |entry| {
-            let Some(win) = weak.upgrade() else { return };
-            // The answer to the old text is no longer wanted.
-            if let Some((_, stop)) = win.search_stop.take() {
-                stop.stop();
-                win.typing.borrow_mut().interrupted();
-            }
-            let typed = win.typing.borrow_mut().typed(&entry.text());
-            match typed {
-                Typed::Cleared => win.change_screen(OnScreen::search_closed),
-                Typed::Wait(pause) => {
-                    let weak = Rc::downgrade(&win);
-                    glib::timeout_add_local_once(typing::PAUSE, move || {
-                        let Some(win) = weak.upgrade() else { return };
-                        let run = win.typing.borrow_mut().paused(pause);
-                        if let Some(run) = run {
-                            win.run_search(run);
-                        }
-                    });
-                }
+            if let Some(win) = weak.upgrade() {
+                win.listing.typed(&entry.text());
             }
         });
         let weak = Rc::downgrade(self);
         self.list.search_button.connect_toggled(move |button| {
             let Some(win) = weak.upgrade() else { return };
             if !button.is_active() {
-                win.typing.borrow_mut().closed();
-                if let Some((_, stop)) = win.search_stop.take() {
-                    stop.stop();
-                }
+                win.listing.search_bar_closed();
             }
         });
     }
@@ -61,101 +42,189 @@ impl MainWindow {
     /// Enter in the search field, or a picked suggestion: runs `text` at
     /// once, as far as the servers.
     pub(super) fn search_entered(self: &Rc<Self>, text: String) {
-        let run = self.typing.borrow_mut().entered(&text);
-        if let Some(run) = run {
-            self.run_search(run);
+        self.listing.entered(&text);
+    }
+}
+
+/// The window, as the listing run reads and changes it.
+pub(super) struct ListPane(pub(super) Weak<MainWindow>);
+
+impl ListPane {
+    fn window(&self) -> Option<Rc<MainWindow>> {
+        self.0.upgrade()
+    }
+}
+
+impl Pane for ListPane {
+    fn scope(&self) -> Scope {
+        self.window()
+            .map_or_else(|| Scope::over(Vec::new()), |win| win.scope())
+    }
+
+    fn view(&self, mailbox: &Mailbox, category: Category) -> View {
+        self.window()
+            .map(|win| win.view_of(mailbox, category))
+            .unwrap_or_default()
+    }
+
+    fn follows(&self, mailbox: &Mailbox) -> Option<(AccountId, String)> {
+        let win = self.window()?;
+        follows(mailbox, win.offers(mailbox.account()?))
+    }
+
+    fn loaded(&self) -> Loaded {
+        self.window()
+            .map(|win| win.list.loaded())
+            .unwrap_or_default()
+    }
+
+    fn redraw(&self, redraw: &Redraw) {
+        if let Some(win) = self.window() {
+            win.redraw(redraw);
         }
     }
 
-    fn run_search(self: &Rc<Self>, run: Run) {
-        let query = run.query.clone();
-        *self.searched.borrow_mut() = Some(run);
-        self.search(query);
+    fn refreshing(&self, refresh: &Refresh) {
+        let Some(win) = self.window() else { return };
+        win.refresh_counts();
+        // A conversation the events did not name has nothing new.
+        win.refresh_open_threads(|account_id, thread_id| refresh.names(account_id, thread_id));
     }
 
-    /// Lists the first page of a search under `ticket`: the stored mail
-    /// first, then, when the search reaches them, the servers' answer in
-    /// its place. A search the field did not run, such as one the
-    /// assistant opened, reaches the servers. With no stored rows to show,
-    /// `spinner` puts the spinner up while the servers answer; a refresh
-    /// leaves the rows on screen instead.
-    pub(super) fn search_first_page(
-        self: &Rc<Self>,
-        ticket: Ticket,
+    fn set_rows(&self, listing: Listing) {
+        let Some(win) = self.window() else { return };
+        for notice in &listing.notices {
+            win.toast(notice);
+        }
+        let rows = listing.rows.into_iter().map(Rc::new).collect();
+        win.list.set_empty_description(&listing.empty.description);
+        win.list
+            .set_rows(rows, &listing.empty.title, listing.empty.icon);
+        win.follow_selection();
+        win.list.set_title(&listing.title, &listing.subtitle);
+    }
+
+    fn append(&self, rows: Vec<ThreadSummary>) {
+        if let Some(win) = self.window() {
+            win.list.append(rows.into_iter().map(Rc::new).collect());
+        }
+    }
+
+    fn replace(&self, changed: &[Named], rows: Vec<ThreadSummary>, title: &str, subtitle: &str) {
+        let Some(win) = self.window() else { return };
+        win.list.replace_threads(changed, rows);
+        win.follow_selection();
+        win.list.set_title(title, subtitle);
+    }
+
+    fn drop_rows(&self, gone: &[Target]) {
+        let Some(win) = self.window() else { return };
+        win.list.retain(|row| !gone.contains(&Target::from_row(row)));
+        if win.conversation.read(|o| o.among(gone)) == Some(true) {
+            win.conversation.clear();
+        }
+    }
+
+    fn loading(&self) {
+        if let Some(win) = self.window() {
+            win.list.show_loading();
+        }
+    }
+
+    fn select(&self, (account_id, thread_id, then): Revealed) {
+        if let Some(win) = self.window() {
+            win.select_revealed(account_id, thread_id, then);
+        }
+    }
+
+    fn failed(&self, err: &anyhow::Error) {
+        if let Some(win) = self.window() {
+            win.toast(&load_failed(err));
+        }
+    }
+}
+
+/// The store, the servers and the main loop, as the listing run asks them.
+pub(super) struct CoreLists(pub(super) Rc<Core>);
+
+impl Lists for CoreLists {
+    fn list(&self, mailbox: Mailbox, scope: Scope, view: View, held: Loaded) -> Answer<'_, anyhow::Result<Listing>> {
+        let lists = self.0.lists();
+        Box::pin(
+            self.0
+                .call(async move { lists.list(&mailbox, &scope, &view, held).await }),
+        )
+    }
+
+    fn stored_search(
+        &self,
         query: String,
         only: Option<AccountId>,
-        spinner: bool,
-    ) {
-        let reach = match &*self.searched.borrow() {
-            Some(run) if run.query == query => run.reach,
-            _ => Reach::Servers,
+        scope: Scope,
+        view: View,
+    ) -> Answer<'_, anyhow::Result<Listing>> {
+        let lists = self.0.lists();
+        Box::pin(
+            self.0
+                .call(async move { lists.stored_search(&query, only, &scope, &view).await }),
+        )
+    }
+
+    fn server_search(
+        &self,
+        mailbox: Mailbox,
+        scope: Scope,
+        view: View,
+        stop: Stop,
+    ) -> Answer<'_, anyhow::Result<Listing>> {
+        let lists = self.0.lists();
+        Box::pin(self.0.call(async move {
+            lists
+                .list_until(&mailbox, &scope, &view, Loaded::nothing(), &stop)
+                .await
+        }))
+    }
+
+    fn changed(&self, mailbox: Mailbox, named: Vec<Named>, view: View) -> Answer<'_, Option<Changed>> {
+        let lists = self.0.lists();
+        let call = self
+            .0
+            .call(async move { lists.changed(&mailbox, &named, &view).await });
+        Box::pin(async move { call.await.unwrap_or(None) })
+    }
+
+    fn gone_from(&self, folder: Folder, targets: Vec<Target>) -> Answer<'_, Vec<Target>> {
+        let actions = self.0.actions();
+        let call = self
+            .0
+            .call(async move { actions.gone_from(folder, &targets).await });
+        Box::pin(async move { call.await.unwrap_or_default() })
+    }
+
+    /// This never touches the window: a failure only logs, and the
+    /// listing on screen, which came from the store already, stays as it
+    /// is.
+    fn follow(&self, account_id: AccountId, server_mailbox: String) {
+        let Some(account) = self.0.account(account_id) else {
+            return;
         };
-        let stop = Stop::default();
-        let held = (reach == Reach::Servers).then(|| (ticket, stop.clone()));
-        if let Some((_, older)) = self.search_stop.replace(held) {
-            older.stop();
-        }
-        let (scope, view) = (self.scope(), self.view());
-        let this = Rc::clone(self);
-        glib::spawn_future_local(async move {
-            let lists = this.core.lists();
-            let (asked, within, seen) = (query.clone(), scope.clone(), view.clone());
-            let stored = this
-                .core
-                .call(async move { lists.stored_search(&asked, only, &within, &seen).await })
-                .await;
-            if reach == Reach::Store {
-                return this.land_search(ticket, stored);
-            }
-            if stop.stopped() || !this.screen.borrow_mut().feed().current(ticket) {
-                return;
-            }
-            match &stored {
-                Ok(found) if !found.rows.is_empty() => this.show_listing(found.clone()),
-                Err(err) => tracing::warn!(error = %err, "could not search the stored mail"),
-                Ok(_) if spinner => this.list.show_loading(),
-                Ok(_) => {}
-            }
-            let lists = this.core.lists();
-            let mailbox = Mailbox::Search {
-                query,
-                account_id: only,
-            };
-            let until = stop.clone();
-            let found = this
-                .core
-                .call(async move {
-                    lists
-                        .list_until(&mailbox, &scope, &view, Loaded::nothing(), &until)
-                        .await
-                })
-                .await;
-            {
-                let mut held = this.search_stop.borrow_mut();
-                if held.as_ref().is_some_and(|(at, _)| *at == ticket) {
-                    *held = None;
-                }
-            }
-            // A stopped search answers with what it had, which is less than
-            // the stored rows already on screen.
-            if !stop.stopped() {
-                this.land_search(ticket, found);
+        self.0.spawn(async move {
+            if let Err(err) = account.follow_mailbox(&server_mailbox).await {
+                tracing::warn!(
+                    account = account_id,
+                    mailbox = %server_mailbox,
+                    error = %err,
+                    "could not follow the folder opened on screen"
+                );
             }
         });
     }
 
-    /// Puts a search's first page on screen while `ticket` is current.
-    fn land_search(self: &Rc<Self>, ticket: Ticket, loaded: anyhow::Result<Listing>) {
-        let landed = self.screen.borrow_mut().feed().first_page(ticket, &loaded);
-        let Some(landed) = landed else {
-            return;
-        };
-        match loaded {
-            Ok(listing) => self.show_listing(listing),
-            Err(err) => self.toast(&load_failed(&err)),
-        }
-        if let Some((account_id, thread_id, then)) = landed.reveal {
-            self.select_revealed(account_id, thread_id, then);
-        }
+    fn sleep(&self, time: Duration) -> Answer<'_, ()> {
+        Box::pin(glib::timeout_future(time))
+    }
+
+    fn spawn(&self, work: Work) {
+        glib::spawn_future_local(work);
     }
 }

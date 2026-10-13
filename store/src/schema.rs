@@ -9,6 +9,14 @@ use rusqlite::functions::FunctionFlags;
 
 use crate::{Result, StoreError};
 
+/// Every schema change, in order; append only.
+///
+/// Rebuilding `messages` (copy, drop, rename) drops the triggers on it:
+/// `local_messages_follow`, which takes a POP3 message's bytes with its
+/// row, and the contact triggers of migrations 61 to 64. Such a migration must
+/// create them again. It also renumbers the implicit rowids the
+/// correspondents tally counts by, as a VACUUM may, so either must mark
+/// the tally stale (`UPDATE contact_marks SET stale = 1, counted_row = 0`).
 const MIGRATIONS: &[&str] = &[
     r#"
 CREATE TABLE accounts (
@@ -757,8 +765,10 @@ CREATE TABLE rule_changes (
     // that is not downloaded yet, with its last words.
     //
     // `local_messages` holds the raw bytes of mail that lives only here,
-    // and goes with the message row. `accounts.pop3_remove` is `never`,
-    // `downloaded` or `days`, with the day count beside it. SQLite cannot
+    // and goes with the message row (`local_messages_follow`, which a
+    // migration rebuilding `messages` must create again).
+    // `accounts.pop3_remove` is `never`, `downloaded` or `days`, with the
+    // day count beside it. SQLite cannot
     // widen a CHECK in place, so `account_servers` is rebuilt to take a
     // 'pop3' role.
     r#"
@@ -863,6 +873,237 @@ CREATE TABLE contact_offers (
     PRIMARY KEY (account_id, email)
 );
 "#,
+    // The sync window, in days, an account's stored mail was loaded for
+    // (0 for all mail, NULL until the account first runs under this
+    // version), so a longer window brings older mail in and a shorter one
+    // prunes at once. `backfill_extends` marks a backfill that lengthens
+    // the window over mail already stored, which keeps what it holds.
+    r#"
+ALTER TABLE accounts ADD COLUMN window_days INTEGER;
+ALTER TABLE accounts ADD COLUMN backfill_extends INTEGER NOT NULL DEFAULT 0;
+"#,
+    // A JMAP account's session URL, how it signs in (the account password
+    // over Basic, with the user name Basic sends when it is not the
+    // address, or a token over Bearer), whether its mail takes labels,
+    // from the session's maxMailboxesPerEmail, and the capabilities the
+    // session offered, as a JSON array, both read at sign-in. The password
+    // or token lives in the keyring and never here.
+    r#"
+CREATE TABLE jmap_accounts (
+    account_id   INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    session_url  TEXT NOT NULL,
+    auth         TEXT NOT NULL CHECK (auth IN ('basic', 'bearer')),
+    user_name    TEXT,
+    labels       INTEGER NOT NULL DEFAULT 1,
+    capabilities TEXT NOT NULL DEFAULT '[]'
+);
+"#,
+    // A Send Later message the server holds names its hold, so the outbox
+    // asks the server about it instead of sending it. A cached body keeps
+    // the read receipt its sender asked for and the receipt it is. The
+    // person's answer to a receipt asked for is kept here, since Gmail and
+    // Outlook have no keyword for it.
+    r#"
+ALTER TABLE outbox ADD COLUMN held TEXT;
+CREATE UNIQUE INDEX outbox_by_hold ON outbox(account_id, held) WHERE held IS NOT NULL;
+ALTER TABLE bodies ADD COLUMN receipt_to TEXT;
+ALTER TABLE bodies ADD COLUMN read_report TEXT;
+CREATE TABLE receipts (
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    answered   TEXT NOT NULL CHECK (answered IN ('sent', 'declined')),
+    at         INTEGER NOT NULL,
+    PRIMARY KEY (account_id, message_id)
+);
+"#,
+    // A JMAP account may sign in with OAuth: its client id, which a server
+    // with dynamic registration made for it, and the token endpoint its
+    // refreshes go to. SQLite cannot widen a CHECK in place, so the table
+    // is rebuilt with every row copied across; nothing references it. The
+    // new columns are nullable, so an older app still reads the table. The
+    // tokens and the client secret live in the keyring and never here.
+    r#"
+CREATE TABLE jmap_accounts_new (
+    account_id      INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    session_url     TEXT NOT NULL,
+    auth            TEXT NOT NULL CHECK (auth IN ('basic', 'bearer', 'oauth')),
+    user_name       TEXT,
+    labels          INTEGER NOT NULL DEFAULT 1,
+    capabilities    TEXT NOT NULL DEFAULT '[]',
+    oauth_client_id TEXT,
+    oauth_token_url TEXT
+);
+INSERT INTO jmap_accounts_new (account_id, session_url, auth, user_name, labels, capabilities)
+    SELECT account_id, session_url, auth, user_name, labels, capabilities FROM jmap_accounts;
+DROP TABLE jmap_accounts;
+ALTER TABLE jmap_accounts_new RENAME TO jmap_accounts;
+"#,
+    // Every message's Message-ID, not only those threaded here: a read
+    // receipt names the message it answers, and finding that copy in Sent
+    // otherwise walks the whole mailbox. Adds an index; changes no row.
+    r#"
+CREATE INDEX messages_by_msgid ON messages(account_id, rfc822_msgid);
+"#,
+    // An invitation names its event by iCalendar UID, which the calendar
+    // reads with any case, so finding the event walked every event of the
+    // account. Adds an index on the lower-case UID; changes no row.
+    r#"
+CREATE INDEX events_by_uid ON events(account_id, lower(uid));
+"#,
+    // The recipient suggestions count correspondents from every message.
+    // `correspondents` holds that tally as counted up to message row
+    // `counted_row`, and the writer brings it up to date when idle
+    // (`contacts::catch_up`), so nothing stays in memory between reads. A
+    // change to a row it already counted marks it `stale`, and the next
+    // catch-up counts every row again; a row past `counted_row` needs no
+    // mark, since no tally holds it yet. The table is derived, so it starts
+    // empty and stale, and it travels with the file.
+    //
+    // The tally keys on the messages table's implicit rowid. A VACUUM may
+    // renumber it, and a migration that rebuilds `messages` renumbers it
+    // and drops its triggers (these and `local_messages_follow`): either
+    // must recreate the triggers and set `stale = 1, counted_row = 0`.
+    r#"
+CREATE TABLE contact_marks (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    stale       INTEGER NOT NULL DEFAULT 1,
+    counted_row INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO contact_marks (id) VALUES (1);
+CREATE TABLE correspondents (
+    key       TEXT PRIMARY KEY,
+    email     TEXT NOT NULL,
+    name      TEXT,
+    score     INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TRIGGER contacts_message_gone AFTER DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_message_changed AFTER UPDATE OF from_name, from_addr, to_addrs, cc_addrs, date ON messages
+WHEN (OLD.from_name IS NOT NEW.from_name OR OLD.from_addr IS NOT NEW.from_addr
+    OR OLD.to_addrs IS NOT NEW.to_addrs OR OLD.cc_addrs IS NOT NEW.cc_addrs OR OLD.date IS NOT NEW.date)
+    AND NEW.rowid <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_filed AFTER INSERT ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent')
+    AND (SELECT rowid FROM messages WHERE account_id = NEW.account_id AND id = NEW.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_unfiled AFTER DELETE ON message_mailboxes
+WHEN EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+    AND (SELECT rowid FROM messages WHERE account_id = OLD.account_id AND id = OLD.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes
+WHEN (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_role AFTER UPDATE OF role ON mailboxes
+WHEN (OLD.role IS 'sent') <> (NEW.role IS 'sent') AND (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+CREATE TRIGGER contacts_sent_gone AFTER DELETE ON mailboxes
+WHEN OLD.role IS 'sent' AND (SELECT counted_row FROM contact_marks) > 0
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
+    // A deleted message used to mark the correspondents tally stale, and the
+    // next catch-up counted every message again on the writer thread. Now
+    // the delete leaves what it counted in `contact_gone`, and the catch-up
+    // takes it off the tally. A deletion the tally cannot undo (one that
+    // may have decided a name or a last date), or more than 5000 waiting,
+    // still marks it stale. The delete runs BEFORE the row goes, while its
+    // Sent filings still exist. When the deleted row is the last one
+    // counted, `counted_row` steps back to the row before it, since SQLite
+    // gives the next new message that number again.
+    r#"
+CREATE TABLE contact_gone (
+    seq       INTEGER PRIMARY KEY,
+    from_name TEXT,
+    from_addr TEXT,
+    to_addrs  TEXT,
+    cc_addrs  TEXT,
+    date      INTEGER NOT NULL,
+    sent      INTEGER NOT NULL
+);
+DROP TRIGGER contacts_message_gone;
+CREATE TRIGGER contacts_message_gone BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND (SELECT stale FROM contact_marks) = 0
+    AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) < 5000
+BEGIN
+    INSERT INTO contact_gone (from_name, from_addr, to_addrs, cc_addrs, date, sent)
+    VALUES (OLD.from_name, OLD.from_addr, OLD.to_addrs, OLD.cc_addrs, OLD.date,
+        EXISTS (SELECT 1 FROM message_mailboxes f JOIN mailboxes b ON b.key = f.mailbox
+            WHERE f.account_id = OLD.account_id AND f.message_id = OLD.id AND b.role = 'sent'));
+    UPDATE contact_marks SET counted_row =
+        (SELECT coalesce(max(rowid), 0) FROM messages WHERE rowid < OLD.rowid)
+    WHERE counted_row = OLD.rowid;
+END;
+CREATE TRIGGER contacts_message_gone_many BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND ((SELECT stale FROM contact_marks) = 1
+        OR (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) >= 5000)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
+    // `contact_gone.sent` held whether a deleted message was filed in Sent,
+    // but a recount counts a message once for each Sent folder it is filed
+    // in, so the delete must take that many weights off. It now holds the
+    // number of Sent filings; the 0 and 1 already kept mean the same as
+    // before. A delete also now leaves its count while a recount runs, when
+    // the row was one the recount already passed, rather than sending the
+    // recount back to the start; only more than 5000 waiting does that.
+    r#"
+DROP TRIGGER contacts_message_gone;
+DROP TRIGGER contacts_message_gone_many;
+CREATE TRIGGER contacts_message_gone BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) < 5000
+BEGIN
+    INSERT INTO contact_gone (from_name, from_addr, to_addrs, cc_addrs, date, sent)
+    VALUES (OLD.from_name, OLD.from_addr, OLD.to_addrs, OLD.cc_addrs, OLD.date,
+        (SELECT count(*) FROM message_mailboxes f JOIN mailboxes b ON b.key = f.mailbox
+            WHERE f.account_id = OLD.account_id AND f.message_id = OLD.id AND b.role = 'sent'));
+    UPDATE contact_marks SET counted_row =
+        (SELECT coalesce(max(rowid), 0) FROM messages WHERE rowid < OLD.rowid)
+    WHERE counted_row = OLD.rowid;
+END;
+CREATE TRIGGER contacts_message_gone_many BEFORE DELETE ON messages
+WHEN OLD.rowid <= (SELECT counted_row FROM contact_marks)
+    AND (SELECT coalesce(max(seq) - min(seq), 0) FROM contact_gone) >= 5000
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
+    // A filing that moved marked the tally stale whatever the folders were.
+    // Only a move into or out of a Sent folder changes what it counts, and
+    // only for a message it already counted, as the other filing triggers
+    // check.
+    r#"
+DROP TRIGGER contacts_filing_moved;
+CREATE TRIGGER contacts_filing_moved AFTER UPDATE ON message_mailboxes
+WHEN (EXISTS (SELECT 1 FROM mailboxes WHERE key = OLD.mailbox AND role = 'sent')
+        OR EXISTS (SELECT 1 FROM mailboxes WHERE key = NEW.mailbox AND role = 'sent'))
+    AND (SELECT rowid FROM messages WHERE account_id = OLD.account_id AND id = OLD.message_id)
+        <= (SELECT counted_row FROM contact_marks)
+BEGIN
+    UPDATE contact_marks SET stale = 1, counted_row = 0;
+END;
+"#,
 ];
 
 /// How long the copy taken before a migration stays once the store has
@@ -942,7 +1183,25 @@ fn restore(path: &Path, copy: &Path) -> io::Result<()> {
         side.push(suffix);
         remove_if_present(Path::new(&side))?;
     }
-    std::fs::copy(copy, path).map(drop)
+    std::fs::copy(copy, path)?;
+    mark_tally_stale(path).map_err(io::Error::other)
+}
+
+/// The copy came from a VACUUM, which may number the messages' rowids
+/// differently from the store it replaces, and the correspondents tally
+/// counts by those rowids. A store old enough to have no tally needs
+/// nothing.
+fn mark_tally_stale(path: &Path) -> rusqlite::Result<()> {
+    let conn = Connection::open(path)?;
+    let has_tally: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'contact_marks')",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_tally {
+        conn.execute("UPDATE contact_marks SET stale = 1, counted_row = 0", [])?;
+    }
+    Ok(())
 }
 
 fn remove_if_present(path: &Path) -> io::Result<()> {

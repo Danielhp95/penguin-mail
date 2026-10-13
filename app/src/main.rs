@@ -35,7 +35,9 @@ mod open_thread;
 mod packaging;
 mod permission;
 mod pgp;
+mod photos;
 mod quoted;
+mod recent;
 mod protection;
 mod render;
 mod richtext;
@@ -51,6 +53,7 @@ mod templates;
 mod translation;
 mod tray;
 mod ui;
+mod unread;
 mod unsubscribe;
 mod unsubscribe_page;
 mod update;
@@ -123,6 +126,10 @@ fn main() -> glib::ExitCode {
             )
             .finish(),
     ));
+    // A repeating event with no zone repeats in the computer's. Reading
+    // that zone once here keeps the file reads off the calendar's first
+    // expansion.
+    mailrs_domain::calendar::local::zone();
     // `std::env::args` panics on an argument that is not UTF-8, such as a
     // calendar file's name in an old encoding. The flags read the lossy
     // copy; the file keeps its bytes.

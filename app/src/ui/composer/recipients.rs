@@ -78,7 +78,10 @@ impl Recipients {
         let entry = gtk::Entry::builder()
             .placeholder_text(placeholder)
             .hexpand(true)
-            .width_chars(18)
+            // Small enough to share a line with a chip in a 360 px
+            // composer; it grows into whatever room the line has left.
+            .width_chars(8)
+            .max_width_chars(8)
             .has_frame(false)
             .css_classes(["recipient-entry"])
             .build();

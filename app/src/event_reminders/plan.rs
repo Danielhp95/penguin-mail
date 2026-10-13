@@ -80,7 +80,7 @@ pub fn plan(
         if ends <= now {
             continue;
         }
-        let reminders = occurrence.event.reminders.as_ref().unwrap_or(&calendar.reminders);
+        let reminders = occurrence.event.reminders.as_deref().unwrap_or(calendar.default_reminders(occurrence.event.all_day));
         for reminder in reminders.iter().filter(|r| r.method == ReminderMethod::Notification) {
             let key = Key {
                 account_id: occurrence.account_id,
@@ -193,6 +193,7 @@ mod tests {
             shown: true,
             hidden: false,
             reminders,
+            all_day_reminders: None,
         }
     }
 
@@ -340,6 +341,18 @@ mod tests {
         let due = run(&[offsite], &work, &nothing(), five_pm);
         assert_eq!(posted(&due), vec![("offsite".to_string(), 420)]);
         assert_eq!(due.post[0].starts, five_pm + 7 * HOUR, "the day starts at midnight in Lisbon");
+    }
+
+    #[test]
+    fn an_all_day_event_takes_the_calendar_s_all_day_default() {
+        let work = Calendar { all_day_reminders: Some(vec![minutes(420)]), ..calendar(vec![minutes(10)]) };
+        let thursday: EpochMillis = 1_790_208_000_000;
+        let mut offsite = meeting("offsite", thursday, thursday + DAY, None);
+        offsite.event = Arc::new(Event { all_day: true, zone: "UTC".into(), ..(*offsite.event).clone() });
+        let five_pm: EpochMillis = 1_790_179_200_000;
+        assert_eq!(posted(&run(std::slice::from_ref(&offsite), &work, &nothing(), five_pm)), vec![("offsite".to_string(), 420)]);
+        let standup = [meeting("standup", TWO_PM, TWO_PM + HOUR, None)];
+        assert_eq!(posted(&run(&standup, &work, &nothing(), TWO_PM - 10 * MIN)), vec![("standup".to_string(), 10)]);
     }
 
     #[test]

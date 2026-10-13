@@ -15,6 +15,9 @@ use url::Url;
 use mailrs_domain::sign_in_page::Finished;
 
 use crate::GmailError;
+
+/// The most a token endpoint's answer may take; a real one is a few hundred bytes.
+const TOKEN_LIMIT: usize = 64 << 10;
 use crate::calendar::{CALENDAR_LIST_SCOPE, CALENDAR_LIST_WRITE_SCOPE, CALENDAR_SCOPE, CALENDARS_SCOPE};
 use crate::people::{CONTACTS_SCOPE, CONTACTS_WRITE_SCOPE};
 
@@ -58,7 +61,7 @@ pub const SIGN_IN_SCOPES: [&str; 7] = [
     DRIVE_FILE_SCOPE,
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AccessToken {
     pub token: String,
     pub expires_at: Instant,
@@ -66,6 +69,18 @@ pub struct AccessToken {
     /// when the answer carried no `scope` field, which an old refresh
     /// token's first use after an upgrade still can.
     pub granted: Option<Granted>,
+}
+
+// Tokens and the PKCE verifier sign in as the person, so their Debug
+// output, which can end up in a log or a panic message, hides them.
+impl std::fmt::Debug for AccessToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessToken")
+            .field("token", &"<hidden>")
+            .field("expires_at", &self.expires_at)
+            .field("granted", &self.granted)
+            .finish()
+    }
 }
 
 /// The scopes a token carries, parsed from Google's space-separated
@@ -131,17 +146,35 @@ impl AccessToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tokens {
     pub access: AccessToken,
     pub refresh_token: String,
 }
 
+impl std::fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokens")
+            .field("access", &self.access)
+            .field("refresh_token", &"<hidden>")
+            .finish()
+    }
+}
+
 /// A PKCE verifier and its S256 challenge.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Pkce {
     pub verifier: String,
     pub challenge: String,
+}
+
+impl std::fmt::Debug for Pkce {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pkce")
+            .field("verifier", &"<hidden>")
+            .field("challenge", &self.challenge)
+            .finish()
+    }
 }
 
 impl Pkce {
@@ -317,12 +350,13 @@ impl OAuthClient {
         let response = self.http.post(&self.token_url).form(form).send().await?;
         let status = response.status().as_u16();
         if response.status().is_success() {
-            return response
-                .json()
-                .await
-                .map_err(|e| GmailError::Decode(e.to_string()));
+            let bytes = crate::client::read_capped(response, TOKEN_LIMIT).await?;
+            return serde_json::from_slice(&bytes).map_err(|e| GmailError::Decode(e.to_string()));
         }
-        let body = response.text().await.unwrap_or_default();
+        let body = crate::client::read_capped(response, TOKEN_LIMIT)
+            .await
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default();
         Err(match status {
             400 | 401 if body.contains("invalid_grant") => GmailError::NeedsReauth,
             429 => GmailError::RateLimited { retry_after: None },
@@ -457,6 +491,22 @@ mod build_client_tests {
         let shown = format!("{client:?}");
         assert!(!shown.contains("GOCSPX-x"));
         assert!(!shown.contains("id.apps.googleusercontent.com"));
+    }
+
+    #[test]
+    fn debug_output_leaves_out_tokens_and_the_verifier() {
+        let access = AccessToken { token: "ya29.access".into(), expires_at: Instant::now(), granted: None };
+        let tokens = Tokens { access: access.clone(), refresh_token: "1//refresh".into() };
+        let authorized = crate::Authorized {
+            email: "dana@gmail.com".into(),
+            refresh_token: "1//refresh".into(),
+            granted: None,
+        };
+        let pkce = Pkce::generate();
+        let shown = format!("{access:?} {tokens:?} {authorized:?} {pkce:?}");
+        assert!(!shown.contains("ya29.access"), "{shown}");
+        assert!(!shown.contains("1//refresh"), "{shown}");
+        assert!(!shown.contains(&pkce.verifier), "{shown}");
     }
 }
 

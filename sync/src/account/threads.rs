@@ -9,7 +9,7 @@ use mailrs_store::{accounts, bodies, messages};
 
 use super::AccountSync;
 use super::fetch::{Fetched, overtaken};
-use crate::{MailBackend, SyncError, Want, now_millis};
+use crate::{SyncError, Want, now_millis};
 
 /// Fetches of one thread before an answer history keeps overtaking is
 /// written anyway, adding only what the store lacks.
@@ -46,7 +46,7 @@ impl AccountSync {
     async fn stored_and_current(&self, thread_id: &str) -> Result<bool, SyncError> {
         // The store is the whole of an account whose mailboxes are local;
         // there is no server to ask.
-        if self.services.mail.capabilities().local_mailboxes {
+        if self.mail.capabilities().local_mailboxes {
             return Ok(true);
         }
         let fresh = self
@@ -136,7 +136,7 @@ impl AccountSync {
                         if !overtaken {
                             for id in &answer.gone {
                                 changed |= before.iter().any(|m| &m.id == id);
-                                changes.push(Change::Delete {
+                                changes.push(Change::Gone {
                                     message_id: id.clone(),
                                 });
                             }
@@ -152,7 +152,7 @@ impl AccountSync {
                     // so an overtaken "not found" leaves the store alone.
                     None if overtaken => Ok(Written::Stored { changed: false }),
                     None => {
-                        let delete = Change::DeleteThread {
+                        let delete = Change::ThreadGone {
                             thread_id: thread.clone(),
                         };
                         messages::apply(c, account_id, &[delete])?;
@@ -225,8 +225,7 @@ impl AccountSync {
         let (body, complete) = match self.small(message_id).await? {
             true => (mailrs_mime::read(&self.raw(message_id).await?), true),
             false => {
-                let name = self.remote(message_id).await?;
-                let parts = self.services.mail.fetch_structure(&name).await?;
+                let parts = self.mail.fetch_structure(message_id).await?;
                 (mailrs_mime::body(&parts), !parts.incomplete)
             }
         };

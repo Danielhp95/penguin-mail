@@ -6,6 +6,8 @@
 //! mailbox it was opened from. [`Reach::new`] holds that rule with no
 //! widget in sight; [`MainWindow::reach`] feeds it what a view shows.
 
+use std::borrow::Borrow;
+
 use gtk::gio;
 use gtk::prelude::*;
 use mailrs_domain::{AccountId, Target, ThreadSummary};
@@ -55,15 +57,20 @@ impl Reach {
     /// only one of them. With one row or none selected, the open
     /// conversation stands for the selection, and a lone row counts when
     /// nothing is open yet.
-    pub(super) fn new(selected: &[ThreadSummary], open: Option<Open>, mailbox: Mailbox) -> Reach {
-        if selected.len() > 1 {
+    pub(super) fn new<R: Borrow<ThreadSummary>>(
+        selected: &[R],
+        open: Option<Open>,
+        mailbox: Mailbox,
+    ) -> Reach {
+        let selected = || selected.iter().map(Borrow::borrow);
+        if selected().len() > 1 {
             return Reach {
-                targets: selected.iter().map(Target::from_row).collect(),
+                targets: selected().map(Target::from_row).collect(),
                 marks: Marks {
-                    unread: selected.iter().any(|r| r.unread),
-                    flagged: selected.iter().all(|r| r.starred),
+                    unread: selected().any(|r| r.unread),
+                    flagged: selected().all(|r| r.starred),
                 },
-                muted: selected.iter().all(|r| r.muted),
+                muted: selected().all(|r| r.muted),
                 mailbox,
             };
         }
@@ -75,9 +82,9 @@ impl Reach {
                 mailbox,
             },
             None => Reach {
-                targets: selected.iter().map(Target::from_row).collect(),
-                marks: selected.first().map(Marks::from_row).unwrap_or_default(),
-                muted: selected.first().is_some_and(|r| r.muted),
+                targets: selected().map(Target::from_row).collect(),
+                marks: selected().next().map(Marks::from_row).unwrap_or_default(),
+                muted: selected().next().is_some_and(|r| r.muted),
                 mailbox,
             },
         }
@@ -237,7 +244,7 @@ mod tests {
 
     #[test]
     fn nothing_selected_or_open_reaches_nothing() {
-        let reach = Reach::new(&[], None, Mailbox::Scheduled);
+        let reach = Reach::new::<ThreadSummary>(&[], None, Mailbox::Scheduled);
         assert!(reach.targets.is_empty());
         assert_eq!(reach.marks, Marks::default());
         assert!(!reach.muted);

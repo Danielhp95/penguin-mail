@@ -993,6 +993,9 @@ fn to_summary(row: &Row<'_>) -> rusqlite::Result<ThreadSummary> {
         from_email: row.get(11)?,
         muted: row.get(12)?,
         invitation: row.get(13)?,
+        scheduled: false,
+        held: false,
+        recipient: None,
     })
 }
 
@@ -1123,6 +1126,9 @@ fn to_message_row(row: &Row<'_>) -> rusqlite::Result<ThreadSummary> {
         from_email: row.get(11)?,
         muted: row.get(12)?,
         invitation: row.get(13)?,
+        scheduled: false,
+        held: false,
+        recipient: None,
     })
 }
 

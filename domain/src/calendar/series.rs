@@ -223,6 +223,7 @@ fn one(series: &Event, changed: &[Event], picked: Picked, edited: Event) -> Even
         ),
         uid: series.uid.clone(),
         etag: held.map(|e| e.etag.clone()).unwrap_or_default(),
+        series_etag: series.etag.clone(),
         rules: Vec::new(),
         series: Some(series.id.clone()),
         original_start: Some(picked.original_start),
@@ -705,6 +706,16 @@ mod tests {
     }
 
     #[test]
+    fn a_changed_occurrence_carries_the_version_of_its_series() {
+        let series = Event { etag: "\"7\"".into(), ..standup(&["RRULE:FREQ=DAILY;COUNT=10"]) };
+        let steps = change(&series, &[], thursday(), moved(&series, thursday(), 1), RepeatScope::This, "pmnew");
+        let [Step::Save(one)] = steps.as_slice() else {
+            panic!("{steps:?}")
+        };
+        assert_eq!((one.etag.as_str(), one.series_etag.as_str()), ("", "\"7\""));
+    }
+
+    #[test]
     fn this_event_only_writes_a_changed_occurrence() {
         let series = standup(&["RRULE:FREQ=DAILY;COUNT=10"]);
         let steps = change(
@@ -1163,6 +1174,7 @@ mod tests {
             end: thursday().start + (series.end - series.start),
             rules: Vec::new(),
             series: Some("standup".into()),
+            series_etag: series.etag.clone(),
             original_start: Some(thursday().original_start),
             ..series.clone()
         };
@@ -1188,6 +1200,7 @@ mod tests {
             end: lisbon(9, 24, 11, 15),
             rules: Vec::new(),
             series: Some("standup".into()),
+            series_etag: series.etag.clone(),
             original_start: Some(thursday().original_start),
             ..series.clone()
         };

@@ -15,6 +15,50 @@ use super::super::fake::{Harness, ME, NOW, YOU, labelled, meta};
 use super::super::mail::{Kind, kind_of, pdf_text};
 use super::{harness, mail, target};
 
+#[tokio::test]
+async fn an_assistant_reply_uses_the_recipient_suffix_and_excludes_our_addresses() {
+    use crate::compose::{SendAsAddress, Suffixes};
+    use mailrs_domain::Address;
+    let alias = "dana+shop@second.example";
+    let mut original = meta(
+        "suffix-message",
+        "suffix-thread",
+        "ann@example.com",
+        "Order",
+        NOW,
+    );
+    original.to = vec![Address {
+        name: None,
+        email: alias.into(),
+    }];
+    let h = Harness::with(vec![original]).await;
+    h.desk.0.borrow_mut().settings.send_as.insert(
+        ME.into(),
+        vec![SendAsAddress {
+            email: "dana@second.example".into(),
+            name: Some("Dana".into()),
+            suffixes: Suffixes {
+                plus: true,
+                dot: false,
+            },
+            ..Default::default()
+        }],
+    );
+    h.ok(
+        "draft_email",
+        json!({
+            "account": ME, "to": ["ann@example.com", alias], "body": "Thanks",
+            "reply_to": {"account": ME, "thread_id": "suffix-thread"}
+        }),
+    )
+    .await;
+    let asked = h.asked();
+    let draft = asked.composed.last().unwrap();
+    assert_eq!(draft.from.email, alias);
+    assert_eq!(draft.to.len(), 1);
+    assert_eq!(draft.to[0].email, "ann@example.com");
+}
+
 fn later() -> String {
     (Local::now() + Duration::days(1))
         .format("%Y-%m-%dT%H:%M")
@@ -317,6 +361,7 @@ async fn work_and_travel() -> (Harness, String, String, String) {
         sync.follow_mailbox(folder).await.expect("the folder syncs");
     }
     let folder = |name: &str| Label {
+            role: None,
         account_id: h.account_id,
         id: name.into(),
         name: name.into(),
@@ -526,7 +571,7 @@ async fn send_later_keeps_a_saved_drafts_blind_copy_and_files() {
     written.attachments = vec![crate::compose::OutgoingAttachment {
         filename: "ferns.txt".into(),
         mime_type: "text/plain".into(),
-        data: b"Three ferns.".to_vec(),
+        data: b"Three ferns.".to_vec().into(),
         content_id: None,
     }];
     let raw = crate::compose::build_mime(&written, 0, "<d1@example.com>").expect("a draft");

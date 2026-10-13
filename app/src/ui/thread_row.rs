@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 
@@ -35,6 +36,11 @@ mod imp {
         pub subject: OnceCell<gtk::Label>,
         pub count: OnceCell<gtk::Label>,
         pub snippet: OnceCell<gtk::Label>,
+        /// "On the server", in place of the date on a Send Later row the
+        /// server holds.
+        pub held: OnceCell<gtk::Box>,
+        /// The held row's second line, under the hour it goes.
+        pub note: OnceCell<gtk::Label>,
         /// The calendar mark beside the subject, on while an open message
         /// of the thread carried a live invitation.
         pub invite: OnceCell<gtk::Image>,
@@ -123,6 +129,21 @@ mod imp {
             star.add_css_class("starred");
             let date = text_label("date");
             date.set_ellipsize(pango::EllipsizeMode::None);
+            // The chip says what the date would: the row's own lines give
+            // the hour, and the chip who sends it.
+            let held = gtk::Box::builder()
+                .spacing(4)
+                .valign(gtk::Align::Center)
+                .visible(false)
+                .css_classes(["held-chip"])
+                .build();
+            held.append(
+                &gtk::Image::builder()
+                    .icon_name("penguin-mail-cloud-symbolic")
+                    .pixel_size(14)
+                    .build(),
+            );
+            held.append(&gtk::Label::new(Some(&gettext("On the server"))));
             for widget in [
                 account.upcast_ref::<gtk::Widget>(),
                 vip.upcast_ref(),
@@ -131,6 +152,7 @@ mod imp {
                 mute.upcast_ref(),
                 star.upcast_ref(),
                 date.upcast_ref(),
+                held.upcast_ref(),
             ] {
                 top.append(widget);
             }
@@ -154,10 +176,17 @@ mod imp {
             snippet.set_wrap_mode(pango::WrapMode::WordChar);
             snippet.set_lines(2);
             snippet.set_yalign(0.0);
+            let note = text_label("snippet");
+            note.add_css_class("held-note");
+            note.set_wrap(true);
+            note.set_wrap_mode(pango::WrapMode::WordChar);
+            note.set_lines(2);
+            note.set_visible(false);
 
             content.append(&top);
             content.append(&middle);
             content.append(&snippet);
+            content.append(&note);
             row.append(&dot);
             row.append(&avatar);
             row.append(&content);
@@ -175,6 +204,8 @@ mod imp {
             let _ = self.invite.set(invite);
             let _ = self.count.set(count);
             let _ = self.snippet.set(snippet);
+            let _ = self.held.set(held);
+            let _ = self.note.set(note);
         }
     }
 
@@ -266,13 +297,20 @@ pub fn set_avatar_hue(avatar: &adw::Avatar, name: &str, address: &str) {
     }
 }
 
-/// The name an avatar draws its initials from.
-fn display_name(thread: &ThreadSummary) -> String {
-    if thread.from.trim().is_empty() {
-        thread.from_email.clone()
-    } else {
-        thread.from.clone()
+/// Whose face the row shows, as a name and an address: the recipient on
+/// a row named after who its message goes to, else the newest sender.
+/// The address keys the colour, the photo and the VIP star.
+pub fn person(thread: &ThreadSummary) -> (&str, &str) {
+    match thread.recipient.as_deref() {
+        Some(to) => (to.display(), &to.email),
+        None => (&thread.from, &thread.from_email),
     }
+}
+
+/// The name an avatar draws its initials from.
+fn display_name(thread: &ThreadSummary) -> &str {
+    let (name, email) = person(thread);
+    if name.trim().is_empty() { email } else { name }
 }
 
 fn flag_class(color: FlagColor) -> &'static str {
@@ -314,6 +352,11 @@ impl ThreadRow {
         self.imp().item.set(Some(item));
     }
 
+    /// The list item that holds the row.
+    pub fn item(&self) -> Option<gtk::ListItem> {
+        self.imp().item.upgrade()
+    }
+
     /// The position in the list the row shows, or `None` while it shows
     /// nothing.
     pub fn position(&self) -> Option<u32> {
@@ -334,16 +377,17 @@ impl ThreadRow {
             Avatar::Hidden => face.set_visible(false),
             Avatar::Photo(photo) => {
                 face.set_visible(true);
-                face.set_text(Some(&display_name(thread)));
+                face.set_text(Some(display_name(thread)));
                 face.set_custom_image(Some(photo));
             }
             Avatar::Initials => {
                 face.set_visible(true);
-                face.set_text(Some(&display_name(thread)));
+                face.set_text(Some(display_name(thread)));
                 face.set_custom_image(gdk::Paintable::NONE);
             }
         }
-        set_avatar_hue(face, &thread.from, &thread.from_email);
+        let (name, email) = person(thread);
+        set_avatar_hue(face, name, email);
         imp.vip.get().expect("vip star exists").set_visible(vip);
         let get = |cell: &OnceCell<gtk::Label>| {
             cell.get()
@@ -355,30 +399,48 @@ impl ThreadRow {
         } else {
             self.remove_css_class("unread");
         }
-        let name = if thread.from.is_empty() {
-            gettext("Unknown sender")
+        let name: Cow<str> = if thread.from.is_empty() {
+            gettext("Unknown sender").into()
         } else {
-            thread.from.clone()
+            thread.from.as_str().into()
         };
         get(&imp.from).set_markup(&sender_markup(&name, &thread.from_email));
         get(&imp.from_name).set_text(&name);
         imp.floor.replace(address_floor_markup(&name, &thread.from_email));
         let date = get(&imp.date);
+        // A Send Later row's preview says when it goes.
+        date.set_visible(!thread.scheduled);
+        imp.held.get().expect("held chip exists").set_visible(thread.held);
         date.set_label(&relative_date(thread.last_message_at, Local::now()));
         if thread.unread {
             date.add_css_class("unread");
         } else {
             date.remove_css_class("unread");
         }
-        get(&imp.subject).set_label(&if thread.subject.trim().is_empty() {
-            gettext("(no subject)")
-        } else {
-            thread.subject.clone()
-        });
+        match thread.subject.trim().is_empty() {
+            true => get(&imp.subject).set_label(&gettext("(no subject)")),
+            false => get(&imp.subject).set_label(&thread.subject),
+        }
         let count = get(&imp.count);
         count.set_visible(thread.message_count > 1);
         count.set_label(&thread.message_count.to_string());
-        get(&imp.snippet).set_label(&one_line(&thread.snippet));
+        match thread.scheduled {
+            true => self.add_css_class("scheduled"),
+            false => self.remove_css_class("scheduled"),
+        }
+        let note = get(&imp.note);
+        match thread.held {
+            true => {
+                let (when, server) = held_lines(&thread.snippet);
+                get(&imp.snippet).set_label(when);
+                note.set_label(server.unwrap_or_default());
+                note.set_visible(server.is_some());
+            }
+            false => {
+                get(&imp.snippet).set_label(&one_line(&thread.snippet));
+                note.set_visible(false);
+            }
+        }
         let flag = imp.star.get().expect("flag exists");
         flag.set_visible(thread.starred);
         let wanted = flag_class(thread.flag_color.unwrap_or(FlagColor::Red));
@@ -410,12 +472,19 @@ impl ThreadRow {
             }
             account.add_css_class(wanted);
         }
+        let snippet = match thread.held {
+            true => fill(
+                &gettext("On the server, {lines}"),
+                &[("lines", &one_line(&thread.snippet))],
+            ),
+            false => thread.snippet.clone(),
+        };
         let described = spoken(
             thread.unread,
             thread.invitation,
             &thread.from,
             &thread.subject,
-            &thread.snippet,
+            &snippet,
         );
         self.update_property(&[gtk::accessible::Property::Label(&described)]);
         // The keyboard focus sits on the list item GTK wraps the row in,
@@ -453,6 +522,15 @@ fn address_floor_markup(name: &str, address: &str) -> Option<String> {
     Some(sender_markup(name, &format!("{local}@")))
 }
 
+/// A held Send Later row's lines: the hour it goes, and under it the line
+/// that says the server sends it, when the row has one.
+fn held_lines(snippet: &str) -> (&str, Option<&str>) {
+    match snippet.split_once('\n') {
+        Some((when, server)) => (when, Some(server)),
+        None => (snippet, None),
+    }
+}
+
 /// `text` as one paragraph. A label clamps its lines within each
 /// paragraph, so a preview that kept the body's line breaks would show
 /// every line of it.
@@ -462,7 +540,39 @@ fn one_line(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{address_floor_markup, one_line, sender_markup, spoken};
+    use super::{address_floor_markup, held_lines, one_line, sender_markup, spoken};
+
+    #[test]
+    fn a_held_row_puts_the_servers_line_under_the_hour() {
+        assert_eq!(
+            held_lines("Sends Mon 19 Oct at 08:30.\nThe server sends it even if Penguin Mail is closed."),
+            ("Sends Mon 19 Oct at 08:30.", Some("The server sends it even if Penguin Mail is closed."))
+        );
+        assert_eq!(
+            held_lines("The server has not sent this message yet."),
+            ("The server has not sent this message yet.", None)
+        );
+    }
+
+    #[test]
+    fn a_row_addressed_to_someone_draws_their_face() {
+        let theo = mailrs_domain::Address { name: Some("Theo Brandt".into()), email: "theo@example.org".into() };
+        let sent = mailrs_domain::ThreadSummary {
+            from: "To Theo Brandt".into(),
+            from_email: "me@example.org".into(),
+            recipient: Some(Box::new(theo)),
+            ..Default::default()
+        };
+        assert_eq!(super::person(&sent), ("Theo Brandt", "theo@example.org"));
+        assert_eq!(super::display_name(&sent), "Theo Brandt");
+        let received = mailrs_domain::ThreadSummary {
+            from: "Ines Duarte".into(),
+            from_email: "ines@example.org".into(),
+            ..Default::default()
+        };
+        assert_eq!(super::person(&received), ("Ines Duarte", "ines@example.org"));
+        assert_eq!(super::display_name(&received), "Ines Duarte");
+    }
 
     #[test]
     fn a_preview_shows_as_one_paragraph() {

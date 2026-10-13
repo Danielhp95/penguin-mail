@@ -64,6 +64,10 @@ Focused and Other are the category bar's toggles, the same control as
 Gmail's categories, and each is named with its unread count, as in
 "Focused, 6 unread". Only one of the two bars shows over an inbox.
 
+Mailbox rows announce their unread count, including custom folders, Sent,
+Junk and Trash. Drafts keep their total count. Nested folders follow the
+server mailbox they belong to, including the account's Inbox.
+
 ## Add Account
 
 Each provider tile in Add Account and on the first-run page is one
@@ -79,7 +83,7 @@ browser, Microsoft".
 
 ## The composer from the keyboard
 
-Tab goes From, To, Cc and Bcc while they show, Subject, the formatting
+Tab goes From, Address Suffix when enabled, To, Cc and Bcc while they show, Subject, the formatting
 bar, then the body. The bar is one stop: it has the toolbar role, and
 Left, Right, Home and End move between its buttons while Tab leaves it.
 Tab comes back to the button you left it on. `ui::roving` holds this, and

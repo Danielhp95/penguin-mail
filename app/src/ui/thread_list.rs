@@ -5,7 +5,7 @@
 mod entry;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -14,7 +14,9 @@ use mailrs_domain::{AccountId, ThreadSummary};
 
 use super::sidebar::DRAG_MAIL;
 use super::thread_row::{Avatar, OpenMenu, ThreadRow};
+use super::list_feed::order;
 use crate::diff::splice;
+use crate::photos::ContactPhotos;
 use mailrs_domain::translate::gettext;
 
 /// The keys that open the menu of the row with the focus, in GTK's
@@ -22,10 +24,12 @@ use mailrs_domain::translate::gettext;
 pub const MENU_KEYS: [&str; 2] = ["Menu", "<Shift>F10"];
 
 /// What is selected in the list.
+/// The rows are the ones the list holds, shared rather than copied: a
+/// select-all over a large mailbox hands out every row.
 pub enum Picked {
     None,
-    One(ThreadSummary),
-    Many(Vec<ThreadSummary>),
+    One(Row),
+    Many(Vec<Row>),
 }
 
 type Key = (AccountId, String, Option<String>);
@@ -70,16 +74,17 @@ pub struct ThreadList {
     scroller: gtk::ScrolledWindow,
     rows: Rc<RefCell<Vec<Row>>>,
     /// The rows of the drag in progress.
-    dragged: Rc<RefCell<Vec<ThreadSummary>>>,
+    dragged: Rc<RefCell<Vec<Row>>>,
     show_accounts: Rc<Cell<bool>>,
     /// Lower-case VIP addresses; their rows get a star.
     vips: Rc<RefCell<HashSet<String>>>,
-    /// Contact photos by lower-case sender address, already decoded. Empty
-    /// while contacts are off, and then rows show no face at all.
-    photos: Rc<RefCell<HashMap<String, gdk::Texture>>>,
-    /// How many times the window has handed over photos, so a photo that
-    /// decodes after a newer hand-over is dropped.
-    photos_asked: Cell<u64>,
+    /// Contact photos, read as rows ask for them. None, or none on disk
+    /// while contacts are off, and rows show no face at all.
+    photos: Rc<RefCell<Option<Rc<ContactPhotos>>>>,
+    /// The row widgets the list made, which it recycles as it scrolls.
+    made: Rc<RefCell<Vec<glib::WeakRef<ThreadRow>>>>,
+    /// Draws one row for the item it holds.
+    bind: Rc<dyn Fn(&gtk::ListItem)>,
     muted: Cell<bool>,
     /// The menu a right click on a row opens. It has no model until the
     /// window hands over the conversation's own through `set_row_menu`.
@@ -99,8 +104,10 @@ impl ThreadList {
         super::name_menu_items(&row_popover);
         row_popover.set_has_arrow(false);
         row_popover.set_halign(gtk::Align::Start);
-        let dragged: Rc<RefCell<Vec<ThreadSummary>>> = Rc::new(RefCell::new(Vec::new()));
+        let dragged: Rc<RefCell<Vec<Row>>> = Rc::new(RefCell::new(Vec::new()));
+        let made: Rc<RefCell<Vec<glib::WeakRef<ThreadRow>>>> = Rc::default();
         let factory = gtk::SignalListItemFactory::new();
+        let making = Rc::clone(&made);
         let (all, drag_rows, picked) = (Rc::clone(&rows), Rc::clone(&dragged), selection.clone());
         let menu = row_popover.clone();
         factory.connect_setup(move |_, item| {
@@ -109,6 +116,7 @@ impl ThreadList {
                 .expect("list items are ListItems");
             let row = ThreadRow::default();
             row.set_item(item);
+            making.borrow_mut().push(row.downgrade());
             context_menu(&row, item, &picked, &menu);
             // Dragging a selected row takes the whole selection along.
             let source = gtk::DragSource::new();
@@ -123,14 +131,13 @@ impl ThreadList {
             source.connect_prepare(move |_, _, _| {
                 let position = list_item.position();
                 let rows = all.borrow();
-                let copy = |row: &Row| (**row).clone();
-                let taken: Vec<ThreadSummary> = if picked.is_selected(position) {
+                let taken: Vec<Row> = if picked.is_selected(position) {
                     (0..rows.len() as u32)
                         .filter(|p| picked.is_selected(*p))
-                        .filter_map(|p| rows.get(p as usize).map(copy))
+                        .filter_map(|p| rows.get(p as usize).map(Rc::clone))
                         .collect()
                 } else {
-                    rows.get(position as usize).map(copy).into_iter().collect()
+                    rows.get(position as usize).map(Rc::clone).into_iter().collect()
                 };
                 if taken.is_empty() {
                     return None;
@@ -154,13 +161,9 @@ impl ThreadList {
         let shown = Rc::clone(&show_accounts);
         let vips: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(HashSet::new()));
         let starred_people = Rc::clone(&vips);
-        let photos: Rc<RefCell<HashMap<String, gdk::Texture>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        let photos: Rc<RefCell<Option<Rc<ContactPhotos>>>> = Rc::default();
         let faces = Rc::clone(&photos);
-        factory.connect_bind(move |_, item| {
-            let item = item
-                .downcast_ref::<gtk::ListItem>()
-                .expect("list items are ListItems");
+        let bind: Rc<dyn Fn(&gtk::ListItem)> = Rc::new(move |item| {
             let (Some(row), Some(object)) = (
                 item.child().and_downcast::<ThreadRow>(),
                 item.item().and_downcast::<glib::BoxedAnyObject>(),
@@ -168,18 +171,25 @@ impl ThreadList {
                 return;
             };
             let thread = object.borrow::<Row>();
-            let sender = thread.from_email.to_lowercase();
+            // The face the row shows: on a Follow Up or Outbox row, the
+            // recipient's, not the sender's own.
+            let sender = super::thread_row::person(&thread).1.to_lowercase();
             let vip = starred_people.borrow().contains(&sender);
-            let faces = faces.borrow();
-            let avatar = if faces.is_empty() {
-                Avatar::Hidden
-            } else {
-                match faces.get(&sender) {
-                    Some(photo) => Avatar::Photo(photo),
-                    None => Avatar::Initials,
-                }
+            let faces = faces.borrow().clone().filter(|faces| faces.any());
+            let photo = faces.as_ref().and_then(|faces| faces.texture(&sender));
+            let avatar = match (&faces, &photo) {
+                (None, _) => Avatar::Hidden,
+                (Some(_), Some(photo)) => Avatar::Photo(photo),
+                (Some(_), None) => Avatar::Initials,
             };
             row.bind(&thread, shown.get(), vip, avatar);
+        });
+        let binds = Rc::clone(&bind);
+        factory.connect_bind(move |_, item| {
+            let item = item
+                .downcast_ref::<gtk::ListItem>()
+                .expect("list items are ListItems");
+            binds(item);
         });
         let view = gtk::ListView::builder()
             .model(&selection)
@@ -344,9 +354,24 @@ impl ThreadList {
             show_accounts,
             vips,
             photos,
-            photos_asked: Cell::new(0),
+            made,
+            bind,
             muted: Cell::new(false),
             row_popover,
+        });
+        // A search's subtitle is its query, which the open entry already
+        // shows; it comes back when the entry closes.
+        let weak = Rc::downgrade(&list);
+        list.search_bar.connect_search_mode_enabled_notify(move |_| {
+            if let Some(list) = weak.upgrade() {
+                list.show_subtitle();
+            }
+        });
+        let weak = Rc::downgrade(&list);
+        list.search_entry.connect_changed(move |_| {
+            if let Some(list) = weak.upgrade() {
+                list.show_subtitle();
+            }
         });
         let weak = Rc::downgrade(&list);
         list.selection.connect_selection_changed(move |_, _, _| {
@@ -367,9 +392,23 @@ impl ThreadList {
     pub fn set_title(&self, title: &str, subtitle: &str) {
         self.title.set_label(title);
         self.subtitle.set_label(subtitle);
-        let layout = super::narrow_header::header_layout(self.narrow.get());
-        self.subtitle.set_visible(layout.subtitle && !subtitle.is_empty());
+        self.show_subtitle();
         self.page.set_title(title);
+    }
+
+    /// Shows the subtitle when the layout has room for it and it says
+    /// something the search entry under it does not. The subtitle hangs
+    /// 7 px below the header bar (style.css, `.list-header-title`), into
+    /// room the chips leave under it. A mailbox with no chips keeps that
+    /// room empty, so a banner or the first row under the header does not
+    /// cover the subtitle.
+    pub(crate) fn show_subtitle(&self) {
+        let layout = super::narrow_header::header_layout(self.narrow.get());
+        let query = self.search_entry.text();
+        let searching = self.search_bar.is_search_mode().then_some(query.as_str());
+        let shows = subtitle_shows(layout.subtitle, &self.subtitle.label(), searching);
+        self.subtitle.set_visible(shows);
+        self.categories_slot.set_height_request(if shows { 7 } else { 0 });
     }
 
     /// Lays the header out for a phone or for a wider window. On a phone
@@ -381,8 +420,7 @@ impl ThreadList {
             return;
         }
         let layout = super::narrow_header::header_layout(narrow);
-        self.subtitle
-            .set_visible(layout.subtitle && !self.subtitle.label().is_empty());
+        self.show_subtitle();
         match layout.small_title {
             true => self.title.add_css_class("small"),
             false => self.title.remove_css_class("small"),
@@ -421,72 +459,59 @@ impl ThreadList {
     }
 
     /// Draws every row again, for example after account colours change.
+    /// Only the rows the list has made are drawn now; the rest read the
+    /// same settings when they scroll into view.
     pub fn rebind(&self) {
-        let rows = self.rows.borrow().clone();
-        self.replace_all(&rows);
+        self.redraw_made(|_| true);
     }
 
-    /// The contact photos rows may show, by lower-case address. An empty
-    /// map takes the whole avatar column away, which is how the list looks
-    /// while contacts are off.
-    ///
-    /// A PNG or JPEG decodes on the spot. Any other format decodes on a
-    /// worker thread, and its face appears once it has.
-    pub fn set_photos(self: &Rc<Self>, files: &HashMap<String, std::path::PathBuf>) {
-        let asked = self.photos_asked.get() + 1;
-        self.photos_asked.set(asked);
-        let mut photos = self.photos.borrow_mut();
-        let before = photos.len();
-        photos.retain(|email, _| files.contains_key(email));
-        let mut later = Vec::new();
-        for (email, file) in files {
-            if photos.contains_key(email) {
-                continue;
+    /// Hands the list the contact photos its rows show. A photo not read
+    /// yet arrives later, and only the rows showing that person are drawn
+    /// again.
+    pub fn set_photos(self: &Rc<Self>, photos: Rc<ContactPhotos>) {
+        let list = Rc::downgrade(self);
+        photos.on_texture(move |addresses| match list.upgrade() {
+            Some(list) => {
+                list.photos_arrived(addresses);
+                true
             }
-            let bytes = match std::fs::read(file) {
-                Ok(bytes) => glib::Bytes::from_owned(bytes),
-                Err(err) => {
-                    tracing::debug!(error = %err, "could not read a contact photo");
-                    continue;
-                }
-            };
-            if !super::texture::decoded_in_process(&bytes) {
-                later.push((email.clone(), bytes));
-                continue;
-            }
-            match gdk::Texture::from_bytes(&bytes) {
-                Ok(texture) => {
-                    photos.insert(email.clone(), texture);
-                }
-                Err(err) => tracing::debug!(error = %err, "could not read a contact photo"),
-            }
-        }
-        let changed = before != photos.len();
-        drop(photos);
-        if changed {
-            self.rebind();
-        }
-        if later.is_empty() {
-            return;
-        }
-        let weak = Rc::downgrade(self);
-        glib::spawn_future_local(async move {
-            let mut decoded = Vec::new();
-            for (email, bytes) in later {
-                if let Some(texture) = super::texture::decode(bytes).await {
-                    decoded.push((email, texture));
-                }
-            }
-            // A newer set of photos replaced this one while it decoded.
-            let Some(list) = weak.upgrade() else {
-                return;
-            };
-            if decoded.is_empty() || list.photos_asked.get() != asked {
-                return;
-            }
-            list.photos.borrow_mut().extend(decoded);
-            list.rebind();
+            None => false,
         });
+        *self.photos.borrow_mut() = Some(photos);
+        self.rebind();
+    }
+
+    /// Draws every row again after the photos on disk changed: contacts
+    /// loaded, or were turned off.
+    pub fn photos_changed(&self) {
+        self.rebind();
+    }
+
+    /// Draws again the rows on screen whose person's photo just arrived.
+    fn photos_arrived(&self, addresses: &[String]) {
+        self.redraw_made(|thread| {
+            let person = super::thread_row::person(thread).1;
+            addresses.iter().any(|a| a.eq_ignore_ascii_case(person))
+        });
+    }
+
+    /// Draws again the rows the list made whose thread `which` accepts.
+    fn redraw_made(&self, which: impl Fn(&ThreadSummary) -> bool) {
+        let rows: Vec<ThreadRow> = {
+            let mut made = self.made.borrow_mut();
+            made.retain(|row| row.upgrade().is_some());
+            made.iter().filter_map(|row| row.upgrade()).collect()
+        };
+        for row in rows {
+            let Some(item) = row.item() else { continue };
+            let showing = item
+                .item()
+                .and_downcast::<glib::BoxedAnyObject>()
+                .is_some_and(|object| which(&object.borrow::<Row>()));
+            if showing {
+                (self.bind)(&item);
+            }
+        }
     }
 
     /// Marks rows from these addresses as VIP mail.
@@ -573,6 +598,8 @@ impl ThreadList {
 
     /// Puts fresh rows in place of the ones belonging to `changed` threads.
     /// Rows that came back keep the list in date order; the rest drop out.
+    /// Which fresh rows belong below the last one loaded is the list
+    /// feed's call (`ListFeed::place`), made before they get here.
     pub fn replace_threads(&self, changed: &[(AccountId, String)], fresh: Vec<ThreadSummary>) {
         let touched = |row: &ThreadSummary| {
             changed
@@ -586,14 +613,8 @@ impl ThreadList {
             .filter(|row| !touched(row))
             .map(Rc::clone)
             .collect();
-        // Past the last loaded row the list is incomplete, so a row that
-        // sorts below it waits for the next page instead of jumping in.
-        let floor = rows.last().map(Rc::clone);
         for row in fresh {
             let row = Rc::new(row);
-            if floor.as_ref().is_some_and(|last| order(&row) < order(last)) {
-                continue;
-            }
             let at = rows.partition_point(|held| order(held) > order(&row));
             rows.insert(at, row);
         }
@@ -604,18 +625,6 @@ impl ThreadList {
             .map(|i| i.to_string())
             .unwrap_or_default();
         self.set_rows(rows, &title, &icon);
-    }
-
-    fn replace_all(&self, rows: &[Row]) {
-        let keys = self.selected_keys();
-        self.muted.set(true);
-        let objects: Vec<glib::BoxedAnyObject> = rows
-            .iter()
-            .map(|row| glib::BoxedAnyObject::new(Rc::clone(row)))
-            .collect();
-        self.store.splice(0, self.store.n_items(), &objects);
-        self.reselect(&keys);
-        self.muted.set(false);
     }
 
     /// The keys of the selected rows.
@@ -658,12 +667,7 @@ impl ThreadList {
     }
 
     pub fn picked(&self) -> Picked {
-        let rows = self.rows.borrow();
-        let mut picked: Vec<ThreadSummary> = self
-            .positions()
-            .into_iter()
-            .filter_map(|p| rows.get(p).map(|row| (**row).clone()))
-            .collect();
+        let mut picked = self.selected_rows();
         match picked.len() {
             0 => Picked::None,
             1 => Picked::One(picked.remove(0)),
@@ -671,11 +675,11 @@ impl ThreadList {
         }
     }
 
-    pub fn selected_rows(&self) -> Vec<ThreadSummary> {
+    pub fn selected_rows(&self) -> Vec<Row> {
         let rows = self.rows.borrow();
         self.positions()
             .into_iter()
-            .filter_map(|p| rows.get(p).map(|row| (**row).clone()))
+            .filter_map(|p| rows.get(p).map(Rc::clone))
             .collect()
     }
 
@@ -767,7 +771,7 @@ impl ThreadList {
     }
 
     /// The rows of the last drag.
-    pub fn dragged(&self) -> Vec<ThreadSummary> {
+    pub fn dragged(&self) -> Vec<Row> {
         self.dragged.borrow().clone()
     }
 
@@ -934,10 +938,11 @@ fn neighbour(len: usize, first: usize, last: usize) -> Option<usize> {
     }
 }
 
-/// Where a row sorts in the list: newest first, ties broken as the store
-/// breaks them.
-fn order(row: &ThreadSummary) -> (i64, i64, &str) {
-    (row.last_message_at, -row.account_id, row.id.as_str())
+/// Whether the list header shows `subtitle`: the layout has room, it says
+/// something, and it is not the query of a search whose entry is open
+/// (`searching` holds the entry's text then).
+fn subtitle_shows(room: bool, subtitle: &str, searching: Option<&str>) -> bool {
+    room && !subtitle.is_empty() && searching.is_none_or(|query| query.trim() != subtitle.trim())
 }
 
 #[cfg(test)]
@@ -977,5 +982,14 @@ mod tests {
         assert_eq!(neighbour(5, 3, 4), Some(2));
         assert_eq!(neighbour(5, 0, 4), None);
         assert_eq!(neighbour(1, 0, 0), None);
+    }
+
+    #[test]
+    fn a_search_does_not_repeat_its_query_under_the_title() {
+        assert!(!super::subtitle_shows(true, "hike", Some("hike ")));
+        assert!(super::subtitle_shows(true, "hike", None));
+        assert!(super::subtitle_shows(true, "19 unread", Some("hike")));
+        assert!(!super::subtitle_shows(false, "19 unread", None));
+        assert!(!super::subtitle_shows(true, "", None));
     }
 }

@@ -1,0 +1,39 @@
+# A pull request that touches one of these paths asks @g0shed for review.
+# With "Require review from Code Owners" on in the branch rules for main, it
+# cannot merge without that approval.
+#
+# These are the files that run during a build or a release, choose which
+# code goes into the app, ship as its data, or hold someone's passwords,
+# tokens and keys.
+
+# CI, release and repository settings
+/.github/                      @g0shed
+/scripts/                      @g0shed
+/packaging/                    @g0shed
+/snap/                         @g0shed
+
+# Dependencies and code that runs at build time
+/Cargo.toml                    @g0shed
+**/Cargo.toml                  @g0shed
+/Cargo.lock                    @g0shed
+/deny.toml                     @g0shed
+**/build.rs                    @g0shed
+/rust-toolchain*               @g0shed
+
+# Files installed with the app
+/app/data/                     @g0shed
+
+# Keyring, tokens and sign-in
+/sync/src/passwords.rs         @g0shed
+/sync/src/sign_in.rs           @g0shed
+/sync/src/sign_in/             @g0shed
+/gmail/src/oauth.rs            @g0shed
+/gmail/src/token_store.rs      @g0shed
+/gmail/src/secret_portal.rs    @g0shed
+/graph/src/auth.rs             @g0shed
+/jmap/src/auth.rs              @g0shed
+/app/src/keyring_plug.rs       @g0shed
+
+# Signing and encryption
+/pgp/                          @g0shed
+/smime/                        @g0shed

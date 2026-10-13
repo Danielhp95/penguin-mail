@@ -125,7 +125,7 @@ async fn a_file_from_a_message_goes_out_with_its_bytes() {
         );
         let files = &asked.sent[0].attachments;
         assert_eq!(files.len(), 2);
-        assert_eq!(files[0].data, b"Bring the red kite.");
+        assert_eq!(&files[0].data[..], b"Bring the red kite.");
         assert_eq!(files[0].mime_type, "text/plain");
         assert_eq!(files[1].filename, "map.png");
     }
@@ -184,7 +184,7 @@ async fn a_forward_carries_the_message_its_header_and_its_files() {
         [("notes.txt", None), ("logo.png", Some("logo"))],
         "the image the HTML shows keeps its id"
     );
-    assert_eq!(draft.attachments[0].data, b"Bring the red kite.");
+    assert_eq!(&draft.attachments[0].data[..], b"Bring the red kite.");
 }
 
 #[tokio::test]
@@ -270,7 +270,7 @@ async fn a_file_on_this_computer_is_named_before_it_is_read() {
     );
     let file = &asked.sent[0].attachments[0];
     assert_eq!(file.filename, "plan.txt");
-    assert_eq!(file.data, b"Meet at the hill.");
+    assert_eq!(&file.data[..], b"Meet at the hill.");
     assert_eq!(file.mime_type, "text/plain");
 }
 
@@ -291,7 +291,7 @@ async fn a_draft_with_a_file_on_this_computer_asks_first() {
             "Put a file from this computer in a draft?\n\nFrom this computer: {shown}"
         )]
     );
-    assert_eq!(asked.composed[0].attachments[0].data, b"Meet at the hill.");
+    assert_eq!(&asked.composed[0].attachments[0].data[..], b"Meet at the hill.");
 }
 
 #[tokio::test]
@@ -518,7 +518,7 @@ fn fern_swap() -> Draft {
     draft.attachments = vec![OutgoingAttachment {
         filename: "ferns.txt".into(),
         mime_type: "text/plain".into(),
-        data: b"Maidenhair, hart's tongue.".to_vec(),
+        data: b"Maidenhair, hart's tongue.".to_vec().into(),
         content_id: None,
     }];
     draft
@@ -671,7 +671,7 @@ async fn an_encrypted_draft_is_changed_and_saved_encrypted_again() {
     assert!(saved.encrypt && saved.sign, "both switches come back on");
     assert_eq!(saved.to, [address("bo@example.com")]);
     assert_eq!(saved.markdown.trim(), "Swap on Sunday?");
-    assert_eq!(saved.attachments[0].data, b"Maidenhair, hart's tongue.");
+    assert_eq!(&saved.attachments[0].data[..], b"Maidenhair, hart's tongue.");
 }
 
 #[tokio::test]

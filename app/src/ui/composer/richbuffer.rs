@@ -906,7 +906,8 @@ mod tests {
         crate::ui::calendar::popover::checks::run();
         crate::ui::calendar::attachments::checks::run();
         crate::ui::checks::run();
-        crate::tray::checks::run();
+        crate::ui::copied::checks::run();
+        crate::ui::add_account::checks::run();
         // The extraction script needs a real engine to run in, and this
         // is the one test binary that starts one.
         an_unsubscribe_page_reads_back_as_its_fixture();
@@ -1117,7 +1118,7 @@ mod tests {
         let attachment = OutgoingAttachment {
             filename: "dot.png".into(),
             mime_type: "image/png".into(),
-            data: pixel.save_to_png_bytes().to_vec(),
+            data: pixel.save_to_png_bytes().into(),
             content_id: Some("dot@mailrs".into()),
         };
         let mut body = RichBody::from_markdown("Look **here** and there");

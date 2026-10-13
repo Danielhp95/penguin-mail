@@ -1,0 +1,6 @@
+# Test code holds fixture passwords and assert messages that CodeQL reads as
+# secrets and logging; none of it ships, so it stays out of the scan.
+name: Penguin Mail CodeQL
+paths-ignore:
+  - '**/tests/**'
+  - 'testmail/**'

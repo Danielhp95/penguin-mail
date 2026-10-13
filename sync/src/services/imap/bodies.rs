@@ -119,7 +119,7 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
 /// Gmail adapter follows, `text/calendar` where there is one and any part
 /// `is_calendar` takes otherwise. Nothing inside a forwarded message: the
 /// body lists that message as a file.
-fn text_paths(parts: &Parts) -> Vec<String> {
+pub(in crate::services) fn text_paths(parts: &Parts) -> Vec<String> {
     let mut leaves = Vec::new();
     leaves_of(&parts.root, 0, &mut leaves);
     let has_calendar = leaves.iter().any(|p| p.mime_type == "text/calendar");

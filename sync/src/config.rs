@@ -45,10 +45,21 @@ pub struct Config {
     pub sync: SyncConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,
+}
+
+// Debug output can end up in a log, and the secret belongs to the person's
+// own Google project.
+impl std::fmt::Debug for OAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthConfig")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<hidden>")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,6 +216,13 @@ mod tests {
     use std::time::Duration;
 
     use super::{Config, OAuthConfig, move_old_dir};
+
+    #[test]
+    fn debug_output_leaves_out_an_own_clients_secret() {
+        let own = OAuthConfig { client_id: "id.apps.googleusercontent.com".into(), client_secret: "GOCSPX-own".into() };
+        let shown = format!("{own:?}");
+        assert!(!shown.contains("GOCSPX-own"), "{shown}");
+    }
 
     #[test]
     fn a_private_folder_is_the_owners_alone_whether_new_or_old() {

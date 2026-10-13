@@ -24,6 +24,10 @@ pub struct SieveRules<M> {
     address: String,
     provider: String,
     state: Arc<Mutex<State>>,
+    /// The script a JMAP server keeps its own automatic reply in. Another
+    /// client's script is included, but never this one: the reply would
+    /// keep answering while the server reports it off.
+    server_reply: Option<&'static str>,
     /// Held from a write's read of the script through its put, so a rule
     /// sent by the timer and the automatic reply saved at the same moment
     /// do not both start from the same script and lose one change.
@@ -44,6 +48,7 @@ impl<M> Clone for SieveRules<M> {
             address: self.address.clone(),
             provider: self.provider.clone(),
             state: Arc::clone(&self.state),
+            server_reply: self.server_reply,
             writing: Arc::clone(&self.writing),
         }
     }
@@ -64,7 +69,26 @@ impl<M: ManageSieveApi> SieveRules<M> {
             address,
             provider,
             state: Arc::default(),
+            server_reply: None,
             writing: Arc::default(),
+        }
+    }
+
+    /// These rules on a server that keeps its own automatic reply in the
+    /// script named `script`.
+    pub fn beside_server_reply(self, script: Option<&'static str>) -> Self {
+        SieveRules { server_reply: script, ..self }
+    }
+
+    fn is_server_reply(&self, name: &str) -> bool {
+        self.server_reply == Some(name)
+    }
+
+    /// Takes out an include of the server's own reply script, which an
+    /// older build wrote.
+    fn drop_server_reply(&self, script: &mut Script) {
+        if script.include.as_deref().is_some_and(|name| self.is_server_reply(name)) {
+            script.include = None;
         }
     }
 
@@ -73,6 +97,102 @@ impl<M: ManageSieveApi> SieveRules<M> {
     pub async fn listing(&self) -> Result<(Vec<Filter>, Vec<String>), BackendError> {
         let (script, _, _) = self.load().await?;
         Ok((script.rules, script.foreign))
+    }
+
+    /// Brings the script in line with the account's folders after one was
+    /// renamed, moved or deleted. `moved` pairs a folder's old id with its
+    /// new one, as an IMAP rename changes it; a JMAP id stays, and only the
+    /// path the script names changes. A rule whose folder is gone is turned
+    /// off rather than left filing into nothing, and the Rules page says
+    /// so. The script is written only when its text changes, and is never
+    /// made the running one here.
+    pub async fn follow_folders(&self, moved: &[(String, String)]) -> Result<(), BackendError> {
+        let _writing = self.writing.lock().await;
+        let (mut script, ext, _, held) = self.load_text().await?;
+        let Some(held) = held else {
+            return Ok(());
+        };
+        for rule in &mut script.rules {
+            for set in rule.action.add.iter_mut().chain(rule.action.remove.iter_mut()) {
+                if let MailSet::Mailbox(id) = set
+                    && let Some((_, to)) = moved.iter().find(|(from, _)| from == id)
+                {
+                    *id = to.clone();
+                }
+            }
+        }
+        self.turn_off_orphans(&mut script, &ext, None).await?;
+        self.drop_server_reply(&mut script);
+        let text = script::write(&script, &self.address, &|set| self.folder(set), &ext).map_err(|e| self.words(e))?;
+        if text != held {
+            self.api.put(SCRIPT_NAME, &text).await.map_err(|e| self.err(e))?;
+        }
+        Ok(())
+    }
+
+    /// Adds `rules` to the script in one write, keeping each as it is,
+    /// off or on, and leaving out one the script already holds, so a
+    /// second try after a lost answer adds nothing twice. The script
+    /// becomes the running one as any rule write makes it, and answers
+    /// `WouldReplace` where that write would.
+    pub async fn take_in(&self, rules: &[Filter]) -> Result<(), BackendError> {
+        if rules.iter().any(|r| r.read_only) {
+            return Err(BackendError::Refused(gettext("The rule is read-only.")));
+        }
+        let _writing = self.writing.lock().await;
+        let (mut script, ext, running) = self.load().await?;
+        for rule in rules {
+            if !script.rules.iter().any(|held| held.criteria == rule.criteria && held.action == rule.action) {
+                let id = format!("sieve-{:016x}", rand::random::<u64>());
+                script.rules.push(Filter { id: Some(id), ..rule.clone() });
+            }
+        }
+        self.store(script, &ext, running, None).await
+    }
+
+    /// Lists a JMAP account's mailboxes when nothing has yet, or again when
+    /// `fresh`, so a rule saved before the first listing waits for it
+    /// rather than failing on a folder the adapter has not seen.
+    async fn know_folders(&self, fresh: bool) -> Result<(), BackendError> {
+        match &self.mail {
+            AnyMail::Jmap(_) if fresh => self.mail.mailboxes().await.map(drop),
+            AnyMail::Jmap(jmap) => jmap.ensure_listed().await,
+            _ => Ok(()),
+        }
+    }
+
+    /// The rule files into a folder the account no longer lists.
+    fn misses_folder(&self, rule: &Filter, ext: &Extensions) -> bool {
+        let alone = Script { rules: vec![Filter { off: false, ..rule.clone() }], ..Script::default() };
+        matches!(script::write(&alone, &self.address, &|set| self.folder(set), ext), Err(WriteError::NoFolder(_)))
+    }
+
+    /// Turns off each rule but `keep` whose folder a JMAP account no longer
+    /// lists, after one fresh listing confirms it is gone. Only a JMAP
+    /// account can tell: an IMAP folder's id is its name, which the script
+    /// names whether or not the folder is there.
+    async fn turn_off_orphans(&self, script: &mut Script, ext: &Extensions, keep: Option<&str>) -> Result<(), BackendError> {
+        if !matches!(self.mail, AnyMail::Jmap(_)) {
+            return Ok(());
+        }
+        self.know_folders(false).await?;
+        let orphaned = |rules: &Script| -> Vec<usize> {
+            rules
+                .rules
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| !r.off && (keep.is_none() || r.id.as_deref() != keep) && self.misses_folder(r, ext))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        if orphaned(script).is_empty() {
+            return Ok(());
+        }
+        self.know_folders(true).await?;
+        for at in orphaned(script) {
+            script.rules[at].off = true;
+        }
+        Ok(())
     }
 
     /// The Sieve extensions the server offered when last asked.
@@ -131,42 +251,59 @@ impl<M: ManageSieveApi> SieveRules<M> {
         BackendError::Refused(text)
     }
 
-    /// The UTF-8 name of the folder a set files into.
+    /// The UTF-8 name of the folder a set files into: an IMAP mailbox's
+    /// decoded path, or a JMAP mailbox's path, `Parent/Child`, since a
+    /// JMAP id names nothing a Sieve script can file into.
     fn folder(&self, set: &MailSet) -> Option<String> {
         let id = match set {
             MailSet::Role(role) => self.mail.mailbox_for(*role)?,
             MailSet::Mailbox(id) => id.clone(),
             _ => return None,
         };
-        Some(mailrs_imap::utf7::decode(&id))
+        match &self.mail {
+            AnyMail::Jmap(jmap) => jmap.mailbox_path(&id),
+            _ => Some(mailrs_imap::utf7::decode(&id)),
+        }
     }
 
     async fn load(&self) -> Result<(Script, Extensions, Running), BackendError> {
+        let (script, ext, running, _) = self.load_text().await?;
+        Ok((script, ext, running))
+    }
+
+    /// As `load`, with the script's text as the server holds it, `None`
+    /// when the server has no script of the app's.
+    async fn load_text(&self) -> Result<(Script, Extensions, Running, Option<String>), BackendError> {
         let caps = self.api.capabilities().await.map_err(|e| self.err(e))?;
         self.state().extensions = Some(caps.sieve.clone());
         let listed = self.api.scripts().await.map_err(|e| self.err(e))?;
-        let script = if listed.iter().any(|l| l.name == SCRIPT_NAME) {
-            let text = self.api.get(SCRIPT_NAME).await.map_err(|e| self.err(e))?;
-            script::read(&text)
-        } else {
-            Script::default()
+        let text = match listed.iter().any(|l| l.name == SCRIPT_NAME) {
+            true => Some(self.api.get(SCRIPT_NAME).await.map_err(|e| self.err(e))?),
+            false => None,
         };
+        let script = text.as_deref().map(script::read).unwrap_or_default();
         let running = match listed.iter().find(|l| l.active) {
             Some(l) if l.name == SCRIPT_NAME => Running::Ours,
             Some(l) => Running::Theirs(l.name.clone()),
             None => Running::Nothing,
         };
-        Ok((script, caps.sieve, running))
+        Ok((script, caps.sieve, running, text))
     }
 
+    /// Writes `script` and makes it the running one. `keep` names the rule
+    /// being saved, whose missing folder is the person's to hear about;
+    /// any other rule whose folder is gone is turned off.
     async fn store(
         &self,
         mut script: Script,
         ext: &Extensions,
         running: Running,
+        keep: Option<&str>,
     ) -> Result<(), BackendError> {
+        self.turn_off_orphans(&mut script, ext, keep).await?;
+        self.drop_server_reply(&mut script);
         if let Running::Theirs(name) = &running {
-            if ext.has("include") {
+            if ext.has("include") && !self.is_server_reply(name) {
                 script.include = Some(name.clone());
             } else if !self.state().take_over {
                 return Err(BackendError::WouldReplace {
@@ -198,9 +335,12 @@ impl<M: ManageSieveApi> SieveRules<M> {
         Ok(())
     }
 
+    /// `filter` as the person saved it: with an id, and on, since saving a
+    /// rule that is off turns it back on.
     fn fresh(filter: &Filter) -> Filter {
         Filter {
             id: Some(filter.id.clone().unwrap_or_else(|| format!("sieve-{:016x}", rand::random::<u64>()))),
+            off: false,
             ..filter.clone()
         }
     }
@@ -217,7 +357,7 @@ impl<M: ManageSieveApi> RulesService for SieveRules<M> {
         let (mut script, ext, running) = self.load().await?;
         let made = Self::fresh(filter);
         script.rules.push(made.clone());
-        self.store(script, &ext, running).await?;
+        self.store(script, &ext, running, made.id.as_deref()).await?;
         Ok(made)
     }
 
@@ -229,7 +369,7 @@ impl<M: ManageSieveApi> RulesService for SieveRules<M> {
         if script.rules.len() == before {
             return Err(BackendError::NotFound);
         }
-        self.store(script, &ext, running).await
+        self.store(script, &ext, running, None).await
     }
 
     async fn replace_filter(&self, old_id: &str, new: &Filter) -> Result<Filter, BackendError> {
@@ -243,7 +383,7 @@ impl<M: ManageSieveApi> RulesService for SieveRules<M> {
             .ok_or(BackendError::NotFound)?;
         let made = Self::fresh(new);
         script.rules[slot] = made.clone();
-        self.store(script, &ext, running).await?;
+        self.store(script, &ext, running, made.id.as_deref()).await?;
         Ok(made)
     }
 
@@ -265,7 +405,7 @@ impl<M: ManageSieveApi> AutoReplyService for SieveRules<M> {
         let _writing = self.writing.lock().await;
         let (mut script, ext, running) = self.load().await?;
         script.vacation = Some(vacation.clone());
-        self.store(script, &ext, running).await
+        self.store(script, &ext, running, None).await
     }
 
     fn keeps_subject(&self) -> bool {

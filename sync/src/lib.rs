@@ -17,14 +17,17 @@ pub mod hidden;
 pub mod invitations;
 pub mod lock;
 pub mod mailbox;
+pub mod masked;
 pub mod newsletters;
 mod one_click;
 mod ops;
 pub mod outbox;
 pub mod passwords;
+pub mod events;
 pub mod raw_cache;
 pub mod rules;
 pub mod sign_in;
+pub mod switch;
 pub mod services;
 mod settings;
 mod triage;
@@ -51,7 +54,8 @@ pub const WAIT_CEILING: std::time::Duration = std::time::Duration::from_secs(60)
 pub const WORKER_STACK: usize = 8 << 20;
 
 pub use account::{
-    AccountSync, DEFAULT_BODY_CACHE_BYTES, DEFAULT_WINDOW_DAYS, FETCH_CONCURRENCY, Searched,
+    ALL_MAIL, AccountSync, DEFAULT_BODY_CACHE_BYTES, DEFAULT_WINDOW_DAYS, FETCH_CONCURRENCY,
+    Searched, window_longer, window_reach,
 };
 pub use actions::{
     Accounts, Categorized, Failure, History, MailAction, MailActions, NewLabels, Outcome, Returned,
@@ -61,8 +65,8 @@ pub use api::{AccountClient, DraftRef, GmailApi, SavedDraft};
 pub use backoff::{MOST_TRIES, backoff_delay, poll_offset, retry_delay, with_jitter};
 pub use calendar::{Added, Calendar};
 pub use connect::{
-    Clients, Connected, Connector, KEYRING, Lacks, connect_account, connect_caldav, connect_imap, connect_microsoft, connect_microsoft_at, connect_pop3, pop3_servers_for,
-    server_of, servers_for,
+    Clients, Connected, Connector, JmapGrant, JmapGrantRow, JmapSessions, KEYRING, jmap_grant, Lacks, connect_account, connect_caldav, connect_imap, auth_of, connect_jmap, connect_microsoft, connect_microsoft_at, connect_pop3, pop3_servers_for,
+    server_of, servers_for, smtp_login,
 };
 pub use contacts::{Card, ContactBook, Refreshed};
 pub use engine::{EngineConfig, SyncEngine};
@@ -76,15 +80,15 @@ pub use mailbox::{
 pub use newsletters::Newsletters;
 pub use one_click::OneClick;
 pub use ops::{MailOp, MovedFrom};
-pub use outbox::{Cancelled, Drained, Outbox, Posted};
+pub use outbox::{Cancelled, Drained, Outbox, OutboxHold, Posted, Reheld, Reopened, server_holds};
 pub use services::{
-    AccountServices, AnyAutoReply, AnyDav, AnyGmail, AnyGraph, AnyImap, AnyPop3, AnySieve, AnySmtp, Backfill, Found, ID_PAGE_SIZE, LIST_PAGE_SIZE, RawMessage,
+    AccountServices, AnyAutoReply, AnyDav, AnyGmail, AnyGraph, AnyImap, AnyJmap, AnyPop3, AnySieve, AnySmtp, Backfill, Found, ID_PAGE_SIZE, LIST_PAGE_SIZE, RawMessage,
     RemoteRef, SearchQuery, Want, AnyCalendar, AnyContacts, AnyIdentities, AnyMail, AnyRules,
-    AutoReplyService, CalendarService, ContactsService, Google, GraphApi, Imap, ImapApi, ImapSettings,
-    IdentityService, KeywordsOf, KeywordsPage, MailBackend, MailCapabilities, Microsoft, MicrosoftSettings, Missing, NoMail, Offers, Pop3, Pop3Settings, Refused,
-    Priority, Relocated, RemoteChange,
+    AutoReplyService, CalendarService, ContactsService, Google, GraphApi, Imap, ImapApi, ImapSettings, Jmap, JmapApi, JmapSettings, JmapSieve,
+    IdentityService, KeywordsOf, KeywordsPage, Look, Looked, MailBackend, MailCapabilities, Microsoft, MicrosoftSettings, Missing, NoMail, Offers, Pop3, Pop3Settings, Refused,
+    Priority, Relocated, RemoteChange, Claimed, Held, ReceiptOut, Settled, Storage, Unheld,
     RulesService, SendAsAddress, SyncState, Unapplied, Changes, RAW_LIMIT, Submit, Withheld,
-    background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesPlace, SieveRules,
+    background, withheld_by_grant, CalDav, CardDav, LocalRules, RulesBeside, RulesPlace, SieveRules, SERVER_REPLY_SCRIPT,
 };
 pub use settings::{
     AccountSettings, AutomaticReply, HIDE_MY_EMAIL_LABEL, Permitted, Replaced, RuleList, SentRules,

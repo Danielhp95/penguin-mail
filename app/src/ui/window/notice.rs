@@ -55,6 +55,8 @@ pub enum Notice<'a> {
     },
     /// The Send Later, Outbox or Reminders lists changed.
     OutboxChanged,
+    /// How full an account's server is changed.
+    StorageChanged,
     Toast(String),
     /// A rule change that waited for the server was refused; the server's
     /// words.
@@ -93,6 +95,7 @@ impl MainWindow {
                 recipients,
             } => self.sent(said, account_id, recipients),
             Notice::OutboxChanged => self.scheduled_changed(),
+            Notice::StorageChanged => self.rebuild_storage_banners(),
             Notice::Toast(text) => self.toast(&text),
             Notice::RuleRefused(words) => self.toast(&fill(
                 &gettext("A rule that waited was refused: {reason}"),

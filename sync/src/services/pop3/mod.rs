@@ -2,9 +2,11 @@
 //! and nothing else, so this adapter answers every mailbox and message
 //! question from the store, which for this account is the mail and not a
 //! cache of it: six role mailboxes and the folders a person makes, all
-//! kept here. It holds the POP3 client for the downloader and opens no
-//! session itself. Sending goes over SMTP, as an IMAP account's does, and
-//! the copy, drafts and every write land in the store.
+//! kept here. Its one look for new mail is the check (`check.rs`), the
+//! only time it opens a POP3 session. Sending goes over SMTP, as an IMAP
+//! account's does, and the copy, drafts and every write land in the store.
+
+mod check;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::io::Cursor;
@@ -30,7 +32,7 @@ use rusqlite::Connection;
 
 use super::imap::submit_over;
 use super::{
-    Backfill, Changes, Found, IdentityService, KeywordsPage, MailBackend, MailCapabilities,
+    Backfill, Changes, Found, IdentityService, KeywordsPage, Look, MailBackend, MailCapabilities,
     RawMessage, Relocated, RemoteRef, SearchQuery, SendAsAddress, Submit, SyncState, Unapplied,
     Want,
 };
@@ -58,6 +60,10 @@ const BATCH_LIMIT: usize = 1000;
 
 /// How many opened messages keep the spans of their parts.
 const OUTLINES_KEPT: usize = 8;
+
+/// What `Pop3::outlined` answers: the copy's length, its parts and their
+/// spans, and the part asked for, decoded.
+type Streamed = (u64, Parts, Spans, Option<Option<Vec<u8>>>);
 
 /// Where the parts of a message opened lately lie in its stored copy, which
 /// was `length` bytes long then.
@@ -188,6 +194,12 @@ pub struct Pop3<S, P> {
     client: Arc<P>,
     settings: Arc<Pop3Settings>,
     tray_only: Arc<AtomicBool>,
+    /// Held for a whole check. Most POP3 servers lock the maildrop for one
+    /// session, so a second check started meanwhile, by the timer or by
+    /// Check for Mail, waits here rather than meeting the lock and
+    /// failing. It keeps what the last clean check found, so a check that
+    /// finds the server as it was can stop at `STAT`.
+    checking: Arc<tokio::sync::Mutex<Option<check::Quiet>>>,
     /// The spans of the messages opened last, newest at the back, so a
     /// file asked for after its message opened is read alone.
     outlines: Arc<Mutex<VecDeque<Outlined>>>,
@@ -202,6 +214,7 @@ impl<S, P> Clone for Pop3<S, P> {
             client: Arc::clone(&self.client),
             settings: Arc::clone(&self.settings),
             tray_only: Arc::clone(&self.tray_only),
+            checking: Arc::clone(&self.checking),
             outlines: Arc::clone(&self.outlines),
         }
     }
@@ -222,13 +235,9 @@ impl<S, P> Pop3<S, P> {
             client,
             settings: Arc::new(settings),
             tray_only: Arc::default(),
+            checking: Arc::default(),
             outlines: Arc::default(),
         }
-    }
-
-    /// The POP3 client, for the downloader.
-    pub fn client(&self) -> &Arc<P> {
-        &self.client
     }
 
     async fn read<T: Send + 'static>(
@@ -276,6 +285,42 @@ impl<S, P> Pop3<S, P> {
             .iter()
             .find(|o| o.id == id)
             .map(|o| (o.length, Arc::clone(&o.spans)))
+    }
+
+    /// The outline of the stored copy of `id`, read from its blob a piece
+    /// at a time, with its length. With `path`, also that part decoded
+    /// from the blob when the outline puts it there. `None` when the copy
+    /// is gone, cannot be read or cannot be outlined, for the caller to
+    /// read it whole.
+    async fn outlined(&self, id: &str, path: Option<&str>) -> Result<Option<Streamed>, BackendError> {
+        let (id, path) = (id.to_string(), path.map(str::to_string));
+        let read = self
+            .read(move |c, a| {
+                let Some(mut blob) = local_messages::open(c, a, &id)? else {
+                    return Ok(None);
+                };
+                let length = blob.len() as u64;
+                let streamed = (|| {
+                    let Some((parts, spans)) = mailrs_mime::outline_from(&mut blob, length)? else {
+                        return Ok(None);
+                    };
+                    let found = match path.as_deref().and_then(|p| spans.get(p)) {
+                        Some(span) => Some(mailrs_mime::decode_span(&mut blob, span)?),
+                        None => None,
+                    };
+                    Ok::<_, std::io::Error>(Some((length, parts, spans, found)))
+                })();
+                Ok(Some(streamed))
+            })
+            .await?;
+        Ok(match read {
+            Some(Ok(streamed)) => streamed,
+            Some(Err(err)) => {
+                tracing::info!(%err, "could not outline a stored copy from its blob");
+                None
+            }
+            None => None,
+        })
     }
 
     /// Part `path` of message `id`, decoded from its stored copy a piece at
@@ -438,7 +483,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
             ask_removal(c, a, &ids)?;
             let deletions: Vec<Change> = ids
                 .into_iter()
-                .map(|message_id| Change::Delete { message_id })
+                .map(|message_id| Change::Erase { message_id })
                 .collect();
             messages::apply(c, a, &deletions)?;
             Ok(())
@@ -488,6 +533,11 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     /// POP3 cannot say when mail arrives.
     async fn watch(&self) {
         std::future::pending::<()>().await
+    }
+
+    /// The check: what is new on the server comes down into the store.
+    async fn look_for_mail(&self) -> Look {
+        Look::Done(self.check().await)
     }
 
     async fn keywords_in(
@@ -611,6 +661,10 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     /// `fetch_part`. A full read would decode every file in the message,
     /// three and a half times its size in memory for one large file.
     async fn fetch_structure(&self, id: &str) -> Result<Parts, BackendError> {
+        if let Some((length, parts, spans, _)) = self.outlined(id, None).await? {
+            self.remember(id, length, spans);
+            return Ok(parts);
+        }
         let raw = self.raw(id).await?;
         let (parts, spans) = mailrs_mime::outline(&raw).ok_or(BackendError::NotFound)?;
         self.remember(id, raw.len() as u64, spans);
@@ -623,6 +677,10 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
     async fn fetch_part(&self, id: &str, path: &str) -> Result<Vec<u8>, BackendError> {
         if let Some(bytes) = self.part_alone(id, path).await? {
             return Ok(bytes);
+        }
+        if let Some((length, _, spans, Some(found))) = self.outlined(id, Some(path)).await? {
+            self.remember(id, length, spans);
+            return found.ok_or(BackendError::NotFound);
         }
         let raw = self.raw(id).await?;
         let (_, spans) = mailrs_mime::outline(&raw).ok_or(BackendError::NotFound)?;
@@ -698,7 +756,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
             .write(move |c, a| {
                 keep_local(c, a, meta, links, &raw)?;
                 if let Some(old) = old {
-                    messages::apply(c, a, &[Change::Delete { message_id: old }])?;
+                    messages::apply(c, a, &[Change::Erase { message_id: old }])?;
                 }
                 Ok(messages::thread_id_of(c, a, &new)?.unwrap_or_else(|| new.clone()))
             })
@@ -722,7 +780,7 @@ impl<S: Submit, P: Pop3Api> MailBackend for Pop3<S, P> {
         let held = self
             .write(move |c, a| {
                 let held = messages::thread_id_of(c, a, &id)?.is_some();
-                messages::apply(c, a, &[Change::Delete { message_id: id }])?;
+                messages::apply(c, a, &[Change::Erase { message_id: id }])?;
                 Ok(held)
             })
             .await?;

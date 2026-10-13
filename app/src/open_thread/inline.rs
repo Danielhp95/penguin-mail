@@ -60,14 +60,15 @@ impl Address {
     /// with the content id escaped as [`prefix`] writes it.
     pub fn parse(uri: &str) -> Option<Address> {
         let rest = uri.strip_prefix(SCHEME)?.strip_prefix(':')?;
-        let mut parts = rest.splitn(4, '/');
-        let account_id = parts.next()?.parse().ok()?;
-        let message_id = parts.next()?.to_string();
-        let version = parts.next()?.parse().ok()?;
-        let cid = unescape(parts.next()?)?;
+        let (account_id, rest) = rest.split_once('/')?;
+        let (rest, cid) = rest.rsplit_once('/')?;
+        let (message_id, version) = rest.rsplit_once('/')?;
+        let account_id = account_id.parse().ok()?;
+        let version = version.parse().ok()?;
+        let cid = unescape(cid)?;
         Some(Address {
             account_id,
-            message_id,
+            message_id: message_id.to_string(),
             version,
             cid,
         })
@@ -124,13 +125,13 @@ impl OpenThread {
     /// The bodies that name a picture by `cid:` and whose pictures have
     /// not arrived. A body the store kept counts as much as one Gmail just
     /// sent: the store keeps no pictures.
-    pub fn wanting_images(&self) -> Vec<(String, MessageBody)> {
+    pub fn wanting_images(&self) -> Vec<(String, Arc<MessageBody>)> {
         self.bodies
             .iter()
             .filter(|(id, _)| !self.inline_images.contains_key(*id))
             .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)))
             .filter(|(_, body)| body.html.as_deref().is_some_and(|h| h.contains("cid:")))
-            .map(|(id, body)| (id.clone(), body.clone()))
+            .map(|(id, body)| (id.clone(), Arc::clone(body)))
             .collect()
     }
 
@@ -206,6 +207,16 @@ mod tests {
             Address::parse(&written).map(|a| a.cid).as_deref(),
             Some(cid)
         );
+    }
+
+    #[test]
+    fn an_imap_message_id_with_mailbox_slashes_keeps_its_whole_id() {
+        let message_id = "Work/Clients/123/456";
+        let written = format!("{}logo@news", prefix(8, message_id, 0));
+        let read = Address::parse(&written).expect("an IMAP picture address");
+        assert_eq!(read.message_id, message_id);
+        assert_eq!(read.version, 0);
+        assert_eq!(read.cid, "logo@news");
     }
 
     #[test]

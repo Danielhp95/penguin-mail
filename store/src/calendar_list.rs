@@ -143,7 +143,7 @@ pub fn refresh_calendar(conn: &Connection, account_id: AccountId, calendar: &Cal
             calendar.access.as_str(),
             calendar.zone,
             calendar.primary,
-            serde_json::to_string(&calendar.reminders).unwrap_or_default(),
+            crate::calendar::reminders_text(calendar),
             calendar.hidden,
         ],
     )?;
@@ -333,6 +333,7 @@ mod tests {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }
     }
 

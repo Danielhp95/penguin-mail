@@ -63,7 +63,7 @@ pub struct Wording {
 fn company(provider: Provider) -> &'static str {
     match provider {
         Provider::Microsoft => "Microsoft",
-        Provider::Gmail | Provider::Imap | Provider::Pop3 | Provider::CalDav => "Google",
+        Provider::Gmail | Provider::Imap | Provider::Pop3 | Provider::Jmap | Provider::CalDav => "Google",
     }
 }
 
@@ -71,7 +71,7 @@ fn company(provider: Provider) -> &'static str {
 fn settings_of(provider: Provider) -> &'static str {
     match provider {
         Provider::Microsoft => "Outlook",
-        Provider::Gmail | Provider::Imap | Provider::Pop3 | Provider::CalDav => "Gmail",
+        Provider::Gmail | Provider::Imap | Provider::Pop3 | Provider::Jmap | Provider::CalDav => "Gmail",
     }
 }
 

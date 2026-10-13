@@ -560,6 +560,12 @@ impl Harness {
         .await
     }
 
+    /// The mailboxes and their counts over the connected accounts, as the
+    /// window reads them.
+    pub fn lists(&self) -> Mailboxes<Connected> {
+        Mailboxes::new(Arc::clone(&self.effects.connected), self.db.clone())
+    }
+
     /// The sync handle of the fixture account.
     pub fn sync(&self) -> Arc<AccountSync> {
         self.effects
@@ -582,6 +588,7 @@ impl Harness {
             .expect("the account goes in");
         assert_eq!(account_id, 1, "fixture mail belongs to account 1");
         let known = vec![Label {
+            role: None,
             account_id,
             id: "Label_kites".into(),
             name: "Kites".into(),

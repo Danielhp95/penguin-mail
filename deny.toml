@@ -1,0 +1,60 @@
+# cargo-deny checks every crate in Cargo.lock: known vulnerabilities and
+# yanked releases, where each crate comes from, its licence, and how the
+# workspace names its dependencies. The PR checks workflow runs
+# `cargo deny check` on every pull request and once a week.
+
+[graph]
+all-features = true
+
+[advisories]
+# The RustSec database. A vulnerability or a yanked release fails the check.
+# To let one through, add its id below with the reason, for example
+# { id = "RUSTSEC-2026-0000", reason = "only the server side is affected" }.
+yanked = "deny"
+# An unmaintained crate is a warning in the PR summary to read, not a reason
+# to block a change that did not add it.
+unmaintained = "none"
+ignore = []
+
+[sources]
+# Every crate comes from crates.io. A git dependency or another registry
+# fails the check: neither shows up in crates.io's audit trail, and a git
+# branch can change under the same lock entry.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[licenses]
+# Licences that may be combined into a GPL-3.0-or-later program. A crate
+# offered under several licences (MIT OR Apache-2.0) passes when one of
+# them is here. GPL-2.0-only is absent on purpose: it cannot be combined
+# with GPL-3.0.
+allow = [
+    "GPL-3.0-or-later",
+    "LGPL-2.1-or-later",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+exceptions = []
+
+[bans]
+# Two versions of one crate make the build heavier; the summary lists them.
+multiple-versions = "warn"
+# A `*` requirement takes whatever crates.io serves next. The workspace's
+# own crates are path dependencies and need no version.
+wildcards = "deny"
+allow-wildcard-paths = true

@@ -175,6 +175,7 @@ fn calendar_of(c: &GraphCalendar) -> model::Calendar {
         primary: c.is_default_calendar,
         shown: true,
         reminders: Vec::new(),
+        all_day_reminders: None,
         ..model::Calendar::default()
     }
 }

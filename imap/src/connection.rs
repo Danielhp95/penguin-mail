@@ -10,7 +10,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_imap::extensions::idle::IdleResponse;
-use async_imap::imap_proto::{RequestId, Response, ResponseCode, Status};
+use async_imap::imap_proto::{Outcome, RequestId, Response, ResponseCode, Status};
 use async_imap::{Authenticator, Client, Session};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::time::Instant;
@@ -18,12 +18,12 @@ use tokio::time::Instant;
 use crate::guard::{Guarded, IDLE_BYTES};
 use crate::parse::{
     AppendUidReader, CapabilityReader, CopyUidReader, FlagsReader, HeadersReader, ListReader,
-    MAX_ANSWERS, Reads, SearchReader, SectionReader, SelectReader, StructureReader,
+    MAX_ANSWERS, QuotaReader, Reads, SearchReader, SectionReader, SelectReader, StructureReader,
 };
 use crate::refusal::{Doing, Refusal, clipped, from_async_imap, from_io, refusal};
 use crate::{
     AppendUid, BodyStructure, Capabilities, CopyUid, Fetched, FlagsOf, HEADER_FIELDS, ImapError,
-    Listed, Login, Selected, Since, UidSet, Woke,
+    Listed, Login, QuotaUse, Selected, Since, UidSet, Woke,
 };
 
 /// What a connection runs over: TLS in the app, a pipe in tests.
@@ -91,14 +91,13 @@ impl<S: Stream> Conn<S> {
                 } => before.read(greeting.parsed()),
                 Response::Data {
                     status: Status::Bye,
-                    information,
-                    ..
+                    outcome,
                 } => {
                     return Err(refusal(
                         Doing::Greeting,
                         Refusal::Bye,
                         false,
-                        information.as_deref().unwrap_or_default(),
+                        outcome.information.as_deref().unwrap_or_default(),
                     ));
                 }
                 other => {
@@ -165,6 +164,27 @@ impl<S: Stream> Conn<S> {
         let mut reader = ListReader::default();
         self.exec(command, Doing::Other, &mut reader).await?;
         Ok(reader.listed)
+    }
+
+    pub(crate) async fn unread(&mut self, mailbox: &str) -> Result<u32, ImapError> {
+        let command = format!("STATUS {} (UNSEEN)", quoted(mailbox)?);
+        let mut reader = crate::parse::UnreadReader {
+            mailbox,
+            unread: None,
+        };
+        self.exec(&command, Doing::Other, &mut reader).await?;
+        reader
+            .unread
+            .ok_or_else(|| ImapError::Protocol("STATUS omitted UNSEEN".into()))
+    }
+
+    /// The quota roots `mailbox` falls under, each resource with its use
+    /// and limit.
+    pub(crate) async fn quota_root(&mut self, mailbox: &str) -> Result<Vec<QuotaUse>, ImapError> {
+        let command = format!("GETQUOTAROOT {}", quoted(mailbox)?);
+        let mut reader = QuotaReader::default();
+        self.exec(&command, Doing::Other, &mut reader).await?;
+        Ok(reader.uses)
     }
 
     /// Selects `mailbox`. With QRESYNC on and a `since` to start from, the
@@ -490,11 +510,10 @@ impl<S: Stream> Conn<S> {
                     IdleResponse::NewData(data) => match data.parsed() {
                         Response::Data {
                             status: Status::Bye,
-                            information,
-                            ..
+                            outcome,
                         } => {
                             return Err(ImapError::Network(clipped(
-                                information.as_deref().unwrap_or_default().to_string(),
+                                outcome.information.as_deref().unwrap_or_default().to_string(),
                             )));
                         }
                         _ => Woke::Changed,
@@ -659,9 +678,7 @@ fn ended(
     tag: &RequestId,
     doing: Doing<'_>,
 ) -> Option<Result<(), ImapError>> {
-    let text = |information: &Option<std::borrow::Cow<'_, str>>| {
-        information.as_deref().unwrap_or_default().to_string()
-    };
+    let text = |outcome: &Outcome<'_>| outcome.information.as_deref().unwrap_or_default().to_string();
     match response {
         // A tag has no length limit, so the text is clipped.
         Response::Done { tag: other, .. } if other != tag => {
@@ -673,23 +690,21 @@ fn ended(
         Response::Done {
             tag: done,
             status,
-            code,
-            information,
+            outcome,
         } if done == tag => Some(match status {
             Status::Ok => Ok(()),
             Status::No => Err(refusal(
                 doing,
                 Refusal::No,
-                matches!(code, Some(ResponseCode::TryCreate)),
-                &text(information),
+                matches!(outcome.code, Some(ResponseCode::TryCreate)),
+                &text(outcome),
             )),
-            _ => Err(refusal(doing, Refusal::Bad, false, &text(information))),
+            _ => Err(refusal(doing, Refusal::Bad, false, &text(outcome))),
         }),
         Response::Data {
             status: Status::Bye,
-            information,
-            ..
-        } => Some(Err(refusal(doing, Refusal::Bye, false, &text(information)))),
+            outcome,
+        } => Some(Err(refusal(doing, Refusal::Bye, false, &text(outcome)))),
         _ => None,
     }
 }
@@ -717,15 +732,14 @@ async fn raw_capability<S: Stream>(
         if let Response::Done {
             tag,
             status,
-            information,
-            ..
+            outcome,
         } = response.parsed()
             && tag.0 == RAW_TAG
         {
             return match status {
                 Status::Ok => Ok(()),
                 _ => Err(ImapError::Protocol(clipped(
-                    information.as_deref().unwrap_or_default().to_string(),
+                    outcome.information.as_deref().unwrap_or_default().to_string(),
                 ))),
             };
         }
@@ -1289,6 +1303,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn status_counts_unread_without_selecting_or_accepting_another_mailbox() {
+        let log = log();
+        let stream = pipe(
+            GREETING,
+            server(ALL, log.clone(), |command| match command {
+                c if c.starts_with("STATUS") => vec![
+                    "* STATUS Other (UNSEEN 99)".into(),
+                    "* STATUS \"INBOX/Lists\" (MESSAGES 20 UNSEEN 4)".into(),
+                    "{tag} OK".into(),
+                ],
+                _ => vec!["{tag} OK".into()],
+            }),
+        );
+        let mut conn = Conn::login(stream, false, &ann()).await.unwrap();
+        assert_eq!(conn.unread("INBOX/Lists").await.unwrap(), 4);
+        assert!(seen(&log).contains(&"STATUS \"INBOX/Lists\" (UNSEEN)".to_string()));
+        assert!(!seen(&log).iter().any(|line| line.starts_with("SELECT")));
+    }
+
+    #[tokio::test]
     async fn list_asks_for_special_use_when_the_server_has_it() {
         let log = log();
         let stream = pipe(
@@ -1555,14 +1589,16 @@ mod tests {
         )
     }
 
-    /// Runs `test` on a 2 MB stack, the size of a tokio worker's, so an
-    /// answer that makes imap-proto recurse too deep crashes the test
-    /// binary instead of passing.
+    /// Runs `test` on an 8 MiB stack, what `mailrs_sync::WORKER_STACK`
+    /// gives each thread that runs this client, so an answer that makes
+    /// imap-proto recurse too deep crashes the test binary instead of
+    /// passing. A debug build of imap-proto 0.17 parses only 59 levels in
+    /// Tokio's default 2 MiB, below the cap; a release build parses 371.
     fn on_a_small_stack<F: std::future::Future<Output = ()>>(
         test: impl FnOnce() -> F + Send + 'static,
     ) {
         std::thread::Builder::new()
-            .stack_size(2 << 20)
+            .stack_size(8 << 20)
             .spawn(|| {
                 tokio::runtime::Builder::new_current_thread()
                     .enable_all()

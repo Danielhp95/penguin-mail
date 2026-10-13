@@ -7,12 +7,15 @@
 //! source, as it always did, and Format Markdown moves a body from one to
 //! the other.
 
+mod body_view;
 mod editor;
 mod pictures;
 mod recipients;
 mod removals;
 mod richbuffer;
+mod saving;
 pub mod spell;
+mod work;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -23,12 +26,15 @@ use mailrs_store::templates::Template;
 
 use self::editor::Editor;
 use self::recipients::Recipients;
+use self::saving::{Landed, Saving};
+use self::work::Work;
 use super::autocomplete::Contacts;
 use super::{labelled_by, name, name_with_shortcut, roving};
 use crate::attachcheck::Promise;
 use crate::compose::{
     Asking, Built, Draft, Forwarded, Gate, OutgoingAttachment, SendWhen, build, format_recipients,
-    gate, html_to_send, is_address, new_message_id, opening_identity,
+    gate, html_to_send, is_address, kept_mask, masked_site, new_message_id, off_thread,
+    opening_identity,
 };
 use crate::core::Core;
 use crate::format::{future_date, human_size, send_later_presets};
@@ -38,6 +44,7 @@ use crate::settings::ComposeFormat;
 use crate::stray_markdown;
 use crate::templates::{self, Filling};
 use crate::web::WebView;
+use mailrs_domain::Address;
 use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
 
 pub use crate::compose::Identity;
@@ -110,6 +117,39 @@ impl Check {
     }
 }
 
+/// The More menu beside Send. Templates, Preview, Sign and Encrypt stood
+/// in the header as four icon buttons left of Send. They share this menu
+/// now, so the bar holds Attach Files, More and Send, and the shield while
+/// the message goes out signed or encrypted. Sign and Encrypt only show
+/// when this computer has gpg or gpgsm to run them; Request Read Receipt
+/// has a section of its own after them.
+fn more_menu(template_menu: &gio::Menu, has_engine: bool) -> gio::Menu {
+    let menu = gio::Menu::new();
+    let writing = gio::Menu::new();
+    // Attach Files moves here on a narrow window, where its button goes
+    // so Send keeps its word; the action is off, and the item hidden,
+    // while the button shows.
+    let attach = gio::MenuItem::new(Some(&gettext("Attach Files…")), Some("composer.attach"));
+    attach.set_attribute_value("hidden-when", Some(&"action-disabled".to_variant()));
+    writing.append_item(&attach);
+    writing.append_submenu(Some(&gettext("Templates")), template_menu);
+    writing.append(Some(&gettext("Preview")), Some("composer.preview"));
+    menu.append_section(None, &writing);
+    if has_engine {
+        let guarding = gio::Menu::new();
+        guarding.append(Some(&gettext("Sign")), Some("composer.sign"));
+        guarding.append(Some(&gettext("Encrypt")), Some("composer.encrypt"));
+        let note_item = gio::MenuItem::new(None, None);
+        note_item.set_attribute_value("custom", Some(&"encrypt-note".to_variant()));
+        guarding.append_item(&note_item);
+        menu.append_section(None, &guarding);
+    }
+    let asking = gio::Menu::new();
+    asking.append(Some(&gettext("Request Read Receipt")), Some("composer.receipt"));
+    menu.append_section(None, &asking);
+    menu
+}
+
 /// The space above and below the words in the body.
 const BODY_MARGIN: i32 = 18;
 /// The room under the last line for the "•••" row, and the gap above it.
@@ -147,6 +187,18 @@ pub struct Composer {
     toasts: adw::ToastOverlay,
     title: adw::WindowTitle,
     from: gtk::DropDown,
+    suffix: gtk::Entry,
+    /// New Masked Address, at the end of the From row for an account that
+    /// makes masked addresses.
+    mask: gtk::Button,
+    /// The masked address made for this message, which it goes out from
+    /// while the From row stays on the identity it was made for.
+    masked: RefCell<Option<Address>>,
+    /// The address the message goes out from, under the From row while a
+    /// suffix or a masked address changes it, and the "Masked" chip.
+    sender_line: gtk::Box,
+    sender_preview: gtk::Label,
+    masked_chip: gtk::Label,
     to: Rc<Recipients>,
     cc: Rc<Recipients>,
     bcc: Rc<Recipients>,
@@ -194,7 +246,10 @@ pub struct Composer {
     encrypt: Check,
     /// Under Encrypt in the menu: why it cannot be chosen, while it cannot.
     encrypt_note: gtk::Label,
-    /// The More menu beside Send: Templates, Preview, Sign and Encrypt.
+    /// Request Read Receipt, a check item in the More menu.
+    receipt: Check,
+    /// The More menu beside Send: Templates, Preview, Sign, Encrypt and
+    /// Request Read Receipt.
     more_menu: gtk::MenuButton,
     /// The shield in the header while the message goes out signed or
     /// encrypted. Its icon and its name say which; it opens More.
@@ -246,6 +301,22 @@ pub struct Composer {
     asked: Cell<bool>,
     dirty: Cell<bool>,
     closing: Cell<bool>,
+    /// Set while the message shows read-only: a Send Later message the
+    /// server still holds, which nothing here may send, save or change.
+    locked: Cell<bool>,
+    /// Set once the message went to be sent or scheduled, and once a draft
+    /// of it was saved: either way it is no longer the one it opened as.
+    handed: Cell<bool>,
+    saved: Cell<bool>,
+    /// The send or save running now. A second press waits, and closing the
+    /// window cancels it.
+    work: Work,
+    /// The draft save running now, which the close dialog waits for or
+    /// discards.
+    saving: Saving,
+    /// The Send button's content, which reads "Sending…" while a send builds.
+    send_content: adw::ButtonContent,
+    attach: gtk::Button,
     on_send: Box<dyn Fn(Draft, Built, SendWhen)>,
 }
 
@@ -288,13 +359,12 @@ impl Composer {
             Some("composer.send-later"),
         );
         later.append_section(None, &custom);
+        let send_content = adw::ButtonContent::builder()
+            .icon_name("mail-send-symbolic")
+            .label(gettext("Send"))
+            .build();
         let send = adw::SplitButton::builder()
-            .child(
-                &adw::ButtonContent::builder()
-                    .icon_name("mail-send-symbolic")
-                    .label(gettext("Send"))
-                    .build(),
-            )
+            .child(&send_content)
             .menu_model(&later)
             .dropdown_tooltip(gettext("Send Later"))
             .css_classes(["suggested-action"])
@@ -316,24 +386,8 @@ impl Composer {
         let sign = Check::new("sign", has_engine && (sign_by_default || draft.sign));
         let encrypt = Check::new("encrypt", false);
         encrypt.set_sensitive(false);
-        // Templates, Preview, Sign and Encrypt stood in the header as four
-        // icon buttons left of Send. They share one menu now, so the bar
-        // holds Attach Files, More and Send, and the shield while the
-        // message goes out signed or encrypted.
-        let menu = gio::Menu::new();
-        let writing = gio::Menu::new();
-        writing.append_submenu(Some(&gettext("Templates")), &template_menu);
-        writing.append(Some(&gettext("Preview")), Some("composer.preview"));
-        menu.append_section(None, &writing);
-        let guarding = gio::Menu::new();
-        guarding.append(Some(&gettext("Sign")), Some("composer.sign"));
-        guarding.append(Some(&gettext("Encrypt")), Some("composer.encrypt"));
-        let note_item = gio::MenuItem::new(None, None);
-        note_item.set_attribute_value("custom", Some(&"encrypt-note".to_variant()));
-        guarding.append_item(&note_item);
-        if has_engine {
-            menu.append_section(None, &guarding);
-        }
+        let receipt = Check::new("receipt", draft.receipt);
+        let menu = more_menu(&template_menu, has_engine);
         let more = gtk::MenuButton::builder()
             .icon_name("view-more-symbolic")
             .tooltip_text(gettext("More"))
@@ -365,7 +419,7 @@ impl Composer {
         super::name_menu_items_of(&send);
         super::name_menu_items_of(&more);
         let protection = gtk::Button::builder()
-            .icon_name("security-high-symbolic")
+            .icon_name("penguin-mail-mask-symbolic")
             .css_classes(["flat", "protected"])
             .visible(false)
             .build();
@@ -412,8 +466,75 @@ impl Composer {
         // One size group holds the label column to a single width, so every
         // field starts at the same edge whichever labels are on show.
         let column = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
-        let from_row = field(&gettext("From"), &from, &column);
-        if identities.len() > 1 {
+        let suffix = gtk::Entry::builder()
+            .placeholder_text(gettext("+suffix or .suffix"))
+            .width_chars(16)
+            .build();
+        crate::ui::name(&suffix, &gettext("Address Suffix"));
+        if let Some(identity) = identities.get(selected) {
+            suffix.set_visible(identity.suffixes.enabled());
+            suffix.set_text(
+                identity
+                    .suffixes
+                    .suffix(&identity.address.email, &draft.from.email)
+                    .unwrap_or(""),
+            );
+        }
+        let mask = gtk::Button::builder()
+            .icon_name("penguin-mail-mask-symbolic")
+            .tooltip_text(gettext("New Masked Address"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat", "composer-mask"])
+            .visible(identities.get(selected).is_some_and(|i| i.masks))
+            .build();
+        crate::ui::name(&mask, &gettext("New Masked Address"));
+        let listed_mask = core
+            .account(draft.account_id)
+            .and_then(|sync| sync.services().mail.is_masked(&draft.from.email));
+        let masked = identities
+            .get(selected)
+            .and_then(|chosen| kept_mask(&identities, chosen, &draft.from, listed_mask));
+        // A masked sender takes the suffix's place.
+        if masked.is_some() {
+            suffix.set_visible(false);
+        }
+        let sender_preview = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::Middle)
+            .css_classes(["sender-preview"])
+            .build();
+        let masked_chip = gtk::Label::builder()
+            .label(gettext("Masked"))
+            .valign(gtk::Align::Center)
+            .css_classes(["masked-chip"])
+            .build();
+        let sender_line = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        sender_line.append(&sender_preview);
+        sender_line.append(&masked_chip);
+        let choices = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        choices.append(&from);
+        choices.append(&suffix);
+        choices.append(&mask);
+        // The empty room after the address still opens the list, as the
+        // whole row did when the drop-down filled it.
+        let click = gtk::GestureClick::new();
+        let opens = from.downgrade();
+        click.connect_released(move |gesture, _, x, y| {
+            let (Some(from), Some(row)) = (opens.upgrade(), gesture.widget()) else {
+                return;
+            };
+            if row.pick(x, y, gtk::PickFlags::DEFAULT).as_ref() == Some(&row) {
+                from.emit_by_name::<()>("activate", &[]);
+            }
+        });
+        choices.add_controller(click);
+        let sender_fields = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        sender_fields.set_hexpand(true);
+        sender_fields.append(&choices);
+        sender_fields.append(&sender_line);
+        let from_row = field(&gettext("From"), &sender_fields, &column);
+        crate::ui::name(&from, &gettext("From"));
+        if identities.len() > 1 || identities.iter().any(|i| i.suffixes.enabled() || i.masks) {
             fields.append(&from_row);
             fields.append(&line());
         }
@@ -436,16 +557,15 @@ impl Composer {
         fields.append(&field(&gettext("Subject"), &subject, &column));
         fields.append(&line());
 
-        let body = gtk::TextView::builder()
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .top_margin(BODY_MARGIN)
-            .bottom_margin(BODY_MARGIN)
-            .left_margin(20)
-            .right_margin(20)
-            .accepts_tab(false)
-            .css_classes(["composer-body"])
-            .vexpand(true)
-            .build();
+        let body = body_view::BodyView::new().upcast::<gtk::TextView>();
+        body.set_wrap_mode(gtk::WrapMode::WordChar);
+        body.set_top_margin(BODY_MARGIN);
+        body.set_bottom_margin(BODY_MARGIN);
+        body.set_left_margin(20);
+        body.set_right_margin(20);
+        body.set_accepts_tab(false);
+        body.set_css_classes(&["composer-body"]);
+        body.set_vexpand(true);
         name(&body, &gettext("Message"));
         let editor = Editor::new(&body, format);
         let preview = WebView::sealed();
@@ -538,17 +658,16 @@ impl Composer {
             .height_request(400)
             .build();
         super::window::track_dark_class(&window);
-        // On a phone the composer has 360 px. The header drops its title
-        // and Send its word, and the format bar's buttons pack closer
-        // (style.css, .composer-narrow), which brings the narrowest the
-        // window goes from 443 px to under 360.
+        // On a phone the composer has 360 px. The header drops its title,
+        // Attach Files moves into More so Send keeps its word, and the
+        // format bar's buttons pack closer (style.css, .composer-narrow),
+        // which brings the narrowest the window goes from 443 px to under
+        // 360.
         let narrow = adw::Breakpoint::new(
             adw::BreakpointCondition::parse("max-width: 480sp").expect("valid breakpoint"),
         );
         narrow.add_setter(&title, "visible", Some(&false.to_value()));
-        if let Some(content) = send.child().and_downcast::<adw::ButtonContent>() {
-            narrow.add_setter(&content, "label", Some(&"".to_value()));
-        }
+        narrow.add_setter(&attach, "visible", Some(&false.to_value()));
         let marked = window.downgrade();
         narrow.connect_apply(move |_| {
             if let Some(window) = marked.upgrade() {
@@ -573,6 +692,12 @@ impl Composer {
             toasts,
             title,
             from,
+            suffix,
+            mask,
+            masked: RefCell::new(masked),
+            sender_line,
+            sender_preview,
+            masked_chip,
             to,
             cc,
             bcc,
@@ -605,6 +730,7 @@ impl Composer {
             sign,
             encrypt,
             encrypt_note,
+            receipt,
             more_menu: more.clone(),
             protection,
             asked_keys: RefCell::new(Asked::default()),
@@ -631,6 +757,13 @@ impl Composer {
             asked: Cell::new(false),
             dirty: Cell::new(false),
             closing: Cell::new(false),
+            locked: Cell::new(false),
+            handed: Cell::new(false),
+            saved: Cell::new(false),
+            work: Work::default(),
+            saving: Saving::default(),
+            send_content,
+            attach: attach.clone(),
             on_send: Box::new(on_send),
         });
         composer.fill_body();
@@ -713,15 +846,23 @@ impl Composer {
             let weak = Rc::downgrade(self);
             let here = Rc::downgrade(field);
             let back = back.map(Rc::downgrade);
+            let before = Rc::downgrade(self);
             field.on_tab(
                 move || {
                     if let (Some(c), Some(here)) = (weak.upgrade(), here.upgrade()) {
                         c.after(&here);
                     }
                 },
-                move || {
-                    if let Some(previous) = back.as_ref().and_then(|b| b.upgrade()) {
-                        previous.entry.grab_focus();
+                move || match back.as_ref() {
+                    Some(previous) => {
+                        if let Some(previous) = previous.upgrade() {
+                            previous.entry.grab_focus();
+                        }
+                    }
+                    None => {
+                        if let Some(c) = before.upgrade() {
+                            c.before_to();
+                        }
                     }
                 },
             );
@@ -753,6 +894,20 @@ impl Composer {
             }
         });
         let weak = Rc::downgrade(self);
+        self.mask.connect_clicked(move |_| {
+            if let Some(c) = weak.upgrade() {
+                c.mask_for_this_message();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.suffix.connect_changed(move |_| {
+            if let Some(c) = weak.upgrade() {
+                c.dirty.set(true);
+                c.check_send();
+                c.check_own();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.more_button.connect_toggled(move |toggle| {
             if let Some(c) = weak.upgrade() {
                 c.show_more(toggle.is_active());
@@ -763,6 +918,12 @@ impl Composer {
             if let Some(c) = weak.upgrade() {
                 c.dirty.set(true);
                 c.show_protection();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.receipt.connect_toggled(move |_| {
+            if let Some(c) = weak.upgrade() {
+                c.mark_unsaved();
             }
         });
         let weak = Rc::downgrade(self);
@@ -830,6 +991,7 @@ impl Composer {
             ),
             ("edit-markdown", Box::new(|c| c.edit_as_markdown())),
             ("clear-format", Box::new(|c| c.clear_format())),
+            ("attach", Box::new(|c| c.pick_files())),
             ("save-template", Box::new(|c| c.save_as_template())),
         ] {
             let action = gio::SimpleAction::new(name, None);
@@ -853,11 +1015,15 @@ impl Composer {
                 c.stack.set_visible_child_name("edit");
             }
         });
-        for check in [&self.sign, &self.encrypt, &preview] {
+        for check in [&self.sign, &self.encrypt, &self.receipt, &preview] {
             actions.add_action(&check.0);
         }
         self.window.insert_action_group("composer", Some(&actions));
 
+        if let Some(item) = actions.lookup_action("attach").and_downcast::<gio::SimpleAction>() {
+            item.set_enabled(!attach.get_visible());
+            attach.connect_visible_notify(move |button| item.set_enabled(!button.get_visible()));
+        }
         let weak = Rc::downgrade(self);
         attach.connect_clicked(move |_| {
             if let Some(c) = weak.upgrade() {
@@ -956,7 +1122,10 @@ impl Composer {
             let Some(c) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
-            if c.closing.get() || !c.dirty.get() || c.is_blank() {
+            // A send or save still running counts as unsaved work: closing
+            // asks, and Discard cancels it.
+            let idle = !c.work.is_busy();
+            if c.closing.get() || (idle && (!c.dirty.get() || c.is_blank())) {
                 return glib::Propagation::Proceed;
             }
             c.confirm_close();
@@ -978,6 +1147,16 @@ impl Composer {
             Some(field) => field.entry.grab_focus(),
             None => self.subject.grab_focus(),
         };
+    }
+
+    /// Shift+Tab out of To: the last control on the From row that shows,
+    /// New Masked Address, the suffix or the sender. With no From row the
+    /// focus stays in To.
+    fn before_to(&self) {
+        let from_row: [&gtk::Widget; 3] = [self.mask.upcast_ref(), self.suffix.upcast_ref(), self.from.upcast_ref()];
+        if let Some(widget) = from_row.into_iter().find(|w| w.is_mapped() && w.is_sensitive()) {
+            widget.grab_focus();
+        }
     }
 
     /// Shows or hides the Cc and Bcc rows.
@@ -1235,14 +1414,73 @@ impl Composer {
             .move_overlay(&self.history, start.x(), end.y() + end.height() + HISTORY_GAP);
     }
 
-    fn identity(&self) -> Option<&Identity> {
-        self.identities.get(self.from.selected() as usize)
+    fn identity(&self) -> Option<Identity> {
+        let chosen = self.identities.get(self.from.selected() as usize)?;
+        if let Some(masked) = self.masked.borrow().as_ref() {
+            return Some(crate::compose::sender_with_mask(chosen, Some(masked)));
+        }
+        let mut identity = chosen.clone();
+        identity.address = identity
+            .suffixes
+            .address(&identity.address, &self.suffix.text())?;
+        Some(identity)
+    }
+
+    /// Makes a masked address for the first recipient's site and sends this
+    /// message from it. The subject goes with it as the note, so Hide My
+    /// Email says where the address was given out.
+    fn mask_for_this_message(self: &Rc<Self>) {
+        let Some(chosen) = self.identities.get(self.from.selected() as usize).cloned() else {
+            return;
+        };
+        let site = masked_site(&self.to.addresses());
+        let note = self.subject.text().trim().to_string();
+        self.mask.set_sensitive(false);
+        let this = Rc::clone(self);
+        let settings = self.core.gmail_settings();
+        glib::spawn_future_local(async move {
+            let account_id = chosen.account_id;
+            let made = this
+                .core
+                .call(async move { settings.create_masked_address(account_id, &site, &note).await })
+                .await;
+            this.mask.set_sensitive(true);
+            // The writer moved the From row to another account meanwhile:
+            // the address belongs to the one it was made for.
+            let still = this.identities.get(this.from.selected() as usize);
+            match made {
+                Ok(masked) if still.is_some_and(|i| i.account_id == account_id) => {
+                    this.masked.replace(Some(Address {
+                        name: chosen.address.name.clone(),
+                        email: masked.email.clone(),
+                    }));
+                    this.suffix.set_visible(false);
+                    this.dirty.set(true);
+                    this.check_send();
+                    this.check_own();
+                    this.toast_wrapping(&fill(&gettext("Sending from {address}"), &[("address", &masked.email)]));
+                }
+                Ok(_) => {}
+                Err(err) => this.failed(&gettext("Could not make a masked address: {reason}"), &err),
+            }
+        });
     }
 
     /// Follows the From row with the signature, since Gmail keeps one per
     /// send-as address and a message signed by the wrong one looks careless.
     fn identity_changed(self: &Rc<Self>, to: usize) {
         let was = self.showing.replace(to);
+        self.masked.replace(None);
+        self.suffix.set_text("");
+        self.suffix.set_visible(
+            self.identities
+                .get(to)
+                .is_some_and(|i| i.suffixes.enabled()),
+        );
+        self.mask
+            .set_visible(self.identities.get(to).is_some_and(|i| i.masks));
+        self.dirty.set(true);
+        self.check_send();
         let sending = self.identities.get(to).map(|i| i.account_id);
         for field in [&self.to, &self.cc, &self.bcc] {
             field.set_from(sending);
@@ -1292,8 +1530,22 @@ impl Composer {
     /// Greys out Send while the message cannot go anywhere, and says why.
     /// It asks the recipients only, so every keystroke stays cheap.
     fn check_send(&self) {
-        let problem = match self.identity() {
-            None => Some(gettext("No account to send from.")),
+        let identity = self.identity();
+        if identity.is_some() {
+            self.suffix.remove_css_class("error");
+        } else {
+            self.suffix.add_css_class("error");
+        }
+        let masked = self.masked.borrow().is_some();
+        self.sender_line
+            .set_visible(self.suffix.get_visible() || masked);
+        self.masked_chip.set_visible(masked);
+        self.sender_preview
+            .set_text(identity.as_ref().map_or("", |i| i.address.email.as_str()));
+        let problem = match identity {
+            None => Some(gettext(
+                "Choose a sender and enter a permitted address suffix.",
+            )),
             Some(identity) => {
                 let mut draft = Draft::new(identity.account_id, identity.address.clone());
                 draft.to = self.to.addresses();
@@ -1302,7 +1554,7 @@ impl Composer {
                 draft.problem()
             }
         };
-        self.send.set_sensitive(problem.is_none());
+        self.send.set_sensitive(problem.is_none() && !self.work.is_busy());
         let tip = problem.unwrap_or_else(|| gettext("Send (Ctrl+Enter)"));
         self.send.set_tooltip_text(Some(&tip));
     }
@@ -1397,7 +1649,9 @@ impl Composer {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let standard = protection::signing_for(&this.core, &from).await;
-            this.signing_with.set(standard);
+            if this.identity().is_some_and(|i| i.address.email == from) {
+                this.signing_with.set(standard);
+            }
         });
     }
 
@@ -1417,7 +1671,7 @@ impl Composer {
 
     /// The draft as the fields describe it now.
     fn collect(&self) -> Option<Draft> {
-        let identity = self.identity()?.clone();
+        let identity = self.identity()?;
         let base = self.base.borrow();
         let mut draft = base.clone();
         if draft.account_id != identity.account_id {
@@ -1437,6 +1691,7 @@ impl Composer {
         draft.attachments = self.attachments.borrow().clone();
         draft.sign = self.sign.is_active();
         draft.encrypt = self.encrypt.is_active() && self.encrypt.is_sensitive();
+        draft.receipt = self.receipt.is_active();
         // A signature on an encrypted message goes inside the encryption,
         // so the recipients' standard carries both.
         draft.standard = match draft.encrypt {
@@ -1444,6 +1699,60 @@ impl Composer {
             false => self.signing_with.get(),
         };
         Some(draft)
+    }
+
+    /// Shows the message read-only under a banner that says why: a Send
+    /// Later message the server still holds, which the person can read but
+    /// not send, save or change here. `cancel`, when given, is the banner's
+    /// Cancel Send; the composer closes after it.
+    pub fn lock(self: &Rc<Self>, notice: &str, cancel: Option<Box<dyn Fn()>>) {
+        self.locked.set(true);
+        self.dirty.set(false);
+        // A caret would say the words can be changed. GTK draws none in a
+        // text view that is not editable, and none with no focus.
+        self.body.set_editable(false);
+        self.subject.set_editable(false);
+        gtk::prelude::GtkWindowExt::set_focus(&self.window, None::<&gtk::Widget>);
+        let banner = adw::Banner::builder().use_markup(false).title(notice).revealed(true).build();
+        if let Some(cancel) = cancel {
+            banner.set_button_label(Some(&gettext("Cancel Send")));
+            let weak = Rc::downgrade(self);
+            banner.connect_button_clicked(move |_| {
+                cancel();
+                if let Some(c) = weak.upgrade() {
+                    c.closing.set(true);
+                    c.window.close();
+                }
+            });
+        }
+        if let Some(toolbar) = self.toasts.child().and_downcast::<adw::ToolbarView>() {
+            toolbar.add_top_bar(&banner);
+            if let Some(content) = toolbar.content() {
+                content.set_sensitive(false);
+            }
+        }
+        for control in [self.send.upcast_ref::<gtk::Widget>(), self.more_menu.upcast_ref(), self.attach.upcast_ref(), self.protection.upcast_ref()] {
+            control.set_sensitive(false);
+        }
+        // Takes the menu's and the keys' actions away with the buttons.
+        self.window.insert_action_group("composer", None::<&gio::ActionGroup>);
+    }
+
+    /// Runs `unchanged` when the window closes on the message as it
+    /// opened: not sent, not scheduled, not saved, and with no change
+    /// made, kept or thrown away.
+    pub fn on_closed_unchanged(self: &Rc<Self>, unchanged: Box<dyn Fn()>) {
+        let weak = Rc::downgrade(self);
+        self.window.connect_close_request(move |_| {
+            if let Some(c) = weak.upgrade()
+                && !c.handed.get()
+                && !c.saved.get()
+                && !c.dirty.get()
+            {
+                unchanged();
+            }
+            glib::Propagation::Proceed
+        });
     }
 
     /// Treats the message as unsaved, so closing asks before discarding it.
@@ -1454,6 +1763,20 @@ impl Composer {
     pub fn toast(&self, text: &str) {
         self.toasts
             .add_toast(adw::Toast::builder().title(super::window::toast_title(text)).timeout(4).build());
+    }
+
+    /// A toast whose words wrap instead of ending in "…", for a line that
+    /// names an address the writer has to read whole in a narrow window.
+    fn toast_wrapping(&self, text: &str) {
+        let title = gtk::Label::builder()
+            .label(text)
+            .wrap(true)
+            .wrap_mode(gtk::pango::WrapMode::WordChar)
+            .max_width_chars(40)
+            .xalign(0.0)
+            .build();
+        self.toasts
+            .add_toast(adw::Toast::builder().custom_title(&title).timeout(4).build());
     }
 
     /// Toasts a failure. `said` is `gettext` of the sentence, with
@@ -1470,6 +1793,9 @@ impl Composer {
     /// the gate wants asked, and passes it on for sending once nothing
     /// stands in the way.
     fn hand_over(self: &Rc<Self>, when: SendWhen) {
+        if self.locked.get() || self.work.is_busy() {
+            return;
+        }
         let this = Rc::clone(self);
         glib::spawn_future_local(async move { this.pass_gate(when).await });
     }
@@ -1502,19 +1828,62 @@ impl Composer {
     /// Builds the message and passes it on, then closes. The bytes go
     /// with it, so the app does not build the same message again.
     fn send_off(self: &Rc<Self>, draft: Draft, when: SendWhen) {
-        let built = match build(&draft, now_secs(), &new_message_id(&draft.from.email)) {
-            Ok(built) => built,
-            Err(err) => {
-                self.failed(&gettext("Could not build the message: {reason}"), &err);
+        let Some(ticket) = self.work.begin() else {
+            return;
+        };
+        self.show_busy(true);
+        let this = Rc::clone(self);
+        glib::spawn_future_local(async move {
+            let built = built_off_thread(&draft).await;
+            // A window closed with Discard while this built has cancelled
+            // the send: nothing goes out.
+            if !this.work.finish(ticket) {
                 return;
             }
-        };
+            this.show_idle();
+            match built {
+                Ok(built) => this.pass_on(draft, built, when),
+                Err(err) => this.failed(&gettext("Could not build the message: {reason}"), &err),
+            }
+        });
+    }
+
+    /// Shows that the message is being sent or saved: the Send button
+    /// reads "Sending…" for a send, and the fields and editor stop taking
+    /// edits, which the finished message would not hold.
+    fn show_busy(&self, sending: bool) {
+        self.send.set_sensitive(false);
+        if sending {
+            self.send_content.set_label(&gettext("Sending…"));
+            self.send_content.set_icon_name("content-loading-symbolic");
+        }
+        self.set_content_sensitive(false);
+    }
+
+    /// Undoes [`Composer::show_busy`] once the send or save came back.
+    fn show_idle(self: &Rc<Self>) {
+        self.send_content.set_label(&gettext("Send"));
+        self.send_content.set_icon_name("mail-send-symbolic");
+        self.set_content_sensitive(true);
+        self.check_send();
+    }
+
+    fn set_content_sensitive(&self, sensitive: bool) {
+        if let Some(toolbar) = self.toasts.child().and_downcast::<adw::ToolbarView>()
+            && let Some(content) = toolbar.content()
+        {
+            content.set_sensitive(sensitive);
+        }
+    }
+
+    fn pass_on(self: &Rc<Self>, draft: Draft, built: Built, when: SendWhen) {
         if let Some(identity) = self.identity() {
             (self.remember)(Remembered::SentFrom {
                 account: identity.account_email.clone(),
                 email: identity.address.email.clone(),
             });
         }
+        self.handed.set(true);
         self.closing.set(true);
         self.window.close();
         (self.on_send)(draft, built, when);
@@ -1590,7 +1959,16 @@ impl Composer {
     /// their own key, since Gmail would otherwise hold it readable until it
     /// went out. `protection::draft` says how, and how it comes back.
     fn save_draft(self: &Rc<Self>, then_close: bool) {
-        let Some(draft) = self.collect() else { return };
+        if self.locked.get() || self.work.is_busy() {
+            return;
+        }
+        let Some(draft) = self.collect() else {
+            self.toast(&gettext(
+                "Choose a sender and enter a permitted address suffix.",
+            ));
+            self.suffix.grab_focus();
+            return;
+        };
         let secret = self.secret.get() || draft.encrypt;
         // The recipients choose the standard of an encrypted message, and
         // the writer's own holdings that of one they cannot encrypt yet.
@@ -1598,11 +1976,31 @@ impl Composer {
             true => draft.standard,
             false => self.signing_with.get(),
         };
+        let Some(ticket) = self.work.begin() else {
+            return;
+        };
+        self.show_busy(false);
+        self.saving.began();
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            match protection::draft::save(&this.core, &draft, secret, standard).await {
+            let saved = protection::draft::save(&this.core, &draft, secret, standard).await;
+            let made = saved.as_ref().ok().map(|saved| saved.draft_id.as_str());
+            // Whoever waits on this save hears of it here, and runs only
+            // once this has set the draft id below, since nothing in
+            // between awaits.
+            if let Landed::Delete(draft_id) = this.saving.landed(draft.draft_id.as_deref(), made) {
+                this.delete_discarded(draft.account_id, draft_id);
+            }
+            // Discard in the close dialog cancels the save: its result is
+            // dropped and the window closes as the writer asked.
+            if !this.work.finish(ticket) {
+                return;
+            }
+            this.show_idle();
+            match saved {
                 Ok(saved) => {
                     this.base.borrow_mut().draft_id = Some(saved.draft_id);
+                    this.saved.set(true);
                     this.dirty.set(false);
                     if then_close {
                         this.closing.set(true);
@@ -1614,6 +2012,18 @@ impl Composer {
                     }
                 }
                 Err(problem) => this.toast(&problem),
+            }
+        });
+    }
+
+    /// Deletes the draft a save made after the writer chose Discard.
+    fn delete_discarded(&self, account_id: mailrs_domain::AccountId, draft_id: String) {
+        let Some(sync) = self.core.account(account_id) else {
+            return;
+        };
+        self.core.spawn(async move {
+            if let Err(err) = sync.delete_draft(&draft_id).await {
+                tracing::warn!(error = %err, "could not delete a draft saved after Discard");
             }
         });
     }
@@ -1638,16 +2048,36 @@ impl Composer {
         glib::spawn_future_local(async move {
             match dialog.choose_future(Some(&this.window)).await.as_str() {
                 "discard" => {
+                    this.saving.discard();
+                    this.work.cancel();
                     this.closing.set(true);
                     this.window.close();
                 }
-                "save" => this.save_draft(true),
+                "save" => {
+                    // A save already running makes the draft; this one
+                    // then writes what the window holds now over it,
+                    // rather than making a second draft beside it.
+                    // A send still building is dropped, as before.
+                    match this.saving.wait() {
+                        Some(running) => {
+                            let _ = running.await;
+                        }
+                        None => {
+                            this.work.cancel();
+                            this.show_idle();
+                        }
+                    }
+                    this.save_draft(true);
+                }
                 _ => {}
             }
         });
     }
 
     fn pick_files(self: &Rc<Self>) {
+        if self.locked.get() {
+            return;
+        }
         let dialog = gtk::FileDialog::builder()
             .title(gettext("Attach Files"))
             .modal(true)
@@ -1890,8 +2320,9 @@ impl Composer {
             Some("composer.edit-markdown"),
         );
         menu.append_section(None, &switch);
+        // A letter rather than ⋮, so it does not read as the header's More.
         let more = gtk::MenuButton::builder()
-            .icon_name("view-more-symbolic")
+            .icon_name("format-text-rich-symbolic")
             .tooltip_text(gettext("More Formatting"))
             .menu_model(&menu)
             .css_classes(["flat"])
@@ -2170,6 +2601,9 @@ impl Composer {
     }
 
     fn pick_images(self: &Rc<Self>) {
+        if self.locked.get() {
+            return;
+        }
         let filter = gtk::FileFilter::new();
         filter.set_name(Some(&gettext("Images")));
         filter.add_mime_type("image/*");
@@ -2212,7 +2646,7 @@ impl Composer {
                     self.attachments.borrow_mut().push(OutgoingAttachment {
                         filename,
                         mime_type,
-                        data: bytes.to_vec(),
+                        data: glib::Bytes::from_owned(bytes).into(),
                         content_id: None,
                     });
                     self.dirty.set(true);
@@ -2238,7 +2672,7 @@ impl Composer {
         self.attachments.borrow_mut().push(OutgoingAttachment {
             filename,
             mime_type,
-            data,
+            data: data.into(),
             content_id: Some(cid),
         });
         self.dirty.set(true);
@@ -2251,7 +2685,7 @@ impl Composer {
             if let Some(cid) = &attachment.content_id {
                 let data = base64::Engine::encode(
                     &base64::engine::general_purpose::STANDARD,
-                    &attachment.data,
+                    &attachment.data[..],
                 );
                 html = html.replace(
                     &format!("cid:{cid}"),
@@ -2452,9 +2886,11 @@ fn from_dropdown(identities: &[Identity]) -> gtk::DropDown {
     // A flattened list of lists is a section model, which is what gives the
     // popup its headings.
     let model = gtk::FlattenListModel::new(Some(sections));
+    // As wide as the address, so its arrow sits right after the words it
+    // changes rather than at the window's far edge.
     let from = gtk::DropDown::builder()
         .model(&model)
-        .hexpand(true)
+        .halign(gtk::Align::Start)
         .valign(gtk::Align::Center)
         .css_classes(["flat", "composer-from"])
         .build();
@@ -2560,6 +2996,14 @@ fn now_secs() -> i64 {
     mailrs_sync::now_millis() / 1000
 }
 
+/// `draft` built on a worker thread; the copy shares the files' bytes.
+async fn built_off_thread(draft: &Draft) -> Result<Built, String> {
+    let draft = draft.clone();
+    off_thread(move || build(&draft, now_secs(), &new_message_id(&draft.from.email)))
+        .await
+        .and_then(|built| built)
+}
+
 /// The formatting menu's name for a paragraph style, the target of
 /// `composer.block`. Lists and quotes are buttons on the bar, not menu
 /// items, so a line of one marks no item.
@@ -2588,6 +3032,31 @@ fn block_of(name: &str) -> BlockKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The action of each item in each section of `menu`, in order.
+    fn actions(menu: &gio::Menu) -> Vec<Vec<String>> {
+        (0..menu.n_items())
+            .filter_map(|i| menu.item_link(i, gio::MENU_LINK_SECTION))
+            .map(|section| {
+                (0..section.n_items())
+                    .filter_map(|i| {
+                        section
+                            .item_attribute_value(i, gio::MENU_ATTRIBUTE_ACTION, None)
+                            .and_then(|v| v.get::<String>())
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_read_receipt_has_a_section_of_its_own_at_the_end_of_more() {
+        for has_engine in [true, false] {
+            let menu = more_menu(&gio::Menu::new(), has_engine);
+            let sections = actions(&menu);
+            assert_eq!(sections.last().unwrap(), &["composer.receipt"], "{sections:?}");
+        }
+    }
 
     #[test]
     fn each_paragraph_style_in_the_menu_reads_back_as_itself() {

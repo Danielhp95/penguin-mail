@@ -798,7 +798,7 @@ pub(super) static MAIN_ACTIONS: &[(&str, WindowRun)] = &[
     ("hide-my-email", |win| win.show_hide_my_email(None)),
     ("check", |win| {
         win.core.poke_all();
-        win.reload_folder();
+        win.listing.reload_remote();
         win.toast(&gettext("Checking for mail"));
     }),
     // The menu's Refresh under the calendar section; disabled outside
@@ -822,6 +822,13 @@ pub(super) static MAIN_ACTIONS: &[(&str, WindowRun)] = &[
     ("previous-conversation", |win| win.list.step(-1)),
     ("clear-selection", |win| win.clear_selection()),
     ("about", |win| win.show_about()),
+    ("donate", |win| {
+        gtk::UriLauncher::new(crate::ui::about::DONATE_URL).launch(
+            Some(&win.window),
+            gio::Cancellable::NONE,
+            |_| {},
+        );
+    }),
     ("preferences", |win| win.show_preferences()),
     ("quit", |win| {
         if let Some(app) = win.app.upgrade() {

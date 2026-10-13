@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
+use tokio::io::AsyncWriteExt;
 use mailrs_domain::{Account, AccountId, ChangeEvent, EpochMillis, MailSet, Provider};
-use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize, built_in_client};
+use mailrs_gmail::{GMAIL_API_BASE, Granted, SIGN_IN_SCOPES, authorize};
 use mailrs_store::threads::{self, ThreadFilter};
 use mailrs_store::{Db, accounts, messages};
 use mailrs_sync::passwords::Secrets;
@@ -21,7 +22,7 @@ use mailrs_sync::{
 use mailrs_sync::config::{Config, config_path, data_dir, migrate_old_dirs, secure_dirs};
 use mailrs_sync::lock::{LockError, SyncLock};
 use mailrs_sync::mailbox::Standard;
-use mailrs_sync::sign_in::google_signed_in;
+use mailrs_sync::sign_in::{google_sign_in, google_signed_in};
 
 /// How long `account add` waits for the browser.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -202,9 +203,14 @@ async fn connect(connector: &Connector, account: &Account) -> Result<AccountServ
 }
 
 async fn add_account(db: &Db) -> Result<()> {
-    // Every sign-in, first or again, goes through the build's client.
-    let oauth = built_in_client()
-        .ok_or_else(|| anyhow!("This copy of Penguin Mail was built without Google sign-in."))?;
+    // Every sign-in, first or again, goes through the own client the
+    // environment names, or else the build's.
+    let clients = Clients::current();
+    let (oauth, _) = google_sign_in(&clients)?;
+    let own = match &clients.own_google {
+        Some(Ok(own)) => Some(own),
+        _ => None,
+    };
     let flow = authorize(&oauth, GMAIL_API_BASE, |url| {
         println!(
             "Opening your browser for Google's consent screen. If it does not open, visit:\n\n{url}\n"
@@ -220,12 +226,13 @@ async fn add_account(db: &Db) -> Result<()> {
         .context("gave up waiting for the browser after five minutes")??;
     let account = google_signed_in(
         db,
-        Secrets::keyring().google,
+        &Secrets::keyring(),
         &authorized.email,
         &authorized.refresh_token,
         now_millis(),
         authorized.granted.as_ref().map(Granted::to_scope).as_deref(),
         &SIGN_IN_SCOPES.join(" "),
+        own,
     )
     .await?;
     println!(
@@ -263,7 +270,7 @@ async fn remove_account(db: &Db, email: &str) -> Result<()> {
             Provider::Gmail => format!(
                 "Removed {email}. Revoke Google's side at https://myaccount.google.com/permissions if you want."
             ),
-            Provider::Imap | Provider::Pop3 | Provider::CalDav => format!("Removed {email} and its password."),
+            Provider::Imap | Provider::Pop3 | Provider::Jmap | Provider::CalDav => format!("Removed {email} and its password or token."),
             Provider::Microsoft => format!(
                 "Removed {email} and its sign-in. Revoke Microsoft's side at https://account.live.com/consent/Manage if you want."
             ),
@@ -465,12 +472,25 @@ async fn export_mail(
             PathBuf::from(export::file_name(&named.subject, named.date, extension))
         }
     };
-    let mail = match message_id {
-        Some(id) => sync.raw_message(id).await?,
-        None => sync.export_mbox(thread_id, None).await?,
-    };
-    std::fs::write(&path, &mail).with_context(|| format!("could not write {}", path.display()))?;
-    println!("Wrote {} bytes to {}", mail.len(), path.display());
+    // Written beside the target and renamed over it when whole, so a
+    // failed export leaves what was there. `--out /dev/stdout` and other
+    // devices take the bytes as they come.
+    let mut file = export::Replacing::create(&path)
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
+    match message_id {
+        Some(id) => {
+            let raw = sync.raw_message(id).await?;
+            file.file().write_all(&raw).await?;
+        }
+        None => sync.export_mbox_to(thread_id, None, file.file()).await?,
+    }
+    let length = file
+        .finish()
+        .await
+        .with_context(|| format!("could not write {}", path.display()))?;
+    // On stderr, so an export to stdout stays the mail alone.
+    eprintln!("Wrote {length} bytes to {}", path.display());
     Ok(())
 }
 

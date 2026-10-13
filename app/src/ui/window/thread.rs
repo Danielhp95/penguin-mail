@@ -8,9 +8,11 @@
 
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 
 use gtk::glib;
 use mailrs_domain::invitation::{Invitation, When};
+use mailrs_domain::translate::gettext;
 use mailrs_domain::{AccountId, EpochMillis, FlagColor, MessageBody, MessageMeta, Target, ThreadSummary};
 use mailrs_store::calendar::CalendarScope;
 use mailrs_store::outbox::Queued;
@@ -21,15 +23,16 @@ use super::pictures::Pictures;
 use super::{BODY_FETCHES, MainWindow, read_cached_body};
 use crate::core::Core;
 use crate::open_thread::run::{
-    Answer, Card, Desk, Effects, Fetched, InlinePictures, Stored, ThreadRun,
+    Answer, Card, Desk, Effects, Fetched, InlinePictures, Preferences, ReceiptCard, Stored,
+    ThreadRun,
 };
 use crate::open_thread::{Cleaned, OpenThread, ToClean, Unsent};
 use crate::protection::Read;
-use crate::settings::MarkRead;
-use crate::translation::{self, Language, Prose, Translation};
+use crate::settings::{MarkRead, ReadReceipts};
+use crate::translation::{self, Translation};
 use crate::ui::conversation::ConversationView;
-use crate::ui::invitation::{AddTo, Showing};
 use crate::ui::invitation::strip::{self, Strip};
+use crate::ui::invitation::{AddTo, Showing};
 use crate::wanted::Screen;
 
 impl MainWindow {
@@ -96,10 +99,30 @@ impl MainWindow {
         }
     }
 
+    /// Asks the conversations on `account_id` again whether their receipt
+    /// question was answered, now that the account can say.
+    pub(super) fn account_ready_for_threads(self: &Rc<Self>, account_id: AccountId) {
+        for view in self.views() {
+            let run = self.thread_run(&view);
+            glib::spawn_future_local(async move { run.account_ready(account_id).await });
+        }
+    }
+
     /// The translation card's button.
     pub(super) fn translate_message(self: &Rc<Self>, view: &Rc<ConversationView>) {
         let run = self.thread_run(view);
         glib::spawn_future_local(async move { run.translate().await });
+    }
+
+    /// The read receipt card's buttons. A card already at work has no
+    /// message to answer for, so a second press sends nothing.
+    pub(super) fn answer_receipt(self: &Rc<Self>, view: &Rc<ConversationView>, message_id: String, send: bool) {
+        // Only the message the card asks about, and only while it asks.
+        if view.find(OpenThread::receipt_asked).as_deref() != Some(message_id.as_str()) {
+            return;
+        }
+        let run = self.thread_run(view);
+        glib::spawn_future_local(async move { run.answer_receipt(message_id, send).await });
     }
 }
 
@@ -122,21 +145,6 @@ impl Ports {
             .ok_or_else(|| "the account has stopped syncing".to_string())
     }
 
-    /// Cleans the bodies' HTML on a worker thread. Forty newsletters take
-    /// the GTK thread tens of milliseconds, during which the window would
-    /// not draw. A body this fails to clean is cleaned when drawn.
-    async fn clean_away(&self, bodies: ToClean) -> HashMap<String, Cleaned> {
-        if bodies.is_empty() {
-            return HashMap::new();
-        }
-        self.core
-            .call(async move { tokio::task::spawn_blocking(move || bodies.clean()).await })
-            .await
-            .unwrap_or_else(|err| {
-                tracing::warn!(error = %err, "could not clean the bodies away from the window");
-                HashMap::new()
-            })
-    }
 }
 
 impl Screen for Ports {
@@ -146,8 +154,8 @@ impl Screen for Ports {
 }
 
 impl Desk for Ports {
-    fn target(&self) -> Option<Target> {
-        self.view.read(OpenThread::target)
+    fn open_thread(&self, read: &mut dyn FnMut(&OpenThread)) {
+        self.view.read(read);
     }
 
     fn start_loading(&self) -> u64 {
@@ -169,7 +177,7 @@ impl Desk for Ports {
             .is_some_and(|window| window.images_allowed_for(senders))
     }
 
-    fn photos(&self, senders: &[String]) -> HashMap<String, String> {
+    fn photos(&self, senders: &[String]) -> crate::render::Photos {
         self.window()
             .and_then(|window| window.app.upgrade())
             .map(|app| app.sender_photos(senders.iter().cloned()))
@@ -179,25 +187,6 @@ impl Desk for Ports {
     fn is_vip(&self, email: &str) -> bool {
         self.window()
             .is_some_and(|window| window.settings_with(|s| s.is_vip(email)))
-    }
-
-    fn mark_read_delay(&self) -> Option<u32> {
-        match self.window()?.settings_with(|s| s.mark_read) {
-            MarkRead::Immediately => Some(0),
-            MarkRead::AfterDelay => Some(2),
-            MarkRead::Manually => None,
-        }
-    }
-
-    fn unread(&self) -> bool {
-        self.view.read(OpenThread::unread).unwrap_or(false)
-    }
-
-    fn invitation(&self) -> Option<(String, String)> {
-        self.view.find(|open| {
-            open.invitation()
-                .map(|(meta, ics)| (meta.id.clone(), ics.to_string()))
-        })
     }
 
     fn invitation_off_calendar(&self) -> Option<Invitation> {
@@ -211,40 +200,6 @@ impl Desk for Ports {
             .flatten()
     }
 
-    fn wanting_thumbnails(&self) -> Vec<(String, MessageBody)> {
-        self.view
-            .read(OpenThread::wanting_thumbnails)
-            .unwrap_or_default()
-    }
-
-    fn wanting_images(&self) -> Vec<(String, MessageBody)> {
-        self.view
-            .read(OpenThread::wanting_images)
-            .unwrap_or_default()
-    }
-
-    fn prose(&self) -> Option<(String, Prose)> {
-        self.view.find(OpenThread::prose)
-    }
-
-    fn same_writer(&self, message_id: &str) -> String {
-        self.view
-            .read(|open| open.same_writer(message_id))
-            .unwrap_or_default()
-    }
-
-    fn translation_of(&self, message_id: &str) -> Option<(Option<Language>, bool, bool)> {
-        self.view.find(|open| open.translation_of(message_id))
-    }
-
-    fn arrived(&self, message_id: &str) -> Option<(MessageBody, String)> {
-        self.view.find(|open| open.arrived(message_id))
-    }
-
-    fn interface_language(&self) -> Option<Language> {
-        self.window()?.interface_language()
-    }
-
     fn translation_destination(&self) -> Result<String, String> {
         let window = self
             .window()
@@ -252,10 +207,21 @@ impl Desk for Ports {
         window.settings_with(|s| translation::destination(&s.ai).map(|(_, goes)| goes))
     }
 
-    fn never_translate(&self) -> Vec<String> {
-        self.window()
-            .map(|window| window.settings_with(|s| s.never_translate.clone()))
-            .unwrap_or_default()
+    fn preferences(&self) -> Preferences {
+        let Some(window) = self.window() else {
+            return Preferences::default();
+        };
+        window.settings_with(|s| Preferences {
+            mark_read_delay: match s.mark_read {
+                MarkRead::Immediately => Some(0),
+                MarkRead::AfterDelay => Some(2),
+                MarkRead::Manually => None,
+            },
+            translation_language: Some(crate::assistant::language::selected(&s.ai.language)),
+            translation_revision: Some(s.ai.language_revision),
+            never_translate: s.never_translate.clone(),
+            offers_receipts: s.read_receipts == ReadReceipts::Ask,
+        })
     }
 }
 
@@ -266,8 +232,7 @@ impl Effects for Ports {
         thread_id: String,
     ) -> Answer<'_, Result<Stored, String>> {
         Box::pin(async move {
-            let mut stored = self
-                .core
+            self.core
                 .read(move |c| {
                     let messages = messages::thread_messages(c, account_id, &thread_id)?;
                     let mut bodies = HashMap::new();
@@ -286,15 +251,11 @@ impl Effects for Ports {
                     Ok(Stored {
                         messages,
                         bodies,
-                        cleaned: HashMap::new(),
                         left,
                     })
                 })
                 .await
-                .map_err(|err| err.to_string())?;
-            let html = ToClean::of(account_id, &stored.bodies);
-            stored.cleaned = self.clean_away(html).await;
-            Ok(stored)
+                .map_err(|err| err.to_string())
         })
     }
 
@@ -326,10 +287,14 @@ impl Effects for Ports {
         })
     }
 
-    fn bodies(&self, account_id: AccountId, message_ids: Vec<String>) -> Answer<'_, Fetched> {
+    fn bodies(
+        &self,
+        account_id: AccountId,
+        message_ids: Vec<String>,
+    ) -> Answer<'_, Vec<(String, Result<MessageBody, String>)>> {
         Box::pin(async move {
             let Ok(sync) = self.sync(account_id) else {
-                return Fetched::default();
+                return Vec::new();
             };
             let fetches = message_ids.into_iter().map(|id| {
                 let (core, sync) = (Rc::clone(&self.core), sync.clone());
@@ -342,25 +307,38 @@ impl Effects for Ports {
             // A long thread would otherwise fire one Gmail call per message
             // at once, and 30 of them at 5 units each is most of a second's
             // budget.
-            let bodies: Vec<(String, Result<MessageBody, String>)> = {
-                use futures::StreamExt;
-                futures::stream::iter(fetches)
-                    .buffered(BODY_FETCHES)
-                    .collect()
-                    .await
-            };
-            let arrived = bodies
-                .iter()
-                .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)));
-            let cleaned = self.clean_away(ToClean::of(account_id, arrived)).await;
-            Fetched { bodies, cleaned }
+            use futures::StreamExt;
+            futures::stream::iter(fetches)
+                .buffered(BODY_FETCHES)
+                .collect()
+                .await
+        })
+    }
+
+    /// Cleans on a worker thread. Forty newsletters take the GTK thread
+    /// tens of milliseconds, during which the window would not draw. A
+    /// body this fails to clean comes back as a failed copy, which the
+    /// page draws as its text, so it does not stay loading.
+    fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
+        Box::pin(async move {
+            if html.is_empty() {
+                return HashMap::new();
+            }
+            let failed = html.stand_ins();
+            self.core
+                .call(async move { tokio::task::spawn_blocking(move || html.clean()).await })
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(error = %err, "could not clean the bodies away from the window");
+                    failed.failures()
+                })
         })
     }
 
     fn inline_images(
         &self,
         account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, InlinePictures> {
         Box::pin(async move {
             match self.sync(account_id) {
@@ -377,7 +355,7 @@ impl Effects for Ports {
     fn thumbnails(
         &self,
         account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, HashMap<String, String>> {
         Box::pin(async move {
             let Ok(sync) = self.sync(account_id) else {
@@ -558,7 +536,7 @@ impl Effects for Ports {
 
     fn translate(
         &self,
-        into: Language,
+        into: String,
         pieces: Vec<String>,
     ) -> Answer<'_, Result<Vec<Option<String>>, String>> {
         Box::pin(async move {
@@ -569,7 +547,7 @@ impl Effects for Ports {
             self.core
                 .call(async move {
                     let pieces: Vec<&str> = pieces.iter().map(String::as_str).collect();
-                    translation::ask(config, into, &pieces)
+                    translation::ask(config, &into, &pieces)
                         .await
                         .map_err(anyhow::Error::msg)
                 })
@@ -580,6 +558,60 @@ impl Effects for Ports {
 
     fn sleep(&self, seconds: u32) -> Answer<'_, ()> {
         Box::pin(glib::timeout_future_seconds(seconds))
+    }
+
+    fn receipt_answered(&self, account_id: AccountId, message_id: String) -> Answer<'_, Result<bool, String>> {
+        Box::pin(async move {
+            // Not connected yet: ask later rather than twice.
+            let Some(sync) = self.core.account(account_id) else {
+                return Ok(true);
+            };
+            // A receipt nobody answered still needs an address of the
+            // account's that the mail came to, or the card would offer one
+            // from another address; such a message counts as settled.
+            self.core
+                .call(async move { sync.receipt_open(&message_id).await.map(|open| !open) })
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn answer_receipt(
+        &self,
+        account_id: AccountId,
+        message_id: String,
+        send: bool,
+    ) -> Answer<'_, Result<(), String>> {
+        Box::pin(async move {
+            let sync = self
+                .core
+                .account(account_id)
+                .ok_or_else(|| gettext("The account is not connected yet."))?;
+            self.core
+                .call(async move { sync.answer_receipt(&message_id, send).await })
+                .await
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn sent_recipients(
+        &self,
+        account_id: AccountId,
+        rfc822_msgid: String,
+    ) -> Answer<'_, Result<Vec<String>, String>> {
+        Box::pin(async move {
+            self.core
+                .read(move |c| messages::sent_copies(c, account_id, &rfc822_msgid))
+                .await
+                .map(|copies| {
+                    copies
+                        .into_iter()
+                        .flat_map(|copy| copy.to.into_iter().chain(copy.cc))
+                        .map(|address| address.email)
+                        .collect()
+                })
+                .map_err(|err| err.to_string())
+        })
     }
 
     fn queued(&self, id: i64) -> Answer<'_, Result<Option<Queued>, String>> {
@@ -610,6 +642,10 @@ impl Effects for Ports {
 
     fn bodies_arrived(&self, fetched: Fetched) {
         self.view.bodies_arrived(fetched);
+    }
+
+    fn cleaned(&self, cleaned: HashMap<String, Cleaned>) {
+        self.view.cleaned(cleaned);
     }
 
     fn thumbnails_arrived(&self, found: HashMap<String, String>) {
@@ -664,6 +700,14 @@ impl Effects for Ports {
         }
     }
 
+    fn receipt_card(&self, card: ReceiptCard) {
+        self.view.receipt_card(card);
+    }
+
+    fn report_checked(&self, message_id: String, sent: bool) {
+        self.view.report_checked(message_id, sent);
+    }
+
     fn translation_card(&self, card: Card) {
         let shown = &self.view.translate;
         match card {
@@ -683,6 +727,10 @@ impl Effects for Ports {
 
     fn translated(&self, message_id: String, translation: Translation) {
         self.view.translated(message_id, translation);
+    }
+
+    fn keep_translations(&self, into: &str) {
+        self.view.keep_translations(into);
     }
 
     fn turn_translation(&self, message_id: &str) -> bool {

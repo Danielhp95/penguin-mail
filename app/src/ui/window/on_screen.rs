@@ -7,8 +7,8 @@
 //! pick its own handful of redraws: search forgot the selection and the
 //! Outbox actions, and a mailbox that vanished was listed twice. Every
 //! transition here changes the state and answers with a [`Redraw`] naming
-//! what went stale, the way `Aftermath` does for a mail action, and
-//! `MainWindow::redraw` carries it out. Nothing here touches GTK.
+//! what went stale, the way `Aftermath` does for a mail action, and the
+//! listing run carries it out. Nothing here touches GTK.
 
 use mailrs_domain::{AccountId, Category, SmartMailbox};
 
@@ -222,54 +222,6 @@ fn mailbox_search_title() -> String {
     mailrs_domain::translate::gettext("Search")
 }
 
-/// Whether a request for the sidebar counts should start a count now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Count {
-    /// Start one on the next turn of the main loop.
-    Start,
-    /// One is already waiting to start, or running and will run again.
-    Joined,
-}
-
-/// Coalesces requests for the sidebar counts. An account change used to
-/// count twice, and a burst of events once per event: two grouped
-/// queries over the whole store each time. Requests made before a count
-/// starts share it, and requests made while one runs share one more
-/// after it, since that one may have read the store too early.
-#[derive(Debug, Default)]
-pub(super) struct Counts {
-    waiting: bool,
-    running: bool,
-    again: bool,
-}
-
-impl Counts {
-    /// Something changed what the counts would say.
-    pub(super) fn ask(&mut self) -> Count {
-        if self.waiting || self.running {
-            self.again |= self.running;
-            return Count::Joined;
-        }
-        self.waiting = true;
-        Count::Start
-    }
-
-    /// The count starts.
-    pub(super) fn start(&mut self) {
-        self.waiting = false;
-        self.running = true;
-    }
-
-    /// The count finished. `Start` means a request came in while it ran.
-    pub(super) fn done(&mut self) -> Option<Count> {
-        self.running = false;
-        std::mem::take(&mut self.again).then(|| {
-            self.waiting = true;
-            Count::Start
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use mailrs_domain::Folder;
@@ -430,27 +382,5 @@ mod tests {
         let (redraw, now) = screen.reveal((1, "t1".into(), Reveal::Read));
         assert_eq!(redraw, None);
         assert_eq!(now, Some((1, "t1".into(), Reveal::Read)));
-    }
-
-    #[test]
-    fn requests_for_the_counts_share_one_count() {
-        let mut counts = Counts::default();
-        assert_eq!(counts.ask(), Count::Start);
-        assert_eq!(counts.ask(), Count::Joined);
-        counts.start();
-        assert_eq!(counts.done(), None, "nothing came in while it ran");
-        assert_eq!(counts.ask(), Count::Start);
-    }
-
-    #[test]
-    fn a_request_while_the_counts_run_counts_once_more_after() {
-        let mut counts = Counts::default();
-        counts.ask();
-        counts.start();
-        assert_eq!(counts.ask(), Count::Joined);
-        assert_eq!(counts.ask(), Count::Joined);
-        assert_eq!(counts.done(), Some(Count::Start));
-        counts.start();
-        assert_eq!(counts.done(), None);
     }
 }

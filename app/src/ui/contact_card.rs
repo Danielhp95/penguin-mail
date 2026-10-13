@@ -60,7 +60,11 @@ pub fn present(parent: &impl IsA<gtk::Widget>, person: Person, chose: impl Fn(Ch
         .halign(gtk::Align::Center)
         .build();
     super::thread_row::set_avatar_hue(&avatar, &person.name, &person.email);
-    if let Some(bytes) = person.photo.as_ref().and_then(|path| std::fs::read(path).ok()) {
+    let photo = person.photo.as_ref().and_then(|path| std::fs::read(path).ok());
+    // A photo GDK reads in this process is decoded only when its header
+    // says it is a sane size.
+    let photo = photo.filter(|bytes| !super::texture::decoded_in_process(bytes) || crate::photos::fits(bytes));
+    if let Some(bytes) = photo {
         let bytes = glib::Bytes::from_owned(bytes);
         match super::texture::here(&bytes) {
             Some(photo) => avatar.set_custom_image(Some(&photo)),

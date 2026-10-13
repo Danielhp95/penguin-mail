@@ -11,13 +11,16 @@
 //! quoted-printable would leave a mail server free to rewrite them, and an
 //! object whose lines end in a bare newline is one Exchange turns down.
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use mail_builder::MessageBuilder;
 use mail_builder::headers::address::Address as MimeAddress;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::mime::MimePart;
-use mailrs_domain::invitation::{Answer, When};
+use mailrs_domain::calendar as model;
+use mailrs_domain::invitation::{self, Answer, Invitation, Method, Occurrence, Scope, When};
 use mailrs_domain::{Address, EpochMillis};
+
+use crate::{BackendError, MailBackend};
 
 /// The RFC 822 bytes of one iTIP message: `object` to `to`, from `me`.
 /// `method` is the iTIP method the object holds, which the calendar part
@@ -75,6 +78,70 @@ pub(crate) fn reply_prose(me: &Address, answer: Answer, summary: &str) -> String
         me.display(),
         titled(summary)
     )
+}
+
+/// Mails the organizer of `event` the iTIP REPLY for `answer`, for a
+/// calendar server that does not schedule. An event with no organizer, or
+/// one `me` organizes, has nobody to tell.
+pub(crate) async fn tell_organizer<M: MailBackend>(
+    mail: &M,
+    event: &model::Event,
+    me: &str,
+    answer: Answer,
+    occurrence: Option<EpochMillis>,
+    note: Option<&str>,
+    now: EpochMillis,
+) -> Result<(), BackendError> {
+    let Some(organizer) = event.organizer.as_deref().map(str::trim).filter(|o| !o.is_empty() && !o.eq_ignore_ascii_case(me)) else {
+        return Ok(());
+    };
+    let when = match event.all_day {
+        true => {
+            let day = |at: EpochMillis| DateTime::<Utc>::from_timestamp_millis(at).map(|d| d.date_naive());
+            match (day(event.start), day(event.end - 1)) {
+                (Some(first), Some(last)) => Some(When::Days { first, last: last.max(first) }),
+                _ => None,
+            }
+        }
+        false => Some(When::At { starts_at: event.start, ends_at: Some(event.end) }),
+    };
+    let occurrence = occurrence.map(|at| Occurrence {
+        written: format!(":{}", DateTime::<Utc>::from_timestamp_millis(at).unwrap_or_default().format("%Y%m%dT%H%M%SZ")),
+        at: Some(at),
+    });
+    let scope = match occurrence {
+        Some(_) => Scope::Occurrence,
+        None => Scope::Series,
+    };
+    let organizer = Address { name: None, email: organizer.to_string() };
+    let invitation = Invitation {
+        uid: event.uid.clone(),
+        sequence: event.sequence,
+        method: Method::Reply,
+        summary: event.title.clone(),
+        when,
+        location: None,
+        description: None,
+        organizer: Some(organizer.clone()),
+        guests: Vec::new(),
+        repeats: None,
+        occurrence,
+        zone: None,
+        rules: Vec::new(),
+    };
+    let me = Address { name: None, email: me.to_string() };
+    let raw = itip(
+        &me,
+        &organizer,
+        &reply_subject(answer, &invitation.summary),
+        &reply_prose(&me, answer, &invitation.summary),
+        "REPLY",
+        &invitation::reply_with_note(&invitation, &me, answer, scope, note, now),
+        now,
+    )
+    .map_err(BackendError::Refused)?;
+    mail.send(&raw, None).await?;
+    Ok(())
 }
 
 /// "New Time Proposed: Q4 roadmap review".

@@ -159,8 +159,14 @@ impl MainWindow {
 
     /// Shows the newest message in `view` as it arrived, headers and all.
     pub(super) fn view_source(self: &Rc<Self>, view: &ConversationView) {
+        self.view_source_of(view, None);
+    }
+
+    /// Shows `message_id` in `view` as it arrived, or the newest message
+    /// when it is `None`.
+    pub(super) fn view_source_of(self: &Rc<Self>, view: &ConversationView, message_id: Option<String>) {
         let found = view.find(|o| {
-            let message = match &o.only_message {
+            let message = match message_id.as_ref().or(o.only_message.as_ref()) {
                 Some(id) => o.messages.iter().find(|m| &m.id == id),
                 None => o.messages.last(),
             }?;
@@ -194,7 +200,7 @@ fn gates(mailbox: &Mailbox, offers: Offers) -> [(&'static str, bool); 3] {
     [block, categorize, ("trash", deletes(mailbox, offers.delete_forever))]
 }
 
-fn show_source(parent: &adw::Window, subject: &str, raw: Vec<u8>) {
+fn show_source(parent: &adw::Window, subject: &str, raw: std::sync::Arc<Vec<u8>>) {
     let text = String::from_utf8_lossy(&raw).replace("\r\n", "\n");
     let view = gtk::TextView::builder()
         .editable(false)
@@ -254,7 +260,7 @@ fn show_source(parent: &adw::Window, subject: &str, raw: Vec<u8>) {
         glib::spawn_future_local(async move {
             if let Ok(file) = dialog.save_future(Some(&owner)).await
                 && let Some(path) = file.path()
-                && let Err(err) = std::fs::write(&path, &raw)
+                && let Err(err) = std::fs::write(&path, raw.as_slice())
             {
                 tracing::warn!(error = %err, "could not save the message source");
             }

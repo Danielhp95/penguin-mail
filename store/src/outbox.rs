@@ -11,7 +11,7 @@
 use mailrs_domain::{AccountId, EpochMillis};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::Result;
+use crate::{Result, StoreError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Queued {
@@ -39,10 +39,13 @@ pub struct Queued {
     /// Why the last attempt failed. `None` while the message is waiting for
     /// its hour and nothing has gone wrong.
     pub problem: Option<String>,
+    /// The server's hold, for a message the server sends itself at its
+    /// hour. The app sends nothing for it while this is set.
+    pub held: Option<String>,
 }
 
 const COLUMNS: &str = "id, account_id, draft_id, message_id, thread_id, subject, recipients, \
-                       send_at, raw, composer, attempts, problem";
+                       send_at, raw, composer, attempts, problem, held";
 
 fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
     Ok(Queued {
@@ -58,24 +61,43 @@ fn to_queued(row: &Row<'_>) -> rusqlite::Result<Queued> {
         composer: row.get(9)?,
         attempts: row.get(10)?,
         problem: row.get(11)?,
+        held: row.get(12)?,
     })
 }
 
 /// Stores a message: as a new row, or over the row it already has, which
-/// is the one its id names or the one holding the same Gmail draft. Gives
-/// back the row's id. Writing over a row lets go of any claim on it, since
-/// the caller that claimed it is done with it.
+/// is the one its id names, the one holding the same Gmail draft, or the
+/// one holding the same server hold. Gives back the row's id. Writing over
+/// a row lets go of any claim on it, since the caller that claimed it is
+/// done with it.
+///
+/// A message that finds its row by draft alone may not change that row's
+/// hold: the server would still send what it holds, and the row would
+/// lose the handle that calls it back. That answers [`StoreError::Held`].
+/// The caller that names the row by its id has called the hold back.
 pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
-    let already = match (message.id, &message.draft_id) {
-        (id, _) if id > 0 => Some(id),
-        (_, Some(draft_id)) => find_draft(conn, message.account_id, draft_id)?.map(|m| m.id),
+    let by_draft = match &message.draft_id {
+        Some(draft_id) => find_draft(conn, message.account_id, draft_id)?,
+        None => None,
+    };
+    if message.id <= 0
+        && let Some(row) = &by_draft
+        && row.held.is_some()
+        && row.held != message.held
+    {
+        return Err(StoreError::Held);
+    }
+    let by_draft = by_draft.map(|m| m.id);
+    let by_hold = match &message.held {
+        Some(handle) if by_draft.is_none() => find_held(conn, message.account_id, handle)?.map(|m| m.id),
         _ => None,
     };
+    let already = Some(message.id).filter(|id| *id > 0).or(by_draft).or(by_hold);
     if let Some(id) = already {
         let changed = conn.execute(
             "UPDATE outbox SET draft_id = ?2, message_id = ?3, thread_id = ?4, subject = ?5, \
              recipients = ?6, send_at = ?7, raw = ?8, composer = ?9, attempts = ?10, \
-             problem = ?11 WHERE id = ?1",
+             problem = ?11, held = ?12 WHERE id = ?1",
             params![
                 id,
                 message.draft_id,
@@ -87,7 +109,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
                 message.raw,
                 message.composer,
                 message.attempts,
-                message.problem
+                message.problem,
+                message.held
             ],
         )?;
         if changed > 0 {
@@ -97,8 +120,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
     }
     conn.execute(
         "INSERT INTO outbox (account_id, draft_id, message_id, thread_id, subject, recipients, \
-         send_at, raw, composer, attempts, problem) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         send_at, raw, composer, attempts, problem, held) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             message.account_id,
             message.draft_id,
@@ -110,7 +133,8 @@ pub fn put(conn: &Connection, message: &Queued) -> Result<i64> {
             message.raw,
             message.composer,
             message.attempts,
-            message.problem
+            message.problem,
+            message.held
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -184,6 +208,35 @@ pub fn find_draft(
         .optional()?)
 }
 
+/// The waiting message the server holds under `handle`.
+pub fn find_held(conn: &Connection, account_id: AccountId, handle: &str) -> Result<Option<Queued>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS} FROM outbox WHERE account_id = ?1 AND held = ?2"),
+            params![account_id, handle],
+            to_queued,
+        )
+        .optional()?)
+}
+
+/// The held copies no waiting row stands for, by account and message id:
+/// messages carrying `keyword`, the app's held keyword, that no row names
+/// by its draft or its message, and that no row whose hold lost its
+/// answer waits to find by their `Message-ID`. Another install of the app
+/// held them.
+pub fn unclaimed_holds(conn: &Connection, keyword: &str) -> Result<Vec<(AccountId, String)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT m.account_id, m.id FROM message_keywords k \
+         JOIN messages m ON m.account_id = k.account_id AND m.id = k.message_id \
+         WHERE k.keyword = ?1 AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.account_id = m.account_id \
+         AND (o.draft_id = m.id OR o.message_id = m.id \
+         OR (m.rfc822_msgid IS NOT NULL AND o.held LIKE 'unconfirmed:%' \
+         AND substr(o.held, -length(m.rfc822_msgid) - 1) = ':' || m.rfc822_msgid)))",
+    )?;
+    let rows = stmt.query_map(params![keyword], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 /// The waiting message whose Gmail draft shows as `message_id`.
 pub fn by_message(
     conn: &Connection,
@@ -195,17 +248,22 @@ pub fn by_message(
         .find(|m| m.account_id == account_id && m.message_id.as_deref() == Some(message_id)))
 }
 
-/// Records that a waiting message was saved again under a new draft message.
+/// Records that the draft `old` of a waiting message was saved again, as
+/// the draft `draft_id` holding `message_id`. The draft holds the bytes
+/// from then on, so the row drops any it kept. A held row is left alone:
+/// its draft is the server's copy, which nothing saves over.
 pub fn set_message(
     conn: &Connection,
     account_id: AccountId,
+    old: &str,
     draft_id: &str,
     message_id: &str,
     thread_id: &str,
 ) -> Result<()> {
     conn.execute(
-        "UPDATE outbox SET message_id = ?3, thread_id = ?4 WHERE account_id = ?1 AND draft_id = ?2",
-        params![account_id, draft_id, message_id, thread_id],
+        "UPDATE outbox SET draft_id = ?3, message_id = ?4, thread_id = ?5, raw = NULL \
+         WHERE account_id = ?1 AND draft_id = ?2 AND held IS NULL",
+        params![account_id, old, draft_id, message_id, thread_id],
     )?;
     Ok(())
 }
@@ -226,6 +284,14 @@ pub fn try_now(conn: &Connection, now: EpochMillis) -> Result<()> {
         "UPDATE outbox SET send_at = ?1 WHERE problem IS NOT NULL AND send_at > ?1",
         params![now],
     )?;
+    Ok(())
+}
+
+/// Counts a try at the message `id` as it starts, so a try the app never
+/// heard back from, because it stopped, still makes the next one look in
+/// Sent first.
+pub fn count_try(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("UPDATE outbox SET attempts = attempts + 1 WHERE id = ?1", params![id])?;
     Ok(())
 }
 

@@ -9,7 +9,7 @@ use super::fake::{
     spot, strip,
     with_inline_picture, with_picture,
 };
-use super::{Card, Event, Stale};
+use super::{Card, Event, ReceiptCard, Stale};
 use crate::open_thread::Served;
 use crate::protection::{Mark, Read, Tone};
 
@@ -48,7 +48,7 @@ async fn opening_shows_the_stored_copy_then_the_bodies_gmail_sent() {
     assert!(at(Step::Ensure) < at(Step::Bodies));
     assert!(at(Step::Bodies) < at(Step::BodiesArrived));
     let text = window
-        .open(|open| open.bodies["m1"].clone().ok()?.text)
+        .open(|open| open.bodies["m1"].clone().ok()?.text.clone())
         .flatten();
     assert_eq!(text.as_deref(), Some("Hello"));
 }
@@ -962,6 +962,97 @@ async fn an_html_body_is_drawn_cleaned() {
     assert!(!drawn.contains("steal()"), "{drawn}");
 }
 
+/// Every cleaning goes through the port, which does it on another thread
+/// than the one that draws.
+fn cleaned_away(window: &FakeWindow) -> bool {
+    let here = std::thread::current().id();
+    let cleaners = window.0.borrow().cleaners.clone();
+    !cleaners.is_empty() && cleaners.iter().all(|worker| *worker != here)
+}
+
+#[tokio::test]
+async fn gmail_s_html_is_cleaned_through_the_port_before_it_is_drawn() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Bodies) < at(Step::Clean) && at(Step::Clean) < at(Step::BodiesArrived));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window), [["m1"]], "loading, then the body in one patch");
+    assert!(page(&window).contains("<p>Hi Ann</p>"));
+}
+
+/// The stored copy goes on screen whole, its HTML already cleaned.
+#[tokio::test]
+async fn the_stored_copy_is_cleaned_before_it_goes_on_screen() {
+    let window = FakeWindow::new();
+    window.with(|screen| {
+        screen.messages = vec![meta("m1", false)];
+        if let Some(stored) = screen.stored.get_mut(THREAD) {
+            stored.messages = vec![meta("m1", false)];
+            stored
+                .bodies
+                .insert("m1".to_string(), html_body("<p>Kites at ten</p>"));
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    let steps = window.steps();
+    let at = |step| steps.iter().position(|s| *s == step).expect("step taken");
+    assert!(at(Step::Clean) < at(Step::Show));
+    assert!(cleaned_away(&window));
+    let first = window.0.borrow().loads.first().cloned().unwrap_or_default();
+    assert!(first.contains("<p>Kites at ten</p>"), "{first}");
+}
+
+/// A body an engine opened says it is loading until the port has cleaned
+/// it, and nothing cleans it on the way to the page.
+#[tokio::test]
+async fn an_opened_html_body_is_cleaned_through_the_port() {
+    let window = FakeWindow::new();
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    let before_patches = patches(&window).len();
+    window
+        .run()
+        .engine_answered(target(None), "m1".to_string(), opened(html_body("<p>Under the mat</p>")))
+        .await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(window.took(Step::Cleaned));
+    assert!(cleaned_away(&window));
+    assert_eq!(patches(&window)[before_patches..], [["m1"], ["m1"]]);
+    assert!(page(&window).contains("<p>Under the mat</p>"));
+}
+
+/// A body the cleaner fails on ends in a fallback line, not in "Loading…"
+/// for good, and is not sent out to be cleaned again.
+#[tokio::test]
+async fn a_body_that_fails_to_clean_ends_in_the_fallback_not_in_loading() {
+    let window = FakeWindow::with_body(html_body("<p>Hi Ann</p>"));
+    window.with(|screen| screen.clean_fails = true);
+    window.run().open(row(THREAD)).await;
+    let drawn = page(&window);
+    assert!(drawn.contains("This message could not be displayed"), "{drawn}");
+    assert!(!drawn.contains("Loading…"), "{drawn}");
+    let asked = window.steps().iter().filter(|step| **step == Step::Clean).count();
+    assert_eq!(asked, 1, "cleaned once");
+}
+
+/// A model's HTML is mail like any other: cleaned through the port.
+#[tokio::test]
+async fn a_translated_html_message_is_cleaned_through_the_port() {
+    let window = FakeWindow::with_body(html_body(
+        "<p>Olá Ana, a reunião de amanhã fica para as dez horas. Não te esqueças de \
+         trazer os documentos que eu te pedi, para podermos ver tudo com calma \
+         antes de falar com o banco. Um abraço e até amanhã.</p>",
+    ));
+    window.run().open(row(THREAD)).await;
+    let before = window.0.borrow().cleaners.len();
+    window.run().translate().await;
+    assert_eq!(window.0.borrow().cleaners.len(), before + 1);
+    assert!(cleaned_away(&window));
+    assert!(page(&window).contains("Hello Ana"), "{}", page(&window));
+}
+
 #[tokio::test]
 async fn a_shown_translation_is_what_the_page_draws() {
     let window = FakeWindow::with_body(portuguese());
@@ -1059,4 +1150,346 @@ async fn hours_for_a_thread_the_reader_left_go_nowhere() {
     window.run().open(row(THREAD)).await;
     assert!(window.took(Step::Strip));
     assert!(!window.took(Step::StripKnown));
+}
+
+#[tokio::test]
+async fn ai_language_changes_translation_without_changing_the_interface() {
+    for language in ["Russian", "Czech", "Slovak"] {
+        let window = FakeWindow::with_body(body(
+            "Please read the attached document and let us know if you have any questions. We will send you the details tomorrow. Thank you for your help.",
+        ));
+        window.with(|screen| screen.language = Some(language.into()));
+        window.run().open(row(THREAD)).await;
+        assert!(matches!(
+            window.0.borrow().cards.last(),
+            Some(Card::Offered { .. })
+        ));
+        window.run().translate().await;
+        assert_eq!(window.0.borrow().requested_languages, [language]);
+        assert_eq!(
+            window.open(|open| open.translations["m1"].into.clone()),
+            Some(language.into())
+        );
+    }
+}
+
+#[tokio::test]
+async fn changing_the_ai_language_discards_only_old_translations() {
+    let window = FakeWindow::with_body(portuguese());
+    window.run().open(row(THREAD)).await;
+    window.run().translate().await;
+    window.run().offer_translation_again();
+    assert_eq!(window.open(|open| open.translations.len()), Some(1));
+    window.with(|screen| screen.language = Some("Czech".into()));
+    window.run().offer_translation_again();
+    assert_eq!(window.open(|open| open.translations.len()), Some(0));
+    assert!(page(&window).contains("Olá Ana"));
+    assert!(!page(&window).contains("Hello Ana"));
+    assert!(matches!(
+        window.0.borrow().cards.last(),
+        Some(Card::Offered { .. })
+    ));
+    window.run().translate().await;
+    assert_eq!(window.0.borrow().requested_languages, ["English", "Czech"]);
+}
+
+#[tokio::test]
+async fn changing_language_during_translation_discards_the_old_answer_and_error() {
+    for reply in [
+        Ok(vec![Some("Old translation".into())]),
+        Err("offline".into()),
+    ] {
+        let window = FakeWindow::with_body(portuguese());
+        window.with(|screen| {
+            screen.languages_during_translation = vec!["Russian".into()];
+            screen.translation = reply;
+        });
+        window.run().open(row(THREAD)).await;
+        window.run().translate().await;
+        assert!(!window.took(Step::Translated));
+        assert!(window.0.borrow().toasts.is_empty());
+        assert_eq!(window.open(|open| open.translations.len()), Some(0));
+    }
+}
+
+#[tokio::test]
+async fn returning_to_the_original_language_drops_the_in_flight_answer_and_error() {
+    for reply in [Ok(vec![Some("Old translation".into())]), Err("offline".into())] {
+        let window = FakeWindow::with_body(portuguese());
+        window.with(|screen| {
+            screen.languages_during_translation = vec!["Czech".into(), "English".into()];
+            screen.translation = reply;
+        });
+        window.run().open(row(THREAD)).await;
+        window.run().translate().await;
+        assert!(!window.took(Step::Translated));
+        assert!(window.0.borrow().toasts.is_empty());
+        assert_eq!(window.open(|open| open.translations.len()), Some(0));
+    }
+}
+
+/// Ann's message, asking for a read receipt at her own address.
+fn asking() -> mailrs_domain::MessageBody {
+    mailrs_domain::MessageBody {
+        receipt_to: Some("ann@example.com".into()),
+        ..body("The rota is up.")
+    }
+}
+
+#[tokio::test]
+async fn a_message_that_asks_puts_the_card_up() {
+    let window = FakeWindow::with_body(asking());
+    window.run().open(row(THREAD)).await;
+    assert_eq!(
+        window.with(|s| s.receipt_cards.clone()),
+        [ReceiptCard::Asked {
+            message_id: "m1".into(),
+            to: "ann@example.com".into()
+        }]
+    );
+    assert!(window.page().contains("mailrs:receipt/send"), "{}", window.page());
+}
+
+#[tokio::test]
+async fn an_answered_receipt_is_not_asked_again() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answered = Ok(true));
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+}
+
+#[tokio::test]
+async fn a_message_marked_mdnsent_elsewhere_asks_nothing() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| {
+        for meta in s.messages.iter_mut().chain(s.stored.get_mut(THREAD).unwrap().messages.iter_mut()) {
+            meta.held.keywords.push(mailrs_domain::mailbox::keyword::MDN_SENT.to_string());
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(!window.took(Step::ReceiptAnswered));
+}
+
+#[tokio::test]
+async fn never_ask_puts_nothing_up() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.offers_receipts = false);
+    window.run().open(row(THREAD)).await;
+    assert!(!window.took(Step::ReceiptAnswered), "the store is not even asked");
+    assert!(window.page().contains("Read receipt requested"), "the message still says it asked");
+}
+
+#[tokio::test]
+async fn a_message_from_me_asks_nothing() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("me@example.com".into()),
+        ..body("Note to self")
+    });
+    window.with(|s| {
+        for meta in s.messages.iter_mut().chain(s.stored.get_mut(THREAD).unwrap().messages.iter_mut()) {
+            meta.from = Some(mailrs_domain::Address { name: None, email: "Me@Example.com".into() });
+        }
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    assert!(!window.page().contains("Read receipt requested"));
+}
+
+/// RFC 8098: a receipt to someone other than the sender tells a stranger
+/// the mail was opened, so the app does not offer one.
+#[tokio::test]
+async fn a_receipt_asked_for_another_address_is_not_offered() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("tracker@elsewhere.example".into()),
+        ..body("The rota is up.")
+    });
+    window.run().open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    assert!(!window.took(Step::ReceiptAnswered));
+    assert!(!window.page().contains("Read receipt requested"));
+}
+
+#[tokio::test]
+async fn the_sender_s_address_matches_in_any_case() {
+    let window = FakeWindow::with_body(mailrs_domain::MessageBody {
+        receipt_to: Some("ANN@example.com".into()),
+        ..body("The rota is up.")
+    });
+    window.run().open(row(THREAD)).await;
+    assert_eq!(window.with(|s| s.receipt_cards.len()), 1);
+}
+
+#[tokio::test]
+async fn sending_takes_the_card_down_and_says_so() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    assert_eq!(window.with(|s| s.receipt_answers.clone()), [("m1".to_string(), true)]);
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "Read receipt sent")));
+    assert!(!window.page().contains("mailrs:receipt/send"));
+    assert!(window.page().contains("Read receipt requested"));
+}
+
+#[tokio::test]
+async fn declining_takes_the_card_down_quietly() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), false).await;
+    assert_eq!(window.with(|s| s.receipt_answers.clone()), [("m1".to_string(), false)]);
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(window.with(|s| s.toasts.is_empty()));
+}
+
+#[tokio::test]
+async fn the_buttons_wait_while_the_answer_goes_out() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    let cards = window.with(|s| s.receipt_cards.clone());
+    assert_eq!(cards[cards.len() - 2], ReceiptCard::Working);
+}
+
+#[tokio::test]
+async fn a_failed_send_puts_the_question_back() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answer = Err("offline".into()));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    run.answer_receipt("m1".into(), true).await;
+    assert!(matches!(
+        window.with(|s| s.receipt_cards.last().cloned()),
+        Some(ReceiptCard::Asked { .. })
+    ));
+    assert!(window.with(|s| s.toasts.iter().any(|t| t == "The receipt was not sent, and you can try again: offline")));
+}
+
+/// A send that may have gone keeps its answer, so it is not tried again,
+/// and the card does not offer it.
+#[tokio::test]
+async fn a_failed_send_already_recorded_takes_the_card_down() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answer = Err("offline".into()));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.with(|s| s.receipt_answered = Ok(true));
+    run.answer_receipt("m1".into(), true).await;
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(
+        window.with(|s| s
+            .toasts
+            .iter()
+            .any(|t| t == "The receipt may have gone out, so Penguin Mail will not send it again: offline")),
+        "{:?}",
+        window.with(|s| s.toasts.clone())
+    );
+}
+
+/// A read report for mail the person sent: Original-Message-ID names a
+/// message in their Sent mail.
+fn report(original: &str) -> mailrs_domain::MessageBody {
+    mailrs_domain::MessageBody {
+        read_report: Some(mailrs_domain::ReadReport {
+            by: "ann@example.com".into(),
+            displayed: true,
+            original: Some(original.into()),
+        }),
+        ..body("Your message was shown.")
+    }
+}
+
+#[tokio::test]
+async fn a_report_for_mail_i_sent_shows_as_one_line() {
+    let window = FakeWindow::with_body(report("kites@example.com"));
+    window.with(|s| s.sent.push(("kites@example.com".into(), vec!["Ann@Example.com".into()])));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(page.contains("ann@example.com</strong>"), "{page}");
+    assert!(!page.contains("Your message was shown."), "{page}");
+}
+
+/// Anyone can send a report naming anyone. One that names no message the
+/// person sent says nothing about who read what.
+#[tokio::test]
+async fn a_forged_report_shows_no_read_line() {
+    let window = FakeWindow::with_body(report("made-up@example.com"));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(window.took(Step::SentCopy));
+    assert!(!page.contains("Read by"), "{page}");
+    assert!(page.contains("Your message was shown."), "{page}");
+}
+
+/// A real Message-ID from Sent, in a report from someone the message never
+/// went to: the report says nothing about who read it.
+#[tokio::test]
+async fn a_report_from_someone_the_message_did_not_go_to_shows_no_line() {
+    let window = FakeWindow::with_body(report("kites@example.com"));
+    window.with(|s| s.sent.push(("kites@example.com".into(), vec!["bob@example.com".into()])));
+    window.run().open(row(THREAD)).await;
+    let page = window.page();
+    assert!(!page.contains("Read by"), "{page}");
+    assert!(page.contains("Your message was shown."), "{page}");
+}
+
+#[tokio::test]
+async fn a_press_while_the_answer_goes_out_does_nothing() {
+    use super::Effects;
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.receipt_card(ReceiptCard::Working);
+    run.answer_receipt("m1".into(), true).await;
+    assert!(!window.took(Step::AnswerReceipt));
+}
+
+/// The engine opening a body redraws the receipt card. One whose answer is
+/// on its way keeps its buttons waiting.
+#[tokio::test]
+async fn a_redraw_while_the_answer_goes_out_keeps_the_buttons_waiting() {
+    use super::Effects;
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    window.receipt_card(ReceiptCard::Working);
+    run.engine_answered(target(None), "m1".into(), opened(asking())).await;
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Working));
+    assert!(!window.page().contains("mailrs:receipt/"), "{}", window.page());
+}
+
+/// A redraw that asked the store before the answer was kept hears "not
+/// answered" after the receipt went. The card stays down, so a second
+/// press cannot say a receipt was sent when none was.
+#[tokio::test]
+async fn a_stale_redraw_does_not_bring_the_card_back_after_sending() {
+    let window = FakeWindow::with_body(asking());
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    let (release, held) = futures::channel::oneshot::channel();
+    window.with(|s| s.receipt_hold = Some(held));
+    futures::join!(run.account_ready(ACCOUNT), async {
+        run.answer_receipt("m1".into(), true).await;
+        let _ = release.send(());
+    });
+    assert_eq!(window.with(|s| s.receipt_cards.last().cloned()), Some(ReceiptCard::Hidden));
+    assert!(!window.page().contains("mailrs:receipt/send"), "{}", window.page());
+}
+
+/// An account still connecting cannot say whether the receipt was
+/// answered, so the card waits for it and comes up once it can.
+#[tokio::test]
+async fn the_card_comes_up_once_the_account_connects() {
+    let window = FakeWindow::with_body(asking());
+    window.with(|s| s.receipt_answered = Ok(true));
+    let run = window.run();
+    run.open(row(THREAD)).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()));
+    window.with(|s| s.receipt_answered = Ok(false));
+    run.account_ready(ACCOUNT + 1).await;
+    assert!(window.with(|s| s.receipt_cards.is_empty()), "another account changes nothing");
+    run.account_ready(ACCOUNT).await;
+    assert_eq!(window.with(|s| s.receipt_cards.len()), 1);
 }

@@ -16,14 +16,36 @@ pub(super) struct ImapState {
     pub mailboxes: BTreeMap<String, Kept>,
 }
 
+/// The most UIDs a mailbox's [`Kept::deleted`] remembers, the highest
+/// kept. A client that marks more and never expunges loses only the
+/// return of the oldest if it undoes them.
+pub(super) const MOST_REMEMBERED_DELETED: usize = 1000;
+
 /// Where one mailbox stood at the last look.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Kept {
     pub uidvalidity: u32,
     pub uidnext: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modseq: Option<u64>,
+    /// The UIDs, ascending, that another client had marked `\Deleted`
+    /// at the last look, which the store therefore let go. One that
+    /// comes back undeleted is fetched again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<u32>,
+}
+
+impl Kept {
+    /// Remembers `uids` as the mailbox's deleted UIDs, the highest
+    /// [`MOST_REMEMBERED_DELETED`] of them.
+    pub fn remember_deleted(&mut self, mut uids: Vec<u32>) {
+        uids.sort_unstable();
+        uids.dedup();
+        let excess = uids.len().saturating_sub(MOST_REMEMBERED_DELETED);
+        uids.drain(..excess);
+        self.deleted = uids;
+    }
 }
 
 impl ImapState {
@@ -50,6 +72,7 @@ impl Kept {
             uidvalidity: selected.uidvalidity,
             uidnext: selected.uidnext.unwrap_or(top.saturating_add(1)),
             modseq: selected.highestmodseq,
+            deleted: Vec::new(),
         }
     }
 }
@@ -69,6 +92,7 @@ mod tests {
                     uidvalidity: 7,
                     uidnext: 43,
                     modseq: Some(1200),
+                    deleted: Vec::new(),
                 },
             )]),
         };
@@ -87,10 +111,24 @@ mod tests {
                     uidvalidity: 3,
                     uidnext: 9,
                     modseq: None,
+                    deleted: Vec::new(),
                 },
             )]),
         };
         assert_eq!(ImapState::read(&state.written()).unwrap(), state);
+    }
+
+    #[test]
+    fn a_mailbox_remembers_its_highest_deleted_uids_up_to_the_cap() {
+        let mut kept = Kept {
+            uidvalidity: 1,
+            uidnext: 5000,
+            modseq: None,
+            deleted: Vec::new(),
+        };
+        kept.remember_deleted((1..=1500).rev().chain([1500]).collect());
+        assert_eq!(kept.deleted.len(), super::MOST_REMEMBERED_DELETED);
+        assert_eq!((kept.deleted[0], kept.deleted[999]), (501, 1500));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use super::calendar_account::{PERSONAL, calendar_only};
 use crate::calendar_copy::CalendarCopy;
 use crate::fake::{FakeGmail, fill_store, meta};
 use crate::{AccountServices, AccountSync, Accounts, BackendError, CalendarService, EngineConfig, SyncEngine, now_millis};
+use crate::MailBackend;
 
 struct Setup {
     engine: Arc<SyncEngine>,
@@ -290,4 +291,28 @@ async fn a_refusal_met_outside_the_read_is_reported_once() {
     copy.refresh_due(&[1], NOW + 2_000, true).await.unwrap();
     copy.refresh_due(&[1], NOW + 3_000, true).await.unwrap();
     assert!(s.events.try_recv().is_err(), "the state was reported again");
+}
+
+#[tokio::test]
+async fn gmail_looks_less_often_while_only_the_tray_runs() {
+    let s = setup().await;
+    let services = AccountServices::google(Arc::clone(&s.fake));
+    assert_eq!(services.mail.poll_interval(), None, "the engine's own pace while the window is open");
+    services.mail.set_window_open(false);
+    assert_eq!(services.mail.poll_interval(), Some(Duration::from_secs(5 * 60)));
+    services.mail.set_window_open(true);
+    assert_eq!(services.mail.poll_interval(), None);
+}
+
+#[tokio::test]
+async fn opening_the_window_looks_for_mail_at_once() {
+    let s = setup().await;
+    s.engine.start_account(1, AccountServices::google(Arc::clone(&s.fake)));
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+    s.engine.set_window_open(false);
+    s.fake
+        .deliver(meta("n", "tn", now_millis(), &["INBOX", "UNREAD"]));
+    // The tray's next look is minutes away; showing the window cannot wait for it.
+    s.engine.set_window_open(true);
+    wait_for(&s.events, |e| matches!(e, ChangeEvent::NewMail { .. })).await;
 }

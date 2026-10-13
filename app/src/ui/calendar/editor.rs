@@ -124,9 +124,9 @@ struct Editor {
     /// The field new guests are typed into, read again on Save.
     guest_entry: RefCell<Option<gtk::Entry>>,
     reminders_group: RefCell<Option<adw::PreferencesGroup>>,
-    /// The calendar's own reminders, shown while `draft.reminders` is
+    /// The calendar whose own reminders show while `draft.reminders` is
     /// `None`. Follows the calendar row on a new event.
-    reminders_default: RefCell<Vec<Reminder>>,
+    reminders_calendar: RefCell<Calendar>,
     reminder_rows: RefCell<Vec<adw::ComboRow>>,
     /// The Custom Repeat page's content, rebuilt each time the Repeats
     /// row asks for it rather than kept live, so a start moved after the
@@ -215,7 +215,7 @@ pub fn open(
         guest_rows: RefCell::new(Vec::new()),
         guest_entry: RefCell::new(None),
         reminders_group: RefCell::new(None),
-        reminders_default: RefCell::new(Vec::new()),
+        reminders_calendar: RefCell::new(Calendar::default()),
         reminder_rows: RefCell::new(Vec::new()),
         custom_container: gtk::Box::new(gtk::Orientation::Vertical, 0),
         custom_state: RefCell::new(Custom {
@@ -729,6 +729,10 @@ impl Editor {
             this.show_start();
             this.show_end();
             this.show_zone();
+            // A calendar may keep other reminders for all-day events.
+            if this.draft.borrow().reminders.is_none() {
+                this.rebuild_reminders();
+            }
         });
         start_time_drop.set_visible(!all_day.is_active());
         end_time_drop.set_visible(!all_day.is_active());
@@ -1222,7 +1226,7 @@ impl Editor {
                         draft.zone = calendar.zone.clone();
                     }
                 }
-                *this.reminders_default.borrow_mut() = calendar.reminders.clone();
+                *this.reminders_calendar.borrow_mut() = calendar.clone();
                 if this.draft.borrow().reminders.is_none() {
                     this.rebuild_reminders();
                 }
@@ -1405,16 +1409,19 @@ impl Editor {
             .sensitive(self.may(Part::Reminders))
             .build();
         let draft = self.draft.borrow();
-        let calendar_default = choices
-            .calendars
-            .get(&(draft.account_id, draft.calendar.clone()))
-            .map(|c| c.reminders.clone())
-            .unwrap_or_default();
+        let calendar = choices.calendars.get(&(draft.account_id, draft.calendar.clone())).cloned().unwrap_or_default();
         drop(draft);
-        *self.reminders_default.borrow_mut() = calendar_default;
+        *self.reminders_calendar.borrow_mut() = calendar;
         *self.reminders_group.borrow_mut() = Some(group.clone());
         self.rebuild_reminders();
         group
+    }
+
+    /// The calendar's own reminders for the draft: an all-day event's when
+    /// the calendar keeps those apart.
+    fn reminders_default(&self) -> Vec<Reminder> {
+        let all_day = self.draft.borrow().all_day;
+        self.reminders_calendar.borrow().default_reminders(all_day).to_vec()
     }
 
     /// Rebuilds the reminders group's rows from `draft.reminders`, or the
@@ -1433,7 +1440,7 @@ impl Editor {
             .borrow()
             .reminders
             .clone()
-            .unwrap_or_else(|| self.reminders_default.borrow().clone());
+            .unwrap_or_else(|| self.reminders_default());
         let mut rows = Vec::new();
         for (i, reminder) in list.iter().enumerate() {
             let row = self.reminder_row(i, *reminder);
@@ -1452,7 +1459,7 @@ impl Editor {
                 .borrow()
                 .reminders
                 .clone()
-                .unwrap_or_else(|| this.reminders_default.borrow().clone());
+                .unwrap_or_else(|| this.reminders_default());
             list.push(Reminder {
                 minutes: 10,
                 method: ReminderMethod::Notification,
@@ -1498,7 +1505,7 @@ impl Editor {
                 .borrow()
                 .reminders
                 .clone()
-                .unwrap_or_else(|| this.reminders_default.borrow().clone());
+                .unwrap_or_else(|| this.reminders_default());
             if let Some(entry) = list.get_mut(index) {
                 entry.minutes = *minutes;
             }
@@ -1513,7 +1520,7 @@ impl Editor {
                 .borrow()
                 .reminders
                 .clone()
-                .unwrap_or_else(|| this.reminders_default.borrow().clone());
+                .unwrap_or_else(|| this.reminders_default());
             if index < list.len() {
                 list.remove(index);
             }

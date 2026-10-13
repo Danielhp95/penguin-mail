@@ -4,13 +4,19 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
+use std::rc::Rc;
 
-use mailrs_domain::{Address, MessageBody, MessageMeta, Provenance};
+use mailrs_domain::{Address, MessageBody, MessageMeta, Provenance, ReadReport};
 
 use crate::format::{avatar_hue, full_date, header_date, human_size, initials};
 use crate::quoted;
 use mailrs_domain::translate::{fill, fill_plural, gettext};
+
+pub mod receipt;
+
+pub use receipt::Receipt;
 
 /// How long a message's fold takes to open or close.
 pub const FOLD_MS: u32 = 240;
@@ -52,6 +58,9 @@ pub enum BodyState<'a> {
     Loading,
     Loaded(&'a MessageBody),
     Failed(&'a str),
+    /// The body arrived but could not be cleaned for drawing, and has no
+    /// text to show instead.
+    Unreadable,
 }
 
 pub struct MessageView<'a> {
@@ -69,6 +78,12 @@ pub struct MessageView<'a> {
     /// article then keeps an empty place between the header and the body,
     /// which the card, a widget of the window, is laid over.
     pub event_slot: bool,
+    /// What the message says about the read receipt its sender asked for,
+    /// or `None` when it asked for none the app would offer.
+    pub receipt: Option<Receipt<'a>>,
+    /// The receipt this message is, drawn as one line in place of its
+    /// body. Set only for a receipt about mail the person sent.
+    pub read_by: Option<&'a ReadReport>,
 }
 
 /// A body's cleaned HTML, and whether it chooses its own colours. Mail
@@ -101,7 +116,7 @@ pub struct Conversation<'a> {
     pub me: &'a [String],
     /// Contact photos by lower-case sender address, as `data:` URIs. The
     /// page loads nothing from disk, so a photo travels inline.
-    pub photos: &'a HashMap<String, String>,
+    pub photos: &'a Photos,
     /// Whether remote images and styles may load.
     pub allow_remote: bool,
 }
@@ -117,8 +132,14 @@ pub fn render(conversation: &Conversation, theme: &Theme) -> String {
         },
         theme,
     );
-    for view in &conversation.messages {
-        html.push_str(&article(view, conversation.me, conversation.photos));
+    let senders: Vec<&str> = conversation
+        .messages
+        .iter()
+        .map(|view| sender_address(view.meta))
+        .collect();
+    for (index, view) in conversation.messages.iter().enumerate() {
+        let face = face(conversation.photos, senders[index], &senders[..index]);
+        html.push_str(&article(view, conversation.me, face));
     }
     html.push_str(TAIL);
     html
@@ -180,20 +201,64 @@ pub fn head(conversation: &Head, theme: &Theme) -> String {
     html
 }
 
+/// Contact photos by lower-case address, as `data:` URIs shared with the
+/// photo cache.
+pub type Photos = HashMap<String, Rc<str>>;
+
+/// A sender's photo as one article draws it.
+#[derive(Debug, Clone, Copy)]
+pub struct Face<'a> {
+    uri: &'a Rc<str>,
+    /// The class that paints the photo on the avatar.
+    class: u64,
+    /// Whether this article carries the rule that paints it. Only the
+    /// first article from each sender does, so a long thread from one
+    /// person holds their photo once; a rule in one article reaches the
+    /// avatars in all of them.
+    paints: bool,
+}
+
+impl<'a> Face<'a> {
+    /// The photo, and whether this article carries the rule that paints it.
+    pub fn photo(&self) -> (&'a Rc<str>, bool) {
+        (self.uri, self.paints)
+    }
+}
+
+/// The address a message's face stands for.
+pub fn sender_address(meta: &MessageMeta) -> &str {
+    meta.from.as_ref().map_or("", |from| from.email.as_str())
+}
+
+/// The face of a message from `address`, after messages from `earlier`.
+pub fn face<'a>(photos: &'a Photos, address: &str, earlier: &[&str]) -> Option<Face<'a>> {
+    let key = address.trim().to_lowercase();
+    let uri = photos.get(&key)?;
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    Some(Face {
+        uri,
+        class: hasher.finish(),
+        paints: !earlier
+            .iter()
+            .any(|before| before.trim().eq_ignore_ascii_case(address.trim())),
+    })
+}
+
 /// One message's `<article>`, whole, as a patch puts it in place of the
 /// one before.
-pub fn article(view: &MessageView, me: &[String], photos: &HashMap<String, String>) -> String {
+/// The message whose source a "View Source" link on the page asks for.
+pub fn source_of(uri: &str) -> Option<&str> {
+    uri.strip_prefix("mailrs:source/").filter(|id| !id.is_empty())
+}
+
+pub fn article(view: &MessageView, me: &[String], face: Option<Face>) -> String {
     let mut html = String::new();
-    render_message(&mut html, view, me, photos);
+    render_message(&mut html, view, me, face);
     html
 }
 
-fn render_message(
-    html: &mut String,
-    view: &MessageView,
-    me: &[String],
-    photos: &HashMap<String, String>,
-) {
+fn render_message(html: &mut String, view: &MessageView, me: &[String], face: Option<Face>) {
     let meta = view.meta;
     // A closed message is also shut, which keeps its body out of layout: a
     // forty message newsletter thread with one message open finished
@@ -210,15 +275,21 @@ fn render_message(
         Some(from) => (from.display().to_string(), from.email.clone()),
         None => (gettext("Unknown sender"), String::new()),
     };
-    let photo = photos.get(address.trim().to_lowercase().as_str());
     // The whole header toggles the message, so the toggle is a layer
     // under it. The face and the name sit above that layer and open the
     // sender's card instead.
     let card = format!("mailrs:contact/{}", escape(&address));
     let _ = write!(
         html,
-        "<article class=\"message {state}{unread}\" id=\"m-{id}\"><div class=\"header\">\
-         <a class=\"toggle\" href=\"mailrs:toggle/{id}\" aria-label=\"{toggle}\"></a>",
+        "<article class=\"message {state}{unread}\" id=\"m-{id}\">",
+        id = escape(&meta.id),
+    );
+    if view.receipt.is_some() {
+        receipt::note(html);
+    }
+    let _ = write!(
+        html,
+        "<div class=\"header\"><a class=\"toggle\" href=\"mailrs:toggle/{id}\" aria-label=\"{toggle}\"></a>",
         id = escape(&meta.id),
         toggle = escape(&gettext("Show or hide this message")),
     );
@@ -230,12 +301,22 @@ fn render_message(
         &gettext("Contact card for {person}"),
         &[("person", &name)],
     ));
-    match photo {
-        Some(uri) => {
+    match face {
+        Some(face) => {
+            let class = face.class;
+            // The URI is base64 the app wrote, which holds no quote and
+            // no "<" to end the rule or the element early.
+            if face.paints {
+                let _ = write!(
+                    html,
+                    "<style>.face-{class:016x}{{background:center/cover url(\"{uri}\")}}</style>",
+                    uri = face.uri,
+                );
+            }
             let _ = write!(
                 html,
-                "<a class=\"avatar\" href=\"{card}\" title=\"{contact}\" \
-                 aria-label=\"{opens}\"><img src=\"{uri}\" alt=\"\"></a>"
+                "<a class=\"avatar face-{class:016x}\" href=\"{card}\" title=\"{contact}\" \
+                 aria-label=\"{opens}\"></a>"
             );
         }
         None => {
@@ -289,11 +370,27 @@ fn render_message(
             escape(&gettext("Invitation"))
         );
     }
+    if let Some(Receipt::Asked { to, working }) = view.receipt {
+        receipt::card(html, &meta.id, to, working);
+    }
     render_body(html, view);
     html.push_str("</div></div></article>");
 }
 
 fn render_body(html: &mut String, view: &MessageView) {
+    if let (BodyState::Loaded(_), Some(report)) = (&view.body, view.read_by) {
+        let when = crate::format::local(view.meta.date).map_or_else(String::new, |at| {
+            fill(
+                &gettext("{date}, {time}"),
+                &[
+                    ("date", &crate::format::day_month(at.date_naive(), chrono::Local::now().date_naive())),
+                    ("time", &crate::clock_format::time_text(at.time())),
+                ],
+            )
+        });
+        receipt::report_line(html, report, &when);
+        return;
+    }
     match &view.body {
         BodyState::Loading => {
             let _ = write!(
@@ -309,11 +406,28 @@ fn render_body(html: &mut String, view: &MessageView) {
             );
             let _ = write!(html, "<div class=\"body status\">{}</div>", escape(&said));
         }
+        BodyState::Unreadable => {
+            // The source is still there to read, or to save as an .eml
+            // file from the window that shows it.
+            let _ = write!(
+                html,
+                "<div class=\"body status unreadable\"><span>{}</span>\
+                 <a class=\"pill\" role=\"button\" href=\"mailrs:source/{}\">{}</a></div>",
+                escape(&gettext("This message could not be displayed")),
+                escape(&view.meta.id),
+                escape(&gettext("View Source"))
+            );
+        }
         BodyState::Loaded(body) => {
             if let Some(clean) = &view.sanitized {
+                // Mail's styles reach its own shadow host (`:host`), and a
+                // host moved up the page would paint over the sender row
+                // or the receipt card and take the clicks meant for them.
+                // The frame is the page's, so mail cannot style it, and it
+                // clips whatever the host paints outside it.
                 let _ = write!(
                     html,
-                    "<div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
+                    "<div class=\"body-frame\"><div class=\"body html{plain}\"><template shadowrootmode=\"open\"><style>{HTML_BODY_CSS}{TRIMMED_CSS}</style>\
                      <div class=\"root\">",
                     plain = if clean.paints { "" } else { " plain" },
                 );
@@ -325,7 +439,7 @@ fn render_body(html: &mut String, view: &MessageView) {
                     }
                     None => html.push_str(clean.html),
                 }
-                html.push_str("</div></template></div>");
+                html.push_str("</div></template></div></div>");
             } else {
                 let text = body.text.as_deref().unwrap_or("");
                 html.push_str("<div class=\"body text\">");
@@ -819,7 +933,6 @@ a:focus-visible,summary:focus-visible,.event-slot:focus-visible{{outline:2px sol
 .fold{{position:relative}}\
 .avatar{{position:relative;grid-row:span 2;align-self:start;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;\
 justify-content:center;overflow:hidden;color:#fff;font-weight:700;font-size:15px;letter-spacing:0.02em;text-decoration:none}}\
-.avatar img{{width:100%;height:100%;object-fit:cover}}\
 .who{{position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 .name{{font-weight:800;color:inherit;text-decoration:none}}\
 .name:hover{{text-decoration:underline}}\
@@ -863,10 +976,13 @@ opacity 180ms cubic-bezier(0.23,1,0.32,1)}}\
 .body.status,.html{{background:var(--surface);border-radius:12px;padding:14px;\
 border:1px solid var(--line);overflow:hidden;margin-left:0}}\
 .html{{background:#fff}}\
-.html.plain{{background:var(--surface)}}\
+.body-frame{{contain:paint;margin:14px 0 2px}}.body-frame>.html{{margin:0}}\
+.html.plain{{background:none;border:none;padding:0;border-radius:0}}\
 .status{{color:var(--dim);font-style:italic}}\
+.unreadable{{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}}\
+.unreadable .pill{{font-style:normal}}\
 blockquote.quote{{margin:6px 0;padding:0 0 0 12px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,transparent);color:var(--dim)}}\
-.signature{{color:var(--dim)}}{trimmed}\
+.signature{{color:var(--dim)}}{trimmed}{receipts}\
 a{{color:var(--accent-text)}}\
 .attachments{{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0 52px}}\
 .body.text+.attachments{{margin-left:0}}\
@@ -887,6 +1003,7 @@ color:inherit;text-decoration:none;min-width:0}}\
 .address{{display:none}}.message{{padding:14px 8px 16px;margin:0 -8px}}.chev{{display:none}}}}",
         fold = FOLD_MS,
         trimmed = TRIMMED_CSS,
+        receipts = receipt::css(theme.dark),
         scheme = if theme.dark { "dark" } else { "light" },
         accent = theme.accent,
         accent_text = theme.accent_text,
@@ -953,8 +1070,9 @@ mod tests {
     }
 
     use std::collections::HashMap;
+    use std::rc::Rc;
 
-    use mailrs_domain::{Address, Attachment, MessageBody, MessageMeta};
+    use mailrs_domain::{Address, Attachment, MessageBody, MessageMeta, ReadReport};
 
     use super::*;
 
@@ -1036,6 +1154,20 @@ mod tests {
         assert!(HTML_BODY_CSS.contains("font:14px/1.5 var(--ui-font,-apple-system)"));
     }
 
+    /// HTML that paints nothing of its own reads like plain text, so it
+    /// sits on the page the same way, with no sheet round it.
+    #[test]
+    fn html_that_paints_nothing_has_no_sheet() {
+        let html = page("s", vec![]);
+        let rule = html
+            .split('}')
+            .find(|rule| rule.split('{').next() == Some(".html.plain"))
+            .expect("a rule for plain HTML");
+        for word in ["background:none", "border:none", "padding:0"] {
+            assert!(rule.contains(word), "{rule}");
+        }
+    }
+
     /// Ruling R8: a plain-text body sits on the page as the mockup draws
     /// it, starting at the avatar's column; HTML and status lines keep
     /// their sheet.
@@ -1068,7 +1200,7 @@ mod tests {
     fn page_with(
         subject: &str,
         views: Vec<MessageView>,
-        photos: &HashMap<String, String>,
+        photos: &Photos,
     ) -> String {
         let me = ["me@example.com".to_string()];
         render(
@@ -1105,6 +1237,8 @@ mod tests {
                 expanded: false,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1126,6 +1260,8 @@ mod tests {
             thumbnails: &no_thumbs,
             // Both fixtures are already clean.
             event_slot: false,
+            receipt: None,
+            read_by: None,
             sanitized: body.html.as_deref().map(|html| Sanitized {
                 html,
                 paints,
@@ -1177,6 +1313,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1231,18 +1369,17 @@ mod tests {
             expanded: false,
             thumbnails: &no_thumbs,
             event_slot: false,
+            receipt: None,
+            read_by: None,
             sanitized: None,
         };
         let initials = page("Hi", vec![view()]);
         assert!(initials.contains(">AL</a>"), "{initials}");
 
-        let photos = HashMap::from([(
-            "ann@example.com".to_string(),
-            "data:image/jpeg;base64,AAAA".to_string(),
-        )]);
+        let photos = ann_s_photo();
         let with_photo = page_with("Hi", vec![view()], &photos);
         assert!(
-            with_photo.contains("<img src=\"data:image/jpeg;base64,AAAA\" alt=\"\">"),
+            with_photo.contains("background:center/cover url(\"data:image/jpeg;base64,AAAA\")"),
             "{with_photo}"
         );
         assert!(!with_photo.contains(">AL</a>"));
@@ -1253,6 +1390,40 @@ mod tests {
                 "{html}"
             );
         }
+    }
+
+    fn ann_s_photo() -> Photos {
+        HashMap::from([(
+            "ann@example.com".to_string(),
+            Rc::from("data:image/jpeg;base64,AAAA"),
+        )])
+    }
+
+    /// A long thread from one sender carries their photo once, however
+    /// many of their messages it holds, and every one shows it.
+    #[test]
+    fn a_sender_s_photo_is_in_the_page_once() {
+        let metas: Vec<MessageMeta> = (1..=3)
+            .map(|n| meta(&format!("m{n}"), "Ann Lee", &[]))
+            .collect();
+        let body = MessageBody::default();
+        let no_thumbs = HashMap::new();
+        let views = metas
+            .iter()
+            .map(|meta| MessageView {
+                meta,
+                body: BodyState::Loaded(&body),
+                expanded: false,
+                thumbnails: &no_thumbs,
+                event_slot: false,
+                receipt: None,
+                read_by: None,
+                sanitized: None,
+            })
+            .collect();
+        let html = page_with("Hi", views, &ann_s_photo());
+        assert_eq!(html.matches("base64,AAAA").count(), 1, "{html}");
+        assert_eq!(html.matches("class=\"avatar face-").count(), 3, "{html}");
     }
 
     #[test]
@@ -1273,6 +1444,8 @@ mod tests {
                     expanded: false,
                     thumbnails: &no_thumbs,
                     event_slot: false,
+                    receipt: None,
+                    read_by: None,
                     sanitized: None,
                 },
                 MessageView {
@@ -1281,6 +1454,8 @@ mod tests {
                     expanded: true,
                     thumbnails: &no_thumbs,
                     event_slot: false,
+                    receipt: None,
+                    read_by: None,
                     sanitized: None,
                 },
             ],
@@ -1333,6 +1508,8 @@ mod tests {
             thumbnails: &no_thumbs,
             sanitized: None,
             event_slot,
+            receipt: None,
+            read_by: None,
         };
         let html = page("Hello", vec![view(&first, false), view(&second, true)]);
         assert_eq!(html.matches("class=\"event-slot\"").count(), 1);
@@ -1368,6 +1545,8 @@ mod tests {
                 thumbnails: &no_thumbs,
                 sanitized: None,
                 event_slot: true,
+                receipt: None,
+                read_by: None,
             }],
         );
         assert!(html.contains(
@@ -1391,6 +1570,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: Some(Sanitized {
                     html: "<p>Hi</p>",
                     paints: false,
@@ -1438,6 +1619,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1480,6 +1663,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1525,6 +1710,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1563,6 +1750,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1590,6 +1779,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1618,6 +1809,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1645,6 +1838,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1672,6 +1867,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1704,6 +1901,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1735,6 +1934,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1753,6 +1954,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1765,6 +1968,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1807,6 +2012,8 @@ mod tests {
                 expanded: true,
                 thumbnails: &no_thumbs,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
                 sanitized: None,
             }],
         );
@@ -1936,6 +2143,8 @@ mod tests {
                 thumbnails: &thumbs,
                 sanitized: None,
                 event_slot: false,
+                receipt: None,
+                read_by: None,
             }],
         );
         assert!(
@@ -1945,5 +2154,145 @@ mod tests {
             ),
             "{html}"
         );
+    }
+
+    fn receipt_view<'a>(
+        meta: &'a MessageMeta,
+        body: &'a MessageBody,
+        no_thumbs: &'a HashMap<String, String>,
+    ) -> MessageView<'a> {
+        MessageView {
+            meta,
+            body: BodyState::Loaded(body),
+            expanded: true,
+            thumbnails: no_thumbs,
+            sanitized: None,
+            event_slot: false,
+            receipt: None,
+            read_by: body.read_report.as_ref(),
+        }
+    }
+
+    #[test]
+    fn a_receipt_is_one_line_and_not_its_text() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            text: Some("Your message was shown.".into()),
+            read_report: Some(ReadReport {
+                by: "tomas@allotment.example".into(),
+                displayed: true,
+                original: Some("rota@fastmail.example".into()),
+            }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read: Rota", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("Read by <strong>tomas@allotment.example</strong> on "), "{page}");
+        assert!(!page.contains("Your message was shown."));
+    }
+
+    #[test]
+    fn a_receipt_for_mail_deleted_unread_says_so() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            read_report: Some(ReadReport {
+                by: "tomas@allotment.example".into(),
+                displayed: false,
+                original: None,
+            }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read: Rota", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("Deleted by <strong>tomas@allotment.example</strong> without being read"), "{page}");
+    }
+
+    #[test]
+    fn an_address_in_a_receipt_line_is_escaped() {
+        let one = meta("m1", "Tomas", &[]);
+        let body = MessageBody {
+            read_report: Some(ReadReport { by: "<b>x</b>@y".into(), displayed: true, original: None }),
+            ..MessageBody::default()
+        };
+        let no_thumbs = HashMap::new();
+        let page = page("Read", vec![receipt_view(&one, &body, &no_thumbs)]);
+        assert!(page.contains("<strong>&lt;b&gt;x&lt;/b&gt;@y</strong>"), "{page}");
+    }
+
+    /// A body that could not be drawn offers its source, so the person can
+    /// still read it or save it as an .eml file.
+    #[test]
+    fn a_body_that_could_not_be_displayed_offers_its_source() {
+        let one = meta("m/1", "Ann", &[]);
+        let body = MessageBody::default();
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.body = BodyState::Unreadable;
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("This message could not be displayed"), "{page}");
+        assert!(page.contains("href=\"mailrs:source/m/1\""), "{page}");
+        assert_eq!(source_of("mailrs:source/m/1"), Some("m/1"));
+        assert_eq!(source_of("mailrs:source/"), None);
+        assert_eq!(source_of("mailrs:receipt/send/m1"), None);
+    }
+
+    #[test]
+    fn the_receipt_card_names_who_would_hear_and_offers_both_answers() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: false });
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("Read receipt requested"), "{page}");
+        assert!(page.contains("Sending a receipt tells ann@example.com that you opened this message."), "{page}");
+        let send = page.find("href=\"mailrs:receipt/send/m1\"").expect("Send Receipt");
+        let decline = page.find("href=\"mailrs:receipt/decline/m1\"").expect("Don't Send");
+        assert!(send < decline, "Send Receipt comes first");
+    }
+
+    #[test]
+    fn a_receipt_card_at_work_has_nothing_to_press() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: true });
+        let page = page("Rota", vec![view]);
+        assert!(!page.contains("mailrs:receipt/"), "{page}");
+        assert!(page.contains("aria-disabled=\"true\""), "{page}");
+    }
+
+    /// Mail styles its own shadow host (`:host{position:relative;top:-110px}`)
+    /// and could paint over the receipt card or the sender row, with a
+    /// click landing on what it hides. A frame of the page's own around
+    /// every host clips what it paints.
+    #[test]
+    fn every_html_body_sits_in_a_frame_mail_cannot_style() {
+        let one = meta("m1", "Ann", &[]);
+        let body = MessageBody { html: Some("<p>Hi</p>".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.sanitized = Some(Sanitized { html: "<p>Hi</p>", paints: false, history: None });
+        let page = page("Hi", vec![view]);
+        let hosts = page.matches("<div class=\"body html").count();
+        assert_eq!(hosts, 1, "{page}");
+        assert_eq!(page.matches("<div class=\"body-frame\"><div class=\"body html").count(), hosts, "{page}");
+        assert!(page.contains(".body-frame{contain:paint"), "{page}");
+    }
+
+    #[test]
+    fn a_receipt_answer_names_its_message() {
+        let one = meta("m/1", "Ann", &[]);
+        let body = MessageBody { text: Some("Hi".into()), ..MessageBody::default() };
+        let no_thumbs = HashMap::new();
+        let mut view = receipt_view(&one, &body, &no_thumbs);
+        view.receipt = Some(Receipt::Asked { to: "ann@example.com", working: false });
+        let page = page("Rota", vec![view]);
+        assert!(page.contains("href=\"mailrs:receipt/send/m/1\""), "{page}");
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/m/1"), Some(("m/1", true)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/decline/m1"), Some(("m1", false)));
+        assert_eq!(receipt::answer_of("mailrs:receipt/send/"), None);
+        assert_eq!(receipt::answer_of("mailrs:receipt/send"), None);
     }
 }

@@ -679,15 +679,16 @@ impl<A: Accounts> Tools<A> {
             let bytes = self
                 .call(async move {
                     let bytes = match format {
-                        Format::Mbox => mail.export_mbox(&targets).await?,
+                        Format::Mbox => mail.export_mbox_file(&targets, &path).await?,
                         Format::Eml => {
                             let target = &targets[0];
                             let id = target.message_id.clone().unwrap_or_default();
-                            mail.export_message(target.account_id, &id).await?
+                            let raw = mail.export_message(target.account_id, &id).await?;
+                            tokio::fs::write(&path, raw.as_slice()).await?;
+                            raw.len() as u64
                         }
                     };
-                    tokio::fs::write(&path, &bytes).await?;
-                    Ok::<usize, anyhow::Error>(bytes.len())
+                    Ok::<u64, anyhow::Error>(bytes)
                 })
                 .await?;
             Ok(json!({"file": file, "bytes": bytes, "replaced": place.replaces}))

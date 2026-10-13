@@ -44,6 +44,7 @@ fn check_refuses_a_certificate_from_a_root_nobody_trusts() {
             ADDRESS,
             ADDRESS,
             &password,
+            &password,
         )
         .await
         .expect_err("a certificate nobody vouches for");

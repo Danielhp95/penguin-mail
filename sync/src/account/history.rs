@@ -10,9 +10,41 @@ use mailrs_store::{accounts, labels, messages, remote_refs};
 
 use super::AccountSync;
 use super::fetch::{Placing, store_fetched};
-use crate::{BackendError, MailBackend, RemoteChange, SyncError, SyncState, Want};
+use crate::{BackendError, Look, Looked, RemoteChange, SyncError, SyncState, Want};
 
 impl AccountSync {
+    /// One look for new mail, at the engine's poll. The mail service looks
+    /// itself when its mail lives only in the store, and this announces
+    /// what it stored, even when the look failed after storing some.
+    /// Otherwise this replays the server's changes ([`Self::incremental`]).
+    pub async fn look_for_mail(&self) -> Result<(), SyncError> {
+        let Look::Done(looked) = self.mail.look_for_mail().await else {
+            return self.incremental().await;
+        };
+        let Looked {
+            threads,
+            new_mail,
+            menu_changed,
+            failed,
+        } = looked;
+        let account_id = self.account_id;
+        let new_mail = self.file_muted_replies(new_mail).await;
+        self.emit_threads(threads);
+        if !new_mail.is_empty() {
+            self.emit(ChangeEvent::NewMail {
+                account_id,
+                message_ids: new_mail,
+            });
+        }
+        if menu_changed {
+            self.emit(ChangeEvent::LabelsChanged { account_id });
+        }
+        match failed {
+            Some(err) => Err(err.into()),
+            None => Ok(()),
+        }
+    }
+
     /// Applies every change since the stored sync state in one transaction,
     /// then stores the new state. Bootstraps instead when there is no state
     /// yet, and lists the mail again when the server has lost its place. A
@@ -36,7 +68,7 @@ impl AccountSync {
     /// anything hears of it: the threads it touched and the new Inbox
     /// mail.
     async fn replay(&self) -> Result<Replayed, SyncError> {
-        let _moves = self.hold_moves().await;
+        let moves = self.mail.hold_moves().await;
         let account_id = self.account_id;
         let cursor = self
             .db
@@ -46,9 +78,9 @@ impl AccountSync {
             self.bootstrap().await?;
             return Ok(Replayed::default());
         };
-        let found = match self.services.mail.changes(Some(&since)).await {
+        let found = match moves.changes(&since).await {
             Ok(found) => found,
-            Err(BackendError::StateLost) => {
+            Err(SyncError::Backend(BackendError::StateLost)) => {
                 tracing::info!(
                     account = account_id,
                     "the server lost its place; listing the mail again"
@@ -56,14 +88,14 @@ impl AccountSync {
                 self.rebootstrap().await?;
                 return Ok(Replayed::default());
             }
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err),
         };
         if found.changes.is_empty() && found.state == since {
             self.mark_caught_up();
             return Ok(Replayed::default());
         }
 
-        let mut changes = self.changes_as_stored(found.changes).await?;
+        let mut changes = found.changes;
         // The state is written only after the batch below, so a relisting
         // that fails here runs again at the next look.
         for change in &changes {
@@ -97,7 +129,7 @@ impl AccountSync {
         });
         changes.extend(compared);
         let (fetched, placing) = self.fetch_for_history(&changes).await?;
-        let mail = &self.services.mail;
+        let mail = &self.mail;
         let named_mailboxes: BTreeSet<String> = changes
             .iter()
             .filter_map(|change| match change {
@@ -147,7 +179,7 @@ impl AccountSync {
                             }
                         }
                         RemoteChange::Deleted { id } => {
-                            batch.push(Change::Delete {
+                            batch.push(Change::Gone {
                                 message_id: id.clone(),
                             });
                         }
@@ -194,7 +226,7 @@ impl AccountSync {
                                 })?;
                             batch.extend(
                                 gone.into_iter()
-                                    .map(|message_id| Change::Delete { message_id }),
+                                    .map(|message_id| Change::Gone { message_id }),
                             );
                         }
                         RemoteChange::Holds {
@@ -208,7 +240,7 @@ impl AccountSync {
                                 })?;
                             batch.extend(
                                 gone.into_iter()
-                                    .map(|message_id| Change::Delete { message_id }),
+                                    .map(|message_id| Change::Gone { message_id }),
                             );
                         }
                         // Relisted and compared above.
@@ -254,7 +286,6 @@ impl AccountSync {
         let mut changes = Vec::new();
         while from <= to {
             let page = self
-                .services
                 .mail
                 .keywords_in(mailbox, uidvalidity, from..=to)
                 .await?;
@@ -310,11 +341,7 @@ impl AccountSync {
     /// matched again if a later one fails and the look runs again.
     pub(super) async fn relist_mailbox(&self, mailbox: &str, uidvalidity: u32) -> Result<(), SyncError> {
         let account_id = self.account_id;
-        let listed = self
-            .services
-            .mail
-            .window_ids(self.window_days, Some(mailbox))
-            .await?;
+        let listed = self.mail.window_ids(self.window_days, Some(mailbox)).await?;
         let generation = self
             .db
             .read(move |c| Ok(accounts::sync_cursor(c, account_id)?.sync_gen))
@@ -378,7 +405,7 @@ impl AccountSync {
                 })?;
                 let deletes: Vec<Change> = gone
                     .iter()
-                    .map(|id| Change::Delete {
+                    .map(|id| Change::Gone {
                         message_id: id.clone(),
                     })
                     .collect();
@@ -407,7 +434,6 @@ impl AccountSync {
     ) -> Result<(HashMap<String, MessageMeta>, Placing), SyncError> {
         let account_id = self.account_id;
         let inbox = self
-            .services
             .mail
             .mailbox_for(Role::Inbox)
             .map(Membership::Mailbox);
@@ -428,7 +454,7 @@ impl AccountSync {
         // change, so a message gaining any server mailbox may be new to
         // the store. Otherwise only a move into the inbox from outside the
         // window counts.
-        let restates = self.services.mail.capabilities().restates;
+        let restates = self.mail.capabilities().restates;
         let arriving: Vec<Want> = changes
             .iter()
             .filter_map(|change| match change {

@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use futures::channel::oneshot;
 use mailrs_domain::invitation::Invitation;
@@ -21,13 +22,16 @@ use mailrs_domain::{
 use mailrs_store::outbox::Queued;
 use mailrs_sync::{Opened, Spot};
 
-use super::{Answer, Card, Desk, Effects, Fetched, InlinePictures, Stored, ThreadRun};
-use crate::open_thread::{Document, InlineImage, OpenThread, Page, ToClean, Unsent};
+use super::{
+    Answer, Card, Desk, Effects, Fetched, InlinePictures, Preferences, ReceiptCard, Stored,
+    ThreadRun,
+};
+use crate::open_thread::{Cleaned, Document, InlineImage, OpenThread, Page, ToClean, Unsent};
 use crate::protection::Read;
 use crate::render::Theme;
-use crate::translation::{self, Language, Prose, Translation};
-use crate::ui::invitation::{AddTo, Showing};
+use crate::translation::Translation;
 use crate::ui::invitation::strip::{Strip, Verdict};
+use crate::ui::invitation::{AddTo, Showing};
 use crate::wanted::Screen as OnScreen;
 
 /// The account and thread every fixture belongs to.
@@ -46,6 +50,8 @@ pub enum Step {
     MessagesArrived,
     Bodies,
     BodiesArrived,
+    Clean,
+    Cleaned,
     Images,
     ImagesArrived,
     Replace,
@@ -78,6 +84,11 @@ pub enum Step {
     SetFlag,
     Queued,
     Unsent,
+    ReceiptAnswered,
+    ReceiptCard,
+    AnswerReceipt,
+    SentCopy,
+    ReportChecked,
 }
 
 /// The window the run reads and writes.
@@ -125,7 +136,10 @@ pub struct Screen {
     pub translation: Result<Vec<Option<String>>, String>,
     /// The Mark as Read setting.
     pub delay: Option<u32>,
-    pub interface: Option<Language>,
+    pub language: Option<String>,
+    pub requested_languages: Vec<String>,
+    pub languages_during_translation: Vec<String>,
+    pub language_revision: u64,
     pub destination: Result<String, String>,
     /// The languages the person never translates, by code.
     pub never: Vec<String>,
@@ -150,6 +164,25 @@ pub struct Screen {
     pub patches: Vec<Vec<String>>,
     /// The page on screen, with every patch applied.
     pub document: Option<Document>,
+    /// The Read Receipts setting: ask, or never ask.
+    pub offers_receipts: bool,
+    /// What the store says about whether a receipt was answered.
+    pub receipt_answered: Result<bool, String>,
+    /// Holds the next answer to whether a receipt was answered until the
+    /// test lets go.
+    pub receipt_hold: Option<oneshot::Receiver<()>>,
+    /// How sending or declining a receipt ends.
+    pub receipt_answer: Result<(), String>,
+    pub receipt_cards: Vec<ReceiptCard>,
+    /// Every answer given, with whether it sent.
+    pub receipt_answers: Vec<(String, bool)>,
+    /// The Message-IDs the person's Sent mail holds, with each message's
+    /// recipients.
+    pub sent: Vec<(String, Vec<String>)>,
+    /// The threads that cleaned HTML, one for each time it was asked.
+    pub cleaners: Vec<std::thread::ThreadId>,
+    /// Cleaning fails, as it does when the worker panics.
+    pub clean_fails: bool,
 }
 
 pub struct FakeWindow(pub RefCell<Screen>);
@@ -365,11 +398,6 @@ pub fn queued(problem: Option<&str>) -> Queued {
     }
 }
 
-/// The English interface.
-pub fn english() -> Language {
-    translation::interface_language("", "en", &[]).expect("English is known")
-}
-
 impl FakeWindow {
     /// A window with nothing open, where the store holds the fixture
     /// thread with one unread message and no body, and Gmail has that
@@ -378,7 +406,6 @@ impl FakeWindow {
         let stored = Stored {
             messages: vec![meta("m1", true)],
             bodies: HashMap::new(),
-            cleaned: HashMap::new(),
             left: false,
         };
         Rc::new(FakeWindow(RefCell::new(Screen {
@@ -415,7 +442,10 @@ impl FakeWindow {
             queued: HashMap::new(),
             translation: Ok(vec![Some("Hello Ana".to_string())]),
             delay: Some(2),
-            interface: Some(english()),
+            language: Some("English".into()),
+            requested_languages: Vec::new(),
+            languages_during_translation: Vec::new(),
+            language_revision: 0,
             destination: Ok("The message goes to a model on this computer.".to_string()),
             never: Vec::new(),
             moves_on: None,
@@ -429,6 +459,15 @@ impl FakeWindow {
             loads: Vec::new(),
             patches: Vec::new(),
             document: None,
+            offers_receipts: true,
+            receipt_answered: Ok(false),
+            receipt_hold: None,
+            receipt_answer: Ok(()),
+            receipt_cards: Vec::new(),
+            receipt_answers: Vec::new(),
+            sent: Vec::new(),
+            cleaners: Vec::new(),
+            clean_fails: false,
         })))
     }
 
@@ -538,8 +577,10 @@ impl OnScreen for FakeWindow {
 }
 
 impl Desk for FakeWindow {
-    fn target(&self) -> Option<Target> {
-        self.open(OpenThread::target)
+    fn open_thread(&self, read: &mut dyn FnMut(&OpenThread)) {
+        if let Some(open) = self.0.borrow().open.as_ref() {
+            read(open);
+        }
     }
 
     fn start_loading(&self) -> u64 {
@@ -561,7 +602,7 @@ impl Desk for FakeWindow {
         false
     }
 
-    fn photos(&self, _senders: &[String]) -> HashMap<String, String> {
+    fn photos(&self, _senders: &[String]) -> crate::render::Photos {
         HashMap::new()
     }
 
@@ -569,60 +610,22 @@ impl Desk for FakeWindow {
         email == "ann@example.com"
     }
 
-    fn mark_read_delay(&self) -> Option<u32> {
-        self.with(|screen| screen.delay)
-    }
-
-    fn unread(&self) -> bool {
-        self.read(OpenThread::unread)
-    }
-
     fn invitation_off_calendar(&self) -> Option<Invitation> {
         self.with(|screen| screen.off_calendar.clone())
-    }
-
-    fn invitation(&self) -> Option<(String, String)> {
-        self.open(|open| {
-            open.invitation()
-                .map(|(meta, ics)| (meta.id.clone(), ics.to_string()))
-        })
-        .flatten()
-    }
-
-    fn wanting_thumbnails(&self) -> Vec<(String, MessageBody)> {
-        self.read(OpenThread::wanting_thumbnails)
-    }
-
-    fn wanting_images(&self) -> Vec<(String, MessageBody)> {
-        self.read(OpenThread::wanting_images)
-    }
-
-    fn prose(&self) -> Option<(String, Prose)> {
-        self.open(OpenThread::prose).flatten()
-    }
-
-    fn same_writer(&self, message_id: &str) -> String {
-        self.read(|open| open.same_writer(message_id))
-    }
-
-    fn translation_of(&self, message_id: &str) -> Option<(Option<Language>, bool, bool)> {
-        self.open(|open| open.translation_of(message_id)).flatten()
-    }
-
-    fn arrived(&self, message_id: &str) -> Option<(MessageBody, String)> {
-        self.open(|open| open.arrived(message_id)).flatten()
-    }
-
-    fn interface_language(&self) -> Option<Language> {
-        self.with(|screen| screen.interface)
     }
 
     fn translation_destination(&self) -> Result<String, String> {
         self.with(|screen| screen.destination.clone())
     }
 
-    fn never_translate(&self) -> Vec<String> {
-        self.with(|screen| screen.never.clone())
+    fn preferences(&self) -> Preferences {
+        self.with(|screen| Preferences {
+            mark_read_delay: screen.delay,
+            translation_language: screen.language.clone(),
+            translation_revision: Some(screen.language_revision),
+            never_translate: screen.never.clone(),
+            offers_receipts: screen.offers_receipts,
+        })
     }
 }
 
@@ -666,7 +669,11 @@ impl Effects for FakeWindow {
         Box::pin(async move { Ok(messages) })
     }
 
-    fn bodies(&self, _account_id: AccountId, message_ids: Vec<String>) -> Answer<'_, Fetched> {
+    fn bodies(
+        &self,
+        _account_id: AccountId,
+        message_ids: Vec<String>,
+    ) -> Answer<'_, Vec<(String, Result<MessageBody, String>)>> {
         self.reached(Step::Bodies);
         let bodies: Vec<(String, Result<MessageBody, String>)> = self.with(|screen| {
             message_ids
@@ -677,18 +684,33 @@ impl Effects for FakeWindow {
                 })
                 .collect()
         });
-        // The window cleans on a worker thread; here it is done at once.
-        let arrived = bodies
-            .iter()
-            .filter_map(|(id, body)| Some((id, body.as_ref().ok()?)));
-        let cleaned = ToClean::of(ACCOUNT, arrived).clean();
-        Box::pin(async move { Fetched { bodies, cleaned } })
+        Box::pin(async move { bodies })
+    }
+
+    /// Cleans on a thread of its own, as the window cleans on a worker,
+    /// and notes which thread did it.
+    fn clean(&self, html: ToClean) -> Answer<'_, HashMap<String, Cleaned>> {
+        self.reached(Step::Clean);
+        if self.with(|screen| screen.clean_fails) {
+            let failed = html.stand_ins().failures();
+            return Box::pin(async move { failed });
+        }
+        let (done, cleaned) = oneshot::channel();
+        std::thread::spawn(move || {
+            let made = (std::thread::current().id(), html.clean());
+            let _ = done.send(made);
+        });
+        Box::pin(async move {
+            let (worker, cleaned) = cleaned.await.unwrap_or_else(|_| (std::thread::current().id(), HashMap::new()));
+            self.with(|screen| screen.cleaners.push(worker));
+            cleaned
+        })
     }
 
     fn inline_images(
         &self,
         _account_id: AccountId,
-        bodies: Vec<(String, MessageBody)>,
+        bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, InlinePictures> {
         self.reached(Step::Images);
         let found = self.with(|screen| {
@@ -706,7 +728,7 @@ impl Effects for FakeWindow {
     fn thumbnails(
         &self,
         _account_id: AccountId,
-        _bodies: Vec<(String, MessageBody)>,
+        _bodies: Vec<(String, Arc<MessageBody>)>,
     ) -> Answer<'_, HashMap<String, String>> {
         self.reached(Step::Thumbnails);
         let found = self.with(|screen| screen.thumbnails.clone());
@@ -786,10 +808,17 @@ impl Effects for FakeWindow {
 
     fn translate(
         &self,
-        _into: Language,
+        into: String,
         _pieces: Vec<String>,
     ) -> Answer<'_, Result<Vec<Option<String>>, String>> {
         self.reached(Step::Translate);
+        self.with(|screen| {
+            screen.requested_languages.push(into);
+            for language in std::mem::take(&mut screen.languages_during_translation) {
+                screen.language_revision += 1;
+                screen.language = Some(language);
+            }
+        });
         let said = self.with(|screen| screen.translation.clone());
         Box::pin(async move { said })
     }
@@ -814,6 +843,39 @@ impl Effects for FakeWindow {
         Box::pin(async move { Ok(found) })
     }
 
+    fn receipt_answered(&self, _account_id: AccountId, _message_id: String) -> Answer<'_, Result<bool, String>> {
+        self.reached(Step::ReceiptAnswered);
+        let (answered, held) = self.with(|screen| (screen.receipt_answered.clone(), screen.receipt_hold.take()));
+        Box::pin(async move {
+            if let Some(held) = held {
+                let _ = held.await;
+            }
+            answered
+        })
+    }
+
+    fn answer_receipt(&self, _account_id: AccountId, message_id: String, send: bool) -> Answer<'_, Result<(), String>> {
+        self.reached(Step::AnswerReceipt);
+        let answer = self.with(|screen| {
+            screen.receipt_answers.push((message_id, send));
+            screen.receipt_answer.clone()
+        });
+        Box::pin(async move { answer })
+    }
+
+    fn sent_recipients(&self, _account_id: AccountId, rfc822_msgid: String) -> Answer<'_, Result<Vec<String>, String>> {
+        self.reached(Step::SentCopy);
+        let recipients = self.with(|screen| {
+            screen
+                .sent
+                .iter()
+                .filter(|(id, _)| *id == rfc822_msgid)
+                .flat_map(|(_, to)| to.clone())
+                .collect()
+        });
+        Box::pin(async move { Ok(recipients) })
+    }
+
     fn sender_vip(&self, _vip: bool) {}
 
     fn messages_arrived(&self, fresh: Vec<MessageMeta>) -> Vec<String> {
@@ -832,6 +894,11 @@ impl Effects for FakeWindow {
         self.change(Step::BodiesArrived, |open| {
             open.take_bodies(fetched.bodies, fetched.cleaned)
         });
+        self.draw();
+    }
+
+    fn cleaned(&self, cleaned: HashMap<String, Cleaned>) {
+        self.change(Step::Cleaned, |open| open.take_cleaned(cleaned));
         self.draw();
     }
 
@@ -908,6 +975,17 @@ impl Effects for FakeWindow {
         self.with(|screen| screen.cards.push(card));
     }
 
+    fn receipt_card(&self, card: ReceiptCard) {
+        self.change(Step::ReceiptCard, |open| open.take_receipt_card(card.clone()));
+        self.with(|screen| screen.receipt_cards.push(card));
+        self.draw();
+    }
+
+    fn report_checked(&self, message_id: String, sent: bool) {
+        self.change(Step::ReportChecked, |open| open.report_checked(message_id, sent));
+        self.draw();
+    }
+
     fn translated(&self, message_id: String, translation: Translation) {
         let card = Card::Done {
             from: translation.from,
@@ -915,10 +993,22 @@ impl Effects for FakeWindow {
             shown: true,
         };
         self.change(Step::Translated, |open| {
-            open.translations.insert(message_id, translation);
+            open.take_translation(message_id, translation)
         });
         self.with(|screen| screen.cards.push(card));
         self.draw();
+    }
+
+    fn keep_translations(&self, into: &str) {
+        let changed = self.with(|screen| {
+            screen
+                .open
+                .as_mut()
+                .is_some_and(|open| open.keep_translations(into))
+        });
+        if changed {
+            self.draw();
+        }
     }
 
     fn turn_translation(&self, message_id: &str) -> bool {

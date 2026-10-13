@@ -145,16 +145,18 @@ pub(crate) fn clipped(mut text: String) -> String {
     text
 }
 
-/// The server's own text inside async-imap's `No` and `Bad` errors, which
-/// carry it as `code: Some(Alert), info: Some("text")`. Anything else
-/// comes back whole.
+/// The server's own text inside async-imap's `No` and `Bad` errors. Its
+/// sign-in and tagged checks write `code: Some(Alert), info: Some("text")`
+/// and its list and fetch readers write `outcome: Outcome { code: None,
+/// information: Some("text") }`, so the words end at the closing quote,
+/// not at the end of the detail. Anything else comes back whole.
 pub(crate) fn server_words(detail: &str) -> String {
-    const START: &str = "info: Some(\"";
-    let Some(at) = detail.find(START) else {
+    let quoted = ["info: Some(\"", "information: Some(\""]
+        .iter()
+        .find_map(|start| detail.find(start).map(|at| &detail[at + start.len()..]));
+    let Some(quoted) = quoted else {
         return detail.to_string();
     };
-    let quoted = &detail[at + START.len()..];
-    let quoted = quoted.strip_suffix("\")").unwrap_or(quoted);
     let mut words = String::with_capacity(quoted.len());
     let mut chars = quoted.chars();
     while let Some(c) = chars.next() {
@@ -164,6 +166,7 @@ pub(crate) fn server_words(detail: &str) -> String {
                     words.push(next);
                 }
             }
+            '"' => break,
             c => words.push(c),
         }
     }
@@ -350,6 +353,18 @@ mod tests {
         );
         assert_eq!(server_words(&detail), "Say \"hi\" \\ bye");
         assert_eq!(server_words("plain words"), "plain words");
+    }
+
+    /// async-imap's list and fetch readers wrap the words in an `Outcome`,
+    /// whose Debug form closes with `") }`.
+    #[test]
+    fn server_words_come_out_of_async_imaps_outcome_form() {
+        let outcome = async_imap::imap_proto::Outcome {
+            code: Some(async_imap::imap_proto::ResponseCode::Alert),
+            information: Some("Say \"hi\" \\ bye".into()),
+        };
+        let detail = format!("outcome: {outcome:?}");
+        assert_eq!(server_words(&detail), "Say \"hi\" \\ bye");
     }
 
     /// async-imap puts the whole unparsed buffer in its parse error, mail

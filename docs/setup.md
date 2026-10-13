@@ -17,6 +17,10 @@ the permissions Penguin Mail asks for, then come back to the app. Until Google
 finishes verifying the app, the page warns that Google has not verified it.
 Choose **Advanced**, then continue.
 
+If Google blocks the sign-in, or your organization allows only apps its
+administrator approved, sign in with a Google client of your own instead; see
+[Your own Google client](#your-own-google-client).
+
 ### Other providers
 
 Choose your provider, or **Other**, and type your address. Penguin Mail finds
@@ -27,6 +31,63 @@ incoming (IMAP) and outgoing (SMTP) servers yourself. The password goes to
 your desktop's keyring, never into a file.
 
 The account appears in the sidebar and starts downloading.
+
+### Sender addresses and suffixes
+
+Under **Preferences > Writing**, each IMAP or POP3 account has a group
+headed by its address. Add the addresses you send from through that account
+there. Each uses that account's existing
+SMTP server and credentials. Choose a default address for new messages and
+an optional sender name. Google accounts keep using the addresses verified
+in Gmail.
+
+Enable **Allow +suffix** or **Allow .suffix** for each address whose server
+accepts them. In the composer's **From** row, choose an address and enter a
+suffix including its separator, such as `+shop` or `.orders`. The full
+address appears below it. A suffix inherits its base address's name and
+signature and stays with the saved draft.
+
+Replies select the matching address in the original message's To or Cc,
+including permitted suffixes on the same domain. Reply All leaves those
+addresses out of the recipients. If no address matches, the account's
+default is used. Delivery headers such as Delivered-To are not used, so
+mail received through a blind copy or forwarding may need a manual From
+choice. A reply to your own sent message can keep its original From.
+
+### Proton Mail Bridge
+
+Proton Mail needs Bridge for IMAP and SMTP. Set up its certificate before
+signing in to Penguin Mail:
+
+1. Start Bridge. Under **Settings > Advanced settings > Export TLS
+   certificates**, export the certificate to a folder only you can access.
+   Bridge also exports a private key. Keep that key out of Penguin Mail's
+   certificate file and remove the exported copy when you no longer need it.
+2. Create Penguin Mail's config directory and copy **only the public
+   certificate** to the path for your installation:
+   - Linux `.deb`, `.rpm`, or source build:
+     `~/.config/penguin-mail/proton-bridge-cert.pem`
+   - Snap: `penguin-mail/proton-bridge-cert.pem` under the snap's config
+     directory (`$XDG_CONFIG_HOME`, or `.config` under its home directory).
+   - Flatpak:
+     `~/.var/app/io.github.c9dev.penguin-mail/config/penguin-mail/proton-bridge-cert.pem`
+   - macOS: `~/Library/Application Support/penguin-mail/proton-bridge-cert.pem`
+
+   The file must contain one PEM `BEGIN CERTIFICATE` block and no private key.
+   Create the parent directory first if it does not exist. You can copy the
+   exported certificate even if Bridge gave it a different file extension.
+3. In Bridge, copy the account's IMAP and SMTP settings and its Bridge
+   password. Choose **Enter Server Settings** in Penguin Mail. Use
+   `127.0.0.1` for both hosts and enter the ports and security types shown
+   by Bridge. Use the Bridge password, not your Proton account password.
+
+Penguin Mail accepts that exact certificate for connections to `127.0.0.1`.
+If Bridge replaces its certificate, export and copy the new public certificate
+before signing in again. Penguin Mail reads the file on each connection, so
+you do not need to restart it. A different certificate on `127.0.0.1`, and
+all certificates on other hosts, still go through the system's certificate
+checks. [Proton's Bridge settings guide](https://proton.me/support/comprehensive-guide-to-bridge-settings)
+describes the export option.
 
 ### Calendars, contacts and rules on other providers
 
@@ -93,6 +154,122 @@ Penguin Mail keeps your refresh tokens in Keychain on macOS or the desktop
 keyring on Linux, not in this file. The Flatpak keeps them in its own store
 instead, through the Secret portal; see "Which package" below.
 
+## Your own Google client
+
+Penguin Mail signs in to Google with the project's own client. When Google
+blocks that client, or your organization allows only apps its administrator
+approved, you can sign in with a client you make in your own Google Cloud
+project. Any package works this way, the released ones included.
+
+### Making the client
+
+In the [Google Cloud console](https://console.cloud.google.com/), create a
+project, then:
+
+1. Under APIs & Services, enable the Gmail, People, Google Calendar and Google
+   Drive APIs.
+2. Under Google Auth Platform, Branding, set the app name (`Penguin Mail` is
+   fine) and your own address as the support and developer contact. Leave the
+   logo out: uploading one sends the app toward Google's verification.
+3. Under Audience, choose **External** and leave the publishing status at
+   **Testing**. Under Test users, add the Google address you will sign in
+   with. Only test users can sign in to an app in testing.
+4. Under Data Access, add the seven scopes Penguin Mail asks for at sign-in,
+   so Google's list matches the app's:
+   - `https://mail.google.com/`
+   - `https://www.googleapis.com/auth/gmail.settings.basic`
+   - `https://www.googleapis.com/auth/contacts`
+   - `https://www.googleapis.com/auth/calendar.events`
+   - `https://www.googleapis.com/auth/calendar.calendarlist`
+   - `https://www.googleapis.com/auth/calendar.calendars`
+   - `https://www.googleapis.com/auth/drive.file`
+
+   The [privacy policy](privacy-policy.md) says what each one is for.
+5. Under Clients, create an OAuth client of type **Desktop app**. Copy its
+   client ID and client secret.
+
+Google ends a sign-in made through an app in testing after seven days, and
+the account then asks you to sign in again. To avoid that, choose
+**Publish app** under Audience instead of adding test users. Don't submit it
+for verification: you click through Google's "unverified app" notice once
+per account.
+
+### Signing in with it
+
+Set `PENGUIN_MAIL_GOOGLE_CLIENT_ID` and `PENGUIN_MAIL_GOOGLE_CLIENT_SECRET`
+in Penguin Mail's environment, then choose **Add Account** and **Google**.
+The sign-in page says "Signing in with your own Google client". If only one
+of the two is set, Penguin Mail says which one is missing and opens no page.
+
+From a terminal, with the .deb, rpm, Arch package, tarball or a copy you
+built:
+
+```sh
+PENGUIN_MAIL_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com \
+PENGUIN_MAIL_GOOGLE_CLIENT_SECRET=GOCSPX-... \
+penguin-mail
+```
+
+Quit Penguin Mail first: a second start hands over to the copy already
+running, which does not see the new variables. `penguin-mail-cli account add`
+reads the same two variables.
+
+The Flatpak reads its environment from Flatpak's overrides:
+
+```sh
+flatpak override --user \
+  --env=PENGUIN_MAIL_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com \
+  --env=PENGUIN_MAIL_GOOGLE_CLIENT_SECRET=GOCSPX-... \
+  io.github.c9dev.penguin-mail
+```
+
+Quit Penguin Mail and start it again for it to see them. Once the account
+is added, remove them again. This also removes any other
+override you made for Penguin Mail:
+
+```sh
+flatpak override --user --reset io.github.c9dev.penguin-mail
+```
+
+For the snap, quit Penguin Mail and start it from a terminal with the
+variables set:
+
+```sh
+PENGUIN_MAIL_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com \
+PENGUIN_MAIL_GOOGLE_CLIENT_SECRET=GOCSPX-... \
+snap run penguin-mail
+```
+
+snapd passes variables like these through to a strictly confined snap
+(checked with snapd 2.77). A start from the app grid does not have them.
+
+On macOS, quit the app and start it from Terminal:
+
+```sh
+PENGUIN_MAIL_GOOGLE_CLIENT_ID=... PENGUIN_MAIL_GOOGLE_CLIENT_SECRET=... \
+"/Applications/Penguin Mail.app/Contents/MacOS/penguin-mail"
+```
+
+A copy installed with `scripts/install-macos.sh` starts through
+`Contents/MacOS/penguin-mail-launcher` instead.
+
+### What Penguin Mail keeps
+
+An account added this way keeps its client in the keyring beside its
+refresh token, under the service `penguin-mail-google-client` (in the
+Flatpak's own store through the Secret portal), and refreshes through that
+client at every start, with or without the variables. You need them again
+only to add another account, or to sign an account in again: a sign-in
+without them moves the account to the project's client. Removing the
+account deletes its client from the keyring. Accounts added before keep the
+project's client.
+
+Your shell's history, a script that sets the variables, and Flatpak's
+override file (`~/.local/share/flatpak/overrides/io.github.c9dev.penguin-mail`)
+keep the client secret in plain text. Google issues a desktop client secret
+to identify the app rather than to protect it, so this exposes no mail, but
+remove the override once the account is added.
+
 ## Building your own copy
 
 A build signs in to Google or Microsoft only when it was compiled with the
@@ -110,30 +287,9 @@ without them works in every other way and says so when you try to add a
 Google account.
 A copy built without the Microsoft one hides Microsoft in Add Account.
 
-To build with a client of your own instead, make one in a Google Cloud
-project:
-
-1. Enable the Gmail, People, Calendar and Drive APIs.
-2. Under Branding, set the app name to `Penguin Mail` and your own address as
-   the support and developer contact. Leave the logo out for personal use:
-   uploading one sends the app toward Google's verification.
-3. Under Audience, choose **External** and publish the app. Don't submit it
-   for verification for personal use; you click through Google's
-   "unverified app" notice once per account instead.
-4. Under Data Access, add the seven scopes the app asks for at sign-in, so
-   Google's list matches the app's:
-   - `https://mail.google.com/`
-   - `https://www.googleapis.com/auth/gmail.settings.basic`
-   - `https://www.googleapis.com/auth/contacts`
-   - `https://www.googleapis.com/auth/calendar.events`
-   - `https://www.googleapis.com/auth/calendar.calendarlist`
-   - `https://www.googleapis.com/auth/calendar.calendars`
-   - `https://www.googleapis.com/auth/drive.file`
-
-   The [privacy policy](privacy-policy.md) says what each one is for.
-5. Under Clients, create an OAuth client of type **Desktop app**.
-
-Put its ID and secret in `packaging/secrets.env`:
+To build with a client of your own instead, make one as
+[Your own Google client](#your-own-google-client) says, and put its ID and
+secret in `packaging/secrets.env`:
 
 ```sh
 PENGUIN_MAIL_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com

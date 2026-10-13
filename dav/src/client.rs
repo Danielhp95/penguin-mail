@@ -5,6 +5,7 @@
 //! home set elsewhere gets no credentials, and the request fails as
 //! unauthorized. Every answer is read up to [`crate::MOST_BYTES`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_domain::EpochMillis;
@@ -133,6 +134,13 @@ pub trait DavApi: Send + Sync + 'static {
 /// password may go there: iCloud serves the principal at caldav.icloud.com
 /// and the calendars at p12-caldav.icloud.com.
 pub fn same_site(host: &str, other: &str) -> bool {
+    // The Public Suffix List reads an IP address as a domain name, so
+    // 192.0.2.10 and 198.51.2.10 would both be "2.10". An address is a
+    // site of its own.
+    let is_ip = |h: &str| h.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>().is_ok();
+    if is_ip(host) || is_ip(other) {
+        return host.eq_ignore_ascii_case(other);
+    }
     match (psl::domain_str(host), psl::domain_str(other)) {
         (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
         _ => host.eq_ignore_ascii_case(other),
@@ -145,11 +153,37 @@ pub fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(str::to_ascii_lowercase)
 }
 
+/// Whether the hosts of two addresses are on one site, as [`same_site`]
+/// reads it. An address that does not parse, or has no host, shares
+/// nothing.
+pub fn shares_site(a: &str, b: &str) -> bool {
+    let host = |address: &str| Url::parse(address).ok().and_then(|u| u.host_str().map(str::to_string));
+    match (host(a), host(b)) {
+        (Some(a), Some(b)) => same_site(&a, &b),
+        _ => false,
+    }
+}
+
+/// Where a bearer token comes from, for an account that signs in with
+/// OAuth. `refused` is the token the server just turned away: the source
+/// hands back another one, refreshing only when it still holds that one,
+/// so calls refused together share one refresh.
+pub trait TokenSource: Send + Sync {
+    fn token<'a>(&'a self, refused: Option<&'a str>) -> std::pin::Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
+
+    /// The server refused the token handed out after a refusal too, so a
+    /// fresh token does not help here. The source can stop handing out
+    /// tokens for this server rather than refresh on every call.
+    fn refused_again(&self) {}
+}
+
 pub struct DavClient {
     base: Url,
     /// Which well-known URL `homes` falls back on (RFC 6764).
     kind: Kind,
     login: Login,
+    /// Set for an OAuth account: the token goes where the password would.
+    bearer: Option<Arc<dyn TokenSource>>,
     http: reqwest::Client,
 }
 
@@ -184,7 +218,7 @@ impl DavClient {
         if base.scheme() != "https" {
             return Err(DavError::Forbidden("Penguin Mail reaches calendar and contact servers over HTTPS only".into()));
         }
-        Ok(DavClient { base, kind, login, http: http_client(true)? })
+        Ok(DavClient { base, kind, login, bearer: None, http: http_client(true)? })
     }
 
     /// A client with no https check, for tests against a local mock
@@ -192,7 +226,37 @@ impl DavClient {
     /// hand as `new` does and a test exercises the real credential rule.
     #[cfg(any(test, feature = "fake"))]
     pub fn over(base: Url, kind: Kind, login: Login) -> Result<DavClient, DavError> {
-        Ok(DavClient { base, kind, login, http: http_client(false)? })
+        Ok(DavClient { base, kind, login, bearer: None, http: http_client(false)? })
+    }
+
+    /// Signs in with tokens from `source` in place of the password.
+    pub fn with_bearer(mut self, source: Arc<dyn TokenSource>) -> DavClient {
+        self.bearer = Some(source);
+        self
+    }
+
+    /// Adds the credentials for a host of the account's own site: the
+    /// bearer token when there is a source, else the password. Answers the
+    /// token it sent, so a refusal can hand it back to the source.
+    async fn authorize(
+        &self,
+        request: reqwest::RequestBuilder,
+        refused: Option<&str>,
+    ) -> Result<(reqwest::RequestBuilder, Option<String>), DavError> {
+        match &self.bearer {
+            Some(source) => {
+                let token = source.token(refused).await.map_err(DavError::Network)?;
+                Ok((request.bearer_auth(&token), Some(token)))
+            }
+            None => Ok((request.basic_auth(&self.login.user, Some(&self.login.password)), None)),
+        }
+    }
+
+    /// Tells the token source that a fresh token was refused too.
+    fn refused_again(&self) {
+        if let Some(source) = &self.bearer {
+            source.refused_again();
+        }
     }
 
     fn url(&self, href: &str) -> Result<Url, DavError> {
@@ -205,10 +269,14 @@ impl DavClient {
         let method = Method::from_bytes(method.as_bytes()).map_err(|err| DavError::Parse(err.to_string()))?;
         let mut url = self.url(href)?;
         let home = self.base.host_str().unwrap_or_default().to_string();
+        // The token a 401 refused, once: a second refusal stands.
+        let mut refused: Option<String> = None;
+        let mut sent = None;
         for _ in 0..4 {
             let mut request = self.http.request(method.clone(), url.clone());
-            if url.host_str().is_some_and(|h| same_site(&home, h)) {
-                request = request.basic_auth(&self.login.user, Some(&self.login.password));
+            let trusted = url.host_str().is_some_and(|h| same_site(&home, h));
+            if trusted {
+                (request, sent) = self.authorize(request, refused.as_deref()).await?;
             }
             if let Some(depth) = depth {
                 request = request.header("Depth", depth);
@@ -221,6 +289,16 @@ impl DavClient {
             }
             let mut response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
             let status = response.status();
+            // A bearer token may have expired: ask for a fresh one, once.
+            if status == StatusCode::UNAUTHORIZED && trusted && refused.is_none()
+                && let Some(token) = sent.take()
+            {
+                refused = Some(token);
+                continue;
+            }
+            if status == StatusCode::UNAUTHORIZED && trusted && sent.is_some() {
+                self.refused_again();
+            }
             if status.is_redirection() {
                 let Some(next) = response.headers().get("Location").and_then(|l| l.to_str().ok()) else {
                     return Err(DavError::Http { status: status.as_u16(), detail: "a redirect with nowhere to go".into() });
@@ -313,6 +391,23 @@ fn not_dav(err: &DavError) -> bool {
 /// whichever way the server spelled its escapes.
 fn absolute(asked: &Url, href: &str) -> String {
     asked.join(&wire_href(href)).map(|url| canonical_href(url.as_str())).unwrap_or_else(|_| canonical_href(href))
+}
+
+/// How much of a failed write's answer is kept to explain it.
+const ERROR_BYTES: usize = 64 << 10;
+
+/// The start of the body, at most `limit` bytes, read a chunk at a time
+/// and abandoned once it is full.
+async fn read_prefix(mut response: reqwest::Response, limit: usize) -> String {
+    let mut bytes = Vec::new();
+    while bytes.len() < limit {
+        match response.chunk().await {
+            Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
+            _ => break,
+        }
+    }
+    bytes.truncate(limit);
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn check(answer: Answer) -> Result<Answer, DavError> {
@@ -474,17 +569,34 @@ impl DavApi for DavClient {
         // The body is not XML, so it goes through `send` without the XML
         // content type: a request built here, as `send` builds one.
         let url = self.url(href)?;
-        let mut request = self.http.put(url.clone()).body(body.to_string());
-        if url.host_str().is_some_and(|h| same_site(self.base.host_str().unwrap_or_default(), h)) {
-            request = request.basic_auth(&self.login.user, Some(&self.login.password));
-        }
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        let response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
+        let trusted = url.host_str().is_some_and(|h| same_site(self.base.host_str().unwrap_or_default(), h));
+        let mut refused: Option<String> = None;
+        let response = loop {
+            let mut request = self.http.put(url.clone()).body(body.to_string());
+            let mut sent = None;
+            if trusted {
+                (request, sent) = self.authorize(request, refused.as_deref()).await?;
+            }
+            for (name, value) in &headers {
+                request = request.header(*name, value);
+            }
+            let response = request.send().await.map_err(|err| DavError::Network(err.to_string()))?;
+            if response.status() == StatusCode::UNAUTHORIZED && trusted && refused.is_none()
+                && let Some(token) = sent
+            {
+                refused = Some(token);
+                continue;
+            }
+            if response.status() == StatusCode::UNAUTHORIZED && trusted && sent.is_some() {
+                self.refused_again();
+            }
+            break response;
+        };
         let status = response.status();
         let etag = response.headers().get("ETag").and_then(|e| e.to_str().ok()).map(str::to_string);
-        let text = response.text().await.unwrap_or_default();
+        // The body of a success is never read, and what explains a failure
+        // is a few lines at the start.
+        let text = if status.is_success() { String::new() } else { read_prefix(response, ERROR_BYTES).await };
         check(Answer { url, status, etag: etag.clone(), retry_after: None, dav: None, body: text })?;
         Ok(etag)
     }
@@ -513,5 +625,33 @@ impl DavApi for DavClient {
 
     fn host(&self) -> &str {
         self.base.host_str().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::read_prefix;
+
+    #[tokio::test]
+    async fn a_long_answer_is_read_only_as_far_as_the_limit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500).set_body_bytes(vec![b'x'; 5 << 20]))
+            .mount(&server)
+            .await;
+        let response = reqwest::get(server.uri()).await.unwrap();
+        let kept = read_prefix(response, 64 << 10).await;
+        assert_eq!(kept.len(), 64 << 10);
+    }
+
+    #[tokio::test]
+    async fn a_short_answer_is_read_whole() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(ResponseTemplate::new(500).set_body_string("nope")).mount(&server).await;
+        let response = reqwest::get(server.uri()).await.unwrap();
+        assert_eq!(read_prefix(response, 64 << 10).await, "nope");
     }
 }

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use mailrs_domain::calendar::series::Step;
-use mailrs_domain::calendar::{self as model, Access, Calendar, Event, Guest, Kind, Notify, Occurrence, Status};
+use mailrs_domain::calendar::{self as model, Access, Calendar, Event, Guest, Kind, Notify, Occurrence, Reminder, Status};
 use mailrs_domain::invitation::Answer;
 use mailrs_domain::{AccountId, EpochMillis};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -69,7 +69,7 @@ pub fn save_calendars(conn: &Connection, account_id: AccountId, list: &[Calendar
                 calendar.zone,
                 calendar.primary,
                 calendar.shown,
-                json(&calendar.reminders),
+                reminders_text(calendar),
             ],
         )?;
     }
@@ -83,6 +83,7 @@ pub fn calendars(conn: &Connection, account_id: AccountId) -> Result<Vec<Calenda
          FROM calendars WHERE account_id = ?1 ORDER BY is_primary DESC, name",
     )?;
     let rows = stmt.query_map(params![account_id], |row| {
+        let (reminders, all_day_reminders) = reminders_of(&row.get::<_, String>(7)?);
         Ok(Calendar {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -91,11 +92,36 @@ pub fn calendars(conn: &Connection, account_id: AccountId) -> Result<Vec<Calenda
             zone: row.get(4)?,
             primary: row.get(5)?,
             shown: row.get(6)?,
-            reminders: parse(&row.get::<_, String>(7)?),
+            reminders,
+            all_day_reminders,
             hidden: row.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// A calendar's default reminders as its row keeps them: a list, or an
+/// object holding the timed list and the all-day one for a provider that
+/// keeps the two apart. The column is JSON, so the second shape needs no
+/// new column, and a row written before reads as the list it was.
+pub(crate) fn reminders_text(calendar: &Calendar) -> String {
+    match &calendar.all_day_reminders {
+        None => json(&calendar.reminders),
+        Some(all_day) => json(&serde_json::json!({ "timed": calendar.reminders, "allDay": all_day })),
+    }
+}
+
+fn reminders_of(text: &str) -> (Vec<Reminder>, Option<Vec<Reminder>>) {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Split {
+        timed: Vec<Reminder>,
+        all_day: Vec<Reminder>,
+    }
+    match serde_json::from_str::<Split>(text) {
+        Ok(split) => (split.timed, Some(split.all_day)),
+        Err(_) => (parse(text), None),
+    }
 }
 
 pub fn set_shown(conn: &Connection, account_id: AccountId, calendar: &str, shown: bool) -> Result<()> {
@@ -219,64 +245,62 @@ pub fn synced(conn: &Connection, account_id: AccountId) -> Result<bool> {
 pub fn save_events(conn: &Connection, account_id: AccountId, events: &[Event], seen_at: EpochMillis) -> Result<()> {
     for event in events {
         let attachments = kept_attachments(conn, account_id, event)?;
-        conn.execute(
+        conn.prepare_cached(
             "INSERT OR REPLACE INTO events (account_id, calendar, id, uid, etag, starts_at, ends_at, zone, \
              all_day, title, place, description, color, busy, status, private, organizer, my_answer, \
              reminders, conference, rules, series_end, series, original_start, pending, seen_at, sequence, kind, \
              attachments) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, \
              ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
-            params![
+        )?
+        .execute(params![
+            account_id,
+            event.calendar,
+            event.id,
+            event.uid,
+            event.etag,
+            event.start,
+            event.end,
+            event.zone,
+            event.all_day,
+            event.title,
+            event.place,
+            event.description,
+            event.color,
+            event.busy,
+            event.status.as_str(),
+            event.private,
+            event.organizer,
+            event.my_answer.map(|a| a.as_str()),
+            event.reminders.as_ref().map(json),
+            event.conference,
+            event.rules.join("\n"),
+            model::series_end(event),
+            event.series,
+            event.original_start,
+            event.pending,
+            seen_at,
+            event.sequence,
+            (event.kind != Kind::Event).then(|| json(&event.kind)),
+            attachments.as_ref().map(json),
+        ])?;
+        conn.prepare_cached("DELETE FROM event_guests WHERE account_id = ?1 AND calendar = ?2 AND event = ?3")?
+            .execute(params![account_id, event.calendar, event.id])?;
+        let mut insert = conn.prepare_cached(
+            "INSERT OR REPLACE INTO event_guests (account_id, calendar, event, email, name, answer, organizer, me) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )?;
+        for guest in &event.guests {
+            insert.execute(params![
                 account_id,
                 event.calendar,
                 event.id,
-                event.uid,
-                event.etag,
-                event.start,
-                event.end,
-                event.zone,
-                event.all_day,
-                event.title,
-                event.place,
-                event.description,
-                event.color,
-                event.busy,
-                event.status.as_str(),
-                event.private,
-                event.organizer,
-                event.my_answer.map(|a| a.as_str()),
-                event.reminders.as_ref().map(json),
-                event.conference,
-                event.rules.join("\n"),
-                model::series_end(event),
-                event.series,
-                event.original_start,
-                event.pending,
-                seen_at,
-                event.sequence,
-                (event.kind != Kind::Event).then(|| json(&event.kind)),
-                attachments.as_ref().map(json),
-            ],
-        )?;
-        conn.execute(
-            "DELETE FROM event_guests WHERE account_id = ?1 AND calendar = ?2 AND event = ?3",
-            params![account_id, event.calendar, event.id],
-        )?;
-        for guest in &event.guests {
-            conn.execute(
-                "INSERT OR REPLACE INTO event_guests (account_id, calendar, event, email, name, answer, organizer, me) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    account_id,
-                    event.calendar,
-                    event.id,
-                    guest.email,
-                    guest.name,
-                    guest.answer.map(|a| a.as_str()),
-                    guest.organizer,
-                    guest.me,
-                ],
-            )?;
+                guest.email,
+                guest.name,
+                guest.answer.map(|a| a.as_str()),
+                guest.organizer,
+                guest.me,
+            ])?;
         }
     }
     Ok(())
@@ -396,7 +420,7 @@ pub fn event(conn: &Connection, account_id: AccountId, calendar: &str, id: &str)
         .optional()?;
     match found {
         Some(mut event) => {
-            event.guests = guests(conn, account_id, calendar, id)?;
+            read_guests(conn, account_id, [&mut event])?;
             Ok(Some(event))
         }
         None => Ok(None),
@@ -417,9 +441,7 @@ pub fn changed_occurrences(
     ))?;
     let mut found: Vec<Event> =
         stmt.query_map(params![account_id, calendar, series], read_event)?.collect::<rusqlite::Result<_>>()?;
-    for event in &mut found {
-        event.guests = guests(conn, account_id, calendar, &event.id)?;
-    }
+    read_guests(conn, account_id, &mut found)?;
     Ok(found)
 }
 
@@ -434,11 +456,8 @@ fn kept_attachments(conn: &Connection, account_id: AccountId, event: &Event) -> 
     let mut fresh = fresh.clone();
     if !event.pending {
         let held: Option<Option<String>> = conn
-            .query_row(
-                "SELECT attachments FROM events WHERE account_id = ?1 AND calendar = ?2 AND id = ?3",
-                params![account_id, event.calendar, event.id],
-                |row| row.get(0),
-            )
+            .prepare_cached("SELECT attachments FROM events WHERE account_id = ?1 AND calendar = ?2 AND id = ?3")?
+            .query_row(params![account_id, event.calendar, event.id], |row| row.get(0))
             .optional()?;
         if let Some(Some(text)) = held {
             model::keep_local(&mut fresh, &parse::<Vec<model::Attachment>>(&text));
@@ -658,12 +677,10 @@ fn expand_rows(
         .iter()
         .filter_map(|e| Some((e.calendar.clone(), e.series.clone()?, e.original_start?)))
         .collect();
+    let mut events: Vec<Event> = events.into_iter().filter(|e| e.status != Status::Cancelled).collect();
+    read_guests(conn, account_id, &mut events)?;
     let mut found = Vec::new();
-    for mut event in events {
-        if event.status == Status::Cancelled {
-            continue;
-        }
-        event.guests = guests(conn, account_id, &event.calendar, &event.id)?;
+    for event in events {
         let event = Arc::new(event);
         for (start, end) in model::expand(&event, from, to) {
             if replaced.contains(&(event.calendar.clone(), event.id.clone(), start)) {
@@ -767,9 +784,9 @@ pub fn waiting(
     let mut found: Vec<Occurrence> = nearest.into_values().collect();
     found.sort_by(|a, b| (a.start, &a.event.title).cmp(&(b.start, &b.event.title)));
     found.truncate(limit);
-    for occurrence in &mut found {
-        let event = Arc::make_mut(&mut occurrence.event);
-        event.guests = guests(conn, occurrence.account_id, &event.calendar, &event.id)?;
+    for &account_id in accounts {
+        let of_account = found.iter_mut().filter(|o| o.account_id == account_id);
+        read_guests(conn, account_id, of_account.map(|o| Arc::make_mut(&mut o.event)))?;
     }
     Ok(found)
 }
@@ -876,12 +893,14 @@ pub fn search(
     let mut found: Vec<Ranked> = ranked.into_values().collect();
     found.sort_by_key(|(past, rank, ..)| (*past, *rank));
     found.truncate(limit);
-    let mut occurrences = Vec::with_capacity(found.len());
-    for (_, _, account_id, mut event, start, end) in found {
-        event.guests = guests(conn, account_id, &event.calendar, &event.id)?;
-        occurrences.push(Occurrence { account_id, event: Arc::new(event), start, end });
+    for &account_id in accounts {
+        let of_account = found.iter_mut().filter(|r| r.2 == account_id);
+        read_guests(conn, account_id, of_account.map(|r| &mut r.3))?;
     }
-    Ok(occurrences)
+    Ok(found
+        .into_iter()
+        .map(|(_, _, account_id, event, start, end)| Occurrence { account_id, event: Arc::new(event), start, end })
+        .collect())
 }
 
 /// The event's next occurrence at or after `from`, within a year ahead;
@@ -898,21 +917,48 @@ fn next_showing(event: &Event, from: EpochMillis) -> (EpochMillis, EpochMillis) 
     (event.start, event.end)
 }
 
-fn guests(conn: &Connection, account_id: AccountId, calendar: &str, event: &str) -> Result<Vec<Guest>> {
-    let mut stmt = conn.prepare(
-        "SELECT email, name, answer, organizer, me FROM event_guests \
-         WHERE account_id = ?1 AND calendar = ?2 AND event = ?3 ORDER BY organizer DESC, email",
-    )?;
-    let rows = stmt.query_map(params![account_id, calendar, event], |row| {
-        Ok(Guest {
-            email: row.get(0)?,
-            name: row.get(1)?,
-            answer: row.get::<_, Option<String>>(2)?.and_then(|a| a.parse().ok()),
-            organizer: row.get(3)?,
-            me: row.get(4)?,
-        })
+/// The guests of the events named in `?2`, a JSON list of
+/// `[calendar, id]` pairs, of account `?1`. The cross join walks the
+/// list and looks each event up by the table's key.
+const GUESTS_OF: &str = "SELECT g.calendar, g.event, g.email, g.name, g.answer, g.organizer, g.me \
+     FROM (SELECT DISTINCT value ->> 0 AS calendar, value ->> 1 AS event FROM json_each(?2)) j \
+     CROSS JOIN event_guests g ON g.account_id = ?1 AND g.calendar = j.calendar AND g.event = j.event \
+     ORDER BY g.organizer DESC, g.email";
+
+/// Gives each of `events`, all the account's, its guests, organizer
+/// first, then by address. Two copies of one event each get the list. One query reads the guests of them all, so a
+/// month of events costs one read rather than one per event.
+fn read_guests<'e>(
+    conn: &Connection,
+    account_id: AccountId,
+    events: impl IntoIterator<Item = &'e mut Event>,
+) -> Result<()> {
+    let events: Vec<&mut Event> = events.into_iter().collect();
+    if events.is_empty() {
+        return Ok(());
+    }
+    let keys: Vec<[&str; 2]> = events.iter().map(|e| [e.calendar.as_str(), e.id.as_str()]).collect();
+    let mut stmt = conn.prepare_cached(GUESTS_OF)?;
+    let rows = stmt.query_map(params![account_id, json(&keys)], |row| {
+        let guest = Guest {
+            email: row.get(2)?,
+            name: row.get(3)?,
+            answer: row.get::<_, Option<String>>(4)?.and_then(|a| a.parse().ok()),
+            organizer: row.get(5)?,
+            me: row.get(6)?,
+        };
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, guest))
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut by_event: HashMap<(String, String), Vec<Guest>> = HashMap::new();
+    for row in rows {
+        let (calendar, event, guest) = row?;
+        by_event.entry((calendar, event)).or_default().push(guest);
+    }
+    for event in events {
+        let key = (event.calendar.clone(), event.id.clone());
+        event.guests = by_event.get(&key).cloned().unwrap_or_default();
+    }
+    Ok(())
 }
 
 fn read_event(row: &Row) -> rusqlite::Result<Event> {
@@ -942,6 +988,7 @@ fn read_event(row: &Row) -> rusqlite::Result<Event> {
             .filter(|l| !l.is_empty())
             .map(str::to_string)
             .collect(),
+        unread_rule: false,
         series: row.get(21)?,
         original_start: row.get(22)?,
         pending: row.get(23)?,
@@ -952,6 +999,8 @@ fn read_event(row: &Row) -> rusqlite::Result<Event> {
         meet_request: None,
         kind: row.get::<_, Option<String>>(25)?.map(|k| parse(&k)).unwrap_or_default(),
         attachments: row.get::<_, Option<String>>(26)?.map(|a| parse(&a)),
+        kept_theirs: Vec::new(),
+        series_etag: String::new(),
     })
 }
 
@@ -1118,8 +1167,8 @@ pub fn enqueue_after(
             }
             (ChangeKind::Remove, "save") => {
                 conn.execute(
-                    "UPDATE calendar_changes SET kind = 'remove', body = NULL WHERE seq = ?1",
-                    params![seq],
+                    "UPDATE calendar_changes SET kind = 'remove', body = ?2 WHERE seq = ?1",
+                    params![seq, json(event)],
                 )?;
                 return waited(seq);
             }
@@ -1143,9 +1192,11 @@ pub fn enqueue_after(
     }
 
     let etag = (!event.etag.is_empty()).then_some(event.etag.as_str());
+    // A removal keeps the event it takes off, so its UID can still find
+    // the event if the account's calendar server changes before it goes.
     let body = match kind {
-        ChangeKind::Create | ChangeKind::Save | ChangeKind::Move => Some(json(event)),
-        ChangeKind::Remove | ChangeKind::Answer => None,
+        ChangeKind::Create | ChangeKind::Save | ChangeKind::Move | ChangeKind::Remove => Some(json(event)),
+        ChangeKind::Answer => None,
     };
     conn.execute(
         "INSERT INTO calendar_changes (account_id, calendar, event, kind, etag, body, waits_on, restores, notify) \
@@ -1316,7 +1367,9 @@ pub fn drop_waiting_on(conn: &Connection, seq: i64) -> Result<Vec<Dropped>> {
                          prior_kind = NULL, prior_body = NULL WHERE seq = ?1",
                         params![seq, kind, prior_body],
                     )?;
-                    let body = prior_body.and_then(|b| serde_json::from_str(&b).ok());
+                    // A removal's body is the event it takes off, not one
+                    // to put back.
+                    let body = prior_body.filter(|_| kind != "remove").and_then(|b| serde_json::from_str(&b).ok());
                     dropped.push(Dropped::Kept { calendar, event, body });
                 }
                 None => {
@@ -1387,6 +1440,249 @@ fn read_change(row: &Row, account_id: AccountId) -> rusqlite::Result<QueuedChang
         restores: row.get::<_, Option<String>>(7)?.and_then(|b| serde_json::from_str(&b).ok()),
         notify: Notify::from_stored(row.get::<_, Option<String>>(8)?.as_deref()),
     })
+}
+
+/// What a calendar's token column starts with while a whole read too long
+/// for one pass is under way: the rest says where the next pass goes on.
+const RESUME: &str = "\u{1}page:";
+
+/// Where a whole read of a calendar stopped, kept in its token column, so
+/// the next read goes on from that page with the same mark and range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumedRead {
+    /// When the read began, which every row it wrote carries.
+    pub mark: EpochMillis,
+    /// The earliest time it reads from.
+    pub from: EpochMillis,
+    /// The provider's page to read next.
+    pub page: String,
+}
+
+impl ResumedRead {
+    /// The text the token column keeps.
+    pub fn text(&self) -> String {
+        format!("{RESUME}{}|{}|{}", self.mark, self.from, self.page)
+    }
+}
+
+/// The whole read a token column says is under way, or `None` for a sync
+/// token.
+pub fn resumed_read(token: &str) -> Option<ResumedRead> {
+    let rest = token.strip_prefix(RESUME)?;
+    let mut parts = rest.splitn(3, '|');
+    let mark = parts.next()?.parse().ok()?;
+    let from = parts.next()?.parse().ok()?;
+    Some(ResumedRead { mark, from, page: parts.next()?.to_string() })
+}
+
+/// What a queued change's calendar starts with once the account's calendar
+/// server changed under it (CalDAV to JMAP Calendars, say) and its calendar
+/// is not on the new server's list: the rest is the old calendar's id. Ids
+/// change shape between servers, so the change must not go out under them.
+/// It waits for the new server's events, then goes onto the event with the
+/// same UID ([`settle_left`]).
+const LEFT: &str = "\u{1}left:";
+
+/// The calendar a change left behind by a switch was queued on, or `None`
+/// for a change on a calendar of the current list.
+pub fn left_behind(calendar: &str) -> Option<&str> {
+    calendar.strip_prefix(LEFT)
+}
+
+/// Whether the account has any change queued, held back or not.
+pub fn has_queued(conn: &Connection, account_id: AccountId) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM calendar_changes WHERE account_id = ?1)",
+        params![account_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Takes the calendar list the account's server gives now, `listed`, before
+/// the copy saves it. A change left behind on a calendar listed again goes
+/// back to it, so a switch back sends it. When `listed` shares no calendar
+/// with the copy's list, the server changed: every change on a calendar it
+/// does not list is left behind, with the UID of its event written into
+/// its JSON body while the copy still holds that event's row.
+pub fn note_list(conn: &Connection, account_id: AccountId, listed: &HashSet<String>) -> Result<()> {
+    let rows: Vec<(i64, String, String, String, Option<String>)> = {
+        let mut stmt =
+            conn.prepare("SELECT seq, calendar, event, kind, body FROM calendar_changes WHERE account_id = ?1")?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        })?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    for (seq, calendar, _, _, _) in &rows {
+        if let Some(old) = left_behind(calendar).filter(|old| listed.contains(*old)) {
+            conn.execute(
+                "UPDATE calendar_changes SET calendar = ?2, \
+                 waits_on = CASE WHEN waits_on = seq THEN NULL ELSE waits_on END WHERE seq = ?1",
+                params![seq, old],
+            )?;
+        }
+    }
+    let held: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT id FROM calendars WHERE account_id = ?1")?;
+        stmt.query_map(params![account_id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    let switched = !listed.is_empty() && !held.is_empty() && !held.iter().any(|id| listed.contains(id));
+    if !switched {
+        return Ok(());
+    }
+    for (seq, calendar, id, kind, body) in rows {
+        if left_behind(&calendar).is_some() || listed.contains(&calendar) || model::list::is_local(&calendar) {
+            continue;
+        }
+        let mut uid = uid_of_queued(conn, account_id, &calendar, &id, body.as_deref())?;
+        if uid.is_empty() && ChangeKind::parse(&kind) == ChangeKind::Create {
+            uid = model::made_uid(&id);
+        }
+        // An event body stays an event, written as the queue writes one,
+        // so a send can still tell its own body from a later edit. A
+        // removal has none and takes the event's ids; an answer's body is
+        // the answer, which keeps fields it does not know.
+        // A removal keeps the event as the copy last held it, which also
+        // names it when it cannot be applied.
+        let body = match body {
+            None => event(conn, account_id, &calendar, &id)?.map(|row| json(&row)),
+            body => body,
+        };
+        let body = match body.as_deref().map(serde_json::from_str::<Event>) {
+            Some(Ok(held)) if ChangeKind::parse(&kind) != ChangeKind::Answer => json(&Event { uid, ..held }),
+            _ => {
+                let mut held: serde_json::Value = body
+                    .as_deref()
+                    .and_then(|b| serde_json::from_str(b).ok())
+                    .unwrap_or_else(|| serde_json::json!({ "calendar": calendar, "id": id }));
+                held["uid"] = serde_json::json!(uid);
+                held.to_string()
+            }
+        };
+        conn.execute(
+            "UPDATE calendar_changes SET calendar = ?2, body = ?3 WHERE seq = ?1",
+            params![seq, format!("{LEFT}{calendar}"), body],
+        )?;
+    }
+    Ok(())
+}
+
+/// The UID of the event a queued change names: its body's, or the copy's
+/// row for the event or, for one occurrence, for its series.
+fn uid_of_queued(conn: &Connection, account_id: AccountId, calendar: &str, id: &str, body: Option<&str>) -> Result<String> {
+    let in_body = body
+        .and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok())
+        .and_then(|b| b.get("uid").and_then(serde_json::Value::as_str).map(str::to_string))
+        .filter(|uid| !uid.is_empty());
+    if let Some(uid) = in_body {
+        return Ok(uid);
+    }
+    if let Some(row) = event(conn, account_id, calendar, id)? {
+        return Ok(row.uid);
+    }
+    match model::split_occurrence_id(id) {
+        Some((series, _)) => Ok(event(conn, account_id, calendar, series)?.map(|row| row.uid).unwrap_or_default()),
+        None => Ok(String::new()),
+    }
+}
+
+/// What became of a change left behind by a switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Left {
+    /// The new server's calendars are not all read yet.
+    Waiting,
+    /// It names the new server's event with its UID now, and can go.
+    Moved,
+    /// The new server has no event with its UID. It stays queued, held
+    /// back for good, until its own calendar is listed again.
+    Kept,
+}
+
+/// Settles the change `seq`, left behind by a switch, once the copy holds
+/// the new server's calendars, each read at least once. The event with the
+/// change's UID on those calendars takes it: its calendar, its id (an
+/// occurrence's id from that series' id), and its version. A create the
+/// new server already holds becomes a change of it.
+pub fn settle_left(conn: &Connection, account_id: AccountId, seq: i64) -> Result<Left> {
+    let row: Option<(String, String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT calendar, event, kind, body FROM calendar_changes WHERE seq = ?1",
+            params![seq],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((calendar, id, kind, body)) = row else {
+        return Ok(Left::Waiting);
+    };
+    let Some(old) = left_behind(&calendar) else {
+        return Ok(Left::Moved);
+    };
+    let listed: Vec<(String, bool)> = {
+        // A whole read still under way has not read every event yet.
+        let mut stmt = conn.prepare(
+            "SELECT id, sync_token IS NOT NULL AND substr(sync_token, 1, length(?2)) <> ?2 FROM calendars WHERE account_id = ?1",
+        )?;
+        stmt.query_map(params![account_id, RESUME], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+    };
+    let unread = listed.iter().any(|(id, read)| !read && !model::list::is_local(id));
+    if listed.is_empty() || listed.iter().any(|(id, _)| id == old) || unread {
+        return Ok(Left::Waiting);
+    }
+    let body: serde_json::Value = body.as_deref().and_then(|b| serde_json::from_str(b).ok()).unwrap_or_default();
+    let uid = body.get("uid").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let kind = ChangeKind::parse(&kind);
+    let destination = body.get("calendar").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+    let lands = kind != ChangeKind::Move || listed.iter().any(|(id, _)| *id == destination);
+    let master = match uid.is_empty() || !lands {
+        true => None,
+        false => conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM events e JOIN calendars c ON c.account_id = e.account_id AND c.id = e.calendar \
+                     WHERE e.account_id = ?1 AND lower(e.uid) = lower(?2) AND e.series IS NULL \
+                     ORDER BY c.is_primary DESC, c.access = 'owner' DESC LIMIT 1"
+                ),
+                params![account_id, uid],
+                read_event,
+            )
+            .optional()?,
+    };
+    let Some(master) = master else {
+        conn.execute("UPDATE calendar_changes SET waits_on = seq WHERE seq = ?1", params![seq])?;
+        return Ok(Left::Kept);
+    };
+    let original = body
+        .get("original_start")
+        .and_then(serde_json::Value::as_i64)
+        .or_else(|| model::split_occurrence_id(&id).map(|(_, at)| at));
+    let new_id = original.map_or_else(|| master.id.clone(), |at| model::occurrence_id(&master, at));
+    let etag = match original {
+        Some(_) => event(conn, account_id, &master.calendar, &new_id)?.map(|row| row.etag).unwrap_or_default(),
+        None => master.etag.clone(),
+    };
+    let kind = if kind == ChangeKind::Create { ChangeKind::Save } else { kind };
+    let body = match kind {
+        ChangeKind::Remove => None,
+        ChangeKind::Answer => Some(body.to_string()),
+        _ => {
+            let mut moved: Event = serde_json::from_value(body).unwrap_or_default();
+            moved.id.clone_from(&new_id);
+            moved.etag.clone_from(&etag);
+            if kind != ChangeKind::Move {
+                moved.calendar.clone_from(&master.calendar);
+            }
+            if original.is_some() {
+                moved.series = Some(master.id.clone());
+                moved.series_etag.clone_from(&master.etag);
+            }
+            Some(json(&moved))
+        }
+    };
+    conn.execute(
+        "UPDATE calendar_changes SET calendar = ?2, event = ?3, kind = ?4, etag = ?5, body = ?6 WHERE seq = ?1",
+        params![seq, master.calendar, new_id, kind.as_str(), (!etag.is_empty()).then_some(etag), body],
+    )?;
+    Ok(Left::Moved)
 }
 
 /// The ids of a calendar's events with an unsent change, without loading
@@ -1502,6 +1798,9 @@ pub fn holdings(conn: &Connection) -> Result<Vec<Holding>> {
 ///   provider never heard of it. But the create is on its way, so the
 ///   row is gone and the provider now holds the event: queue its
 ///   removal against `new_etag`, and keep the answer out of the copy.
+/// - A delete of an event whose `Save` is on its way turns that row into
+///   the removal, with the same event in its body. The row stays, its
+///   etag moved to `new_etag`, and the answer stays out of the copy.
 pub fn finish_change(
     conn: &Connection,
     account_id: AccountId,
@@ -1509,9 +1808,14 @@ pub fn finish_change(
     attempted: &Event,
     new_etag: &str,
 ) -> Result<bool> {
-    let current: Option<Option<String>> = conn
-        .query_row("SELECT body FROM calendar_changes WHERE seq = ?1", params![seq], |row| row.get(0))
+    let current: Option<(String, Option<String>)> = conn
+        .query_row("SELECT kind, body FROM calendar_changes WHERE seq = ?1", params![seq], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
         .optional()?;
+    // A delete that took the row over carries the same event in its body,
+    // and is still to go out.
+    let current = current.map(|(kind, body)| body.filter(|_| kind != "remove"));
     match current {
         None => {
             let gone = Event {
@@ -1577,6 +1881,7 @@ mod tests {
             shown: true,
             hidden: false,
             reminders: Vec::new(),
+            all_day_reminders: None,
         }
     }
 
@@ -1593,6 +1898,18 @@ mod tests {
             busy: true,
             ..Event::default()
         }
+    }
+
+    #[test]
+    fn a_calendar_keeps_its_all_day_reminders_apart() {
+        let (conn, id) = store();
+        let ten = Reminder { minutes: 10, method: model::ReminderMethod::Notification };
+        let night = Reminder { minutes: 540, method: model::ReminderMethod::Email };
+        let split = Calendar { reminders: vec![ten], all_day_reminders: Some(vec![night]), ..calendar("primary", true) };
+        let one = Calendar { reminders: vec![ten], ..calendar("team", false) };
+        save_calendars(&conn, id, &[split.clone(), one.clone()]).unwrap();
+        let read = calendars(&conn, id).unwrap();
+        assert_eq!(read, [split, one]);
     }
 
     #[test]
@@ -1828,6 +2145,63 @@ mod tests {
         lunch.guests = vec![Guest { email: "ana@example.com".into(), answer: Some(Answer::Yes), ..Guest::default() }];
         save_events(&conn, id, &[lunch.clone()], 0).unwrap();
         assert_eq!(super::event(&conn, id, "primary", "lunch").unwrap(), Some(lunch));
+    }
+
+    /// A range read reads every event's guests at once; each event still
+    /// gets its own, the organizer first, even where two calendars hold
+    /// the same event id.
+    #[test]
+    fn each_event_in_a_range_comes_back_with_its_own_guests() {
+        let (conn, id) = store();
+        let guest = |email: &str, organizer: bool| Guest { email: email.into(), organizer, ..Guest::default() };
+        let mut ours = event("primary", "lunch", MONDAY + 12 * HOUR, 1);
+        ours.guests = vec![guest("zoe@example.com", true), guest("ana@example.com", false)];
+        let mut theirs = event("team", "lunch", MONDAY + 13 * HOUR, 1);
+        theirs.guests = vec![guest("bo@example.com", false)];
+        let alone = event("team", "walk", MONDAY + 14 * HOUR, 1);
+        save_events(&conn, id, &[ours.clone(), theirs.clone(), alone], 0).unwrap();
+        let found = occurrences(&conn, &[id], MONDAY, MONDAY + 24 * HOUR, CalendarScope::Shown).unwrap();
+        let guests: Vec<(&str, Vec<&str>)> = found
+            .iter()
+            .map(|o| (o.event.calendar.as_str(), o.event.guests.iter().map(|g| g.email.as_str()).collect()))
+            .collect();
+        assert_eq!(
+            guests,
+            [
+                ("primary", vec!["zoe@example.com", "ana@example.com"]),
+                ("team", vec!["bo@example.com"]),
+                ("team", vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn two_copies_of_one_event_both_get_its_guests() {
+        let (conn, id) = store();
+        let mut lunch = event("primary", "lunch", MONDAY + 12 * HOUR, 1);
+        lunch.guests = vec![Guest { email: "ana@example.com".into(), ..Guest::default() }];
+        save_events(&conn, id, &[lunch.clone()], 0).unwrap();
+        let (mut first, mut second) = (lunch.clone(), lunch.clone());
+        first.guests.clear();
+        second.guests.clear();
+        read_guests(&conn, id, [&mut first, &mut second]).unwrap();
+        assert_eq!((first.guests, second.guests), (lunch.guests.clone(), lunch.guests));
+    }
+
+    #[test]
+    fn the_guests_of_a_range_are_read_by_the_tables_key() {
+        let (conn, _) = store();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {GUESTS_OF}"))
+            .unwrap()
+            .query_map(params![1, r#"[["primary","a"]]"#], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|step| step.contains("event_guests") && step.contains("account_id=? AND calendar=? AND event=?")),
+            "{plan:?}"
+        );
     }
 
     #[test]
@@ -2225,7 +2599,7 @@ mod tests {
         let held = queued(&conn, id).unwrap();
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].kind, ChangeKind::Remove);
-        assert!(held[0].body.is_none());
+        assert_eq!(held[0].body.as_ref().map(|b| b.uid.as_str()), Some("lunch@example.com"), "the removal keeps its event's UID");
     }
 
     fn going(answer: Answer, note: Option<&str>) -> QueuedAnswer {
@@ -2411,6 +2785,24 @@ mod tests {
         let (conn, id) = store();
         let lunch = event("primary", "lunch", MONDAY, 1);
         enqueue(&conn, id, ChangeKind::Create, &lunch).unwrap();
+        let seq = queued(&conn, id).unwrap()[0].seq;
+        enqueue(&conn, id, ChangeKind::Remove, &lunch).unwrap();
+        assert!(!finish_change(&conn, id, seq, &lunch, "\"2\"").unwrap());
+        let held = queued(&conn, id).unwrap();
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].kind, ChangeKind::Remove);
+        assert_eq!(held[0].etag.as_deref(), Some("\"2\""));
+    }
+
+    /// A delete made while an edit is in flight turns the edit's row into
+    /// the removal, with the same event in its body. Finishing the edit
+    /// must leave the removal queued and keep the answer out of the copy,
+    /// or the deleted event comes back and never leaves the provider.
+    #[test]
+    fn finishing_an_edit_a_delete_took_over_keeps_the_delete_queued() {
+        let (conn, id) = store();
+        let lunch = event("primary", "lunch", MONDAY, 1);
+        enqueue(&conn, id, ChangeKind::Save, &lunch).unwrap();
         let seq = queued(&conn, id).unwrap()[0].seq;
         enqueue(&conn, id, ChangeKind::Remove, &lunch).unwrap();
         assert!(!finish_change(&conn, id, seq, &lunch, "\"2\"").unwrap());

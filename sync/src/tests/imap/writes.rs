@@ -405,6 +405,24 @@ async fn delete_forever_expunges_the_message() {
     assert!(h.ids().await.is_empty());
 }
 
+/// Delete Forever reaches a message where it sits now, not where the app
+/// first met it, as after a move to the Archive or the Trash.
+#[tokio::test]
+async fn delete_forever_expunges_a_message_the_app_moved() {
+    let (h, thread) = one_message_on(FakeImap::new()).await;
+    archive(&h, &thread).await;
+
+    let erased = h
+        .sync
+        .erase_all(&[Target::thread(h.account_id, &thread)])
+        .await
+        .unwrap();
+
+    assert!(erased[0].is_ok());
+    assert!(undeleted(&h, "Archive").await.is_empty(), "the message left the server");
+    assert!(h.ids().await.is_empty());
+}
+
 /// The server took the move; a failure afterwards to list the Archive it
 /// made is no failure of the archive, which happened.
 #[tokio::test]

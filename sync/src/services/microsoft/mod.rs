@@ -120,6 +120,11 @@ pub(super) struct Known {
     pub listed: bool,
     pub window_open: bool,
     pub last_slow: Option<Instant>,
+    /// Engine pokes (Check for Mail, a send, a saved draft, the network
+    /// coming back) counted, and the last one a look at every synced
+    /// folder answered; they differ while one is waiting.
+    pub full_check_requested: u64,
+    pub full_check_completed: u64,
 }
 
 /// The attachment ids of the last structures fetched, by part path, so a
@@ -169,6 +174,14 @@ impl<G> Clone for Microsoft<G> {
 
 /// The tag id for an Outlook category. A message names its categories by
 /// name, so the name is the id; the prefix keeps it apart from a folder's.
+/// The start of a window of `days`, as Graph reads a time in a filter;
+/// `None` for all mail, which needs no filter.
+pub(super) fn window_since(days: i64) -> Option<String> {
+    let days = crate::window_reach(days)?;
+    let start = chrono::Utc::now() - chrono::Duration::days(days);
+    Some(start.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+}
+
 pub(super) fn tag_id(name: &str) -> String {
     format!("category:{name}")
 }
@@ -327,6 +340,10 @@ impl<G: GraphApi> MailBackend for Microsoft<G> {
 
     fn set_window_open(&self, open: bool) {
         self.known().window_open = open;
+    }
+
+    fn check_now(&self) {
+        self.check_every_folder();
     }
 
     fn poll_interval(&self) -> Option<Duration> {

@@ -95,7 +95,7 @@ impl AutomaticReply {
             contacts_only: self.contacts_only,
             domain_only: self.domain_only,
             start: self.first_day.map(midnight),
-            end: self.last_day.map(|last| midnight(last) + DAY),
+            end: self.last_day.map(next_midnight),
         }
     }
 }
@@ -117,6 +117,8 @@ pub struct RuleList {
     /// Blocks the server holds that nobody here wrote, shown read-only.
     pub elsewhere: Vec<String>,
     pub place: RulesPlace,
+    /// The rules that run on this computer beside the server's, by id.
+    pub here: Vec<String>,
     /// The server is not answering: the list is the last one read, with
     /// the changes waiting to go out applied.
     pub waiting: bool,
@@ -184,7 +186,8 @@ impl<A: Accounts> AccountSettings<A> {
         let queued = self.db.read(move |c| rule_changes::queued(c, account_id)).await?;
         let mut list = match rules.listing().await {
             Ok((filters, elsewhere)) => {
-                let list = RuleList { rules: filters, elsewhere, place: rules.place(), waiting: false };
+                let here = rules.kept_here().await?;
+                let list = RuleList { rules: filters, elsewhere, place: rules.place(), here, waiting: false };
                 self.remember_rules(account_id, Some(list.clone()));
                 list
             }
@@ -195,6 +198,7 @@ impl<A: Accounts> AccountSettings<A> {
                     rules: Vec::new(),
                     elsewhere: Vec::new(),
                     place: rules.place(),
+                    here: Vec::new(),
                     waiting: true,
                 });
                 list.waiting = true;
@@ -502,6 +506,39 @@ impl<A: Accounts> AccountSettings<A> {
             .filter(|text| !text.is_empty()))
     }
 
+    /// The account's masked addresses, newest first.
+    pub async fn masked_addresses(&self, account_id: AccountId) -> Result<Vec<crate::masked::MaskedAddress>, SyncError> {
+        Ok(self.jmap(account_id)?.masked_addresses().await?)
+    }
+
+    /// A new masked address of `account_id` for `site`, with `note` saying
+    /// where it was given out.
+    pub async fn create_masked_address(
+        &self,
+        account_id: AccountId,
+        site: &str,
+        note: &str,
+    ) -> Result<crate::masked::MaskedAddress, SyncError> {
+        Ok(self.jmap(account_id)?.make_masked(site, note).await?)
+    }
+
+    pub async fn set_masked_state(
+        &self,
+        account_id: AccountId,
+        id: &str,
+        state: crate::masked::MaskedState,
+    ) -> Result<(), SyncError> {
+        Ok(self.jmap(account_id)?.set_masked(id, state).await?)
+    }
+
+    /// The account's JMAP adapter, when its session makes masked addresses.
+    fn jmap(&self, account_id: AccountId) -> Result<crate::Jmap<crate::AnyJmap>, SyncError> {
+        match &self.services(account_id)?.mail {
+            crate::AnyMail::Jmap(adapter) if adapter.masked_email() => Ok(adapter.clone()),
+            _ => Err(BackendError::Unsupported.into()),
+        }
+    }
+
     fn sync(&self, account_id: AccountId) -> Result<Arc<AccountSync>, SyncError> {
         self.accounts
             .account(account_id)
@@ -620,6 +657,20 @@ fn to(address: &str) -> FilterCriteria {
         to: Some(address.to_string()),
         ..FilterCriteria::default()
     }
+}
+
+/// Local midnight at the start of the day after the one `at` falls in.
+/// A day the clocks change on is 23 or 25 hours long, so this counts in
+/// days, not hours.
+fn next_midnight(at: EpochMillis) -> EpochMillis {
+    Local
+        .timestamp_millis_opt(at)
+        .single()
+        .and_then(|when| when.date_naive().succ_opt())
+        .and_then(|day| day.and_hms_opt(0, 0, 0))
+        .and_then(|start| Local.from_local_datetime(&start).earliest())
+        .map(|start| start.timestamp_millis())
+        .unwrap_or(at + DAY)
 }
 
 /// Local midnight at the start of the day `at` falls in.

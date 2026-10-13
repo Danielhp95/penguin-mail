@@ -18,6 +18,7 @@ use crate::sign_in::{
 use mailrs_domain::RemoveSetting;
 use crate::{
     BackendError, MailBackend, SyncError, connect_account, connect_imap, server_of, servers_for,
+    smtp_login,
 };
 
 #[tokio::test]
@@ -112,6 +113,7 @@ fn new_fastmail(password: &str) -> NewImap {
         provider_name: "Fastmail".into(),
         servers: fastmail(),
         password: password.into(),
+        smtp_password: None,
     }
 }
 
@@ -141,6 +143,15 @@ impl PasswordStore for Refusing {
     fn delete(&self, _: AccountId) -> Result<(), PasswordError> {
         Ok(())
     }
+    fn load_outgoing(&self, _: AccountId) -> Result<Option<String>, PasswordError> {
+        Ok(None)
+    }
+    fn save_outgoing(&self, _: AccountId, _: &str) -> Result<(), PasswordError> {
+        Err(PasswordError::Keyring("the collection is locked".into()))
+    }
+    fn delete_outgoing(&self, _: AccountId) -> Result<(), PasswordError> {
+        Ok(())
+    }
 }
 
 /// A keyring that never answers, like one waiting on an unlock prompt
@@ -162,6 +173,16 @@ impl PasswordStore for Silent {
         Ok(())
     }
     fn delete(&self, _: AccountId) -> Result<(), PasswordError> {
+        Ok(())
+    }
+    fn load_outgoing(&self, _: AccountId) -> Result<Option<String>, PasswordError> {
+        let _ = self.0.lock().unwrap().recv();
+        Ok(None)
+    }
+    fn save_outgoing(&self, _: AccountId, _: &str) -> Result<(), PasswordError> {
+        Ok(())
+    }
+    fn delete_outgoing(&self, _: AccountId) -> Result<(), PasswordError> {
         Ok(())
     }
 }
@@ -355,6 +376,7 @@ async fn each_server_keeps_the_user_name_it_took() {
         provider_name: "iCloud Mail".into(),
         servers: icloud(),
         password: "pw".into(),
+        smtp_password: None,
     };
     let dana = imap_signed_in(&db, passwords, new, 7).await.unwrap();
     let id = dana.id;
@@ -535,6 +557,7 @@ fn new_pop3(password: &str, remove: RemoveSetting) -> NewPop3 {
         },
         remove,
         password: password.into(),
+        smtp_password: None,
     }
 }
 
@@ -763,4 +786,67 @@ async fn a_keyring_that_refuses_leaves_no_new_calendar_account_behind() {
     let refused = caldav_signed_in(&Cloud::default(), &db, Arc::new(Refusing), at(CLOUD, "robin"), 7).await;
     assert!(matches!(refused, Err(CalDavSignInError::Password(_))));
     assert!(db.read(accounts::list_accounts).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_outgoing_password_of_its_own_goes_beside_the_incoming_one() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let new = NewImap {
+        smtp_password: Some("outgoing".into()),
+        ..new_fastmail("incoming")
+    };
+    let dana = imap_signed_in(&db, Arc::clone(&passwords), new, 7).await.unwrap();
+    assert_eq!(passwords.load(dana.id).unwrap().as_deref(), Some("incoming"));
+    assert_eq!(passwords.load_outgoing(dana.id).unwrap().as_deref(), Some("outgoing"));
+}
+
+/// An empty Outgoing Password means the same as the incoming one, so a
+/// sign-in without one must not leave an old outgoing password to win.
+#[tokio::test]
+async fn signing_in_again_without_an_outgoing_password_forgets_the_old_one() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let first = NewImap {
+        smtp_password: Some("outgoing".into()),
+        ..new_fastmail("incoming")
+    };
+    let dana = imap_signed_in(&db, Arc::clone(&passwords), first, 7).await.unwrap();
+    imap_signed_in(&db, Arc::clone(&passwords), new_fastmail("new"), 8)
+        .await
+        .unwrap();
+    assert_eq!(passwords.load_outgoing(dana.id).unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_pop3_account_keeps_its_outgoing_password_too() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let new = NewPop3 {
+        smtp_password: Some("outgoing".into()),
+        ..new_pop3("incoming", RemoveSetting::Never)
+    };
+    let dana = pop3_signed_in(&db, Arc::clone(&passwords), new, 7).await.unwrap();
+    assert_eq!(passwords.load(dana.id).unwrap().as_deref(), Some("incoming"));
+    assert_eq!(passwords.load_outgoing(dana.id).unwrap().as_deref(), Some("outgoing"));
+}
+
+#[test]
+fn the_outgoing_server_signs_in_with_its_own_password_when_there_is_one() {
+    let login = smtp_login("dana@fastmail.com", "incoming".into(), Some("outgoing".into()));
+    assert_eq!((login.user.as_str(), login.password.as_str()), ("dana@fastmail.com", "outgoing"));
+    let login = smtp_login("dana@fastmail.com", "incoming".into(), None);
+    assert_eq!(login.password, "incoming");
+}
+
+#[tokio::test]
+async fn an_account_with_an_outgoing_password_starts() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let new = NewImap {
+        smtp_password: Some("outgoing".into()),
+        ..new_fastmail("incoming")
+    };
+    let dana = imap_signed_in(&db, Arc::clone(&passwords), new, 7).await.unwrap();
+    assert!(connect_imap(&db, passwords, &dana, 30).await.is_ok());
 }

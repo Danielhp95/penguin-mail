@@ -13,9 +13,10 @@
 # menu is in the accessible tree only while it is open, opens a
 # conversation to read its message view and invitation card, opens a
 # reply and a forward in the composer with their history shown, opens Add
-# Account on its tiles and its Other page, and walks the calendar. Then it
-# starts the demo once more, on Add Account's page for a calendar without
-# mail, and reads that.
+# Account on its tiles and its Other page, opens Switch to JMAP from the
+# Fastmail account's menu, and walks the calendar. Then it starts the demo
+# once more, on Add Account's page for a calendar without mail, and reads
+# that.
 #
 # The hidden display needs Xvfb, dbus-run-session, at-spi2-core, python3
 # with the GObject bindings, and the XTest library to click and type:
@@ -343,6 +344,31 @@ def in_view(node, row):
     return True
 
 
+def web_place(node):
+    """Where the web page that holds `node` sits in the window, as the
+    point its own coordinates start from, and the page's size. Gives
+    (0, 0, None) for a node outside any page.
+
+    WebKit reports the extents of what is inside a page from the page's
+    own corner, and the page node itself reports (0, 0), so a click aimed
+    at a list item of a message lands that far up and to the left of it,
+    on the sidebar. The page's place in the window is the first ancestor
+    above it that has one."""
+    parent = node.get_parent()
+    while parent is not None and parent.get_role_name() != "document web":
+        parent = parent.get_parent()
+    if parent is None:
+        return 0, 0, None
+    size = parent.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+    above = parent.get_parent()
+    while above is not None:
+        box = above.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+        if box.x or box.y:
+            return box.x, box.y, size
+        above = above.get_parent()
+    return 0, 0, size
+
+
 def rows_in_view(bounds):
     """Every row on screen, with the point at its middle."""
     for app in penguins()[0]:
@@ -352,13 +378,20 @@ def rows_in_view(bounds):
                     continue
                 box = row.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
                 name = (row.get_name() or "").strip()
+                left, top, page = web_place(row)
             except Exception:
                 continue
             # Window coordinates stand for screen ones here: nothing
             # manages the hidden display, so the window sits at its top
             # left corner.
-            x, y = box.x + box.width // 2, box.y + box.height // 2
+            x, y = left + box.x + box.width // 2, top + box.y + box.height // 2
             if box.width <= 0 or not (0 < x < bounds.width and 0 < y < bounds.height):
+                continue
+            if page is not None:
+                # A row of a page is in view when the page's own box, moved
+                # to where the page is, holds it whole.
+                if 0 <= box.x and box.x + box.width <= page.width and 0 <= box.y and box.y + box.height <= page.height:
+                    yield name, x, y
                 continue
             # A row scrolled out of its list still has a place. A click
             # there lands on whatever covers it, and at the foot of the
@@ -1019,7 +1052,72 @@ def walk_add_account(keys):
     return len(unnamed) + missing
 
 
-calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = 0
+def walk_switch_jmap(keys):
+    """Opens Switch to JMAP from the demo's Fastmail account menu and walks
+    the dialog into a list of its own, then closes it with Escape.
+
+    Reports the dialog's own line and gives back how many of its controls
+    came back with no name, counting as one a dialog that did not open."""
+
+    def named(role, name):
+        for app in penguins()[0]:
+            for node in nodes(app):
+                try:
+                    if node.get_role_name() == role and (node.get_name() or "").strip() == name:
+                        return node
+                except Exception:
+                    continue
+        return None
+
+    def dialog_of(node):
+        while node is not None and node.get_role_name() != "dialog":
+            node = node.get_parent()
+        return node
+
+    # The menu opens only from a button the sidebar has in view, and the
+    # Fastmail account sits below the fold.
+    for app in penguins()[0]:
+        for pane in nodes(app):
+            if pane.get_role_name() == "scroll pane":
+                box = pane.get_component_iface().get_extents(Atspi.CoordType.WINDOW)
+                if box.width > 0 and box.height > 0:
+                    for _ in range(PAGES):
+                        keys.scroll_down(box.x + box.width // 2, box.y + box.height // 2)
+    time.sleep(0.5)
+    options = named("toggle button", "Options for dana@fastmail.example")
+    if options is None or not options.get_action_iface().do_action(0):
+        print("The Fastmail account menu would not open for Switch to JMAP.", file=sys.stderr)
+        return 1
+    # The walk of every menu above can leave this toggle pressed, and then
+    # the press closes the menu rather than opening it.
+    if not wait_until(lambda: named("menu item", "Switch to JMAP…") is not None, 2.0):
+        options.get_action_iface().do_action(0)
+        wait_until(lambda: named("menu item", "Switch to JMAP…") is not None, 3.0)
+    item = named("menu item", "Switch to JMAP…")
+    if item is None:
+        print("The Fastmail account menu has no Switch to JMAP item.", file=sys.stderr)
+        close(keys)
+        return 1
+    item.get_action_iface().do_action(0)
+    if not wait_until(lambda: named("password text", "API Token") is not None, 10.0):
+        print("Switch to JMAP showed no API Token field by name.", file=sys.stderr)
+        return 1
+    time.sleep(1.0)
+    switch_found = []
+    walk(dialog_of(named("password text", "API Token")), ["Switch to JMAP"], switch_found)
+    for _ in range(3):
+        keys.escape()
+        time.sleep(0.4)
+        if named("password text", "API Token") is None:
+            break
+    unnamed = [row for row in switch_found if not row[1]]
+    print("switch to jmap: %d controls, %d unnamed" % (len(switch_found), len(unnamed)))
+    for role, _, path in unnamed:
+        print("  %s" % path)
+    return len(unnamed)
+
+
+calendar_unnamed = conversation_unnamed = composer_unnamed = added_unnamed = switch_unnamed = 0
 if sys.argv[1:] == ["--calendar-page"]:
     # The demo opens Add Account on its calendar page a moment after the
     # window has settled. A dialog that never opened has no unnamed
@@ -1032,6 +1130,7 @@ if sys.argv[1:] == ["--calendar-page"]:
         sys.exit("Add Account did not open on its calendar page.")
 if sys.argv[1:] == ["--menus"]:
     open_menus()
+    switch_unnamed = walk_switch_jmap(Input())
     conversation_unnamed = walk_conversation(Input())
     composer_unnamed = walk_composer()
     added_unnamed = walk_add_account(Input())
@@ -1041,7 +1140,8 @@ unnamed = [row for row in found if not row[1]]
 print("%d controls, %d named, %d unnamed" % (len(found), len(found) - len(unnamed), len(unnamed)))
 for role, _, path in unnamed:
     print("  %s" % path)
-sys.exit(1 if (unnamed or calendar_unnamed or conversation_unnamed or composer_unnamed or added_unnamed) else 0)
+sys.exit(1 if (unnamed or calendar_unnamed or conversation_unnamed or composer_unnamed or added_unnamed
+             or switch_unnamed) else 0)
 PYTHON
 
 if [ "$here" = --here ]; then

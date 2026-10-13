@@ -312,22 +312,34 @@ pub(super) fn message_delta(
     if !s.folders.contains_key(folder) {
         return Err(GraphError::NotFound);
     }
-    let since_ms = millis(since);
+    // Graph keeps a round's filter in its links, so a change to a message
+    // outside it never comes back as that message. The fake carries the
+    // filter after a `#since=` on each link it gives, and answers such a
+    // change as a removal, which the adapter checks and drops.
+    let (link_text, since_ms) = match link_text {
+        None => (None, millis(since)),
+        Some(text) => match text.split_once("#since=") {
+            Some((link, ms)) => (Some(link), ms.parse().unwrap_or(0)),
+            None => (Some(text), 0),
+        },
+    };
+    let inside = move |m: &FakeMessage| m.message.received_millis().unwrap_or(0) >= since_ms;
     let s = &*s;
-    Round { log: &s.mail_log, expired_before: s.expired_before, now: s.seq, place: folder }.run(
+    let mut page = Round { log: &s.mail_log, expired_before: s.expired_before, now: s.seq, place: folder }.run(
         link_text,
         || {
-            let mut here: Vec<&FakeMessage> = s
-                .messages
-                .values()
-                .filter(|m| m.folder == folder && m.message.received_millis().unwrap_or(0) >= since_ms)
-                .collect();
+            let mut here: Vec<&FakeMessage> =
+                s.messages.values().filter(|m| m.folder == folder && inside(m)).collect();
             here.sort_by_key(|m| std::cmp::Reverse(m.message.received_millis()));
             here.into_iter().map(|m| m.message.clone()).collect()
         },
-        |id| s.messages.get(id).filter(|m| m.folder == folder).map(|m| m.message.clone()),
+        |id| s.messages.get(id).filter(|m| m.folder == folder && inside(m)).map(|m| m.message.clone()),
         removed_message,
-    )
+    )?;
+    for link in [&mut page.next_link, &mut page.delta_link].into_iter().flatten() {
+        link.push_str(&format!("#since={since_ms}"));
+    }
+    Ok(page)
 }
 
 /// One clause of a KQL search, down to the words it looks for: the `key:`

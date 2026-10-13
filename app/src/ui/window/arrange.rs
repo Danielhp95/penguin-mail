@@ -22,6 +22,7 @@ impl MainWindow {
         data: Vec<(Account, Vec<Label>)>,
         settings: &Settings,
         not_downloading: HashSet<AccountId>,
+        switchable: HashSet<AccountId>,
     ) -> (Vec<(Account, Vec<Label>)>, Extras) {
         let emails: Vec<&str> = data.iter().map(|(a, _)| a.email.as_str()).collect();
         let order: Vec<String> = settings
@@ -68,6 +69,7 @@ impl MainWindow {
                 .map(|(account, _)| (account.id, self.label_order(account.id)))
                 .collect(),
             not_downloading,
+            switchable,
         };
         (sorted, extras)
     }

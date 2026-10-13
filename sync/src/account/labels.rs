@@ -8,7 +8,7 @@ use mailrs_gmail::{LabelColor, is_reserved_label_name};
 use mailrs_store::{labels, mailboxes, remote_refs};
 
 use super::AccountSync;
-use crate::{MailBackend, SyncError};
+use crate::SyncError;
 
 impl AccountSync {
     /// Lists the server's mailboxes and brings the stored ones in line: a
@@ -17,7 +17,7 @@ impl AccountSync {
     /// call, 1 quota unit on Gmail. Says whether anything changed, and only
     /// then tells the window, since the sidebar redraws on `LabelsChanged`.
     pub async fn refresh_labels(&self) -> Result<bool, SyncError> {
-        let remote = self.services.mail.mailboxes().await?;
+        let remote = self.mail.mailboxes().await?;
         self.store_listing(remote).await
     }
 
@@ -30,8 +30,8 @@ impl AccountSync {
         // as they make it. A listing read before they made, renamed or
         // deleted one is out of date by the time it is stored, so only a
         // role mailbox not yet stored comes from it.
-        let local = self.services.mail.capabilities().local_mailboxes;
-        let (changed, threads) = self
+        let local = self.mail.capabilities().local_mailboxes;
+        let (changed, threads, moved) = self
             .db
             .write(move |c| {
                 let stored = mailboxes::listed(c, account_id)?;
@@ -43,29 +43,50 @@ impl AccountSync {
                         mailboxes::upsert(c, account_id, mailbox)?;
                         changed = true;
                     }
-                    return Ok((changed, Vec::new()));
+                    return Ok((changed, Vec::new(), false));
                 }
                 let mut threads = Vec::new();
                 let mut changed = false;
+                // A folder gone or renamed elsewhere changes what the
+                // rules' script files into.
+                let mut moved = false;
                 for gone in stored
                     .iter()
                     .filter(|s| remote.iter().all(|r| r.id != s.id))
                 {
-                    threads.extend(mailboxes::delete(c, account_id, &gone.id)?);
-                    changed = true;
+                    if let Some(touched) = mailboxes::gone(c, account_id, &gone.id)? {
+                        threads.extend(touched);
+                        changed = true;
+                        moved = true;
+                    }
                 }
                 for mailbox in remote.iter().filter(|r| !stored.contains(r)) {
+                    moved |= stored.iter().any(|s| s.id == mailbox.id && s.name != mailbox.name);
                     mailboxes::upsert(c, account_id, mailbox)?;
                     changed = true;
                 }
-                Ok((changed, threads))
+                Ok((changed, threads, moved))
             })
             .await?;
         if changed {
             self.emit(ChangeEvent::LabelsChanged { account_id });
             self.emit_threads(threads.into_iter().collect());
         }
+        if moved {
+            self.follow_folders(&[]).await;
+        }
         Ok(changed)
+    }
+
+    /// Rewrites the rules' Sieve script after folders were renamed, moved
+    /// or deleted, so it files into the new paths and turns off the rules
+    /// whose folder is gone. A failure leaves the script as it was: the
+    /// next change tries again, and the folder change itself stands.
+    async fn follow_folders(&self, moved: &[(String, String)]) {
+        let Some(rules) = &self.services.rules else { return };
+        if rules.follow_folders(moved).await.is_err() {
+            tracing::warn!(account = self.account_id, "the rules could not follow a folder change");
+        }
     }
 
     /// Creates a label in Gmail and stores it. Slashes nest it under
@@ -75,7 +96,7 @@ impl AccountSync {
         if is_reserved_label_name(name) {
             return Err(SyncError::ReservedLabel(name.to_string()));
         }
-        let remote = self.services.mail.create_mailbox(name).await?;
+        let remote = self.mail.create_mailbox(name).await?;
         let label = self.user_label(&remote);
         let account_id = self.account_id;
         self.db
@@ -128,9 +149,9 @@ impl AccountSync {
         }
         // A look during the rename would find the old name gone and let
         // its mail go.
-        let _moves = self.hold_moves().await;
+        let _moves = self.mail.hold_moves().await;
         let prefix = format!("{old}/");
-        let mut renamed = vec![self.services.mail.rename_mailbox(id, &name).await?];
+        let mut renamed = vec![self.mail.rename_mailbox(id, &name).await?];
         let mut moved = vec![(id.to_string(), renamed[0].id.clone())];
         let children: Vec<&Label> = all.iter().filter(|l| l.name.starts_with(&prefix)).collect();
         // An IMAP RENAME moves the mailboxes nested under the one renamed,
@@ -138,7 +159,7 @@ impl AccountSync {
         // renames each label on its own.
         let renames = self.renames();
         let listed = match renames && !children.is_empty() {
-            true => Some(self.services.mail.mailboxes().await?),
+            true => Some(self.mail.mailboxes().await?),
             false => None,
         };
         for child in children {
@@ -149,8 +170,7 @@ impl AccountSync {
                     None => continue,
                 },
                 None => {
-                    self.services
-                        .mail
+                    self.mail
                         .rename_mailbox(&child.id, &child_name)
                         .await?
                 }
@@ -186,6 +206,7 @@ impl AccountSync {
             })
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
+        self.follow_folders(&moved).await;
         if renames {
             for (_, to) in &moved {
                 self.relist_if_renumbered(to).await?;
@@ -197,7 +218,7 @@ impl AccountSync {
     /// Lists `mailbox` again when the server gave it a new UIDVALIDITY, as
     /// a server may when it renames one, so its messages keep their ids.
     async fn relist_if_renumbered(&self, mailbox: &str) -> Result<(), SyncError> {
-        let Some(uidvalidity) = self.services.mail.uidvalidity(mailbox).await? else {
+        let Some(uidvalidity) = self.mail.uidvalidity(mailbox).await? else {
             return Ok(());
         };
         let (account_id, name) = (self.account_id, mailbox.to_string());
@@ -215,7 +236,7 @@ impl AccountSync {
 
     /// Gives a label one of Gmail's colours.
     pub async fn set_label_color(&self, id: &str, color: LabelColor) -> Result<(), SyncError> {
-        let remote = self.services.mail.set_mailbox_color(id, &color).await?;
+        let remote = self.mail.set_mailbox_color(id, &color).await?;
         let account_id = self.account_id;
         self.db
             .write(move |c| mailboxes::upsert(c, account_id, &remote))
@@ -228,12 +249,12 @@ impl AccountSync {
 
     /// How many conversations in the whole mailbox carry the label.
     pub async fn label_threads(&self, id: &str) -> Result<u64, SyncError> {
-        Ok(self.services.mail.mailbox_threads(id).await?)
+        Ok(self.mail.mailbox_threads(id).await?)
     }
 
     /// Deletes a label. Its mail stays, without the label.
     pub async fn delete_label(&self, id: &str) -> Result<(), SyncError> {
-        self.services.mail.delete_mailbox(id).await?;
+        self.mail.delete_mailbox(id).await?;
         let (account_id, key) = (self.account_id, id.to_string());
         let threads = self
             .db
@@ -241,12 +262,14 @@ impl AccountSync {
             .await?;
         self.emit(ChangeEvent::LabelsChanged { account_id });
         self.emit_threads(threads.into_iter().collect::<BTreeSet<_>>());
+        self.follow_folders(&[]).await;
         Ok(())
     }
 
     /// A person's mailbox as the label the window and the assistant read.
     fn user_label(&self, remote: &RemoteMailbox) -> Label {
         Label {
+            role: remote.role,
             account_id: self.account_id,
             id: remote.id.clone(),
             name: remote.name.clone(),

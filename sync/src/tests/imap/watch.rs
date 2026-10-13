@@ -78,8 +78,11 @@ async fn without_idle_the_watch_never_ends_and_the_inbox_is_polled_each_minute()
     h.imap
         .deliver_flagged("INBOX", &message("b", "Moss", ""), &[], days_ago(0));
 
+    // Paused, the clock runs on as soon as nothing else can, so an hour
+    // passes at once and a watch that never ends is told from a slow one.
+    tokio::time::pause();
     let woke =
-        tokio::time::timeout(Duration::from_millis(50), h.sync.services().mail.watch()).await;
+        tokio::time::timeout(Duration::from_secs(3600), h.sync.services().mail.watch()).await;
 
     assert!(woke.is_err());
     assert_eq!(
@@ -303,6 +306,71 @@ fn new_mail_arrives_by_idle_without_waiting_for_a_poll() {
         imap.deliver_flagged("INBOX", &message("a", "Kites", ""), &[], days_ago(0));
 
         wait_for(&events, |e| matches!(e, ChangeEvent::NewMail { .. })).await;
+    });
+}
+
+/// Check for Mail on a QRESYNC account looks at the Inbox at once, so a
+/// message another client moved away (an expunge from the Inbox) leaves
+/// the store then, with IDLE off and the next poll a minute away.
+#[test]
+fn check_for_mail_takes_mail_moved_away_elsewhere_out_of_the_inbox_at_once() {
+    on_worker_stack(async move {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        db.write(|c| accounts::insert_account(c, "me@example.com", 0))
+            .await
+            .unwrap();
+        let config = EngineConfig {
+            poll_interval: Duration::from_secs(60 * 60),
+            ..EngineConfig::default()
+        };
+        let (engine, events) = SyncEngine::new(db.clone(), config);
+        let imap = Arc::new(offering(|c| c.idle = false));
+        imap.deliver_flagged("INBOX", &message("a", "Kites", ""), &[], days_ago(1));
+        engine.start_account(
+            1,
+            AccountServices::fake_imap(Arc::clone(&imap), Arc::new(FakeSmtp::default())),
+        );
+        wait_for(&events, |e| {
+            matches!(
+                e,
+                ChangeEvent::AccountStateChanged {
+                    state: AccountState::Ok,
+                    ..
+                }
+            )
+        })
+        .await;
+        let stored = |db: Db| async move {
+            db.read(|c| mailrs_store::messages::existing_ids(c, 1, &["INBOX/1001/1".to_string()]))
+                .await
+                .unwrap()
+                .len()
+        };
+        assert_eq!(stored(db.clone()).await, 1);
+        // Let the first look finish, so the poke is what finds the change.
+        // It lists the mailboxes a third time and ends at Archive.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while imap.calls_to("list") < 3 || imap.calls().last().map(String::as_str) != Some("select Archive") {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the first look never finished");
+        let before_poke = imap.calls_to("select");
+
+        imap.remote_expunge("INBOX", 1);
+        engine.poke(1);
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while stored(db.clone()).await > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Check for Mail took the moved message out of the store");
+        assert!(imap.calls_to("select") > before_poke, "the poke looked");
+        engine.shutdown();
     });
 }
 

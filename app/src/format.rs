@@ -73,6 +73,17 @@ pub fn short_date(day: NaiveDate, today: NaiveDate) -> String {
     day.format_localized(&pattern, date_locale()).to_string()
 }
 
+/// A day as its date and month, "3 Oct", with the year only when it is
+/// not `today`'s, "21 Sep 2025". For a row that only says when something
+/// was made, where the weekday adds nothing.
+pub fn day_month(day: NaiveDate, today: NaiveDate) -> String {
+    let pattern = match day.year() == today.year() {
+        true => gettext("%-d %b"),
+        false => gettext("%-d %b %Y"),
+    };
+    day.format_localized(&pattern, date_locale()).to_string()
+}
+
 /// A day spelled out: "Monday, 5 October 2026". The year is always
 /// there, since a long date is the one a person reads to be sure.
 pub fn long_date(day: NaiveDate) -> String {
@@ -467,6 +478,20 @@ mod tests {
             header_date(at(2027, 1, 4, 8, 0), now),
             "4 Jan 2027 at 08:00"
         );
+    }
+
+    #[test]
+    fn a_day_and_month_leave_out_the_weekday() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 12).unwrap();
+        let day = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
+        assert_eq!(day_month(day, today), "3 Oct");
+    }
+
+    #[test]
+    fn a_day_and_month_in_another_year_name_the_year() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 12).unwrap();
+        let day = NaiveDate::from_ymd_opt(2025, 9, 21).unwrap();
+        assert_eq!(day_month(day, today), "21 Sep 2025");
     }
 
     #[test]

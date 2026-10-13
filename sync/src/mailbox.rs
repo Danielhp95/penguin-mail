@@ -6,20 +6,20 @@
 
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local, TimeZone};
 use mailrs_domain::translate::{date_locale, fill, fill_plural, gettext, pgettext};
 use mailrs_domain::{
-    Account, AccountId, Category, EpochMillis, FlagColor, Folder, MailSet, MessageMeta, Role,
+    Account, AccountId, Address, Category, EpochMillis, FlagColor, Folder, MailSet, MessageMeta, Role,
     SmartMailbox, ThreadSummary,
 };
 use mailrs_store::threads::ThreadFilter;
 use mailrs_store::{Db, flags, follow_ups, outbox, reminders, threads};
 
-use crate::{Accounts, MovedFrom, SearchQuery, SyncError};
+use crate::{Accounts, MailBackend, MovedFrom, SearchQuery, SyncError};
 
 /// Rows in one page of a stored mailbox.
 pub const PAGE: usize = 500;
@@ -277,9 +277,14 @@ impl Mailbox {
         }
     }
 
-    /// Unread counts matter for inboxes; drafts show how many there are.
+    /// Mailboxes show unread counts; drafts keep their total.
     pub fn counts_unread(&self) -> bool {
-        self.standard() == Some(Standard::Inbox) || matches!(self, Mailbox::Vips { .. })
+        self.standard()
+            .is_some_and(|which| which != Standard::Drafts)
+            || matches!(
+                self,
+                Mailbox::Vips { .. } | Mailbox::Label { .. } | Mailbox::Folder { .. }
+            )
     }
 
     /// Whether this mailbox splits into inbox categories.
@@ -632,6 +637,31 @@ struct Reading<'a> {
     stop: &'a Stop,
 }
 
+/// What a count reads.
+#[derive(Clone, Copy)]
+enum CountMode {
+    /// Everything the sidebar shows; `refresh` lets it ask the servers.
+    Full { refresh: bool },
+    /// The inboxes only, from what is kept, for the tray and the Dock.
+    InboxesOnly,
+}
+
+/// A server count expires after a mail change or a minute.
+struct UnreadCounts {
+    at: tokio::time::Instant,
+    changes: u64,
+    counts: HashMap<MailSet, i64>,
+    pending: bool,
+    request: u64,
+    task: tokio::task::AbortHandle,
+}
+
+impl Drop for UnreadCounts {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// Reads mailboxes. One instance serves the window and the assistant.
 pub struct Mailboxes<A: Accounts> {
     accounts: Arc<A>,
@@ -639,6 +669,9 @@ pub struct Mailboxes<A: Accounts> {
     /// The last Gmail search, kept so a folder that reloads a second later
     /// costs nothing.
     remote: Mutex<Option<RemoteListing>>,
+    unread: Arc<Mutex<HashMap<AccountId, UnreadCounts>>>,
+    unread_request: AtomicU64,
+    unread_changed: tokio::sync::watch::Sender<()>,
 }
 
 impl<A: Accounts> Mailboxes<A> {
@@ -647,6 +680,9 @@ impl<A: Accounts> Mailboxes<A> {
             accounts,
             db,
             remote: Mutex::new(None),
+            unread: Arc::new(Mutex::new(HashMap::new())),
+            unread_request: AtomicU64::new(0),
+            unread_changed: tokio::sync::watch::channel(()).0,
         }
     }
 
@@ -654,6 +690,7 @@ impl<A: Accounts> Mailboxes<A> {
     /// again. The window calls this when the reader asks for a refresh.
     pub fn forget_remote(&self) {
         *self.remote.lock().expect("remote listing poisoned") = None;
+        self.unread.lock().expect("unread counts poisoned").clear();
     }
 
     /// The page of `mailbox` that follows the rows the caller holds.
@@ -781,6 +818,92 @@ impl<A: Accounts> Mailboxes<A> {
         }
     }
 
+    /// Wakes the window when a background account count is ready or expires.
+    pub fn counts_changed(&self) -> tokio::sync::watch::Receiver<()> {
+        self.unread_changed.subscribe()
+    }
+
+    fn server_counts(&self, sidebar: &[Mailbox], refresh: bool) -> HashMap<AccountId, HashMap<MailSet, i64>> {
+        let ids: std::collections::BTreeSet<_> =
+            sidebar.iter().filter_map(Mailbox::account).collect();
+        let mut cached = self.unread.lock().expect("unread counts poisoned");
+        cached.retain(|id, _| ids.contains(id));
+        let mut counts = HashMap::new();
+        for id in ids {
+            let Some(sync) = self.accounts.account(id) else {
+                cached.remove(&id);
+                continue;
+            };
+            let changes = sync.mail_changes();
+            if let Some(kept) = cached.get(&id) {
+                if kept.changes == changes {
+                    counts.insert(id, kept.counts.clone());
+                }
+                if kept.changes == changes && (kept.pending || kept.at.elapsed() < REMOTE_FRESH) {
+                    continue;
+                }
+            }
+            if !refresh {
+                continue;
+            }
+            let request = self.unread_request.fetch_add(1, Ordering::Relaxed);
+            let state = Arc::downgrade(&self.unread);
+            let changed = self.unread_changed.clone();
+            // Each account updates on its own; no network await holds up local badges.
+            let mut moved = sync.watch_mail_changes();
+            let task = tokio::spawn(async move {
+                let answer = sync.services().mail.unread_counts().await.unwrap_or_default();
+                // The wait below runs a minute. An account that stops in
+                // that time must not stay alive, with its connections and
+                // caches, for the sake of this task.
+                drop(sync);
+                let Some(current) = state.upgrade() else { return };
+                let saved = {
+                    let mut cached = current.lock().expect("unread counts poisoned");
+                    if let Some(kept) = cached.get_mut(&id)
+                        && kept.request == request
+                    {
+                        kept.counts = answer;
+                        kept.at = tokio::time::Instant::now();
+                        kept.pending = false;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if !saved {
+                    return;
+                }
+                changed.send_replace(());
+                // An unopened folder can change without a local mail event,
+                // and a write the server takes after the store showed it
+                // sends none either, though the answer kept may have come
+                // before the write. Wake the counts when this answer needs
+                // another read.
+                drop(current);
+                tokio::select! {
+                    () = tokio::time::sleep(REMOTE_FRESH) => {}
+                    Ok(()) = moved.changed() => {}
+                }
+                let Some(current) = state.upgrade() else { return };
+                let cached = current.lock().expect("unread counts poisoned");
+                if cached.get(&id).is_some_and(|kept| kept.request == request) {
+                    drop(cached);
+                    changed.send_replace(());
+                }
+            });
+            cached.insert(id, UnreadCounts {
+                at: tokio::time::Instant::now(),
+                changes,
+                counts: counts.get(&id).cloned().unwrap_or_default(),
+                pending: true,
+                request,
+                task: task.abort_handle(),
+            });
+        }
+        counts
+    }
+
     /// Counts for every sidebar mailbox, plus the categories of the inbox
     /// on screen. Grouped queries cover the labels, the flags and the VIPs,
     /// so this costs a handful of queries rather than one per mailbox.
@@ -790,7 +913,43 @@ impl<A: Accounts> Mailboxes<A> {
         shown: &Mailbox,
         view: &View,
     ) -> Result<Counts, SyncError> {
+        self.counts_with(sidebar, shown, view, CountMode::Full { refresh: true }).await
+    }
+
+    /// Reads local mail and cached server counts without starting network work.
+    /// Expired answers remain useful until mail changes invalidate them.
+    pub async fn cached_counts(
+        &self,
+        sidebar: &[Mailbox],
+        shown: &Mailbox,
+        view: &View,
+    ) -> Result<Counts, SyncError> {
+        self.counts_with(sidebar, shown, view, CountMode::Full { refresh: false }).await
+    }
+
+    /// What the tray and the Dock show when no window is open: the counts
+    /// of `inboxes` alone, from the store and the server answers already
+    /// kept. It reads no folder, flag, reminder or outbox counts, and
+    /// starts no network work. The numbers equal those of
+    /// [`Mailboxes::counts`] for the same mailboxes.
+    pub async fn inbox_counts(&self, inboxes: &[Mailbox]) -> Result<Counts, SyncError> {
+        let shown = Mailbox::Unified(Standard::Inbox);
+        self.counts_with(inboxes, &shown, &View::default(), CountMode::InboxesOnly).await
+    }
+
+    async fn counts_with(
+        &self,
+        sidebar: &[Mailbox],
+        shown: &Mailbox,
+        view: &View,
+        reading: CountMode,
+    ) -> Result<Counts, SyncError> {
+        let (refresh, light) = match reading {
+            CountMode::Full { refresh } => (refresh, false),
+            CountMode::InboxesOnly => (false, true),
+        };
         let sidebar = sidebar.to_vec();
+        let remote_counts = self.server_counts(&sidebar, refresh);
         let category_base = view
             .category
             .is_some()
@@ -802,14 +961,34 @@ impl<A: Accounts> Mailboxes<A> {
             .db
             .read(move |c| {
                 let labels = threads::mail_counts(c)?;
-                let flagged = flags::mailbox_counts(c)?;
-                let waiting = if follow_ups {
+                let mut folders = HashMap::new();
+                for folder in Folder::ALL.into_iter().filter(|_| !light) {
+                    folders.insert(folder, mailrs_store::query::folder_unread(c, folder)?);
+                }
+                let unread = |account, set: &MailSet| {
+                    remote_counts
+                        .get(&account)
+                        .and_then(|counts| counts.get(set))
+                        .copied()
+                        .unwrap_or_else(|| labels.account(account, set).unread)
+                };
+                let flagged = match light {
+                    true => HashMap::new(),
+                    false => flags::mailbox_counts(c)?,
+                };
+                let waiting = if follow_ups && !light {
                     follow_ups::waiting_count(c, now)?
                 } else {
                     0
                 };
-                let (scheduled, stuck) = outbox::counts(c)?;
-                let reminders = reminders::count(c)?;
+                let (scheduled, stuck) = match light {
+                    true => (0, 0),
+                    false => outbox::counts(c)?,
+                };
+                let reminders = match light {
+                    true => 0,
+                    false => reminders::count(c)?,
+                };
                 let vips: Vec<String> = sidebar
                     .iter()
                     .filter_map(|m| match m {
@@ -820,16 +999,26 @@ impl<A: Accounts> Mailboxes<A> {
                     .collect();
                 let from_vips = threads::sender_counts(c, &vips)?;
                 let mut mailboxes = HashMap::new();
-                mailboxes.insert(Mailbox::FollowUp, waiting);
-                mailboxes.insert(Mailbox::Scheduled, scheduled);
-                mailboxes.insert(Mailbox::Outbox, stuck);
-                mailboxes.insert(Mailbox::Reminders, reminders);
+                if !light {
+                    mailboxes.insert(Mailbox::FollowUp, waiting);
+                    mailboxes.insert(Mailbox::Scheduled, scheduled);
+                    mailboxes.insert(Mailbox::Outbox, stuck);
+                    mailboxes.insert(Mailbox::Reminders, reminders);
+                }
                 for mailbox in sidebar {
                     let count = match &mailbox {
                         Mailbox::Unified(which) => {
                             let count = labels.unified(&which.set());
                             if mailbox.counts_unread() {
                                 count.unread
+                                    + remote_counts
+                                        .iter()
+                                        .filter_map(|(id, counts)| {
+                                            counts.get(&which.set()).map(|remote| {
+                                                remote - labels.account(*id, &which.set()).unread
+                                            })
+                                        })
+                                        .sum::<i64>()
                             } else {
                                 count.threads
                             }
@@ -837,7 +1026,7 @@ impl<A: Accounts> Mailboxes<A> {
                         Mailbox::Standard { account_id, which } => {
                             let count = labels.account(*account_id, &which.set());
                             if mailbox.counts_unread() {
-                                count.unread
+                                unread(*account_id, &which.set())
                             } else {
                                 count.threads
                             }
@@ -850,9 +1039,37 @@ impl<A: Accounts> Mailboxes<A> {
                             let count = labels
                                 .account(*account_id, &MailSet::Mailbox(label_id.clone()));
                             if mailbox.counts_unread() {
-                                count.unread
+                                unread(*account_id, &MailSet::Mailbox(label_id.clone()))
                             } else {
                                 count.threads
+                            }
+                        }
+                        Mailbox::Folder { .. } | Mailbox::Flag(_) | Mailbox::Vips { .. } if light => continue,
+                        Mailbox::Folder { account_id, folder } => {
+                            let role = match folder {
+                                Folder::Archive => Role::Archive,
+                                Folder::Junk => Role::Junk,
+                                Folder::Trash => Role::Trash,
+                                Folder::AllMail => Role::All,
+                            };
+                            let local = &folders[folder];
+                            let one = |id| {
+                                remote_counts
+                                    .get(&id)
+                                    .and_then(|counts| counts.get(&MailSet::Role(role)))
+                                    .copied()
+                                    .unwrap_or_else(|| local.get(&id).copied().unwrap_or(0))
+                            };
+                            match account_id {
+                                Some(id) => one(*id),
+                                None => local
+                                    .keys()
+                                    .chain(remote_counts.keys())
+                                    .copied()
+                                    .collect::<std::collections::BTreeSet<_>>()
+                                    .into_iter()
+                                    .map(one)
+                                    .sum(),
                             }
                         }
                         Mailbox::Flag(color) => flagged.get(color).copied().unwrap_or(0),
@@ -1176,7 +1393,10 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
+                recipient: first_recipient(item).map(Box::new),
                 message_count: 1,
+                scheduled: true,
+                held: crate::outbox::server_holds(item),
                 ..ThreadSummary::default()
             })
             .collect();
@@ -1205,6 +1425,7 @@ impl<A: Accounts> Mailboxes<A> {
                 subject: item.subject.clone(),
                 snippet: waiting_line(item, now),
                 from: recipients_of(item),
+                recipient: first_recipient(item).map(Box::new),
                 message_count: 1,
                 ..ThreadSummary::default()
             })
@@ -1298,6 +1519,7 @@ impl<A: Accounts> Mailboxes<A> {
                         &[("recipients", &names.join(", "))],
                     )
                 };
+                row.recipient = item.to.first().cloned().map(Box::new);
                 row.snippet = waited(now - item.sent_at);
                 row.last_message_at = item.sent_at;
                 row
@@ -1381,17 +1603,61 @@ fn recipients_of(message: &outbox::Queued) -> String {
     )
 }
 
+/// The first person a waiting message goes to, for its row's avatar.
+/// Read from the message's own To header, so a name holding a comma
+/// stays whole. A message the server holds has no bytes here, and its
+/// row takes the list's words as the name.
+fn first_recipient(message: &outbox::Queued) -> Option<Address> {
+    if let Some(found) = message.raw.as_deref().and_then(mailrs_mime::first_recipient) {
+        return Some(found);
+    }
+    (!message.recipients.is_empty()).then(|| Address {
+        name: Some(message.recipients.clone()),
+        email: String::new(),
+    })
+}
+
 /// What a queued message's row says under the subject, and what the
 /// conversation pane says above the message. A Send Later message says
 /// when it goes; one in the Outbox says why it has not gone and when the
 /// next try is.
 pub fn waiting_line(message: &outbox::Queued, now: DateTime<Local>) -> String {
+    // A server that still holds a message a quarter of an hour after its
+    // hour is late, and the row says so rather than an hour long gone.
+    const LATE: i64 = 15 * 60_000;
+    if message.problem.is_none()
+        && message.held.is_some()
+        && now.timestamp_millis() >= message.send_at.saturating_add(LATE)
+    {
+        // A hold whose answer was lost may never have reached the server,
+        // so the row says only what is known.
+        return match crate::outbox::server_holds(message) {
+            true => gettext("The server has not sent this message yet."),
+            false => gettext("Penguin Mail has not confirmed that the server took this message."),
+        };
+    }
     let Some(problem) = message.problem.as_deref() else {
-        return fill(
-            &gettext("Sends {when}"),
-            &[("when", &future_date(message.send_at, now))],
-        );
+        let when = sending_date(message.send_at, now);
+        return match crate::outbox::server_holds(message) {
+            // The server sends it at the hour whether or not this computer
+            // is on. The list row shows the second line under the first.
+            true => format!(
+                "{}\n{}",
+                fill(&gettext("Sends {when}."), &[("when", &when)]),
+                gettext("The server sends it even if Penguin Mail is closed."),
+            ),
+            false => fill(&gettext("Sends {when}"), &[("when", &when)]),
+        };
     };
+    // A hold whose fate nobody could learn: the app never tried to send
+    // it, so neither "trying again" nor "stopped trying" is true. The
+    // preview holds two lines, so what to do comes first.
+    if message.held.is_some() {
+        return gettext("Check Sent. Penguin Mail could not confirm it went out.");
+    }
+    if crate::outbox::canceled_elsewhere_row(message) {
+        return gettext("Canceled in another app.");
+    }
     let unsent = gettext("Not sent");
     let problem = match problem.trim_end_matches(['.', ' ']) {
         "" => unsent.as_str(),
@@ -1429,6 +1695,18 @@ fn counted(rows: usize) -> String {
 /// 21:00", "tomorrow at 08:00", "Monday at 08:00" within the week, then
 /// "Tue 3 Nov at 08:00".
 pub fn future_date(ts: EpochMillis, now: DateTime<Local>) -> String {
+    date_words(ts, now, true)
+}
+
+/// When a Send Later message goes: "today at 21:00", "tomorrow at
+/// 08:00", then "Fri 16 Oct at 09:00", since a weekday alone reads as
+/// this week's on a row that may wait longer.
+fn sending_date(ts: EpochMillis, now: DateTime<Local>) -> String {
+    date_words(ts, now, false)
+}
+
+/// `future_date`, with or without the bare weekday for the coming week.
+fn date_words(ts: EpochMillis, now: DateTime<Local>, weekdays: bool) -> String {
     use chrono::Datelike;
     let Some(when) = Local.timestamp_millis_opt(ts).single() else {
         return String::new();
@@ -1438,7 +1716,7 @@ pub fn future_date(ts: EpochMillis, now: DateTime<Local>) -> String {
     let pattern = match (when.date_naive() - now.date_naive()).num_days() {
         ..=0 => gettext("today at %H:%M"),
         1 => gettext("tomorrow at %H:%M"),
-        2..=6 => gettext("%A at %H:%M"),
+        2..=6 if weekdays => gettext("%A at %H:%M"),
         _ if when.year() == now.year() => gettext("%a %-d %b at %H:%M"),
         _ => gettext("%-d %b %Y at %H:%M"),
     };
@@ -1502,6 +1780,9 @@ fn row_of(hit: &MessageMeta, alone: bool) -> ThreadSummary {
             .map(|a| a.email.clone())
             .unwrap_or_default(),
         invitation: false,
+        scheduled: false,
+        held: false,
+        recipient: None,
     }
 }
 
@@ -1512,6 +1793,21 @@ mod tests {
     use mailrs_domain::Category;
 
     use super::{summarize_search, unread_subtitle, waited};
+
+    #[test]
+    fn a_waiting_message_is_drawn_for_its_first_recipient() {
+        let message = super::outbox::Queued {
+            recipients: "Doe, Jane, Ines Duarte".into(),
+            raw: Some(b"To: \"Doe, Jane\" <jane@example.org>, ines@example.org\r\n\r\nHi".to_vec()),
+            ..Default::default()
+        };
+        let jane = super::first_recipient(&message).expect("a recipient");
+        assert_eq!((jane.name.as_deref(), jane.email.as_str()), (Some("Doe, Jane"), "jane@example.org"));
+        // Held on the server, with no bytes here: the list's words, whole.
+        let held = super::outbox::Queued { recipients: "Theo Brandt".into(), ..Default::default() };
+        assert_eq!(super::first_recipient(&held).and_then(|a| a.name), Some("Theo Brandt".into()));
+        assert!(super::first_recipient(&super::outbox::Queued::default()).is_none());
+    }
 
     #[test]
     fn an_empty_search_says_what_to_try_next() {

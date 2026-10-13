@@ -2,8 +2,10 @@
 //! parsed responses one at a time, the way they arrive, so a test feeds
 //! it lines written by hand and no server is needed.
 
+use async_imap::imap_proto::rfc4315::UidSetMember;
 use async_imap::imap_proto::{
-    AttributeValue, MailboxDatum, NameAttribute, Response, ResponseCode, Status, UidSetMember,
+    AttributeValue, MailboxDatum, MailboxListData, NameAttribute, Outcome, Response, ResponseCode,
+    Status,
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -15,7 +17,7 @@ use mailrs_domain::EpochMillis;
 use crate::guard::{BODY_BYTES, COMMAND_BYTES, SEARCH_BYTES, SELECT_BYTES};
 use crate::structure::BodyStructure;
 use crate::{
-    AppendUid, CopyUid, Fetched, FlagsOf, ImapError, Listed, Selected, SpecialUse, UidSet,
+    AppendUid, CopyUid, Fetched, FlagsOf, ImapError, Listed, QuotaUse, Selected, SpecialUse, UidSet,
 };
 
 /// The most answers one command may keep: messages, mailboxes, or pairs
@@ -118,6 +120,59 @@ pub(crate) trait Reads {
     fn keep(&mut self, _bytes: Vec<u8>) {}
 }
 
+pub(crate) struct UnreadReader<'a> {
+    pub mailbox: &'a str,
+    pub unread: Option<u32>,
+}
+
+impl Reads for UnreadReader<'_> {
+    fn read(&mut self, response: &Response<'_>) {
+        if let Response::MailboxData(MailboxDatum::Status { mailbox, status }) = response
+            && (mailbox == self.mailbox
+                || (self.mailbox.eq_ignore_ascii_case("INBOX") && mailbox.eq_ignore_ascii_case("INBOX")))
+        {
+            for attribute in status {
+                if let async_imap::imap_proto::StatusAttribute::Unseen(count) = attribute {
+                    self.unread = Some(*count);
+                }
+            }
+        }
+    }
+}
+
+/// The QUOTA answers to a GETQUOTAROOT, one use per resource. The
+/// QUOTAROOT line only names the roots, which the QUOTA lines repeat.
+#[derive(Default)]
+pub(crate) struct QuotaReader {
+    pub(crate) uses: Vec<QuotaUse>,
+}
+
+impl Reads for QuotaReader {
+    fn read(&mut self, response: &Response<'_>) {
+        use async_imap::imap_proto::rfc2087::QuotaResourceName;
+        let Response::Quota(quota) = response else {
+            return;
+        };
+        for resource in &quota.resources {
+            let name = match &resource.name {
+                QuotaResourceName::Storage => "STORAGE".to_string(),
+                QuotaResourceName::Message => "MESSAGE".to_string(),
+                QuotaResourceName::Atom(atom) => atom.to_ascii_uppercase(),
+            };
+            self.uses.push(QuotaUse {
+                root: quota.root_name.to_string(),
+                resource: name,
+                usage: resource.usage,
+                limit: resource.limit,
+            });
+        }
+    }
+
+    fn kept(&self) -> usize {
+        self.uses.len()
+    }
+}
+
 /// Reads nothing, for commands whose only answer is OK.
 impl Reads for () {
     fn read(&mut self, _response: &Response<'_>) {}
@@ -135,11 +190,19 @@ impl Reads for CapabilityReader {
         let list = match response {
             Response::Capabilities(list) => list,
             Response::Data {
-                code: Some(ResponseCode::Capabilities(list)),
+                outcome:
+                    Outcome {
+                        code: Some(ResponseCode::Capabilities(list)),
+                        ..
+                    },
                 ..
             }
             | Response::Done {
-                code: Some(ResponseCode::Capabilities(list)),
+                outcome:
+                    Outcome {
+                        code: Some(ResponseCode::Capabilities(list)),
+                        ..
+                    },
                 ..
             } => list,
             _ => return,
@@ -203,8 +266,10 @@ impl Reads for SelectReader {
         match response {
             Response::Data {
                 status: Status::Ok,
-                code: Some(code),
-                ..
+                outcome:
+                    Outcome {
+                        code: Some(code), ..
+                    },
             } => match code {
                 ResponseCode::UidValidity(v) => self.uidvalidity = Some(*v),
                 ResponseCode::UidNext(n) => self.selected.uidnext = Some(*n),
@@ -620,11 +685,11 @@ impl Reads for ListReader {
     }
 
     fn read(&mut self, response: &Response<'_>) {
-        let Response::MailboxData(MailboxDatum::List {
+        let Response::MailboxData(MailboxDatum::List(MailboxListData {
             name_attributes,
             delimiter,
             name,
-        }) = response
+        })) = response
         else {
             return;
         };
@@ -745,14 +810,13 @@ impl Reads for CopyUidReader {
         let code = match response {
             Response::Data {
                 status: Status::Ok,
-                code,
-                ..
-            } => code,
-            Response::Done {
+                outcome,
+            }
+            | Response::Done {
                 status: Status::Ok,
-                code,
+                outcome,
                 ..
-            } => code,
+            } => &outcome.code,
             _ => return,
         };
         let Some(ResponseCode::CopyUid(uidvalidity, from, to)) = code else {
@@ -784,7 +848,11 @@ impl Reads for AppendUidReader {
     fn read(&mut self, response: &Response<'_>) {
         if let Response::Done {
             status: Status::Ok,
-            code: Some(ResponseCode::AppendUid(uidvalidity, set)),
+            outcome:
+                Outcome {
+                    code: Some(ResponseCode::AppendUid(uidvalidity, set)),
+                    ..
+                },
             ..
         } = response
             && let Some(uid) = uids(set).next()
@@ -828,10 +896,54 @@ pub(crate) mod tests {
     pub(crate) fn feed(reader: &mut impl Reads, lines: &[&str]) {
         for line in lines {
             let (rest, response) =
-                Response::from_bytes(line.as_bytes()).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
+                Response::parse(line.as_bytes()).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
             assert!(rest.is_empty(), "{line:?} left {rest:?}");
             reader.read(&response);
         }
+    }
+
+    #[test]
+    fn a_quota_answer_reads_as_uses() {
+        let mut reader = QuotaReader::default();
+        feed(
+            &mut reader,
+            &[
+                "* QUOTAROOT INBOX \"User quota\"\r\n",
+                "* QUOTA \"User quota\" (STORAGE 10 1048576 MESSAGE 4 1000)\r\n",
+            ],
+        );
+        assert_eq!(
+            reader.uses,
+            [
+                QuotaUse { root: "User quota".into(), resource: "STORAGE".into(), usage: 10, limit: 1_048_576 },
+                QuotaUse { root: "User quota".into(), resource: "MESSAGE".into(), usage: 4, limit: 1000 },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unknown_quota_resource_keeps_its_name_in_upper_case() {
+        let mut reader = QuotaReader::default();
+        feed(&mut reader, &["* QUOTA \"\" (x-custom 1 2)\r\n"]);
+        assert_eq!(reader.uses.len(), 1);
+        assert_eq!(reader.uses[0].resource, "X-CUSTOM");
+    }
+
+    #[test]
+    fn a_quota_with_no_resources_keeps_nothing() {
+        let mut reader = QuotaReader::default();
+        feed(&mut reader, &["* QUOTA \"\" ()\r\n"]);
+        assert!(reader.uses.is_empty());
+    }
+
+    #[test]
+    fn a_huge_quota_number_does_not_panic() {
+        let mut reader = QuotaReader::default();
+        let line = "* QUOTA \"\" (STORAGE 18446744073709551615 18446744073709551615)\r\n";
+        feed(&mut reader, &[line]);
+        assert_eq!(reader.uses[0].limit, u64::MAX);
+        // Beyond u64 the parser refuses the line; nothing may panic or read.
+        assert!(Response::parse(b"* QUOTA \"\" (STORAGE 99999999999999999999999 1)\r\n").is_err());
     }
 
     #[test]
@@ -1301,7 +1413,7 @@ pub(crate) mod tests {
     #[test]
     fn a_section_reader_takes_the_bytes_of_its_uid_whole() {
         let (_, response) =
-            Response::from_bytes(b"* 2 FETCH (UID 9 BODY[1] {5}\r\nhello)\r\n").unwrap();
+            Response::parse(b"* 2 FETCH (UID 9 BODY[1] {5}\r\nhello)\r\n").unwrap();
         let mut reader = SectionReader::new(9);
         assert_eq!(reader.wants(&response), Some(&b"hello"[..]));
         reader.keep(b"hello".to_vec());

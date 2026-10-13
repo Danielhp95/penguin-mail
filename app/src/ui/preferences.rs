@@ -18,7 +18,8 @@ use crate::autostart;
 use crate::language;
 use crate::offered::missing_lines;
 use crate::settings::{
-    Change, Choice, Settings, cache_choices, nearest, poll_choices, window_choices,
+    Change, Choice, Settings, cache_choices, nearest, nearest_window, poll_choices, window_choices,
+    window_note,
 };
 use crate::ui::window::Notice;
 use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
@@ -44,23 +45,34 @@ pub fn present(
     let dialog = adw::PreferencesDialog::builder()
         .search_enabled(true)
         .build();
+    // The phone layout. A dialog applies one breakpoint at a time, so
+    // every page puts its narrow setters on this one.
+    let narrow = adw::Breakpoint::new(
+        adw::BreakpointCondition::parse("max-width: 450sp").expect("valid breakpoint"),
+    );
     dialog.add(&general_page(app, &settings, &missing_lines(&offered, |id, missing| app.core.missed(id, missing))));
     let writing = writing_page(app, &settings, accounts, signature_of, &dialog);
     dialog.add(&writing);
-    dialog.add(&super::contacts_prefs::page(
+    let contacts = super::contacts_prefs::page(
         app,
         &settings,
         &offered,
         withheld,
         grant,
         &calendar_rows(app, &settings),
-    ));
+    );
+    dialog.add(&contacts);
+    // Five tabs share 360 px on a phone, about nine letters each, and
+    // "Contacts & Calendar" ended in "&…". The short name matches the
+    // page's address book icon, and search still finds every row.
+    narrow.add_setter(&contacts, "title", Some(&gettext("Contacts").to_value()));
     if signature_of.is_some() {
         dialog.set_visible_page(&writing);
     }
     let pending = Rc::new(RefCell::new(app.core.sync_config()));
-    dialog.add(&sync_page(app, &pending));
+    dialog.add(&sync_page(app, &pending, &narrow));
     dialog.add(&super::assistant_prefs::page(app, &dialog));
+    dialog.add_breakpoint(narrow);
     let weak = Rc::downgrade(app);
     dialog.connect_closed(move |_| {
         let Some(app) = weak.upgrade() else { return };
@@ -151,6 +163,13 @@ fn general_page(
         Change::RemoteImages,
     ));
     reading.add(&allowed_image_senders(app));
+    reading.add(&combo(
+        app,
+        &gettext("Read Receipts"),
+        Some(&gettext("When a sender asks to know you read their message")),
+        settings.read_receipts,
+        Change::ReadReceipts,
+    ));
     reading.add(&combo(
         app,
         &gettext("Text Size"),
@@ -350,6 +369,8 @@ fn writing_page(
         Change::CheckAttachments,
     ));
     page.add(&sending);
+
+    super::sender_prefs::groups(app, accounts, &page);
 
     let signatures = adw::PreferencesGroup::builder()
         .title(gettext("Signatures"))
@@ -732,9 +753,15 @@ fn spelling_group(
     group
 }
 
-fn sync_page(app: &Rc<App>, pending: &Rc<RefCell<SyncConfig>>) -> adw::PreferencesPage {
+fn sync_page(
+    app: &Rc<App>,
+    pending: &Rc<RefCell<SyncConfig>>,
+    narrow: &adw::Breakpoint,
+) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(gettext("Sync"))
+        // The storage banner opens this page by name.
+        .name("sync")
         .icon_name("mail-send-receive-symbolic")
         .build();
     let current = pending.borrow().clone();
@@ -758,28 +785,63 @@ fn sync_page(app: &Rc<App>, pending: &Rc<RefCell<SyncConfig>>) -> adw::Preferenc
         .title(gettext("Storage"))
         .build();
     let windows = window_choices();
-    storage.add(&sync_combo(
+    let days = current.window_days.unwrap_or(mailrs_sync::DEFAULT_WINDOW_DAYS);
+    let window = sync_combo(
         &windows,
         &gettext("Keep Mail on This Computer For"),
-        Some(&gettext(
-            "Everything in your inbox stays too, and older mail remains searchable",
-        )),
-        nearest(&windows, current.window_days.unwrap_or(30)),
+        Some(&window_note(days)),
+        nearest_window(&windows, days),
         pending,
         |c, v| c.window_days = Some(v),
-    ));
+    );
+    // The line under the row says what the choice on show costs, except
+    // on a phone, where the value needs the room.
+    let notes_shown = Rc::new(Cell::new(true));
+    let picked: Vec<i64> = windows.iter().map(|(days, _)| *days).collect();
+    let shown = Rc::clone(&notes_shown);
+    window.connect_selected_notify(move |row| {
+        if !shown.get() {
+            return;
+        }
+        if let Some(days) = picked.get(row.selected() as usize) {
+            row.set_subtitle(&window_note(*days));
+        }
+    });
+    storage.add(&window);
     let caches = cache_choices();
-    storage.add(&sync_combo(
+    let cache_note = gettext("Bodies of mail you have read, kept for opening offline");
+    let cache = sync_combo(
         &caches,
         &gettext("Message Cache"),
-        Some(&gettext(
-            "Bodies of mail you have read, kept for opening offline",
-        )),
+        Some(&cache_note),
         nearest(&caches, current.body_cache_mb.unwrap_or(1024)),
         pending,
         |c, v| c.body_cache_mb = Some(v),
-    ));
+    );
+    storage.add(&cache);
     page.add(&storage);
+    // On a phone the two lines under these rows took the room their values
+    // need, and Message Cache read "1 …". They go below 450 sp.
+    {
+        let (shown, rows) = (Rc::clone(&notes_shown), (window.clone(), cache.clone()));
+        narrow.connect_apply(move |_| {
+            shown.set(false);
+            rows.0.set_subtitle("");
+            rows.1.set_subtitle("");
+        });
+        let (shown, rows) = (Rc::clone(&notes_shown), (window.clone(), cache.clone()));
+        let windows = window_choices();
+        narrow.connect_unapply(move |_| {
+            shown.set(true);
+            if let Some((days, _)) = windows.get(rows.0.selected() as usize) {
+                rows.0.set_subtitle(&window_note(*days));
+            }
+            rows.1.set_subtitle(&cache_note);
+        });
+    }
+    if let Some(space) = server_space(app, narrow) {
+        page.add(&space);
+    }
 
     let startup = adw::PreferencesGroup::builder()
         .title(gettext("Startup"))
@@ -821,6 +883,169 @@ fn sync_page(app: &Rc<App>, pending: &Rc<RefCell<SyncConfig>>) -> adw::Preferenc
     }
     page.add(&startup);
     page
+}
+
+/// A size on a server, as `human_size` writes it but keeping the tenth
+/// from 10 GB up: on a nearly full account "14.3 GB of 15 GB" says how
+/// much room is left, where "14 GB" hides it. A whole number drops it.
+fn space_size(bytes: u64) -> String {
+    const UNITS: [&str; 3] = ["KB", "MB", "GB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    let tenths = (value * 10.0).round();
+    if value >= 10.0 && tenths % 10.0 == 0.0 {
+        format!("{} {}", tenths / 10.0, UNITS[unit])
+    } else {
+        format!("{:.1} {}", tenths / 10.0, UNITS[unit])
+    }
+}
+
+/// "2.1 GB of 15 GB".
+fn amount_line(storage: mailrs_sync::Storage) -> String {
+    fill(
+        &gettext("{used} of {limit}"),
+        &[("used", &space_size(storage.used)), ("limit", &space_size(storage.limit))],
+    )
+}
+
+/// The row's second line: the amount, and how full once past the warning.
+fn state_line(storage: mailrs_sync::Storage) -> String {
+    let amount = amount_line(storage);
+    if storage.full() {
+        fill(&gettext("{amount} · Full"), &[("amount", &amount)])
+    } else if storage.past_warning() {
+        fill(&gettext("{amount} · Nearly full"), &[("amount", &amount)])
+    } else {
+        amount
+    }
+}
+
+/// One row per account whose server says how full it is, with a bar in
+/// ink while there is room, the warning colour past the server's mark and
+/// red once full. `None` while no server has said, so the page shows no empty
+/// group. Below 450 sp the bar moves under the amount.
+fn server_space(app: &Rc<App>, narrow: &adw::Breakpoint) -> Option<adw::PreferencesGroup> {
+    let storage = app.storage();
+    let rows: Vec<(String, mailrs_sync::Storage)> = app
+        .accounts()
+        .into_iter()
+        .filter_map(|a| Some((a.email.clone(), *storage.get(&a.id)?)))
+        .collect();
+    if rows.is_empty() {
+        return None;
+    }
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Space on the Server"))
+        .description(gettext("How much of its space each server says your mail takes"))
+        .build();
+    narrow.add_setter(&group, "description", Some(&None::<String>.to_value()));
+    for (address, space) in rows {
+        group.add(&server_space_row(&address, space, narrow));
+    }
+    let footer = gtk::Label::builder()
+        .label(gettext("Accounts whose server does not report its space are not listed."))
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["server-space-footer"])
+        .build();
+    group.add(&footer);
+    Some(group)
+}
+
+fn server_space_row(
+    address: &str,
+    space: mailrs_sync::Storage,
+    narrow: &adw::Breakpoint,
+) -> adw::PreferencesRow {
+    let tone = if space.full() {
+        Some("full")
+    } else if space.past_warning() {
+        Some("nearly-full")
+    } else {
+        None
+    };
+    let title = gtk::Label::builder()
+        .label(address)
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .css_classes(["title"])
+        .build();
+    let state = state_line(space);
+    let subtitle = gtk::Label::builder()
+        .label(state.as_str())
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .css_classes(["subtitle"])
+        .build();
+    let words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(3)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    words.append(&title);
+    words.append(&subtitle);
+    let bar = gtk::LevelBar::builder()
+        .min_value(0.0)
+        .max_value(1.0)
+        .value((space.used as f64 / space.limit as f64).min(1.0))
+        .width_request(150)
+        .valign(gtk::Align::Center)
+        .css_classes(["server-space"])
+        .build();
+    // GTK colours a level bar by its own offsets, low as a warning; here
+    // more is worse, so the bar takes its colour from the CSS.
+    for offset in [gtk::LEVEL_BAR_OFFSET_LOW, gtk::LEVEL_BAR_OFFSET_HIGH, gtk::LEVEL_BAR_OFFSET_FULL] {
+        bar.remove_offset_value(Some(offset));
+    }
+    // The second line already says it, so the bar's label repeats it for
+    // a screen reader that reaches the bar alone.
+    bar.update_property(&[gtk::accessible::Property::Label(&format!("{address}: {state}"))]);
+    let end = if space.full() {
+        gtk::Label::builder()
+            .label(gettext("Full"))
+            .valign(gtk::Align::Center)
+            .css_classes(["server-space-chip"])
+            .build()
+    } else {
+        gtk::Label::builder()
+            .label(fill(&gettext("{percent}%"), &[("percent", &space.percent().to_string())]))
+            .width_chars(4)
+            .xalign(1.0)
+            .css_classes(["server-space-percent", "numeric"])
+            .build()
+    };
+    let gauge = gtk::Box::builder().spacing(12).valign(gtk::Align::Center).build();
+    gauge.append(&bar);
+    gauge.append(&end);
+    let content = gtk::Box::builder()
+        .spacing(16)
+        .css_classes(["server-space-row"])
+        .build();
+    content.append(&words);
+    content.append(&gauge);
+    if let Some(tone) = tone {
+        for widget in [subtitle.upcast_ref::<gtk::Widget>(), bar.upcast_ref()] {
+            widget.add_css_class(tone);
+        }
+    }
+    narrow.add_setter(&content, "orientation", Some(&gtk::Orientation::Vertical.to_value()));
+    narrow.add_setter(&content, "spacing", Some(&10.to_value()));
+    narrow.add_setter(&bar, "hexpand", Some(&true.to_value()));
+    narrow.add_setter(&end, "visible", Some(&false.to_value()));
+    adw::PreferencesRow::builder()
+        .title(address)
+        .activatable(false)
+        .focusable(false)
+        .child(&content)
+        .build()
 }
 
 /// The senders whose images load without asking, each with a way off the
@@ -1283,7 +1508,43 @@ fn preview(signature: &str) -> String {
 mod tests {
     use mailrs_domain::calendar::hours::WorkingHours;
 
-    use super::{end_hours, starting_at, ending_at};
+    use super::{amount_line, end_hours, ending_at, starting_at, state_line};
+
+    const GIB: u64 = 1 << 30;
+
+    fn space(used: u64, limit: u64) -> mailrs_sync::Storage {
+        mailrs_sync::Storage::new(used, limit, None).unwrap()
+    }
+
+    #[test]
+    fn the_amount_reads_used_of_limit() {
+        assert_eq!(amount_line(space(2_254_857_830, 16_106_127_360)), "2.1 GB of 15 GB");
+    }
+
+    #[test]
+    fn the_amount_keeps_a_tenth_above_ten_gigabytes() {
+        assert_eq!(amount_line(space(143 * GIB / 10, 15 * GIB)), "14.3 GB of 15 GB");
+    }
+
+    #[test]
+    fn the_amount_keeps_a_tenth_below_ten_gigabytes() {
+        assert_eq!(amount_line(space(5 * GIB, 5 * GIB)), "5.0 GB of 5.0 GB");
+    }
+
+    #[test]
+    fn a_row_with_room_says_only_the_amount() {
+        assert_eq!(state_line(space(21 * GIB / 10, 30 * GIB)), "2.1 GB of 30 GB");
+    }
+
+    #[test]
+    fn a_row_past_the_warning_says_nearly_full() {
+        assert_eq!(state_line(space(143 * GIB / 10, 15 * GIB)), "14.3 GB of 15 GB · Nearly full");
+    }
+
+    #[test]
+    fn a_full_row_says_full() {
+        assert_eq!(state_line(space(5 * GIB, 5 * GIB)), "5.0 GB of 5.0 GB · Full");
+    }
 
     fn nine_to_six() -> WorkingHours {
         WorkingHours::default()

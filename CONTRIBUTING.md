@@ -1,9 +1,9 @@
 # Contributing
 
-Penguin Mail is one person's mail client, published so others can use it
-and learn from it. It does not take pull requests: GitHub lets only
-collaborators open them here. This file is for anyone who wants to report
-a problem, build the app, or read how it works.
+Penguin Mail is a mail client for Linux and macOS. It takes pull requests:
+bug fixes, translations, packaging and features have all come in from
+outside. This file covers reporting a problem, sending a change, building
+the app, and how it works.
 
 ## Reporting a problem
 
@@ -15,6 +15,29 @@ and addresses you would not post in public.
 
 To report a security problem, see [SECURITY.md](SECURITY.md) instead of
 opening an issue.
+
+## Sending a pull request
+
+Open an issue first for anything bigger than a fix, so we can agree on the
+approach before you write it. Then:
+
+- Keep one purpose per pull request, and fill in the template, including
+  where the code came from.
+- Run the checks under [Checks](#checks) before you push.
+- Explain any new crate: what it does for the change, and why the
+  standard library or a crate already in `Cargo.lock` does not do it.
+
+Every pull request runs CI and the security checks listed in
+[SECURITY.md](SECURITY.md#what-we-check-on-a-pull-request): cargo-deny on
+crates and licences, GitHub's dependency review, zizmor on the workflows,
+and a list of build scripts, new crates, `unsafe` and binary files for the
+reviewer. A change to workflows, scripts, packaging, manifests, build
+scripts, the app's data files, or the code that signs in or stores
+secrets also needs the code owner's review; [.github/CODEOWNERS](.github/CODEOWNERS)
+lists those paths.
+
+By opening a pull request you agree to license your change under
+GPL-3.0-or-later.
 
 ## Building from source
 

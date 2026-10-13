@@ -26,6 +26,7 @@ pub use client::{
 };
 pub use convert::{HistoryChange, HistoryPage};
 pub use drive::DRIVE_UPLOAD_BASE;
+pub use drive::DriveStorage;
 pub use error::{GmailError, OneClickError};
 pub use limiter::{AccountQuota, Priority, QuotaLimiter, QuotaPool, Waiting};
 pub use model::{
