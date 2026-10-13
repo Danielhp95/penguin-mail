@@ -30,6 +30,9 @@ pub struct FakeState {
     /// The server says that it schedules on its calendars and not at its
     /// own address, as Nextcloud does.
     pub quiet_at_its_address: bool,
+    /// The server answers 401 when asked whether it schedules, though it
+    /// takes the login for everything else.
+    pub refuse_options: bool,
     pub offline: bool,
     pub refuse_login: bool,
     pub puts: usize,
@@ -319,6 +322,9 @@ impl DavApi for FakeDav {
 
     async fn auto_schedule(&self, at: Option<&str>) -> Result<bool, DavError> {
         let state = self.open()?;
+        if state.refuse_options {
+            return Err(DavError::Unauthorized);
+        }
         Ok(state.auto_schedule && (at.is_some() || !state.quiet_at_its_address))
     }
 

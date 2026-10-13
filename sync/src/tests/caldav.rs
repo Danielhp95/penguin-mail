@@ -495,6 +495,18 @@ async fn reading_the_calendar_list_settles_whether_the_organizer_will_hear() {
     assert!(caldav.tells_organizer());
 }
 
+/// The list was read, so the login was taken, whatever the server made
+/// of the question that follows it. An account said to be refused here
+/// would wait for a sign-in that changes nothing.
+#[tokio::test]
+async fn a_scheduling_question_turned_away_is_not_a_refused_login() {
+    let (dav, caldav) = alone(&[]).await;
+    dav.with(|s| s.refuse_options = true);
+    assert!(!caldav.calendars().await.unwrap().is_empty());
+    assert_eq!(caldav.login_refused(), None);
+    assert!(caldav.tells_organizer(), "a server that does not say leaves the question open");
+}
+
 #[tokio::test]
 async fn an_event_without_an_organizer_has_nobody_to_tell() {
     let (dav, smtp, caldav) = adapter().await;

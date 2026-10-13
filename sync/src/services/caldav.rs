@@ -364,13 +364,15 @@ impl<D: DavApi> CalendarService for CalDav<D> {
         }
         let home = homes.calendar.ok_or(BackendError::Unsupported)?;
         let found = self.api.collections(&home, Kind::Calendar).await.map_err(|e| self.err(e))?;
-        *locked(&self.refused) = None;
         // The window says before an answer whether its organizer will
         // hear of it, which only an account without mail has to ask. A
         // server that does not say leaves the question open.
         if !self.mail.serves_mail() {
             let _ = self.server_schedules(&home).await;
         }
+        // The list was read, so the login was taken, whatever the server
+        // made of the question after it.
+        *locked(&self.refused) = None;
         let home_path = path_of(&home);
         let calendars: Vec<model::Calendar> = found
             .into_iter()
