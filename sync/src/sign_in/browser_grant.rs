@@ -2,8 +2,8 @@
 //! that already exists under another protocol and switches to JMAP. The
 //! switch decides what to keep, in one transaction with the rest of the
 //! account, so nothing here touches the store or the keyring. It runs the
-//! same steps as [`super::jmap_in_browser`]: a client registered with the
-//! app's loopback redirect, the consent page, the code exchange, and the
+//! same steps as [`super::jmap_in_browser`]: a client registered for the
+//! loopback redirect this sign-in listens on, the consent page, the code exchange, and the
 //! `state` and `iss` checks the loopback makes.
 
 use std::fmt;
@@ -16,9 +16,6 @@ use mailrs_store::jmap::SavedOAuth;
 use super::BrowserSignInError;
 use super::jmap_browser::{BROWSER_WAIT, JmapBrowser, SignInServer};
 use mailrs_jmap::JmapError;
-
-/// The redirect a registered client names; any loopback port is taken.
-const REGISTERED_REDIRECT: &str = "http://127.0.0.1/";
 
 /// What a browser sign-in handed back. The tokens never show in Debug.
 pub struct BrowserGrant {
@@ -83,9 +80,12 @@ pub(crate) async fn granting<S: SignInServer>(
         Some(provider) if !provider.oauth_scopes.is_empty() => provider.oauth_scopes.clone(),
         _ => oauth::oauth_scopes(&metadata),
     };
-    let client_id = server.register(&metadata, REGISTERED_REDIRECT, &scopes).await.map_err(BrowserSignInError::Jmap)?;
+    // The client names the loopback's exact redirect, port included, as
+    // `jmap_in_browser`'s does: Fastmail matches one registered without a
+    // port exactly.
     let loopback = Loopback::bind().await.map_err(BrowserSignInError::Jmap)?;
     let redirect = loopback.redirect_uri.clone();
+    let client_id = server.register(&metadata, &redirect, &scopes).await.map_err(BrowserSignInError::Jmap)?;
     let (pkce, state) = (Pkce::generate(), oauth::random_token(32));
     let url = oauth::authorize_url(&metadata, &client_id, &redirect, &scopes, &pkce, &state, &offer.session_url, Some(address))
         .map_err(BrowserSignInError::Jmap)?;
@@ -122,6 +122,15 @@ mod tests {
     struct FakeServer {
         registered: AtomicUsize,
         refresh: Option<&'static str>,
+        /// The redirects the client was registered with and the exchange
+        /// named, in order.
+        redirects: Mutex<Vec<String>>,
+    }
+
+    impl FakeServer {
+        fn giving(refresh: Option<&'static str>) -> FakeServer {
+            FakeServer { registered: AtomicUsize::new(0), refresh, redirects: Mutex::new(Vec::new()) }
+        }
     }
 
     impl SignInServer for FakeServer {
@@ -139,11 +148,12 @@ mod tests {
         }
 
         async fn register(&self, _metadata: &Metadata, redirect: &str, _scopes: &[String]) -> Result<String, JmapError> {
-            assert_eq!(redirect, REGISTERED_REDIRECT);
+            self.redirects.lock().unwrap().push(redirect.to_string());
             Ok(format!("client-{}", self.registered.fetch_add(1, Ordering::SeqCst) + 1))
         }
 
-        async fn exchange(&self, client: &OAuthClient, code: &str, _redirect: &str, _pkce: &Pkce) -> Result<Tokens, JmapError> {
+        async fn exchange(&self, client: &OAuthClient, code: &str, redirect: &str, _pkce: &Pkce) -> Result<Tokens, JmapError> {
+            self.redirects.lock().unwrap().push(redirect.to_string());
             assert_eq!((code, client.client_id.as_str()), ("c1", "client-1"));
             Ok(Tokens { access_token: "a1".into(), expires_in: 3600, refresh_token: self.refresh.map(str::to_string) })
         }
@@ -178,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_grant_registers_a_client_and_hands_back_its_tokens() {
-        let server = FakeServer { registered: AtomicUsize::new(0), refresh: Some("r1") };
+        let server = FakeServer::giving(Some("r1"));
         let pages = Mutex::new(Vec::new());
         let grant = granting(&server, offer(), "me@fastmail.com", browser(&pages), std::future::pending(), Duration::from_secs(5)).await.unwrap();
         assert_eq!(grant.client.client_id, "client-1");
@@ -187,9 +197,22 @@ mod tests {
         assert!(page.contains("login_hint=me%40fastmail.com"), "{page}");
     }
 
+    /// The registered redirect is the one the authorize request and the
+    /// exchange name, port and all: Fastmail matches a redirect registered
+    /// without a port exactly.
+    #[tokio::test]
+    async fn the_client_is_registered_for_the_redirect_the_browser_comes_back_to() {
+        let server = FakeServer::giving(Some("r1"));
+        let pages = Mutex::new(Vec::new());
+        granting(&server, offer(), "me@fastmail.com", browser(&pages), std::future::pending(), Duration::from_secs(5)).await.unwrap();
+        let asked = query_value(&pages.lock().unwrap()[0], "redirect_uri");
+        assert!(asked.strip_prefix("http://127.0.0.1:").and_then(|rest| rest.strip_suffix('/')).and_then(|port| port.parse::<u16>().ok()).is_some_and(|p| p != 0), "{asked}");
+        assert_eq!(*server.redirects.lock().unwrap(), [asked.clone(), asked]);
+    }
+
     #[tokio::test]
     async fn a_grant_with_no_refresh_token_is_refused() {
-        let server = FakeServer { registered: AtomicUsize::new(0), refresh: None };
+        let server = FakeServer::giving(None);
         let pages = Mutex::new(Vec::new());
         let refused = granting(&server, offer(), "me@fastmail.com", browser(&pages), std::future::pending(), Duration::from_secs(5)).await;
         assert!(matches!(refused, Err(BrowserSignInError::NoRefreshToken)), "{refused:?}");
@@ -197,7 +220,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_canceled_grant_says_so() {
-        let server = FakeServer { registered: AtomicUsize::new(0), refresh: Some("r1") };
+        let server = FakeServer::giving(Some("r1"));
         let refused = granting(&server, offer(), "me@fastmail.com", |_: &str| {}, std::future::ready(()), Duration::from_secs(5)).await;
         assert!(matches!(refused, Err(BrowserSignInError::Canceled)), "{refused:?}");
     }

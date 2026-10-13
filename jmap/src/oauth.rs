@@ -284,7 +284,8 @@ pub fn authorize_url(
 
 /// Registers a public client with the loopback redirect and answers its
 /// id. A server without a registration endpoint, or with one off https,
-/// refuses.
+/// refuses. Pass the exact redirect the authorize request will name, port
+/// included: Fastmail matches `http://127.0.0.1/` exactly.
 pub async fn register(metadata: &Metadata, redirect_uri: &str, scopes: &[String]) -> Result<String, JmapError> {
     register_over(metadata, redirect_uri, scopes, Transport::HttpsOnly).await
 }
@@ -691,7 +692,8 @@ async fn renew(
 
 /// Receives the redirect on 127.0.0.1, at a port the system picks, during
 /// consent. RFC 8252 section 7.3 has the server take any port on the
-/// loopback for a client registered with it.
+/// loopback, but Fastmail does so only for a redirect registered with a
+/// port, so the client registers `redirect_uri` as it is.
 pub struct Loopback {
     listener: TcpListener,
     pub redirect_uri: String,
@@ -1004,13 +1006,13 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/register"))
             .and(body_string_contains("\"token_endpoint_auth_method\":\"none\""))
-            .and(body_string_contains("http://127.0.0.1/"))
+            .and(body_string_contains("\"redirect_uris\":[\"http://127.0.0.1:5555/\"]"))
             .respond_with(ResponseTemplate::new(201).set_body_json(json!({"client_id": "stateless-123"})))
             .mount(&server)
             .await;
         let found = metadata_over(&session_of(&server), LOCAL).await.unwrap();
         assert_eq!(
-            register_over(&found, "http://127.0.0.1/", &oauth_scopes(&found), LOCAL).await.unwrap(),
+            register_over(&found, "http://127.0.0.1:5555/", &oauth_scopes(&found), LOCAL).await.unwrap(),
             "stateless-123"
         );
     }
