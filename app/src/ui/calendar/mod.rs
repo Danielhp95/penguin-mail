@@ -1860,10 +1860,14 @@ impl CalendarView {
             }) as Box<dyn Fn()>;
             (b.removal, run)
         });
+        let running = self.core.account(o.account_id);
+        let services = running.as_deref().map(|sync| sync.services());
         // A proposal moves a meeting's time, so a whole-day event and one
-        // with nobody to ask get no door to it.
+        // with nobody to ask get no door to it, and nor does an account
+        // with no mail to send it.
         let proposable = !o.event.all_day
-            && (o.event.organizer.is_some() || o.event.guests.iter().any(|g| g.organizer && !g.me));
+            && (o.event.organizer.is_some() || o.event.guests.iter().any(|g| g.organizer && !g.me))
+            && crate::offered::can_propose(services);
         let propose_view = Rc::downgrade(self);
         let propose_o = o.clone();
         let on_propose = proposable.then(|| {
@@ -1873,12 +1877,11 @@ impl CalendarView {
                 }
             }) as Box<dyn Fn()>
         });
-        let running = self.core.account(o.account_id);
         self.popover.show(
             anchor,
             o,
             &calendar,
-            crate::offered::organizer_hears(running.as_deref().map(|sync| sync.services())),
+            crate::offered::organizer_hears(services),
             move |answer, note| {
                 if let Some(view) = weak.upgrade() {
                     view.answer(occurrence.clone(), answer, note);

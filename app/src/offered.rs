@@ -29,6 +29,14 @@ pub fn organizer_hears(services: Option<&AccountServices>) -> bool {
     services.is_none_or(AccountServices::tells_organizer)
 }
 
+/// Whether the account can propose another time for a meeting. A
+/// proposal goes to the organizer as mail, whatever the calendar's
+/// server does, and a calendar account has none to send. An account that
+/// is not running yet is not held back.
+pub fn can_propose(services: Option<&AccountServices>) -> bool {
+    services.is_none_or(AccountServices::serves_mail)
+}
+
 /// The accounts that have mail, in the order given. A calendar account
 /// has none, so the mail sidebar, the From list and the mail pages of
 /// Preferences are built from these and the calendar from every account.
@@ -1054,6 +1062,18 @@ mod tests {
         assert!(super::organizer_hears(Some(&services)), "nor one whose server has not been asked");
         services.calendar.as_ref().expect("the calendar").calendars().await.expect("the calendar list");
         assert!(!super::organizer_hears(Some(&services)), "the server has said it sends no replies");
+    }
+
+    #[test]
+    fn a_proposal_needs_mail_to_carry_it() {
+        use mailrs_sync::AccountServices;
+        use mailrs_sync::fake::{FakeDav, FakeGmail};
+
+        let with_mail = AccountServices::google(std::sync::Arc::new(FakeGmail::new()));
+        let alone = AccountServices::calendar_only(std::sync::Arc::new(FakeDav::new()));
+        assert!(super::can_propose(Some(&with_mail)));
+        assert!(!super::can_propose(Some(&alone)), "a calendar account has no mail to send it");
+        assert!(super::can_propose(None), "an account that has not started is not held back");
     }
 
     #[test]

@@ -678,7 +678,8 @@ impl EventPopover {
     /// Maybe or No, with the note they wrote; the caller asks which
     /// occurrences it covers and sends it through
     /// `Invitations::answer_event`. `organizer_hears` is whether such an
-    /// answer reaches the organizer; a guest is told when it does not.
+    /// answer reaches the organizer; a guest is told when it does not,
+    /// and has no note to write.
     /// `on_propose`, when given, puts "Propose New Time" under the
     /// answers.
     #[expect(clippy::too_many_arguments, reason = "each is a separate door the popover opens")]
@@ -780,7 +781,7 @@ impl EventPopover {
         let guest = draft::limited(event);
         self.answer_box.set_visible(guest);
         self.unheard.set_visible(guest && !organizer_hears);
-        self.note.set_visible(guest);
+        self.note.set_visible(guest && organizer_hears);
         self.note.set_text("");
         self.propose_row.set_visible(guest && on_propose.is_some());
         self.on_propose.replace(on_propose);
