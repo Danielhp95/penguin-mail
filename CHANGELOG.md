@@ -5,6 +5,8 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ## Unreleased
 
+## 1.0.8 (2026-10-13)
+
 ### New
 
 - French, German and Spanish translations, chosen in Preferences.
