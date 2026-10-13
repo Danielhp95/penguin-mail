@@ -468,36 +468,32 @@ msgid "Type the outgoing server's name."
 msgstr "請輸入寄件伺服器名稱。"
 
 #: app/src/add_account.rs:1333
-#, fuzzy
-#| msgid "Could not make the calendar: {reason}"
 msgid "Could not add the calendar: {reason}"
-msgstr "無法建立行事曆：{reason}"
+msgstr "無法新增行事曆：{reason}"
 
 #: app/src/add_account.rs:1340
 msgid ""
 "To see this server's calendars there, open Preferences, then Contacts & "
 "Calendar, and type its address for that account."
-msgstr ""
+msgstr "若要在該帳號查看此伺服器的行事曆，請開啟 [偏好設定]，再前往 [聯絡人與行事曆]，並為該帳號輸入伺服器位址。"
 
 #: app/src/add_account.rs:1345
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
-msgstr ""
+msgstr "伺服器未接受該使用者名稱與密碼。若伺服器使用兩步驟登入，則需要應用程式密碼。"
 
 #: app/src/add_account.rs:1349
-#, fuzzy
-#| msgid "Penguin Mail could not read the server's answer."
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
-msgstr "Penguin Mail 無法讀取伺服器回應。"
+msgstr "Penguin Mail 無法連線至該伺服器。請檢查位址與網路連線。"
 
 #. A web page at the address, or no CalDAV there, is refused in
 #. the protocol's own words, which are not for the page.
 #: app/src/add_account.rs:1353
 msgid "No calendar was found at that address."
-msgstr ""
+msgstr "在該位址找不到行事曆。"
 
 #: app/src/add_account.rs:1373
 msgid "Mail is downloading. You can close this window."
@@ -2647,15 +2643,10 @@ msgstr ""
 "在伺服器上的郵件會保留。"
 
 #: app/src/offered.rs:654
-#, fuzzy
-#| msgid ""
-#| "Its downloaded mail and saved sign-in are deleted from this computer. "
-#| "Nothing changes in {provider}."
 msgid ""
 "Its calendars and saved sign-in are deleted from this computer. Nothing "
 "changes on the server."
-msgstr ""
-"此電腦上已下載的郵件與儲存的登入資料會刪除。{provider} 上的資料不會變更。"
+msgstr "此電腦上的行事曆與儲存的登入資料會刪除。伺服器上的資料不會變更。"
 
 #: app/src/offered.rs:659
 msgid ""
@@ -4213,10 +4204,8 @@ msgid "Enter server settings by hand"
 msgstr "手動輸入伺服器設定"
 
 #: app/src/ui/add_account.rs:572
-#, fuzzy
-#| msgid "Add a condition with a value"
 msgid "Add a calendar without mail"
-msgstr "請新增條件並填入值"
+msgstr "新增不含郵件的行事曆"
 
 #: app/src/ui/add_account.rs:587 app/src/ui/add_account.rs:1879
 msgid "Add Account"
@@ -4523,16 +4512,14 @@ msgid "Server Address"
 msgstr "伺服器位址"
 
 #: app/src/ui/add_account.rs:1719
-#, fuzzy
-#| msgid "Calendar name"
 msgid "Calendar Server"
-msgstr "行事曆名稱"
+msgstr "行事曆伺服器"
 
 #: app/src/ui/add_account.rs:1721
 msgid ""
 "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an "
 "app password for Penguin Mail."
-msgstr ""
+msgstr "CalDAV 伺服器，例如 Nextcloud。若伺服器使用兩步驟登入，請為 Penguin Mail 建立應用程式密碼。"
 
 #: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1311
 #: app/src/ui/calendar/sidebar.rs:1319
@@ -4540,8 +4527,6 @@ msgid "Add Calendar"
 msgstr "新增行事曆"
 
 #: app/src/ui/add_account.rs:1743
-#, fuzzy
-#| msgid "Add Calendar"
 msgid "Add a Calendar"
 msgstr "新增行事曆"
 
@@ -4579,10 +4564,8 @@ msgid "Looking Up…"
 msgstr "正在查詢…"
 
 #: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1169
-#, fuzzy
-#| msgid "Sign In Again…"
 msgid "Sign In Again"
-msgstr "重新登入…"
+msgstr "重新登入"
 
 #: app/src/ui/add_account.rs:3460 app/src/ui/add_account.rs:3781
 msgid "Sign in with {provider} in your browser"
@@ -6172,7 +6155,7 @@ msgstr "回覆"
 msgid ""
 "This calendar's server sends no replies, so the organizer will not hear your "
 "answer."
-msgstr ""
+msgstr "此行事曆的伺服器不會傳送回覆，因此主辦人不會收到您的回覆。"
 
 #: app/src/ui/calendar/popover.rs:342 app/src/ui/invitation.rs:336
 msgid "Add a note"
@@ -6404,10 +6387,8 @@ msgid "Grant Access for {account}"
 msgstr "授予 {account} 存取權"
 
 #: app/src/ui/calendar/sidebar.rs:1177
-#, fuzzy
-#| msgid "Sign in again to keep {account} syncing"
 msgid "Sign in again to {account}"
-msgstr "請重新登入以繼續同步 {account}"
+msgstr "重新登入 {account}"
 
 #: app/src/ui/calendar/sidebar.rs:1188 app/src/ui/sidebar.rs:1840
 msgid "Sign In Again…"
@@ -8706,8 +8687,6 @@ msgid "Mail"
 msgstr "郵件"
 
 #: app/src/ui/sidebar.rs:659
-#, fuzzy
-#| msgid "Calendar"
 msgid "Calendars"
 msgstr "行事曆"
 

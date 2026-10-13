@@ -480,36 +480,32 @@ msgid "Type the outgoing server's name."
 msgstr "Nhập tên máy chủ gửi thư."
 
 #: app/src/add_account.rs:1333
-#, fuzzy
-#| msgid "Could not make the calendar: {reason}"
 msgid "Could not add the calendar: {reason}"
-msgstr "Không thể tạo lịch: {reason}"
+msgstr "Không thể thêm lịch: {reason}"
 
 #: app/src/add_account.rs:1340
 msgid ""
 "To see this server's calendars there, open Preferences, then Contacts & "
 "Calendar, and type its address for that account."
-msgstr ""
+msgstr "Để xem lịch của máy chủ này ở đó, hãy mở Tùy chọn, rồi Danh bạ và lịch, và nhập địa chỉ máy chủ cho tài khoản đó."
 
 #: app/src/add_account.rs:1345
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
-msgstr ""
+msgstr "Máy chủ không nhận tên người dùng và mật khẩu đó. Nếu máy chủ dùng đăng nhập hai bước, cần có mật khẩu ứng dụng."
 
 #: app/src/add_account.rs:1349
-#, fuzzy
-#| msgid "Penguin Mail could not read the server's answer."
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
-msgstr "Penguin Mail không thể đọc phản hồi của máy chủ."
+msgstr "Penguin Mail không thể kết nối tới máy chủ đó. Kiểm tra địa chỉ và kết nối."
 
 #. A web page at the address, or no CalDAV there, is refused in
 #. the protocol's own words, which are not for the page.
 #: app/src/add_account.rs:1353
 msgid "No calendar was found at that address."
-msgstr ""
+msgstr "Không tìm thấy lịch nào tại địa chỉ đó."
 
 #: app/src/add_account.rs:1373
 msgid "Mail is downloading. You can close this window."
@@ -2693,16 +2689,10 @@ msgstr ""
 "thư đó và thông tin đăng nhập đã lưu. Thư còn trên máy chủ vẫn được giữ lại."
 
 #: app/src/offered.rs:654
-#, fuzzy
-#| msgid ""
-#| "Its downloaded mail and saved sign-in are deleted from this computer. "
-#| "Nothing changes in {provider}."
 msgid ""
 "Its calendars and saved sign-in are deleted from this computer. Nothing "
 "changes on the server."
-msgstr ""
-"Thư đã tải và thông tin đăng nhập đã lưu bị xóa khỏi máy tính này. Không có "
-"gì thay đổi trên {provider}."
+msgstr "Lịch và thông tin đăng nhập đã lưu bị xóa khỏi máy tính này. Không có gì thay đổi trên máy chủ."
 
 #: app/src/offered.rs:659
 msgid ""
@@ -4289,10 +4279,8 @@ msgid "Enter server settings by hand"
 msgstr "Nhập cài đặt máy chủ thủ công"
 
 #: app/src/ui/add_account.rs:572
-#, fuzzy
-#| msgid "Add a condition with a value"
 msgid "Add a calendar without mail"
-msgstr "Thêm điều kiện có giá trị"
+msgstr "Thêm lịch không có thư"
 
 #: app/src/ui/add_account.rs:587 app/src/ui/add_account.rs:1879
 msgid "Add Account"
@@ -4604,16 +4592,14 @@ msgid "Server Address"
 msgstr "Địa chỉ máy chủ"
 
 #: app/src/ui/add_account.rs:1719
-#, fuzzy
-#| msgid "Calendar name"
 msgid "Calendar Server"
-msgstr "Tên lịch"
+msgstr "Máy chủ lịch"
 
 #: app/src/ui/add_account.rs:1721
 msgid ""
 "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an "
 "app password for Penguin Mail."
-msgstr ""
+msgstr "Một máy chủ CalDAV, chẳng hạn Nextcloud. Nếu máy chủ dùng đăng nhập hai bước, hãy tạo mật khẩu ứng dụng cho Penguin Mail."
 
 #: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1311
 #: app/src/ui/calendar/sidebar.rs:1319
@@ -4621,8 +4607,6 @@ msgid "Add Calendar"
 msgstr "Thêm lịch"
 
 #: app/src/ui/add_account.rs:1743
-#, fuzzy
-#| msgid "Add Calendar"
 msgid "Add a Calendar"
 msgstr "Thêm lịch"
 
@@ -4660,10 +4644,8 @@ msgid "Looking Up…"
 msgstr "Đang tra cứu…"
 
 #: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1169
-#, fuzzy
-#| msgid "Sign In Again…"
 msgid "Sign In Again"
-msgstr "Đăng nhập lại…"
+msgstr "Đăng nhập lại"
 
 #: app/src/ui/add_account.rs:3460 app/src/ui/add_account.rs:3781
 msgid "Sign in with {provider} in your browser"
@@ -6276,7 +6258,7 @@ msgstr "Trả lời"
 msgid ""
 "This calendar's server sends no replies, so the organizer will not hear your "
 "answer."
-msgstr ""
+msgstr "Máy chủ của lịch này không gửi câu trả lời, nên người tổ chức sẽ không biết câu trả lời của bạn."
 
 #: app/src/ui/calendar/popover.rs:342 app/src/ui/invitation.rs:336
 msgid "Add a note"
@@ -6509,10 +6491,8 @@ msgid "Grant Access for {account}"
 msgstr "Cấp quyền cho {account}"
 
 #: app/src/ui/calendar/sidebar.rs:1177
-#, fuzzy
-#| msgid "Sign in again to keep {account} syncing"
 msgid "Sign in again to {account}"
-msgstr "Đăng nhập lại để tiếp tục đồng bộ {account}"
+msgstr "Đăng nhập lại vào {account}"
 
 #: app/src/ui/calendar/sidebar.rs:1188 app/src/ui/sidebar.rs:1840
 msgid "Sign In Again…"
@@ -8841,8 +8821,6 @@ msgid "Mail"
 msgstr "Thư"
 
 #: app/src/ui/sidebar.rs:659
-#, fuzzy
-#| msgid "Calendar"
 msgid "Calendars"
 msgstr "Lịch"
 

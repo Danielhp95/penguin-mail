@@ -500,36 +500,32 @@ msgid "Type the outgoing server's name."
 msgstr "Escribe el nombre del servidor saliente."
 
 #: app/src/add_account.rs:1333
-#, fuzzy
-#| msgid "Could not make the calendar: {reason}"
 msgid "Could not add the calendar: {reason}"
-msgstr "No se ha podido crear el calendario: {reason}"
+msgstr "No se ha podido añadir el calendario: {reason}"
 
 #: app/src/add_account.rs:1340
 msgid ""
 "To see this server's calendars there, open Preferences, then Contacts & "
 "Calendar, and type its address for that account."
-msgstr ""
+msgstr "Para ver ahí los calendarios de este servidor, abre Preferencias, luego Contactos y calendario, y escribe su dirección para esa cuenta."
 
 #: app/src/add_account.rs:1345
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
-msgstr ""
+msgstr "El servidor no ha aceptado ese usuario y esa contraseña. Si usa la verificación en dos pasos, necesita una contraseña de aplicación."
 
 #: app/src/add_account.rs:1349
-#, fuzzy
-#| msgid "Penguin Mail could not read the server's answer."
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
-msgstr "Penguin Mail no ha podido leer la respuesta del servidor."
+msgstr "Penguin Mail no ha podido acceder a ese servidor. Comprueba la dirección y tu conexión."
 
 #. A web page at the address, or no CalDAV there, is refused in
 #. the protocol's own words, which are not for the page.
 #: app/src/add_account.rs:1353
 msgid "No calendar was found at that address."
-msgstr ""
+msgstr "No se ha encontrado ningún calendario en esa dirección."
 
 #: app/src/add_account.rs:1373
 msgid "Mail is downloading. You can close this window."
@@ -2808,16 +2804,10 @@ msgstr ""
 "sigue en el servidor se queda allí."
 
 #: app/src/offered.rs:654
-#, fuzzy
-#| msgid ""
-#| "Its downloaded mail and saved sign-in are deleted from this computer. "
-#| "Nothing changes in {provider}."
 msgid ""
 "Its calendars and saved sign-in are deleted from this computer. Nothing "
 "changes on the server."
-msgstr ""
-"Su correo descargado y el inicio de sesión guardado se eliminan de este "
-"equipo. No cambia nada en {provider}."
+msgstr "Sus calendarios y el inicio de sesión guardado se eliminan de este equipo. No cambia nada en el servidor."
 
 #: app/src/offered.rs:659
 msgid ""
@@ -4467,10 +4457,8 @@ msgid "Enter server settings by hand"
 msgstr "Introducir la configuración del servidor a mano"
 
 #: app/src/ui/add_account.rs:572
-#, fuzzy
-#| msgid "Add a condition with a value"
 msgid "Add a calendar without mail"
-msgstr "Añade una condición con un valor"
+msgstr "Añadir un calendario sin correo"
 
 #: app/src/ui/add_account.rs:587 app/src/ui/add_account.rs:1879
 msgid "Add Account"
@@ -4783,16 +4771,14 @@ msgid "Server Address"
 msgstr "Dirección del servidor"
 
 #: app/src/ui/add_account.rs:1719
-#, fuzzy
-#| msgid "Calendar name"
 msgid "Calendar Server"
-msgstr "Nombre del calendario"
+msgstr "Servidor de calendario"
 
 #: app/src/ui/add_account.rs:1721
 msgid ""
 "A CalDAV server, such as Nextcloud. Where it uses two-step sign-in, make an "
 "app password for Penguin Mail."
-msgstr ""
+msgstr "Un servidor CalDAV, como Nextcloud. Si usa la verificación en dos pasos, crea una contraseña de aplicación para Penguin Mail."
 
 #: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1311
 #: app/src/ui/calendar/sidebar.rs:1319
@@ -4800,10 +4786,8 @@ msgid "Add Calendar"
 msgstr "Añadir calendario"
 
 #: app/src/ui/add_account.rs:1743
-#, fuzzy
-#| msgid "Add Calendar"
 msgid "Add a Calendar"
-msgstr "Añadir calendario"
+msgstr "Añadir un calendario"
 
 #: app/src/ui/add_account.rs:2272 app/src/ui/add_account.rs:4116
 msgid "Looking up {domain}"
@@ -4839,10 +4823,8 @@ msgid "Looking Up…"
 msgstr "Buscando…"
 
 #: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1169
-#, fuzzy
-#| msgid "Sign In Again…"
 msgid "Sign In Again"
-msgstr "Volver a iniciar sesión…"
+msgstr "Volver a iniciar sesión"
 
 #: app/src/ui/add_account.rs:3460 app/src/ui/add_account.rs:3781
 msgid "Sign in with {provider} in your browser"
@@ -6485,7 +6467,7 @@ msgstr "Responder"
 msgid ""
 "This calendar's server sends no replies, so the organizer will not hear your "
 "answer."
-msgstr ""
+msgstr "El servidor de este calendario no envía respuestas, así que el organizador no se enterará de tu respuesta."
 
 #: app/src/ui/calendar/popover.rs:342 app/src/ui/invitation.rs:336
 msgid "Add a note"
@@ -6719,10 +6701,8 @@ msgid "Grant Access for {account}"
 msgstr "Conceder acceso para {account}"
 
 #: app/src/ui/calendar/sidebar.rs:1177
-#, fuzzy
-#| msgid "Sign in again to keep {account} syncing"
 msgid "Sign in again to {account}"
-msgstr "Vuelve a iniciar sesión para que {account} siga sincronizándose"
+msgstr "Volver a iniciar sesión en {account}"
 
 #: app/src/ui/calendar/sidebar.rs:1188 app/src/ui/sidebar.rs:1840
 msgid "Sign In Again…"
@@ -9111,10 +9091,8 @@ msgid "Mail"
 msgstr "Correo"
 
 #: app/src/ui/sidebar.rs:659
-#, fuzzy
-#| msgid "Calendar"
 msgid "Calendars"
-msgstr "Calendario"
+msgstr "Calendarios"
 
 #: app/src/ui/sidebar.rs:1003 app/src/ui/sidebar.rs:1005
 msgid "VIPs"
