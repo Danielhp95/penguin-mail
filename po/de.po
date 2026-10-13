@@ -4339,55 +4339,55 @@ msgid ""
 msgstr ""
 "Die Nachricht geht an Anthropic, damit Claude sie über Ihr Abonnement liest."
 
-#: app/src/tray.rs:26
+#: app/src/tray.rs:24
 msgid "No unread mail"
 msgstr "Keine ungelesenen E-Mails"
 
-#: app/src/tray.rs:28
+#: app/src/tray.rs:26
 msgid "{count} unread message"
 msgid_plural "{count} unread messages"
 msgstr[0] "{count} ungelesene Nachricht"
 msgstr[1] "{count} ungelesene Nachrichten"
 
-#: app/src/tray.rs:42 app/src/ui/sidebar.rs:1426
+#: app/src/tray.rs:40 app/src/ui/sidebar.rs:1426
 msgid "{account}, {count} unread message"
 msgid_plural "{account}, {count} unread messages"
 msgstr[0] "{account}, {count} ungelesene Nachricht"
 msgstr[1] "{account}, {count} ungelesene Nachrichten"
 
-#: app/src/tray.rs:195 app/src/tray.rs:219
+#: app/src/tray.rs:147 app/src/tray.rs:185
 msgid "Penguin Mail: {summary}"
 msgstr "Penguin Mail: {summary}"
 
-#: app/src/tray.rs:270
+#: app/src/tray.rs:236
 msgid "Open Penguin Mail"
 msgstr "Penguin Mail öffnen"
 
-#: app/src/tray.rs:271 app/src/ui/composer/mod.rs:349
+#: app/src/tray.rs:237 app/src/ui/composer/mod.rs:349
 #: app/src/ui/composer/mod.rs:655 app/src/ui/composer/mod.rs:1515
 #: app/src/ui/contact_card.rs:162 app/src/ui/thread_list.rs:432
 msgid "New Message"
 msgstr "Neue Nachricht"
 
-#: app/src/tray.rs:272 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
+#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
 msgid "Check for Mail"
 msgstr "Nach E-Mails sehen"
 
-#: app/src/tray.rs:276 app/src/update/mod.rs:98
+#: app/src/tray.rs:242 app/src/update/mod.rs:98
 msgid "Install Update {version}"
 msgstr "Aktualisierung {version} installieren"
 
-#: app/src/tray.rs:279
+#: app/src/tray.rs:245
 msgid "What's New in {version}"
 msgstr "Neuigkeiten in {version}"
 
-#: app/src/tray.rs:283 app/src/ui/about.rs:119 app/src/ui/about.rs:227
+#: app/src/tray.rs:249 app/src/ui/about.rs:119 app/src/ui/about.rs:227
 #: app/src/ui/about.rs:235 app/src/ui/about.rs:242
 #: app/src/ui/preferences.rs:871 app/src/update/mod.rs:108
 msgid "Check for Updates"
 msgstr "Nach Aktualisierungen suchen"
 
-#: app/src/tray.rs:288 app/src/ui/window.rs:3080
+#: app/src/tray.rs:254 app/src/ui/window.rs:3080
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "Beenden"
