@@ -250,7 +250,8 @@ impl<J: JmapApi> MailBackend for Jmap<J> {
         let known = self.known();
         let mut counts = HashMap::new();
         for (id, mailbox) in &known.mailboxes {
-            let unread = i64::try_from(mailbox.unread_emails).unwrap_or(i64::MAX);
+            // Threads, as the sidebar and the list count them.
+            let unread = i64::try_from(mailbox.unread_threads).unwrap_or(i64::MAX);
             counts.insert(MailSet::Mailbox(id.clone()), unread);
             if let Some(role) = known.roles.iter().find(|(_, m)| *m == id).map(|(r, _)| *r) {
                 counts.insert(MailSet::Role(role), unread);

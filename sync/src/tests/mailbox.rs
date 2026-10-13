@@ -1391,3 +1391,29 @@ async fn a_jmap_server_count_follows_a_read_made_here() {
     assert_eq!(after.mailboxes[&inbox], 0, "the server took the read");
     assert_eq!(after.mailboxes[&all], 0);
 }
+
+/// The inbox counts threads, so two unread replies in one conversation
+/// count once, as its one bold row in the list does.
+#[tokio::test]
+async fn a_jmap_inbox_counts_unread_threads_not_messages() {
+    let h = super::jmap::fastmail().await;
+    let now = now_millis();
+    h.fake.deliver("inbox", &super::jmap::raw("first@x", "Plans"), now);
+    let reply = format!(
+        "From: Ada Lovelace <ada@example.com>\r\nTo: me@example.com\r\nSubject: Re: Plans\r\n\
+         Message-ID: <second@x>\r\nIn-Reply-To: <first@x>\r\nDate: {}\r\n\r\nAnd another\r\n",
+        chrono::Utc::now().to_rfc2822()
+    );
+    h.fake.deliver("inbox", reply.as_bytes(), now + 1);
+    h.bootstrap_all().await;
+    let service = Mailboxes::new(
+        Arc::new(Connected(HashMap::from([(h.account_id, Arc::clone(&h.sync))]))),
+        h.db.clone(),
+    );
+    let inbox = Mailbox::Standard { account_id: h.account_id, which: Standard::Inbox };
+    let all = Mailbox::Unified(Standard::Inbox);
+    let sidebar = [inbox.clone(), all.clone()];
+    let counts = counted_after_server(&service, &sidebar, &all).await;
+    assert_eq!(counts.mailboxes[&inbox], 1, "one conversation");
+    assert_eq!(counts.mailboxes[&all], 1);
+}
