@@ -1145,11 +1145,11 @@ impl MainWindow {
         self.stack.set_visible_child_name(page);
         let live: HashSet<AccountId> = data.iter().map(|(a, _)| a.id).collect();
         // Any account can need to sign in again, a calendar account too.
-        let reauth: Vec<Account> = data
+        let reauth = data
             .iter()
-            .filter(|(a, _)| a.state == AccountState::NeedsReauth)
-            .map(|(a, _)| a.clone())
-            .collect();
+            .map(|(a, _)| a)
+            .find(|a| a.state == AccountState::NeedsReauth)
+            .cloned();
         // A calendar account has no mailboxes, so the mail sidebar and
         // everything worded by what the accounts offer for mail is built
         // from the accounts that have mail. The calendar lists every
@@ -1208,7 +1208,7 @@ impl MainWindow {
         self.follow_gates();
         self.list
             .set_show_accounts(mailbox.account().is_none() && data.len() > 1);
-        match reauth.first() {
+        match &reauth {
             Some(account) => {
                 let through_browser = self
                     .app
@@ -2806,7 +2806,10 @@ impl MainWindow {
     /// The accounts with mail: what a mailbox lists and what the mail
     /// buttons are worded for. A calendar account is not among them.
     fn mail_accounts(&self) -> Vec<Account> {
-        crate::offered::mail_accounts(&self.accounts())
+        self.app
+            .upgrade()
+            .map(|app| app.mail_accounts())
+            .unwrap_or_default()
     }
 
     fn account(&self, account_id: AccountId) -> Option<Account> {

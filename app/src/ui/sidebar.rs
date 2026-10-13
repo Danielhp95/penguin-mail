@@ -281,7 +281,7 @@ pub struct Sidebar {
     /// `mail` and `calendar`; it hides while no account offers a
     /// calendar, and "Mailboxes" shows in its place, since a switch to a
     /// calendar that cannot show anything would only mislead. It hides
-    /// too while no account has mail, over the calendars.
+    /// too while no account has mail, and "Calendars" shows in its place.
     pub switch: adw::ToggleGroup,
     /// The badge on the Mail toggle and on the Calendar one.
     badges: [(Space, gtk::Label); 2],

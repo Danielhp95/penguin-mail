@@ -875,7 +875,7 @@ pub async fn seed(db: &Db, now: EpochMillis) -> std::result::Result<DemoMail, Sy
     // Refused only now, with its calendar already in the store, as an
     // account is whose password changed after it had been in use.
     if let Some(dav) = &to_refuse {
-        calendar_account::refuse(dav);
+        dav.refuse_login(true);
     }
     // The demo's cards carry no photos, so the address book writes none
     // and the photo folder is never touched.

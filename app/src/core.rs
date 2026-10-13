@@ -880,8 +880,8 @@ impl Core {
         let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
         self.call(async move {
             let new = NewCalDav { url, user_name, password };
-            // A `CalDavSignInError` the dialog reads back out of the
-            // `anyhow::Error` to word what went wrong.
+            // A failure is a `CalDavSignInError`, which the dialog reads
+            // back out of the `anyhow::Error` to word what went wrong.
             let account = caldav_signed_in(&finding::RealProbe, &db, Arc::clone(&passwords), new, now_millis()).await?;
             let services = connect_caldav(&db, passwords, &account).await?;
             engine.start_account(account.id, services);

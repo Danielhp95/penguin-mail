@@ -35,7 +35,7 @@ const HOUSEHOLD: &str = "/cal/household/";
 pub enum Wanted {
     /// Signed in, with its calendar.
     SignedIn,
-    /// Seeded, then refused by its server at the first read.
+    /// Seeded and read once, then refused by its server.
     Refused,
 }
 
@@ -110,12 +110,6 @@ fn household(now: EpochMillis) -> Vec<(String, String)> {
     ]
 }
 
-/// Makes the server stop taking the password, as one does after the
-/// person changes it elsewhere.
-pub fn refuse(dav: &FakeDav) {
-    dav.with(|server| server.refuse_login = true);
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
@@ -166,7 +160,7 @@ mod tests {
     #[tokio::test]
     async fn a_refused_server_leaves_the_account_needing_to_sign_in() {
         let (db, id, dav, copy, _dir) = seeded().await;
-        refuse(&dav);
+        dav.refuse_login(true);
         // The read fails, and what it leaves behind is the point.
         let _ = copy.refresh(id, now_millis()).await;
         let state = db.read(move |c| accounts::account(c, id)).await.unwrap().expect("the account").state;

@@ -22,7 +22,7 @@ pub(super) fn calendar_only() -> (Arc<FakeDav>, AccountServices) {
 }
 
 #[tokio::test]
-async fn no_mail_answers_unsupported_and_offers_nothing() {
+async fn no_mail_answers_unsupported_or_nothing_and_offers_nothing() {
     let mail = NoMail;
     assert!(matches!(mail.mailboxes().await, Err(BackendError::Unsupported)));
     assert!(matches!(mail.send(b"raw", None).await, Err(BackendError::Unsupported)));
@@ -34,6 +34,9 @@ async fn no_mail_answers_unsupported_and_offers_nothing() {
     let caps = mail.capabilities();
     assert!(!caps.labels && !caps.delete_forever && !caps.local_mailboxes && !caps.native_search);
     assert_eq!(mail.poll_interval(), None);
+    // What asks every account hears nothing, and no failure to log.
+    assert_eq!(mail.storage().await.unwrap(), None);
+    assert!(mail.unread_counts().await.unwrap().is_empty());
 }
 
 #[tokio::test]

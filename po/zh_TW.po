@@ -3747,7 +3747,7 @@ msgstr "Claude 訂閱"
 #. The header in both spaces carries a button for this now (R12);
 #. the menu item stays too, so Ctrl+J shows here as well.
 #: app/src/settings/mod.rs:223 app/src/ui/assistant.rs:100
-#: app/src/ui/window.rs:3108
+#: app/src/ui/window.rs:3111
 msgid "Assistant"
 msgstr "助理"
 
@@ -4101,7 +4101,7 @@ msgstr "開啟 Penguin Mail"
 msgid "New Message"
 msgstr "新增郵件"
 
-#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3111
+#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3114
 msgid "Check for Mail"
 msgstr "檢查郵件"
 
@@ -4119,7 +4119,7 @@ msgstr "{version} 的新功能"
 msgid "Check for Updates"
 msgstr "檢查更新"
 
-#: app/src/tray.rs:254 app/src/ui/window.rs:3124
+#: app/src/tray.rs:254 app/src/ui/window.rs:3127
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "結束"
@@ -4140,7 +4140,7 @@ msgstr "新功能"
 msgid "Website"
 msgstr "網站"
 
-#: app/src/ui/about.rs:179 app/src/ui/window.rs:3123
+#: app/src/ui/about.rs:179 app/src/ui/window.rs:3126
 msgid "Donate"
 msgstr "捐款"
 
@@ -4148,7 +4148,7 @@ msgstr "捐款"
 msgid "License"
 msgstr "授權條款"
 
-#: app/src/ui/about.rs:203 app/src/ui/window.rs:3122
+#: app/src/ui/about.rs:203 app/src/ui/window.rs:3125
 msgid "About Penguin Mail"
 msgstr "關於 Penguin Mail"
 
@@ -4644,7 +4644,7 @@ msgid ""
 "from it safely."
 msgstr "此伺服器無法區分郵件，因此 Penguin Mail 無法安全下載。"
 
-#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3191
+#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3194
 msgid "Summarize this conversation"
 msgstr "摘要此對話"
 
@@ -4788,7 +4788,7 @@ msgstr "編輯 {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:121 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:2159 app/src/ui/composer/recipients.rs:318
-#: app/src/ui/sender_prefs.rs:136 app/src/ui/window.rs:2884
+#: app/src/ui/sender_prefs.rs:136 app/src/ui/window.rs:2887
 msgid "Remove"
 msgstr "移除"
 
@@ -7578,7 +7578,7 @@ msgstr ""
 msgid "Allow Hide My Email"
 msgstr "允許隱藏電子郵件地址"
 
-#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3236
+#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3239
 msgid "Add an account first"
 msgstr "請先新增帳號"
 
@@ -7905,7 +7905,7 @@ msgid "All Files"
 msgstr "所有檔案"
 
 #: app/src/ui/key_import.rs:213 app/src/ui/key_import.rs:217
-#: app/src/ui/window.rs:3681
+#: app/src/ui/window.rs:3684
 msgid "Close"
 msgstr "關閉"
 
@@ -8776,7 +8776,7 @@ msgstr "簽名…"
 msgid "Rules…"
 msgstr "規則…"
 
-#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3114
+#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3117
 msgid "Hide My Email…"
 msgstr "隱藏電子郵件地址…"
 
@@ -9451,77 +9451,77 @@ msgstr "此版本的 Penguin Mail 未包含 Google 登入功能。"
 msgid "Get a Release"
 msgstr "取得發行版本"
 
-#: app/src/ui/window.rs:2873
+#: app/src/ui/window.rs:2876
 msgid ""
 "Could not check for messages the server holds to send later, so {account} "
 "stays: {reason}"
 msgstr "無法檢查伺服器保留待稍後寄出的郵件，因此保留 {account}：{reason}"
 
-#: app/src/ui/window.rs:2883
+#: app/src/ui/window.rs:2886
 msgid "Remove {account}?"
 msgstr "是否移除 {account}？"
 
-#: app/src/ui/window.rs:2900
+#: app/src/ui/window.rs:2903
 msgid "Remove Anyway"
 msgstr "仍要移除"
 
-#: app/src/ui/window.rs:2913
+#: app/src/ui/window.rs:2916
 msgid "Removed {account}"
 msgstr "已移除 {account}"
 
-#: app/src/ui/window.rs:2915
+#: app/src/ui/window.rs:2918
 msgid "Could not remove {account}: {reason}"
 msgstr "無法移除 {account}：{reason}"
 
-#: app/src/ui/window.rs:3095
+#: app/src/ui/window.rs:3098
 msgid "Refresh"
 msgstr "重新整理"
 
-#: app/src/ui/window.rs:3099
+#: app/src/ui/window.rs:3102
 msgid "Show Declined Events"
 msgstr "顯示已婉拒的活動"
 
-#: app/src/ui/window.rs:3112
+#: app/src/ui/window.rs:3115
 msgid "Add Account…"
 msgstr "新增帳號…"
 
-#: app/src/ui/window.rs:3113
+#: app/src/ui/window.rs:3116
 msgid "New Smart Mailbox…"
 msgstr "新增智慧信箱…"
 
-#: app/src/ui/window.rs:3120 app/src/ui/window/shortcuts.rs:606
+#: app/src/ui/window.rs:3123 app/src/ui/window/shortcuts.rs:606
 msgid "Preferences"
 msgstr "偏好設定"
 
-#: app/src/ui/window.rs:3121
+#: app/src/ui/window.rs:3124
 msgid "Keyboard Shortcuts"
 msgstr "鍵盤快速鍵"
 
-#: app/src/ui/window.rs:3130 app/src/ui/window.rs:3132
+#: app/src/ui/window.rs:3133 app/src/ui/window.rs:3135
 msgid "Main Menu"
 msgstr "主選單"
 
-#: app/src/ui/window.rs:3504
+#: app/src/ui/window.rs:3507
 msgid "Open a message from the person first"
 msgstr "請先開啟此人的郵件"
 
-#: app/src/ui/window.rs:3583
+#: app/src/ui/window.rs:3586
 msgid "Penguin Mail shows the new language after a restart"
 msgstr "重新啟動後，Penguin Mail 會顯示新的語言"
 
-#: app/src/ui/window.rs:3585 app/src/update/mod.rs:130
+#: app/src/ui/window.rs:3588 app/src/update/mod.rs:130
 msgid "Restart"
 msgstr "重新啟動"
 
-#: app/src/ui/window.rs:3634
+#: app/src/ui/window.rs:3637
 msgid "Show Rules"
 msgstr "顯示規則"
 
-#: app/src/ui/window.rs:3656
+#: app/src/ui/window.rs:3659
 msgid "Messages That Will Not Download"
 msgstr "無法下載的郵件"
 
-#: app/src/ui/window.rs:3658
+#: app/src/ui/window.rs:3661
 msgid ""
 "Penguin Mail could not download these from {address}'s server. It tries "
 "again at each check, except for a message too large to download."
@@ -10270,7 +10270,7 @@ msgstr "「{title}」已在其他地方變更，因此未儲存此次變更"
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "未儲存「{title}」的變更：{reason}"
 
-#: app/src/ui/window/spaces.rs:273
+#: app/src/ui/window/spaces.rs:271
 msgid "Show Event"
 msgstr "顯示活動"
 

@@ -10,9 +10,9 @@
 //! one that does not gets the iTIP REPLY from the account's mail adapter,
 //! and the attendee line carries `SCHEDULE-AGENT=CLIENT` so a later
 //! server upgrade does not send a second one. A calendar account has no
-//! mail to carry that REPLY: its answer is saved and nobody is told,
-//! which `tells_organizer` says so the window can. The adapter never
-//! opens the store.
+//! mail to carry that REPLY: its answer is saved and nobody is told.
+//! `tells_organizer` says so, and the window passes it on. The adapter
+//! never opens the store.
 //!
 //! Who the account is on an event comes from its mail address. An
 //! account without one asks the server, whose principal lists the

@@ -23,8 +23,8 @@ pub enum Browser {
 
 impl Browser {
     /// The browser sign-in an account of `provider` goes through, or
-    /// `None` for an IMAP, POP3 or calendar account, which signs in with a
-    /// password.
+    /// `None` for an IMAP, POP3, JMAP or calendar account, which signs in
+    /// again through the Add Account form.
     pub fn of(provider: Provider) -> Option<Browser> {
         match provider {
             Provider::Gmail => Some(Browser::Google),

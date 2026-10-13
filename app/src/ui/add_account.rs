@@ -79,8 +79,8 @@ pub enum Done {
         account: Account,
         name: Option<String>,
     },
-    /// An IMAP account that needed to sign in again did. The dialog is
-    /// closed.
+    /// An IMAP account that needed to sign in again did, or a calendar
+    /// account. The dialog is closed.
     SignedInAgain(Account),
     /// A calendar account signed in for the first time. The dialog is
     /// closed: its calendars show in the calendar, which says more than a
@@ -111,7 +111,7 @@ pub fn present(
         Opening::Tile(_) | Opening::ByHand => "address",
         Opening::Browser(_) => "browser",
         Opening::Calendar => "calendar",
-        Opening::Again(account) if !account.provider.serves_mail() => "calendar",
+        Opening::Again(account) if account.provider == Provider::CalDav => "calendar",
         Opening::Again(_) => "password",
     };
     // Every page is added, the root first, so a page popped off the stack
@@ -155,7 +155,7 @@ pub fn present(
         Opening::ByHand => this.open_address(None, true),
         Opening::Browser(browser) => this.start_browser(browser, None),
         Opening::Calendar => this.open_calendar(),
-        Opening::Again(account) if !account.provider.serves_mail() => this.load_calendar(account),
+        Opening::Again(account) if account.provider == Provider::CalDav => this.load_calendar(account),
         Opening::Again(account) => this.load_saved(account),
         Opening::Preview(stage) => preview(&this, &stage),
     }

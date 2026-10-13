@@ -204,9 +204,7 @@ impl MainWindow {
         let visible = !only_calendars && crate::offered::shows_space_switch(&started, waiting, remembered);
         self.sidebar.set_switch_visible(visible);
         if only_calendars {
-            // Straight to the switch, for the accounts just read:
-            // `show_space` asks the app, which may not hold them yet.
-            self.sidebar.switch.set_active_name(Some("calendar"));
+            self.show_space(Space::Calendar);
         } else if !visible && self.space() == Space::Calendar {
             self.show_space(Space::Mail);
         }

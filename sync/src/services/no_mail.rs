@@ -3,10 +3,12 @@
 //! adapter stands, so `AccountServices` keeps one shape and a module that
 //! asks an account for its calendar never learns the difference.
 //!
-//! Nothing reaches it in the ordinary run: the engine starts no mail loop
-//! for such an account, and the window lists it nowhere mail is listed. A
-//! call that arrives anyway is answered `Unsupported`, as a service the
-//! account lacks is everywhere else.
+//! The engine starts no mail loop for such an account, and the window
+//! lists it nowhere mail is listed. What asks every account all the same,
+//! as the storage reading does, hears that there is nothing to say: the
+//! trait's own answers, no storage and no counts. Any other call is
+//! answered `Unsupported`, as a service the account lacks is everywhere
+//! else.
 
 use std::ops::RangeInclusive;
 use std::time::Duration;
