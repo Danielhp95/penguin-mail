@@ -307,9 +307,11 @@ pub mod checks {
         let plain = super::pixmaps();
         for icon in super::badge::badged(&plain, 7) {
             let w = icon.width as usize;
-            // The top right pixel row's last opaque pixel is the badge's.
-            let corner = ((w / 4) * w + w - 2) * 4;
-            let pixel = &icon.data[corner..corner + 4];
+            // Just inside the badge's left edge, at its middle, is orange
+            // over the envelope.
+            let (x, y, _, height) = super::badge::pill(w as f64, 0.0);
+            let at = (((y + height / 2.0) as usize) * w + x as usize + 1) * 4;
+            let pixel = &icon.data[at..at + 4];
             assert!(pixel[0] == 255 && pixel[1] > 200 && pixel[3] < 60, "{w} px: {pixel:?}");
         }
     }
@@ -350,7 +352,7 @@ pub mod checks {
         const SCALE: usize = 6;
         const PANELS: [[u8; 3]; 2] = [[0xf6, 0xf5, 0xf4], [0x24, 0x24, 0x24]];
         let plain = super::pixmaps();
-        for unread in [0, 7, 42, 120] {
+        for unread in [1, 7, 42, 120] {
             for icon in super::badge::badged(&plain, unread) {
                 let side = icon.width as usize;
                 let (width, height) = (side * SCALE * 2 + SCALE * 2, side * SCALE);
