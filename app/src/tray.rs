@@ -90,12 +90,13 @@ fn account_lines(accounts: &[AccountUnread]) -> Vec<AccountLine> {
 /// icon by name. A snap's or Flatpak's icons are not on the host, and
 /// Cinnamon's tray shows a blank picture when neither the name nor a
 /// pixmap gives it one. The colour icon reads on light and dark panels.
-const PIXMAPS: [(u32, &[u8]); 5] = [
+const PIXMAPS: [(u32, &[u8]); 6] = [
     (16, include_bytes!("../data/tray/16.png")),
     (22, include_bytes!("../data/tray/22.png")),
     (24, include_bytes!("../data/tray/24.png")),
     (32, include_bytes!("../data/tray/32.png")),
     (48, include_bytes!("../data/tray/48.png")),
+    (64, include_bytes!("../data/tray/64.png")),
 ];
 
 /// `rgba`, rows of `stride` bytes holding `width` pixels of straight
@@ -296,6 +297,7 @@ pub mod checks {
     pub fn run() {
         the_tray_pictures_decode_to_argb();
         the_badge_sits_on_the_real_icons();
+        the_penguin_fills_every_picture_with_and_without_the_badge();
         if let Some(dir) = std::env::var_os("PENGUIN_MAIL_TRAY_SHOTS") {
             save_badges(std::path::Path::new(&dir));
         }
@@ -309,6 +311,33 @@ pub mod checks {
             let corner = ((w / 4) * w + w - 2) * 4;
             let pixel = &icon.data[corner..corner + 4];
             assert!(pixel[0] == 255 && pixel[1] > 200 && pixel[3] < 60, "{w} px: {pixel:?}");
+        }
+    }
+
+    /// The box around the pixels that are mostly opaque, as (width, height).
+    fn opaque_extent(icon: &ksni::Icon) -> (usize, usize) {
+        let w = icon.width as usize;
+        let (mut left, mut top, mut right, mut bottom) = (w, w, 0, 0);
+        for (i, pixel) in icon.data.as_chunks::<4>().0.iter().enumerate() {
+            if pixel[0] > 127 {
+                let (x, y) = (i % w, i / w);
+                (left, top, right, bottom) = (left.min(x), top.min(y), right.max(x + 1), bottom.max(y + 1));
+            }
+        }
+        (right.saturating_sub(left), bottom.saturating_sub(top))
+    }
+
+    /// A host draws the picture at the panel's size, so transparent
+    /// margins in it make the penguin small beside the other icons.
+    fn the_penguin_fills_every_picture_with_and_without_the_badge() {
+        let plain = super::pixmaps();
+        for icons in [plain.clone(), super::badge::badged(&plain, 3)] {
+            for icon in &icons {
+                let side = icon.width as usize;
+                let (width, height) = opaque_extent(icon);
+                assert!(width * 100 >= side * 90, "{side} px: {width} px wide");
+                assert!(height * 100 >= side * 70, "{side} px: {height} px tall");
+            }
         }
     }
 
@@ -361,7 +390,7 @@ pub mod checks {
     fn the_tray_pictures_decode_to_argb() {
         let icons = super::pixmaps();
         let sizes: Vec<i32> = icons.iter().map(|icon| icon.width).collect();
-        assert_eq!(sizes, [16, 22, 24, 32, 48]);
+        assert_eq!(sizes, [16, 22, 24, 32, 48, 64]);
         for icon in &icons {
             let (w, h) = (icon.width as usize, icon.height as usize);
             assert_eq!(icon.data.len(), w * h * 4);
