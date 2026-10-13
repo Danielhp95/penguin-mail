@@ -1570,8 +1570,7 @@ impl App {
             commands,
             can_update: self.updater.is_some(),
             update: None,
-            pixmaps: crate::tray::pixmaps(),
-            badged: Vec::new(),
+            icon_theme_path: crate::tray::installed_icons(),
         };
         let slot = Arc::clone(&self.tray);
         // The icon comes up on the runtime; the count it shows waits for it.
@@ -1673,7 +1672,7 @@ impl App {
         self.core.spawn(async move {
             handle
                 .update(move |tray: &mut MailTray| {
-                    tray.set_unread(total);
+                    tray.unread = total;
                     tray.accounts = accounts;
                 })
                 .await;
