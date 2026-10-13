@@ -1,16 +1,15 @@
 //! A JMAP account signed in on its server's own page. The server must
 //! publish OAuth metadata (RFC 8414) beside its session, with open dynamic
-//! registration: a new account registers a public client with the app's
-//! loopback redirect and keeps its id. Signing in again uses that client,
-//! and registers a new one only when the server no longer knows it.
-//! Fastmail and Stalwart both work this way, so no client id is built in.
+//! registration: each sign-in registers a public client for the loopback
+//! redirect it listens on, port and all, and the account keeps its id for
+//! refreshing. Fastmail and Stalwart both work this way, so no client id is
+//! built in.
 
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use mailrs_discover::JmapProvider;
-use mailrs_domain::{AccountId, Provider};
 use mailrs_jmap::oauth::{self, Loopback, Metadata, OAuthClient, Pkce, Tokens};
 use mailrs_jmap::{Auth, JmapClient, JmapError};
 use mailrs_store::{Db, accounts};
@@ -24,10 +23,6 @@ use crate::{Connector, JmapGrant, connect_jmap, now_millis};
 /// usual bound for a person at a consent page. The loopback listener
 /// closes when it runs out.
 pub const BROWSER_WAIT: Duration = Duration::from_secs(600);
-
-/// The redirect a registered client names. RFC 8252 section 7.3 has the
-/// server take any port on the loopback, and Fastmail and Stalwart do.
-const REGISTERED_REDIRECT: &str = "http://127.0.0.1/";
 
 /// A JMAP session offered for a browser sign-in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,32 +118,7 @@ async fn redirected(
     }
 }
 
-/// The account at `address` and the client id it signed in with before,
-/// when it signed in through the browser to the same session and the
-/// server still names the same token endpoint.
-async fn kept_client(
-    connector: &Connector,
-    address: &str,
-    session_url: &str,
-    metadata: &Metadata,
-) -> Result<Option<(AccountId, String)>, BrowserSignInError> {
-    let address = address.to_string();
-    let saved = connector
-        .db
-        .read(move |c| match accounts::account_by_email(c, &address)? {
-            Some(held) if held.provider == Provider::Jmap => Ok(mailrs_store::jmap::load(c, held.id)?.map(|saved| (held.id, saved))),
-            _ => Ok(None),
-        })
-        .await
-        .map_err(|err| BrowserSignInError::KeptJmap(err.into()))?;
-    Ok(saved
-        .filter(|(_, saved)| saved.auth == JmapAuth::OAuth && saved.session_url == session_url)
-        .and_then(|(id, saved)| saved.oauth.map(|client| (id, client)))
-        .filter(|(_, client)| client.token_endpoint == metadata.token_endpoint)
-        .map(|(id, client)| (id, client.client_id)))
-}
-
-/// What one trip to the consent page needs besides the client.
+/// What one trip to the consent page needs.
 struct Trip<'a, S, O> {
     server: &'a S,
     metadata: &'a Metadata,
@@ -160,37 +130,41 @@ struct Trip<'a, S, O> {
 }
 
 impl<S: SignInServer, O: Fn(&str)> Trip<'_, S, O> {
-    /// One consent with `client_id`: the loopback, the page through
-    /// `open`, the redirect and the code exchange straight after it.
-    async fn consent(&self, client_id: &str, canceled: impl Future<Output = ()>) -> Result<Tokens, BrowserSignInError> {
+    /// One consent: the loopback, a client registered for its redirect,
+    /// the page through `open`, the redirect and the code exchange straight
+    /// after it. Answers the client's id beside the tokens.
+    ///
+    /// The client names the loopback's exact redirect, port included.
+    /// Fastmail takes any port only for a redirect registered with one (it
+    /// then stores `http://localhost/`); one registered as
+    /// `http://127.0.0.1/` must match exactly, and its page refuses the
+    /// request. An exact redirect suits every server, so no client from an
+    /// earlier sign-in, which listened on another port, is used again.
+    async fn consent(&self, canceled: impl Future<Output = ()>) -> Result<(String, Tokens), BrowserSignInError> {
         let loopback = Loopback::bind().await.map_err(BrowserSignInError::Jmap)?;
         let redirect = loopback.redirect_uri.clone();
+        let client_id = self.server.register(self.metadata, &redirect, self.scopes).await.map_err(BrowserSignInError::Jmap)?;
         let (pkce, state) = (Pkce::generate(), oauth::random_token(32));
-        let url = oauth::authorize_url(self.metadata, client_id, &redirect, self.scopes, &pkce, &state, self.session_url, Some(self.address))
+        let url = oauth::authorize_url(self.metadata, &client_id, &redirect, self.scopes, &pkce, &state, self.session_url, Some(self.address))
             .map_err(BrowserSignInError::Jmap)?;
         (self.open)(&url);
         let code = redirected(loopback, &state, self.metadata, canceled, self.wait).await?;
         let client = OAuthClient {
-            client_id: client_id.to_string(),
+            client_id,
             token_endpoint: self.metadata.token_endpoint.clone(),
             resource: self.session_url.to_string(),
         };
-        self.server.exchange(&client, &code, &redirect, &pkce).await.map_err(BrowserSignInError::Jmap)
-    }
-
-    async fn register(&self) -> Result<String, BrowserSignInError> {
-        self.server.register(self.metadata, REGISTERED_REDIRECT, self.scopes).await.map_err(BrowserSignInError::Jmap)
+        let tokens = self.server.exchange(&client, &code, &redirect, &pkce).await.map_err(BrowserSignInError::Jmap)?;
+        Ok((client.client_id, tokens))
     }
 }
 
-/// The whole sign-in: the client this account signed in with before, or
-/// one registered now, the consent page through `open`, the code exchange,
-/// the session check, then the account kept with its refresh token and its
-/// services built. `address`, as the person typed it, fills the server's
-/// address field and names the account. When the server no longer knows
-/// a kept client, one new client is registered and the consent page opens
-/// once more. Each wait for the browser ends after
-/// [`BROWSER_WAIT`], and the whole sign-in when `canceled` resolves.
+/// The whole sign-in: a client registered for this sign-in's redirect,
+/// the consent page through `open`, the code exchange, the session check,
+/// then the account kept with its refresh token and its services built.
+/// `address`, as the person typed it, fills the server's address field and
+/// names the account. The wait for the browser ends after
+/// [`BROWSER_WAIT`], or when `canceled` resolves.
 /// `dav_password`, when the person gave one, is kept as the app password
 /// for a calendar or contacts server that refused the browser sign-in.
 pub async fn jmap_in_browser(
@@ -220,33 +194,7 @@ pub(crate) async fn signing_in<S: SignInServer>(
     };
     let scopes = scopes_for(&offer, &metadata);
     let trip = Trip { server, metadata: &metadata, scopes: &scopes, session_url: &offer.session_url, address, open: &open, wait };
-    let mut canceled = std::pin::pin!(canceled);
-    let sessions = &connector.secrets.jmap_sessions;
-    // A kept client whose last sign-in never came back is not tried again:
-    // the server may have forgotten it and show its own page instead of
-    // coming back. The row keeps it until a new sign-in succeeds.
-    let kept = kept_client(connector, address, &offer.session_url, &metadata)
-        .await?
-        .filter(|(id, _)| !sessions.kept_client_failed(*id));
-    let (client_id, tokens) = match kept {
-        Some((id, kept)) => match trip.consent(&kept, canceled.as_mut()).await {
-            Err(BrowserSignInError::Jmap(JmapError::UnknownClient)) => {
-                let fresh = trip.register().await?;
-                let tokens = trip.consent(&fresh, canceled.as_mut()).await?;
-                (fresh, tokens)
-            }
-            Err(err @ (BrowserSignInError::GaveUp | BrowserSignInError::Canceled)) => {
-                sessions.kept_client_unanswered(id);
-                return Err(err);
-            }
-            done => (kept, done?),
-        },
-        None => {
-            let fresh = trip.register().await?;
-            let tokens = trip.consent(&fresh, canceled.as_mut()).await?;
-            (fresh, tokens)
-        }
-    };
+    let (client_id, tokens) = trip.consent(canceled).await?;
     let refresh = tokens.refresh_token.ok_or(BrowserSignInError::NoRefreshToken)?;
     // The check sends the access token as it came. A session here could
     // refresh and rotate the refresh token before the keyring holds it,
@@ -345,6 +293,10 @@ mod tests {
         /// What the clients it registers are called: `<names>-1` first.
         names: &'static str,
         registered: AtomicUsize,
+        /// The redirect each client was registered with, in order.
+        registered_for: Mutex<Vec<String>>,
+        /// The redirect each code exchange named, in order.
+        exchanged_for: Mutex<Vec<String>>,
         exchanges: Mutex<VecDeque<Result<Tokens, JmapError>>>,
         /// The client and refresh token of each grant it was asked to revoke.
         revoked: Mutex<Vec<(String, String)>>,
@@ -352,7 +304,12 @@ mod tests {
 
     impl FakeServer {
         fn answering(names: &'static str, exchanges: Vec<Result<Tokens, JmapError>>) -> FakeServer {
-            FakeServer { names, registered: AtomicUsize::new(0), exchanges: Mutex::new(exchanges.into()), revoked: Mutex::new(Vec::new()) }
+            FakeServer {
+                names,
+                registered: AtomicUsize::new(0),
+                registered_for: Mutex::new(Vec::new()),
+                exchanged_for: Mutex::new(Vec::new()),
+                exchanges: Mutex::new(exchanges.into()), revoked: Mutex::new(Vec::new()) }
         }
 
         fn registrations(&self) -> usize {
@@ -370,12 +327,13 @@ mod tests {
         }
 
         async fn register(&self, _metadata: &Metadata, redirect: &str, _scopes: &[String]) -> Result<String, JmapError> {
-            assert_eq!(redirect, "http://127.0.0.1/");
+            self.registered_for.lock().unwrap().push(redirect.to_string());
             let n = self.registered.fetch_add(1, Ordering::SeqCst) + 1;
             Ok(format!("{}-{n}", self.names))
         }
 
-        async fn exchange(&self, client: &OAuthClient, code: &str, _redirect: &str, _pkce: &Pkce) -> Result<Tokens, JmapError> {
+        async fn exchange(&self, client: &OAuthClient, code: &str, redirect: &str, _pkce: &Pkce) -> Result<Tokens, JmapError> {
+            self.exchanged_for.lock().unwrap().push(redirect.to_string());
             assert_eq!((code, client.token_endpoint.as_str()), ("c1", "https://api.fastmail.com/oauth/refresh"));
             self.exchanges.lock().unwrap().pop_front().expect("an exchange the test did not expect")
         }
@@ -627,8 +585,31 @@ mod tests {
         assert!(matches!(signed.services.mail, crate::AnyMail::Jmap(_)));
     }
 
+    /// Fastmail takes a loopback redirect on any port only when the client
+    /// registered it with a port; `http://127.0.0.1/` it matches exactly,
+    /// and its page then says the request is invalid. So the client names
+    /// the very redirect the browser comes back to.
     #[tokio::test]
-    async fn signing_in_again_reuses_the_kept_client() {
+    async fn the_client_is_registered_for_the_redirect_the_browser_comes_back_to() {
+        let jmap = jmap_server().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("mail.db")).unwrap();
+        let reach = connector(&db);
+        let server = FakeServer::answering("client", vec![tokens("r1")]);
+        let pages = Arc::new(Mutex::new(Vec::new()));
+        sign_in(&server, &reach, &format!("{}/jmap/session", jmap.uri()), &pages).await.unwrap();
+        let asked = query_value(&pages.lock().unwrap()[0], "redirect_uri");
+        let port = asked.strip_prefix("http://127.0.0.1:").and_then(|rest| rest.strip_suffix('/')).and_then(|port| port.parse::<u16>().ok());
+        assert!(port.is_some_and(|p| p != 0), "{asked}");
+        assert_eq!(*server.registered_for.lock().unwrap(), std::slice::from_ref(&asked));
+        assert_eq!(*server.exchanged_for.lock().unwrap(), [asked]);
+    }
+
+    /// Each sign-in listens on a port of its own, so a client registered
+    /// for an earlier one would name another redirect: signing in again
+    /// registers a client for this one.
+    #[tokio::test]
+    async fn signing_in_again_registers_a_client_for_its_own_redirect() {
         let jmap = jmap_server().await;
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(&dir.path().join("mail.db")).unwrap();
@@ -642,32 +623,13 @@ mod tests {
         let after = reach.secrets.jmap_sessions.held(again.account.id).unwrap();
         assert!(!Arc::ptr_eq(&before, &after), "the new refresh token gets a new session");
         assert_eq!(again.account.id, first.account.id);
-        assert_eq!(server.registrations(), 1, "a sign-in again registers nothing");
-        assert!(pages.lock().unwrap()[1].contains("client_id=client-1"));
-        assert_eq!(reach.secrets.jmap.load(again.account.id).unwrap().as_deref(), Some("r2"));
-    }
-
-    #[tokio::test]
-    async fn a_kept_client_the_server_forgot_is_registered_again_once() {
-        let jmap = jmap_server().await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(&dir.path().join("mail.db")).unwrap();
-        let reach = connector(&db);
-        let session_url = format!("{}/jmap/session", jmap.uri());
-        let first = FakeServer::answering("old", vec![tokens("r1")]);
-        let pages = Arc::new(Mutex::new(Vec::new()));
-        let account = sign_in(&first, &reach, &session_url, &pages).await.unwrap().account;
-        let forgot = FakeServer::answering("new", vec![Err(JmapError::UnknownClient), tokens("r2")]);
-        let pages = Arc::new(Mutex::new(Vec::new()));
-        let again = sign_in(&forgot, &reach, &session_url, &pages).await.unwrap();
-        assert_eq!(again.account.id, account.id);
-        assert_eq!(forgot.registrations(), 1);
+        assert_eq!(server.registrations(), 2);
         let pages = pages.lock().unwrap().clone();
-        assert_eq!(pages.len(), 2, "the person consents once more, for the new client");
-        assert!(pages[0].contains("client_id=old-1"), "the kept client goes first");
-        assert!(pages[1].contains("client_id=new-1"));
-        assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("new-1"));
-        assert_eq!(reach.secrets.jmap.load(account.id).unwrap().as_deref(), Some("r2"));
+        assert!(pages[1].contains("client_id=client-2"), "{}", pages[1]);
+        let asked: Vec<_> = pages.iter().map(|page| query_value(page, "redirect_uri")).collect();
+        assert_eq!(*server.registered_for.lock().unwrap(), asked);
+        assert_eq!(kept_client_id(&db, again.account.id).await.as_deref(), Some("client-2"));
+        assert_eq!(reach.secrets.jmap.load(again.account.id).unwrap().as_deref(), Some("r2"));
     }
 
     fn metadata() -> Metadata {
@@ -748,36 +710,6 @@ mod tests {
     fn a_server_outside_the_table_asks_for_the_mail_scopes_its_metadata_lists() {
         let offer = JmapBrowser { session_url: "https://mail.example.org/jmap/session".into(), provider: None };
         assert_eq!(scopes_for(&offer, &metadata()), ["urn:ietf:params:oauth:scope:mail", "offline_access"]);
-    }
-
-    #[tokio::test]
-    async fn a_kept_client_that_never_came_back_is_replaced_on_the_next_attempt() {
-        let jmap = jmap_server().await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(&dir.path().join("mail.db")).unwrap();
-        let reach = connector(&db);
-        let session_url = format!("{}/jmap/session", jmap.uri());
-        let first = FakeServer::answering("old", vec![tokens("r1")]);
-        let account = sign_in(&first, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap().account;
-        // The server shows its own page for the kept client and never
-        // comes back; the person cancels.
-        let offer = JmapBrowser { session_url: session_url.clone(), provider: None };
-        let silent = FakeServer::answering("unused", Vec::new());
-        let canceled = signing_in(&silent, &reach, offer, "me@fastmail.com", None, |_: &str| {}, std::future::ready(()), Duration::from_secs(5)).await;
-        assert!(matches!(canceled, Err(BrowserSignInError::Canceled)));
-        assert_eq!(silent.registrations(), 0);
-        assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("old-1"), "a cancel changes nothing kept");
-        let still = crate::connect_jmap(&db, &reach.secrets, &account, 30).await;
-        assert!(still.is_ok(), "the account keeps working with its old client");
-        let next = FakeServer::answering("new", vec![tokens("r2")]);
-        let pages = Arc::new(Mutex::new(Vec::new()));
-        sign_in(&next, &reach, &session_url, &pages).await.unwrap();
-        assert_eq!(next.registrations(), 1);
-        assert!(pages.lock().unwrap()[0].contains("client_id=new-1"), "the kept client is not tried again");
-        assert_eq!(kept_client_id(&db, account.id).await.as_deref(), Some("new-1"));
-        let after = FakeServer::answering("later", vec![tokens("r3")]);
-        sign_in(&after, &reach, &session_url, &Arc::new(Mutex::new(Vec::new()))).await.unwrap();
-        assert_eq!(after.registrations(), 0, "the new client is kept and trusted again");
     }
 
     /// Reads what the store and the keyring hold for `id`: the session URL,

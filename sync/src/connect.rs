@@ -495,15 +495,13 @@ pub fn auth_of(saved: &mailrs_store::jmap::JmapSaved, address: &str, secret: Str
 /// This run's OAuth sessions, one per JMAP account, so a restart of the
 /// account reuses the tokens the last start holds. Two sessions with one
 /// refresh token could each rotate it, and Fastmail revokes a grant whose
-/// old refresh token comes back. Also the accounts whose kept client did
-/// not bring the browser back. Clones share both.
+/// old refresh token comes back. Clones share them.
 #[derive(Clone, Default)]
 pub struct JmapSessions(Arc<std::sync::Mutex<SessionsHeld>>);
 
 #[derive(Default)]
 struct SessionsHeld {
     sessions: std::collections::HashMap<AccountId, HeldSession>,
-    unanswered: std::collections::HashSet<AccountId>,
 }
 
 struct HeldSession {
@@ -548,28 +546,11 @@ impl JmapSessions {
     /// it saves nothing more over the new token or under a gone account.
     /// Answers the newest refresh token the session held.
     pub async fn forget(&self, id: AccountId) -> Option<String> {
-        let kept = {
-            let mut held = self.held_state();
-            held.unanswered.remove(&id);
-            held.sessions.remove(&id)
-        };
+        let kept = self.held_state().sessions.remove(&id);
         match kept {
             Some(kept) => Some(kept.session.retire().await),
             None => None,
         }
-    }
-
-    /// Records that a sign-in with the account's kept client ran out or
-    /// was canceled: the server may no longer know that client and show
-    /// its own page rather than come back.
-    pub(crate) fn kept_client_unanswered(&self, id: AccountId) {
-        self.held_state().unanswered.insert(id);
-    }
-
-    /// Whether the next sign-in should register a new client rather than
-    /// try the kept one again.
-    pub(crate) fn kept_client_failed(&self, id: AccountId) -> bool {
-        self.held_state().unanswered.contains(&id)
     }
 }
 
