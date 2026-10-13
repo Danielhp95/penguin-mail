@@ -2999,13 +2999,17 @@ msgstr "Lesebestätigung gesendet"
 
 #: app/src/open_thread/run/receipt.rs:136
 msgid "The receipt was not sent, and you can try again: {reason}"
-msgstr "Die Lesebestätigung wurde nicht gesendet, Sie können es erneut versuchen: {reason}"
+msgstr ""
+"Die Lesebestätigung wurde nicht gesendet, Sie können es erneut versuchen: "
+"{reason}"
 
 #: app/src/open_thread/run/receipt.rs:140
 msgid ""
 "The receipt may have gone out, so Penguin Mail will not send it again: "
 "{reason}"
-msgstr "Die Lesebestätigung wurde vielleicht schon gesendet, daher sendet Penguin Mail sie nicht noch einmal: {reason}"
+msgstr ""
+"Die Lesebestätigung wurde vielleicht schon gesendet, daher sendet Penguin "
+"Mail sie nicht noch einmal: {reason}"
 
 #: app/src/open_thread/run/translation.rs:158
 msgid "The model sent nothing back to put in the message."
@@ -4351,39 +4355,39 @@ msgid_plural "{account}, {count} unread messages"
 msgstr[0] "{account}, {count} ungelesene Nachricht"
 msgstr[1] "{account}, {count} ungelesene Nachrichten"
 
-#: app/src/tray.rs:194 app/src/tray.rs:218
+#: app/src/tray.rs:195 app/src/tray.rs:219
 msgid "Penguin Mail: {summary}"
 msgstr "Penguin Mail: {summary}"
 
-#: app/src/tray.rs:269
+#: app/src/tray.rs:270
 msgid "Open Penguin Mail"
 msgstr "Penguin Mail öffnen"
 
-#: app/src/tray.rs:270 app/src/ui/composer/mod.rs:349
+#: app/src/tray.rs:271 app/src/ui/composer/mod.rs:349
 #: app/src/ui/composer/mod.rs:655 app/src/ui/composer/mod.rs:1515
 #: app/src/ui/contact_card.rs:162 app/src/ui/thread_list.rs:432
 msgid "New Message"
 msgstr "Neue Nachricht"
 
-#: app/src/tray.rs:271 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
+#: app/src/tray.rs:272 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
 msgid "Check for Mail"
 msgstr "Nach E-Mails sehen"
 
-#: app/src/tray.rs:275 app/src/update/mod.rs:98
+#: app/src/tray.rs:276 app/src/update/mod.rs:98
 msgid "Install Update {version}"
 msgstr "Aktualisierung {version} installieren"
 
-#: app/src/tray.rs:278
+#: app/src/tray.rs:279
 msgid "What's New in {version}"
 msgstr "Neuigkeiten in {version}"
 
-#: app/src/tray.rs:282 app/src/ui/about.rs:119 app/src/ui/about.rs:227
+#: app/src/tray.rs:283 app/src/ui/about.rs:119 app/src/ui/about.rs:227
 #: app/src/ui/about.rs:235 app/src/ui/about.rs:242
 #: app/src/ui/preferences.rs:871 app/src/update/mod.rs:108
 msgid "Check for Updates"
 msgstr "Nach Aktualisierungen suchen"
 
-#: app/src/tray.rs:287 app/src/ui/window.rs:3080
+#: app/src/tray.rs:288 app/src/ui/window.rs:3080
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "Beenden"
@@ -11386,90 +11390,90 @@ msgstr "Alle E-Mails"
 msgid "This smart mailbox has no conditions"
 msgstr "Dieses intelligente Postfach hat keine Bedingungen"
 
-#: sync/src/mailbox.rs:1325
+#: sync/src/mailbox.rs:1332
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr ""
 "Ergebnisse für {account} stammen nur aus den E-Mails auf diesem Rechner"
 
-#: sync/src/mailbox.rs:1337
+#: sync/src/mailbox.rs:1344
 msgid "Could not load mail for {account}: {reason}"
 msgstr "E-Mails für {account} konnten nicht geladen werden: {reason}"
 
-#: sync/src/mailbox.rs:1462
+#: sync/src/mailbox.rs:1469
 msgid "Returns {when}"
 msgstr "Kommt {when} zurück"
 
-#: sync/src/mailbox.rs:1505 sync/src/mailbox.rs:1588
+#: sync/src/mailbox.rs:1512 sync/src/mailbox.rs:1595
 msgid "No recipients"
 msgstr "Keine Empfänger"
 
-#: sync/src/mailbox.rs:1508 sync/src/mailbox.rs:1591
+#: sync/src/mailbox.rs:1515 sync/src/mailbox.rs:1598
 msgid "To {recipients}"
 msgstr "An {recipients}"
 
-#: sync/src/mailbox.rs:1551
+#: sync/src/mailbox.rs:1558
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} ungelesen · {category}"
 msgstr[1] "{count} ungelesen · {category}"
 
-#: sync/src/mailbox.rs:1556
+#: sync/src/mailbox.rs:1563
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} ungelesen"
 msgstr[1] "{count} ungelesen"
 
-#: sync/src/mailbox.rs:1563
+#: sync/src/mailbox.rs:1570
 msgid "Sent yesterday, no reply yet"
 msgstr "Gestern gesendet, noch keine Antwort"
 
-#: sync/src/mailbox.rs:1565
+#: sync/src/mailbox.rs:1572
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "Vor {days} Tag gesendet, noch keine Antwort"
 msgstr[1] "Vor {days} Tagen gesendet, noch keine Antwort"
 
-#: sync/src/mailbox.rs:1625
+#: sync/src/mailbox.rs:1632
 msgid "The server has not sent this message yet."
 msgstr "Der Server hat diese Nachricht noch nicht gesendet."
 
-#: sync/src/mailbox.rs:1626
+#: sync/src/mailbox.rs:1633
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr ""
 "Penguin Mail hat noch nicht bestätigt, dass der Server diese Nachricht "
 "übernommen hat."
 
-#: sync/src/mailbox.rs:1636
+#: sync/src/mailbox.rs:1643
 msgid "Sends {when}."
 msgstr "Wird {when} gesendet."
 
-#: sync/src/mailbox.rs:1637
+#: sync/src/mailbox.rs:1644
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "Der Server sendet sie, auch wenn Penguin Mail geschlossen ist."
 
-#: sync/src/mailbox.rs:1639
+#: sync/src/mailbox.rs:1646
 msgid "Sends {when}"
 msgstr "Wird {when} gesendet"
 
-#: sync/src/mailbox.rs:1646
+#: sync/src/mailbox.rs:1653
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr ""
 "Sehen Sie in „Gesendet“ nach. Penguin Mail konnte das Senden nicht "
 "bestätigen."
 
-#: sync/src/mailbox.rs:1649
+#: sync/src/mailbox.rs:1656
 msgid "Canceled in another app."
 msgstr "In einer anderen App abgebrochen."
 
-#: sync/src/mailbox.rs:1651
+#: sync/src/mailbox.rs:1658
 msgid "Not sent"
 msgstr "Nicht gesendet"
 
-#: sync/src/mailbox.rs:1658
+#: sync/src/mailbox.rs:1665
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}. Neuer Versuch {when}"
 
-#: sync/src/mailbox.rs:1665
+#: sync/src/mailbox.rs:1672
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}. Penguin Mail hat es aufgegeben"
 

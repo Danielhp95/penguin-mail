@@ -4044,39 +4044,39 @@ msgid "{account}, {count} unread message"
 msgid_plural "{account}, {count} unread messages"
 msgstr[0] "{account}，{count} 封未讀郵件"
 
-#: app/src/tray.rs:194 app/src/tray.rs:218
+#: app/src/tray.rs:195 app/src/tray.rs:219
 msgid "Penguin Mail: {summary}"
 msgstr "Penguin Mail：{summary}"
 
-#: app/src/tray.rs:269
+#: app/src/tray.rs:270
 msgid "Open Penguin Mail"
 msgstr "開啟 Penguin Mail"
 
-#: app/src/tray.rs:270 app/src/ui/composer/mod.rs:349
+#: app/src/tray.rs:271 app/src/ui/composer/mod.rs:349
 #: app/src/ui/composer/mod.rs:655 app/src/ui/composer/mod.rs:1515
 #: app/src/ui/contact_card.rs:162 app/src/ui/thread_list.rs:432
 msgid "New Message"
 msgstr "新增郵件"
 
-#: app/src/tray.rs:271 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
+#: app/src/tray.rs:272 app/src/ui/sidebar.rs:1815 app/src/ui/window.rs:3067
 msgid "Check for Mail"
 msgstr "檢查郵件"
 
-#: app/src/tray.rs:275 app/src/update/mod.rs:98
+#: app/src/tray.rs:276 app/src/update/mod.rs:98
 msgid "Install Update {version}"
 msgstr "安裝 {version} 更新"
 
-#: app/src/tray.rs:278
+#: app/src/tray.rs:279
 msgid "What's New in {version}"
 msgstr "{version} 的新功能"
 
-#: app/src/tray.rs:282 app/src/ui/about.rs:119 app/src/ui/about.rs:227
+#: app/src/tray.rs:283 app/src/ui/about.rs:119 app/src/ui/about.rs:227
 #: app/src/ui/about.rs:235 app/src/ui/about.rs:242
 #: app/src/ui/preferences.rs:871 app/src/update/mod.rs:108
 msgid "Check for Updates"
 msgstr "檢查更新"
 
-#: app/src/tray.rs:287 app/src/ui/window.rs:3080
+#: app/src/tray.rs:288 app/src/ui/window.rs:3080
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "結束"
@@ -10762,82 +10762,82 @@ msgstr "所有郵件"
 msgid "This smart mailbox has no conditions"
 msgstr "此智慧信箱沒有條件"
 
-#: sync/src/mailbox.rs:1325
+#: sync/src/mailbox.rs:1332
 msgid "Results for {account} come from the mail on this computer alone"
 msgstr "{account} 的結果僅來自此電腦上的郵件"
 
-#: sync/src/mailbox.rs:1337
+#: sync/src/mailbox.rs:1344
 msgid "Could not load mail for {account}: {reason}"
 msgstr "無法載入 {account} 的郵件：{reason}"
 
-#: sync/src/mailbox.rs:1462
+#: sync/src/mailbox.rs:1469
 msgid "Returns {when}"
 msgstr "於 {when} 移回"
 
-#: sync/src/mailbox.rs:1505 sync/src/mailbox.rs:1588
+#: sync/src/mailbox.rs:1512 sync/src/mailbox.rs:1595
 msgid "No recipients"
 msgstr "沒有收件者"
 
-#: sync/src/mailbox.rs:1508 sync/src/mailbox.rs:1591
+#: sync/src/mailbox.rs:1515 sync/src/mailbox.rs:1598
 msgid "To {recipients}"
 msgstr "收件者：{recipients}"
 
-#: sync/src/mailbox.rs:1551
+#: sync/src/mailbox.rs:1558
 msgid "{count} unread · {category}"
 msgid_plural "{count} unread · {category}"
 msgstr[0] "{count} 封未讀 · {category}"
 
-#: sync/src/mailbox.rs:1556
+#: sync/src/mailbox.rs:1563
 msgid "{count} unread"
 msgid_plural "{count} unread"
 msgstr[0] "{count} 封未讀"
 
-#: sync/src/mailbox.rs:1563
+#: sync/src/mailbox.rs:1570
 msgid "Sent yesterday, no reply yet"
 msgstr "昨天傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1565
+#: sync/src/mailbox.rs:1572
 msgid "Sent {days} day ago, no reply yet"
 msgid_plural "Sent {days} days ago, no reply yet"
 msgstr[0] "{days} 天前傳送，尚未收到回覆"
 
-#: sync/src/mailbox.rs:1625
+#: sync/src/mailbox.rs:1632
 msgid "The server has not sent this message yet."
 msgstr "伺服器尚未寄出這封郵件。"
 
-#: sync/src/mailbox.rs:1626
+#: sync/src/mailbox.rs:1633
 msgid "Penguin Mail has not confirmed that the server took this message."
 msgstr "Penguin Mail 尚未確認伺服器已收下這封郵件。"
 
-#: sync/src/mailbox.rs:1636
+#: sync/src/mailbox.rs:1643
 msgid "Sends {when}."
 msgstr "於 {when} 傳送。"
 
-#: sync/src/mailbox.rs:1637
+#: sync/src/mailbox.rs:1644
 msgid "The server sends it even if Penguin Mail is closed."
 msgstr "即使 Penguin Mail 已關閉，伺服器仍會寄出。"
 
-#: sync/src/mailbox.rs:1639
+#: sync/src/mailbox.rs:1646
 msgid "Sends {when}"
 msgstr "於 {when} 傳送"
 
-#: sync/src/mailbox.rs:1646
+#: sync/src/mailbox.rs:1653
 msgid "Check Sent. Penguin Mail could not confirm it went out."
 msgstr "請查看寄件備份。Penguin Mail 無法確認是否已寄出。"
 
-#: sync/src/mailbox.rs:1649
+#: sync/src/mailbox.rs:1656
 msgid "Canceled in another app."
 msgstr "已在其他應用程式中取消。"
 
-#: sync/src/mailbox.rs:1651
+#: sync/src/mailbox.rs:1658
 msgid "Not sent"
 msgstr "未傳送"
 
-#: sync/src/mailbox.rs:1658
+#: sync/src/mailbox.rs:1665
 msgid "{problem}. Trying again {when}"
 msgstr "{problem}。將於 {when} 重試"
 
-#: sync/src/mailbox.rs:1665
+#: sync/src/mailbox.rs:1672
 msgid "{problem}. Penguin Mail stopped trying"
 msgstr "{problem}。Penguin Mail 已停止重試"
 
