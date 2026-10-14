@@ -12,7 +12,7 @@ use mailrs_store::{Db, accounts, calendar as store_calendar};
 use crate::passwords::{MemoryPasswords, PasswordError, PasswordStore};
 use crate::services::finding::ServiceProbe;
 use crate::sign_in::{
-    CalDavSignInError, ImapSignInError, NewCalDav, NewImap, NewPop3, calendar_account_name, caldav_signed_in,
+    CalDavSignInError, ImapSignInError, NewCalDav, NewImap, NewPop3, calendar_account_name, caldav_signed_in, caldav_signed_in_again,
     imap_signed_in, in_imap_words, pop3_signed_in,
 };
 use mailrs_domain::RemoveSetting;
@@ -681,6 +681,7 @@ fn a_calendar_account_is_named_by_its_user_and_its_host() {
         Some(ROBIN),
         "the host alone, in lower case, and the user name without its spaces"
     );
+    assert_eq!(calendar_account_name(CLOUD, "Robin").as_deref(), Some(ROBIN), "the user name in lower case too");
     assert_eq!(
         calendar_account_name(CLOUD, "me@example.org").as_deref(),
         Some("me@example.org@cloud.example.org"),
@@ -775,9 +776,54 @@ async fn signing_a_calendar_account_in_again_keeps_its_calendars_and_ends_needs_
     })
     .await
     .unwrap();
-    let again = calendar_sign_in(&db, at(CLOUD, "robin")).await.unwrap();
+    let passwords = Arc::new(MemoryPasswords::default());
+    let again = caldav_signed_in_again(&Cloud::default(), &db, Arc::clone(&passwords), id, at(CLOUD, "robin")).await.unwrap();
     assert_eq!((again.id, again.state), (id, AccountState::Ok), "one account, not two");
+    assert_eq!(passwords.load(id).unwrap().as_deref(), Some("app-password"), "the keyring has the new password");
     assert_eq!(db.read(move |c| store_calendar::calendars(c, id)).await.unwrap().len(), 1, "what the copy held is still there");
+}
+
+#[tokio::test]
+async fn adding_the_same_server_again_is_the_same_account_whatever_the_case_of_the_user() {
+    let (db, _dir) = store().await;
+    let first = calendar_sign_in(&db, at(CLOUD, "Robin")).await.unwrap();
+    assert_eq!(first.email, ROBIN);
+    let again = calendar_sign_in(&db, at("cloud.example.org/remote.php/dav", "robin")).await.unwrap();
+    assert_eq!(again.id, first.id, "one account syncing the calendars, not two");
+    assert_eq!(db.read(accounts::list_accounts).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_second_server_on_the_same_host_does_not_take_the_first_ones_place() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let first = caldav_signed_in(&Cloud::default(), &db, Arc::clone(&passwords), at(CLOUD, "robin"), 7).await.unwrap();
+    let id = first.id;
+    let kept = db.read(move |c| services::load(c, id)).await.unwrap();
+    for elsewhere in ["https://cloud.example.org/radicale/", "https://cloud.example.org:5232/"] {
+        let cloud = Cloud::default();
+        let new = NewCalDav { password: "other-password".into(), ..at(elsewhere, "robin") };
+        let refused = caldav_signed_in(&cloud, &db, Arc::clone(&passwords), new, 8).await;
+        assert!(
+            matches!(&refused, Err(CalDavSignInError::Elsewhere { name, address }) if name == ROBIN && address == CLOUD),
+            "{elsewhere}: {:?}",
+            refused.map(|account| account.email)
+        );
+        assert!(cloud.0.lock().unwrap().is_empty(), "{elsewhere}: the password went nowhere");
+    }
+    assert_eq!(db.read(move |c| services::load(c, id)).await.unwrap(), kept, "the first account keeps its server");
+    assert_eq!(passwords.load(id).unwrap().as_deref(), Some("app-password"), "and its password");
+    assert_eq!(db.read(accounts::list_accounts).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn signing_in_again_never_puts_a_calendar_password_on_a_mail_account() {
+    let (db, _dir) = store().await;
+    let mail = db.write(|c| accounts::insert_imap_account(c, "me@example.org", "example.org", 1)).await.unwrap().unwrap();
+    let passwords = Arc::new(MemoryPasswords::default());
+    let refused = caldav_signed_in_again(&Cloud::default(), &db, Arc::clone(&passwords), mail, at(CLOUD, "robin")).await;
+    assert!(matches!(refused, Err(CalDavSignInError::Taken { holder: Provider::Imap, .. })));
+    assert_eq!(passwords.load(mail).unwrap(), None);
 }
 
 #[tokio::test]

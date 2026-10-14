@@ -1339,7 +1339,7 @@ pub fn calendar_problem(err: &anyhow::Error) -> String {
             "{taken} {}",
             gettext("To see this server's calendars there, open Preferences, then Contacts & Calendar, and type its address for that account.")
         ),
-        Some(said @ (CalDavSignInError::Taken { .. } | CalDavSignInError::NotHttps)) => said.to_string(),
+        Some(said @ (CalDavSignInError::Taken { .. } | CalDavSignInError::Elsewhere { .. } | CalDavSignInError::NotHttps)) => said.to_string(),
         Some(CalDavSignInError::Server(SyncError::Backend(backend))) => match backend {
             BackendError::NeedsReauth => gettext(
                 "The server did not take that user name and password. Where it uses two-step \

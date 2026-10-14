@@ -370,6 +370,11 @@ pub enum CalDavSignInError {
     /// calendars itself, and the page says so.
     #[error("{}", taken(.name, .provider))]
     Taken { name: String, provider: String, holder: Provider },
+    /// A calendar account already has the name, for a server at another
+    /// address. Adding this one would take that account's place, so
+    /// nothing was sent.
+    #[error("{}", elsewhere(.name, .address))]
+    Elsewhere { name: String, address: String },
     /// The address is under a scheme other than HTTPS. Nothing was sent
     /// to it.
     #[error("{}", finding::https_only())]
@@ -385,23 +390,34 @@ pub enum CalDavSignInError {
 }
 
 /// What a calendar account on the server at `url` is called: its user on
-/// its host, as GNOME names one. A mail account is called by its address;
-/// a name that carries the host cannot be one, so a calendar account
-/// never takes a mail account's place even where the person signs in to
-/// both with one address. `None` for an address with no host, or no user.
+/// its host, as GNOME names one, in lower case, so a user name typed as
+/// Dana once and dana the next time is one account. A mail account is
+/// called by its address; a name that carries the host cannot be one, so
+/// a calendar account never takes a mail account's place even where the
+/// person signs in to both with one address. `None` for an address with
+/// no host, or no user.
 pub(crate) fn calendar_account_name(url: &str, user_name: &str) -> Option<String> {
-    let (host, user) = (mailrs_dav::host_of(url)?, user_name.trim());
+    let (host, user) = (mailrs_dav::host_of(url)?, user_name.trim().to_lowercase());
     (!user.is_empty()).then(|| format!("{user}@{host}"))
 }
 
-/// Keeps a calendar account once its server took the login: adds it, or
-/// finds the one already here under its name, with the server's address,
-/// the user name and the password. `probe` tries the login first, so a
-/// wrong address or password keeps nothing. As for an IMAP account, the
-/// keyring takes the password before anything else is settled: a new
-/// account goes again when it refuses, and one signing in again stays as
-/// it was. An account signing in again keeps its calendars and stops
-/// needing a sign-in.
+fn elsewhere(name: &str, address: &str) -> String {
+    fill(
+        &gettext("A calendar account named {name} is already here, for the server at {address}. Remove it to add this server under that name."),
+        &[("name", name), ("address", address)],
+    )
+}
+
+/// Adds a calendar account once its server took the login, with the
+/// server's address, the user name and the password. `probe` tries the
+/// login first, so a wrong address or password keeps nothing. The name
+/// another kind of account holds is refused, and so is the name of a
+/// calendar account on a server at another address, before the password
+/// goes anywhere: adding it would move that account to this server. The
+/// same server added again signs its account in again, as Add Account
+/// does for an IMAP account. As for an IMAP account, the keyring takes
+/// the password before anything else is settled, and a new account goes
+/// again when it refuses.
 pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
     probe: &S,
     db: &Db,
@@ -409,50 +425,80 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
     new: NewCalDav,
     now: EpochMillis,
 ) -> Result<Account, CalDavSignInError> {
-    let NewCalDav { url, user_name, password } = new;
-    let user_name = user_name.trim();
-    let url = finding::https_url(&url).ok_or(CalDavSignInError::NotHttps)?;
-    let name = calendar_account_name(&url, user_name)
+    let url = finding::https_url(&new.url).ok_or(CalDavSignInError::NotHttps)?;
+    let name = calendar_account_name(&url, &new.user_name)
         .ok_or_else(|| SyncError::Backend(BackendError::Refused("the address names no host, or no user was given".into())))?;
-    let server = finding::typed(probe, ServiceKind::CalDav, url, user_name, &password).await?;
     let lookup = name.clone();
-    let before = db.read(move |c| accounts::account_by_email(c, &lookup)).await?;
-    let id = match before {
-        Some(held) if held.provider != Provider::CalDav => return Err(CalDavSignInError::taken(name, Some(&held))),
-        Some(held) => {
-            save_passwords(passwords, held.id, password, None).await?;
-            db.write(move |c| {
-                services::save(c, held.id, &server)?;
-                // Signing in again is what ends Needs Sign-In; the
-                // calendar copy says the account works once it reads.
-                if held.state == AccountState::NeedsReauth {
-                    accounts::set_state(c, held.id, AccountState::Ok)?;
-                }
-                Ok(held.id)
-            })
-            .await?
+    let held = db.read(move |c| accounts::account_by_email(c, &lookup)).await?;
+    if let Some(held) = held {
+        if held.provider != Provider::CalDav {
+            return Err(CalDavSignInError::taken(name, Some(&held)));
         }
-        None => {
-            let added_as = name.clone();
-            let added = db
-                .write(move |c| {
-                    let Some(id) = accounts::insert_caldav_account(c, &added_as, now)? else {
-                        // Another provider's account took the name
-                        // between the read and this write.
-                        return Ok(Err(accounts::account_by_email(c, &added_as)?));
-                    };
-                    services::save(c, id, &server)?;
-                    Ok(Ok(id))
-                })
-                .await?;
-            let id = added.map_err(|held| CalDavSignInError::taken(name, held.as_ref()))?;
-            if let Err(err) = save_passwords(passwords, id, password, None).await {
-                db.write(move |c| accounts::delete_account(c, id)).await?;
-                return Err(err.into());
-            }
-            id
+        let id = held.id;
+        let kept = db.read(move |c| services::load(c, id)).await?;
+        let address = kept.into_iter().find(|s| s.kind == ServiceKind::CalDav).map(|s| s.url).unwrap_or_default();
+        if !mailrs_dav::same_address(&address, &url) {
+            return Err(CalDavSignInError::Elsewhere { name, address });
         }
-    };
+        return caldav_signed_in_again(probe, db, passwords, id, new).await;
+    }
+    let user_name = new.user_name.trim();
+    let server = finding::typed(probe, ServiceKind::CalDav, url, user_name, &new.password).await?;
+    let added_as = name.clone();
+    let added = db
+        .write(move |c| {
+            let Some(id) = accounts::insert_caldav_account(c, &added_as, now)? else {
+                // Another provider's account took the name between the
+                // read and this write.
+                return Ok(Err(accounts::account_by_email(c, &added_as)?));
+            };
+            services::save(c, id, &server)?;
+            Ok(Ok(id))
+        })
+        .await?;
+    let id = added.map_err(|held| CalDavSignInError::taken(name, held.as_ref()))?;
+    if let Err(err) = save_passwords(passwords, id, new.password, None).await {
+        db.write(move |c| accounts::delete_account(c, id)).await?;
+        return Err(err.into());
+    }
+    calendar_account(db, id).await
+}
+
+/// Signs calendar account `id` in again, as Sign In Again on its heading
+/// asks: tries the login at the address and user `new` gives, which the
+/// page fills in from the account, then keeps them and the password and
+/// ends Needs Sign-In. The account keeps its calendars. The keyring takes
+/// the password first, so the account stays as it was when it refuses.
+pub async fn caldav_signed_in_again<S: ServiceProbe, P: PasswordStore + 'static>(
+    probe: &S,
+    db: &Db,
+    passwords: Arc<P>,
+    id: AccountId,
+    new: NewCalDav,
+) -> Result<Account, CalDavSignInError> {
+    let NewCalDav { url, user_name, password } = new;
+    let url = finding::https_url(&url).ok_or(CalDavSignInError::NotHttps)?;
+    let held = calendar_account(db, id).await?;
+    // The password would land on a mail account's own in the keyring.
+    if held.provider != Provider::CalDav {
+        return Err(CalDavSignInError::taken(held.email.clone(), Some(&held)));
+    }
+    let server = finding::typed(probe, ServiceKind::CalDav, url, user_name.trim(), &password).await?;
+    save_passwords(passwords, id, password, None).await?;
+    db.write(move |c| {
+        services::save(c, id, &server)?;
+        // Signing in again is what ends Needs Sign-In; the calendar copy
+        // says the account works once it reads.
+        if held.state == AccountState::NeedsReauth {
+            accounts::set_state(c, id, AccountState::Ok)?;
+        }
+        Ok(())
+    })
+    .await?;
+    calendar_account(db, id).await
+}
+
+async fn calendar_account(db: &Db, id: AccountId) -> Result<Account, CalDavSignInError> {
     db.read(move |c| accounts::account(c, id))
         .await?
         .ok_or(CalDavSignInError::Store(StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)))

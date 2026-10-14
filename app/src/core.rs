@@ -24,7 +24,7 @@ use mailrs_sync::passwords::{PasswordStore, Secrets};
 use mailrs_sync::services::finding;
 use mailrs_sync::sign_in::{
     Browser, BrowserReady, BrowserSignInError, JmapBrowser, NewCalDav, NewImap, NewJmap, NewPop3,
-    Wanted, caldav_signed_in, check_pop3, google_sign_in, imap_signed_in, in_browser,
+    Wanted, caldav_signed_in, caldav_signed_in_again, check_pop3, google_sign_in, imap_signed_in, in_browser,
     jmap_in_browser, jmap_signed_in, pop3_signed_in,
 };
 use mailrs_sync::{
@@ -867,9 +867,16 @@ impl Core {
     /// Signs in to a calendar account: tries the login on the CalDAV
     /// server at `url`, then keeps the account, the server and the
     /// password, and starts it, so its calendars are read at the next
-    /// tick. Nothing is kept when the login fails. An account signing in
-    /// again keeps its calendars and starts over with the new password.
-    pub async fn sign_in_calendar(&self, url: String, user_name: String, password: String) -> Result<Account> {
+    /// tick. Nothing is kept when the login fails. `again` is the account
+    /// Sign In Again was opened for, which keeps its calendars and starts
+    /// over with the new password; without one the account is added.
+    pub async fn sign_in_calendar(
+        &self,
+        url: String,
+        user_name: String,
+        password: String,
+        again: Option<AccountId>,
+    ) -> Result<Account> {
         if self.demo {
             bail!(gettext("Demo mode cannot add real accounts."));
         }
@@ -882,7 +889,11 @@ impl Core {
             let new = NewCalDav { url, user_name, password };
             // A failure is a `CalDavSignInError`, which the dialog reads
             // back out of the `anyhow::Error` to word what went wrong.
-            let account = caldav_signed_in(&finding::RealProbe, &db, Arc::clone(&passwords), new, now_millis()).await?;
+            let probe = finding::RealProbe;
+            let account = match again {
+                Some(id) => caldav_signed_in_again(&probe, &db, Arc::clone(&passwords), id, new).await?,
+                None => caldav_signed_in(&probe, &db, Arc::clone(&passwords), new, now_millis()).await?,
+            };
             let services = connect_caldav(&db, passwords, &account).await?;
             engine.start_account(account.id, services);
             Ok::<_, anyhow::Error>(account)

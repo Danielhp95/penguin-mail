@@ -153,6 +153,19 @@ pub fn host_of(url: &str) -> Option<String> {
     Url::parse(url).ok()?.host_str().map(str::to_ascii_lowercase)
 }
 
+/// Whether two addresses name one server: the same scheme, host and port,
+/// and the same path whatever slash it ends with. Two servers on one host,
+/// at another port or under another path, are two. An address that does
+/// not parse names no server.
+pub fn same_address(a: &str, b: &str) -> bool {
+    let server = |address: &str| {
+        let url = Url::parse(address).ok()?;
+        let path = url.path().trim_end_matches('/').to_string();
+        Some((url.scheme().to_string(), url.host_str()?.to_ascii_lowercase(), url.port_or_known_default(), path))
+    };
+    matches!((server(a), server(b)), (Some(a), Some(b)) if a == b)
+}
+
 /// Whether the hosts of two addresses are on one site, as [`same_site`]
 /// reads it. An address that does not parse, or has no host, shares
 /// nothing.

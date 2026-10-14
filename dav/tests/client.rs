@@ -130,6 +130,16 @@ fn the_host_of_an_address_is_lower_case_and_alone() {
 }
 
 #[test]
+fn one_server_is_one_scheme_host_port_and_path() {
+    let nextcloud = "https://home.example.org/remote.php/dav/";
+    assert!(mailrs_dav::same_address(nextcloud, "https://Home.Example.org/remote.php/dav"), "case of the host, and the last slash");
+    assert!(mailrs_dav::same_address("https://home.example.org/", "https://home.example.org:443/"), "the port https goes to anyway");
+    assert!(!mailrs_dav::same_address(nextcloud, "https://home.example.org:5232/"), "another port");
+    assert!(!mailrs_dav::same_address(nextcloud, "https://home.example.org/"), "another path");
+    assert!(!mailrs_dav::same_address("not an address", "not an address"));
+}
+
+#[test]
 fn a_plain_http_context_is_refused() {
     assert!(DavClient::new("http://dav.example.org/", Kind::Calendar, Login::new("me", "pw")).is_err());
 }
