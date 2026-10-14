@@ -1049,12 +1049,13 @@ mod tests {
 
         let dav = std::sync::Arc::new(FakeDav::new());
         dav.add_collection("/cal/personal/", DavKind::Calendar, "Personal", None);
-        let services = AccountServices::calendar_only(dav);
+        dav.set_auto_schedule(true);
+        let services = AccountServices::calendar_only(std::sync::Arc::clone(&dav));
 
         assert!(super::organizer_hears(None), "an account that has not started is not said to be mute");
-        assert!(super::organizer_hears(Some(&services)), "nor one whose server has not been asked");
+        assert!(!super::organizer_hears(Some(&services)), "a server that has not said it sends replies is taken to send none");
         services.calendar.as_ref().expect("the calendar").calendars().await.expect("the calendar list");
-        assert!(!super::organizer_hears(Some(&services)), "the server has said it sends no replies");
+        assert!(super::organizer_hears(Some(&services)), "the server has said it sends them");
     }
 
     #[test]

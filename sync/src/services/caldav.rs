@@ -128,10 +128,13 @@ impl<D: DavApi> CalDav<D> {
     }
 
     /// Whether an answer to an invitation reaches its organizer: always
-    /// with mail to send the REPLY, and otherwise unless the server has
-    /// said it leaves the REPLY to the client.
+    /// with mail to send the REPLY, and otherwise only once the server has
+    /// said it sends the REPLY itself. Before the first calendar read, or
+    /// from a server that does not answer the question, the window warns
+    /// that nobody will hear: a note typed for an organizer who never
+    /// gets it would look sent.
     pub fn tells_organizer(&self) -> bool {
-        self.mail.serves_mail() || locked(&self.schedules).unwrap_or(true)
+        self.mail.serves_mail() || locked(&self.schedules).unwrap_or(false)
     }
 
     /// The addresses the account goes by on an event: the ones it was
@@ -366,7 +369,7 @@ impl<D: DavApi> CalendarService for CalDav<D> {
         let found = self.api.collections(&home, Kind::Calendar).await.map_err(|e| self.err(e))?;
         // The window says before an answer whether its organizer will
         // hear of it, which only an account without mail has to ask. A
-        // server that does not say leaves the question open.
+        // server that does not say is taken to send nothing.
         if !self.mail.serves_mail() {
             let _ = self.server_schedules(&home).await;
         }

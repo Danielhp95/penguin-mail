@@ -136,8 +136,10 @@ no mail, so it is listed nowhere in the mail window. The button beside its
 heading in the calendar's sidebar signs it in again or removes it. An
 invitation you answer there reaches its organizer when the server sends
 replies itself, as Nextcloud does; on a server that does not, the answer is
-saved on your calendar and Penguin Mail says nobody was told. Propose New
-Time goes out as mail, so it is not offered on these invitations.
+saved on your calendar and Penguin Mail says nobody was told. Until the
+server has said which it does, as it does when the calendar first reads,
+Penguin Mail says nobody will be told. Propose New Time goes out as mail,
+so it is not offered on these invitations.
 
 Adding a Google account asks for every permission Penguin Mail uses in that one
 visit, so you never see a second consent screen for automatic replies and

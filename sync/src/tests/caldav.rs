@@ -455,7 +455,7 @@ async fn an_answer_with_no_mail_reaches_the_organizer_only_through_a_server_that
     for schedules in [false, true] {
         let (dav, caldav) = alone(&[ME]).await;
         dav.set_auto_schedule(schedules);
-        assert!(caldav.tells_organizer(), "until the server has said whether it schedules");
+        assert!(!caldav.tells_organizer(), "not until the server has said that it schedules");
         let event = caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
         assert_eq!(event.my_answer, Some(Answer::Yes));
         assert!(dav.body(&format!("{WORK}standup.ics")).unwrap().contains("PARTSTAT=ACCEPTED"));
@@ -504,7 +504,7 @@ async fn a_scheduling_question_turned_away_is_not_a_refused_login() {
     dav.with(|s| s.refuse_options = true);
     assert!(!caldav.calendars().await.unwrap().is_empty());
     assert_eq!(caldav.login_refused(), None);
-    assert!(caldav.tells_organizer(), "a server that does not say leaves the question open");
+    assert!(!caldav.tells_organizer(), "a server that does not say is taken to send nothing");
 }
 
 #[tokio::test]
