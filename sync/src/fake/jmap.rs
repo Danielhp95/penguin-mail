@@ -1605,7 +1605,7 @@ impl JmapApi for FakeJmap {
 
     async fn quotas(&self) -> Answer<Vec<Quota>> {
         self.called("Quota/get");
-        self.with(|s| match s.session.offers(QUOTA) {
+        self.with(|s| match s.session.mail_quota_account().is_some() {
             true => Ok(s.quotas.clone()),
             false => Err(JmapError::UnknownCapability(QUOTA.into())),
         })

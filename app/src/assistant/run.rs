@@ -25,9 +25,10 @@ use mailrs_domain::{
 use mailrs_store::{Db, messages};
 use mailrs_sync::mailbox::Standard;
 use mailrs_sync::{
-    AccountSettings, AccountSync, Accounts, AutomaticReply, BackendError, Calendar, Categorized, Failure,
-    History, Invitations, Loaded, MailAction, MailActions, MailBackend, Mailbox, Mailboxes, Missing,
-    MovedFrom, NewLabels, Outcome, Permitted, Scope, SyncError, TriageAction, View,
+    AccountSettings, AccountSync, Accounts, AutomaticReply, BackendError, Calendar, Categorized,
+    Failure, History, Invitations, Loaded, MailAction, MailActions, MailBackend, Mailbox,
+    Mailboxes, Missing, MovedFrom, NewLabels, Outcome, Permitted, Scope, SyncError, TriageAction,
+    View,
 };
 use serde_json::{Value, json};
 
@@ -764,6 +765,7 @@ impl<A: Accounts> Tools<A> {
             "now": Local::now().format("%A %Y-%m-%d %H:%M").to_string(),
             "accounts": accounts,
             "default_account": settings.default_account,
+            "account_defaults": settings.account_defaults,
             "vips": settings.vips.keys().collect::<Vec<_>>(),
             "mailbox_on_screen": screen.mailbox,
             "open_conversation": open,
@@ -888,7 +890,10 @@ impl<A: Accounts> Tools<A> {
                 let wanted = text(input, "label").ok_or("`label` is missing")?;
                 let labels = self.desk.labels();
                 let mut found = Vec::new();
-                for (id, all) in labels.iter().filter(|(id, _)| scope.is_none_or(|a| a.id == **id)) {
+                for (id, all) in labels
+                    .iter()
+                    .filter(|(id, _)| scope.is_none_or(|a| a.id == **id))
+                {
                     for label in all.iter().filter(|l| l.name.eq_ignore_ascii_case(&wanted)) {
                         if let Some(answer) = self.label_unavailable(*id, label) {
                             return Ok(Named::Unavailable(answer));
@@ -912,9 +917,9 @@ impl<A: Accounts> Tools<A> {
     fn label_unavailable(&self, account_id: AccountId, label: &Label) -> Option<Value> {
         let stands_for_a_set =
             label.kind == LabelKind::System && Standard::from_key(&label.id).is_none();
-        (stands_for_a_set && self.modules.accounts.services(account_id).is_none()).then(|| {
-            json!({"unavailable": format!("{} is not syncing yet.", self.email_of(account_id))})
-        })
+        (stands_for_a_set && self.modules.accounts.services(account_id).is_none()).then(
+            || json!({"unavailable": format!("{} is not syncing yet.", self.email_of(account_id))}),
+        )
     }
 
     async fn search(&self, input: &Value) -> ToolResult {
@@ -1049,9 +1054,11 @@ impl<A: Accounts> Tools<A> {
         };
         let name = required(from, "mailbox")?;
         match self.named_mailboxes(&name, from, None)? {
-            Named::Found(mailboxes) => Ok(mailboxes
-                .iter()
-                .fold(MovedFrom::nowhere(), |all, mailbox| all.and(mailbox.moved_from()))),
+            Named::Found(mailboxes) => {
+                Ok(mailboxes.iter().fold(MovedFrom::nowhere(), |all, mailbox| {
+                    all.and(mailbox.moved_from())
+                }))
+            }
             Named::Unavailable(answer) => Err(answer["unavailable"]
                 .as_str()
                 .unwrap_or("That mailbox cannot be read now.")
@@ -1110,7 +1117,9 @@ impl<A: Accounts> Tools<A> {
             .map(|t| t.account_id)
             .find(|id| !self.offers(*id).labels);
         if let Some(account_id) = in_folders {
-            return self.move_by_label(targets, account_id, &add, &remove, from).await;
+            return self
+                .move_by_label(targets, account_id, &add, &remove, from)
+                .await;
         }
         let plan = NewLabels::plan(&targets, &add, &remove, |account_id| {
             self.labels_of(account_id)
@@ -1728,7 +1737,11 @@ impl<A: Accounts> Tools<A> {
             let site = text(input, "site").unwrap_or_default();
             let account_id = account.id;
             let made = self
-                .call(async move { settings.create_masked_address(account_id, &site, &note).await })
+                .call(async move {
+                    settings
+                        .create_masked_address(account_id, &site, &note)
+                        .await
+                })
                 .await?;
             self.effects.copy(&made.email);
             return Ok(json!({"address": made.email, "masked": true, "copied": true}));

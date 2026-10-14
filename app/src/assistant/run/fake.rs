@@ -303,11 +303,13 @@ impl Effects for FakeEffects {
     }
 
     fn new_draft(&self, account_id: AccountId) -> Result<Draft, String> {
+        let account = self.desk.accounts().into_iter().find(|account| account.id == account_id)
+            .ok_or("Add an account first.")?;
         Ok(Draft::new(
             account_id,
             Address {
                 name: Some("Dana".into()),
-                email: ME.into(),
+                email: account.email,
             },
         ))
     }

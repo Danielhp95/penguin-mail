@@ -27,6 +27,8 @@ assistant on the right. Ask it about your mail in plain words:
 - "Always load images from Trail Notes."
 - "Save this thread as an mbox in my Documents folder."
 
+Choose the assistant's default account under **Preferences > Accounts > Defaults by Task**. New drafts follow **Assistant Actions**, replies follow **Replies**, forwards follow **Forwards**, and new events follow **Calendar Events**. Naming an account in your request takes precedence. Existing drafts and events keep their accounts.
+
 It reads mail with the same tools you use: it lists mailboxes, searches
 each account's server, and reads conversations. On an account from
 another provider it files mail in folders, and when you ask for
@@ -92,7 +94,7 @@ A message it drafts opens in a composer for you to finish. One it sends
 waits for you to allow it, and the question names every recipient, the
 blind copies, the files, and whether it goes out signed or encrypted.
 Replies use a configured sender address matching the original To or Cc,
-including suffixes enabled in the account's group under Preferences > Writing.
+including suffixes enabled under Preferences > Accounts > Addresses You Send From.
 
 Signing and encrypting follow your settings under Preferences unless you
 ask otherwise. It encrypts only when it has a key or certificate for

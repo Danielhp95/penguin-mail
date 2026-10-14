@@ -38,9 +38,9 @@ const BLOCK_REMOTE_RULES: &str = r#"[
 mod announce;
 mod calendar_file;
 mod composing;
+mod dictionaries;
 mod dock_badge;
 mod hidden;
-mod dictionaries;
 mod reminders;
 mod sending;
 mod storage;
@@ -598,8 +598,14 @@ impl App {
                 sender.name = self.names.borrow().get(&account_id).cloned();
             }
         }
-        let mail = self.core.account(account_id).map(|sync| sync.services().mail.clone());
-        let masked = |email: &str| mail.as_ref().is_some_and(|mail| mail.is_masked(email) == Some(true));
+        let mail = self
+            .core
+            .account(account_id)
+            .map(|sync| sync.services().mail.clone());
+        let masked = |email: &str| {
+            mail.as_ref()
+                .is_some_and(|mail| mail.is_masked(email) == Some(true))
+        };
         crate::compose::reply_addresses(&senders, original, masked)
     }
 
@@ -718,9 +724,12 @@ impl App {
         self.refresh_send_as(std::slice::from_ref(account));
     }
 
-    /// Every account, in the order the store lists them.
+    /// Every account in the order chosen in Preferences or the sidebar.
     pub fn accounts(&self) -> Vec<Account> {
-        self.accounts.borrow().clone()
+        let mut accounts = self.accounts.borrow().clone();
+        let settings = self.settings.borrow();
+        accounts.sort_by_key(|account| settings.account_rank(&account.email));
+        accounts
     }
 
     pub fn account(&self, account_id: AccountId) -> Option<Account> {
@@ -763,7 +772,7 @@ impl App {
     /// shown up as a stray unnamed control to a screen reader already
     /// walking the page.
     pub async fn reload_accounts(self: &Rc<Self>) -> anyhow::Result<Vec<(Account, Vec<Label>)>> {
-        let (loaded, order, consent, through_browser) = self
+        let (mut loaded, order, consent, through_browser) = self
             .core
             .read(|c| {
                 let mut out: Vec<(Account, Vec<Label>)> = Vec::new();
@@ -784,11 +793,13 @@ impl App {
                 Ok((out, order, consent, through_browser))
             })
             .await?;
+        loaded.sort_by_key(|(account, _)| self.settings.borrow().account_rank(&account.email));
         *self.label_order.borrow_mut() = order;
         *self.through_browser.borrow_mut() = through_browser;
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
-        self.unread.set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
+        self.unread
+            .set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -859,9 +870,17 @@ impl App {
             if !sync.services().offers().masked_email {
                 continue;
             }
-            let (core, settings, id) = (Rc::clone(&self.core), self.core.gmail_settings(), account.id);
+            let (core, settings, id) = (
+                Rc::clone(&self.core),
+                self.core.gmail_settings(),
+                account.id,
+            );
             glib::spawn_future_local(async move {
-                if core.call(async move { settings.masked_addresses(id).await }).await.is_err() {
+                if core
+                    .call(async move { settings.masked_addresses(id).await })
+                    .await
+                    .is_err()
+                {
                     tracing::warn!(account = id, "could not list the masked addresses");
                 }
             });
@@ -1074,13 +1093,18 @@ impl App {
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
             let copy = this.core.calendar_copy();
-            let sent = this.core.call(async move { copy.send(account_id).await }).await;
+            let sent = this
+                .core
+                .call(async move { copy.send(account_id).await })
+                .await;
             let Some(window) = this.window() else { return };
             match sent {
-                Ok(turned_down) => window.calendar_refreshed(&mailrs_sync::calendar_copy::Refreshed {
-                    turned_down,
-                    ..mailrs_sync::calendar_copy::Refreshed::default()
-                }),
+                Ok(turned_down) => {
+                    window.calendar_refreshed(&mailrs_sync::calendar_copy::Refreshed {
+                        turned_down,
+                        ..mailrs_sync::calendar_copy::Refreshed::default()
+                    })
+                }
                 Err(err) => tracing::info!(%err, "calendar changes wait for the next try"),
             }
         });
@@ -1197,10 +1221,13 @@ impl App {
         // when the main window is closed or a composer has the focus.
         #[cfg(target_os = "macos")]
         for name in ["preferences", "about"] {
-            add(name, Box::new(move |app| {
-                let window = app.show_window();
-                let _ = window.window.activate_action(&format!("win.{name}"), None);
-            }));
+            add(
+                name,
+                Box::new(move |app| {
+                    let window = app.show_window();
+                    let _ = window.window.activate_action(&format!("win.{name}"), None);
+                }),
+            );
         }
         let compose_to = gio::SimpleAction::new("compose-to", Some(glib::VariantTy::STRING));
         let weak = Rc::downgrade(self);
@@ -1213,7 +1240,8 @@ impl App {
         });
         self.gio.add_action(&compose_to);
         // A byte string, so a file name that is not UTF-8 arrives whole.
-        let open_file = gio::SimpleAction::new("open-calendar-file", Some(glib::VariantTy::BYTE_STRING));
+        let open_file =
+            gio::SimpleAction::new("open-calendar-file", Some(glib::VariantTy::BYTE_STRING));
         let weak = Rc::downgrade(self);
         open_file.connect_activate(move |_, parameter| {
             if let (Some(app), Some(path)) =
@@ -1332,7 +1360,9 @@ impl App {
                         Some(&pressed.to_variant()),
                     );
                 }
-                self.issued.borrow_mut().issue(token.clone(), target, notice.buttons);
+                self.issued
+                    .borrow_mut()
+                    .issue(token.clone(), target, notice.buttons);
             }
             self.gio.send_notification(Some(&token), &notification);
         }
@@ -1372,7 +1402,12 @@ impl App {
         };
         let outcome = self
             .core
-            .act(vec![target], action.clone(), History::Record, MovedFrom::nowhere())
+            .act(
+                vec![target],
+                action.clone(),
+                History::Record,
+                MovedFrom::nowhere(),
+            )
             .await;
         self.tell_window(Notice::MailChanged {
             action: &action,
@@ -1469,7 +1504,9 @@ impl App {
                             this.ask_to_replace(account_id, &script);
                         }
                     }
-                    Err(err) => tracing::info!(account = account_id, %err, "rule changes still wait"),
+                    Err(err) => {
+                        tracing::info!(account = account_id, %err, "rule changes still wait")
+                    }
                 }
             }
         });

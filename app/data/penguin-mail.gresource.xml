@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
   <gresource prefix="/io/github/c9dev/PenguinMail">
+    <file>icons/scalable/actions/penguin-mail-chevron-up-symbolic.svg</file>
+    <file>icons/scalable/actions/penguin-mail-chevron-down-symbolic.svg</file>
+    <file>icons/scalable/actions/penguin-mail-chevron-right-symbolic.svg</file>
+    <file>icons/scalable/actions/penguin-mail-move-up-symbolic.svg</file>
+    <file>icons/scalable/actions/penguin-mail-move-down-symbolic.svg</file>
     <file>icons/scalable/actions/penguin-mail-inbox-symbolic.svg</file>
     <file>icons/scalable/actions/penguin-mail-archive-symbolic.svg</file>
     <file>icons/scalable/actions/penguin-mail-all-mail-symbolic.svg</file>

@@ -1884,6 +1884,9 @@ async fn seed_fastmail(
         })
         .await?;
     let imap = Arc::new(FakeImap::new());
+    imap.with(|data| data.quota = vec![mailrs_imap::QuotaUse {
+        root: String::new(), resource: "STORAGE".into(), usage: 3_145_728, limit: 10_485_760,
+    }]);
     for name in FOLDERS {
         imap.add_mailbox(name, None);
     }
@@ -2751,6 +2754,7 @@ mod tests {
         assert!(!offers.categories);
         assert!(offers.calendar && offers.contacts && offers.rules);
         assert!(!offers.auto_reply, "Fastmail runs no ManageSieve here");
+        assert_eq!(demo.mail.services(id).unwrap().mail.storage().await.unwrap(), mailrs_sync::Storage::new(3 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024, None));
     }
 
     #[tokio::test]

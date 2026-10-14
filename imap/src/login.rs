@@ -13,6 +13,7 @@ use crate::refusal::MAX_ERROR_TEXT;
 pub struct Login {
     pub user: String,
     pub password: String,
+    pub(crate) oauth: bool,
 }
 
 impl Login {
@@ -20,14 +21,27 @@ impl Login {
         Login {
             user: user.into(),
             password: password.into(),
+            oauth: false,
         }
     }
+    /// An OAuth access token for an IMAP connection.
+    pub fn bearer(user: impl Into<String>, token: impl Into<String>) -> Self {
+        let mut login = Self::new(user, token);
+        login.oauth = true;
+        login
+    }
+
 }
 
 /// What stands where the password was.
 const HIDDEN: &str = "<hidden>";
 
 impl Login {
+    pub(crate) fn bearer_response(&self) -> String {
+        let user = self.user.replace('=', "=3D").replace(',', "=2C");
+        format!("n,a={user},\x01auth=Bearer {}\x01\x01", self.password)
+    }
+
     /// `text` with the password taken out, in every form a server could
     /// repeat it: as typed, as LOGIN quotes it, as Debug escapes either of
     /// those, and in the base64 that AUTH PLAIN and AUTH LOGIN send. Server text goes
@@ -65,6 +79,7 @@ impl Login {
             password.escape_debug().to_string(),
             password.clone(),
         ];
+        if self.oauth { secrets.push(BASE64.encode(self.bearer_response())); }
         secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
         secrets.dedup();
         secrets
@@ -134,6 +149,13 @@ mod tests {
     use super::Login;
     use crate::refusal::MAX_ERROR_TEXT;
     use crate::testing::forms;
+
+    #[test]
+    fn a_server_cannot_repeat_the_encoded_bearer_token_in_an_error() {
+        let login = Login::bearer("ann@example.com", "sensitive-token");
+        let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, login.bearer_response());
+        assert_eq!(login.hide(&format!("NO rejected {encoded}")), "NO rejected <hidden>");
+    }
 
     #[test]
     fn hide_takes_out_every_form_of_the_password() {

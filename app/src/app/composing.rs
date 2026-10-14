@@ -11,7 +11,7 @@ use mailrs_domain::{Account, AccountId};
 
 use super::App;
 use crate::compose::Draft;
-use crate::settings::Change;
+use crate::settings::{AccountUse, Change};
 use crate::ui::composer::{Composer, Remembered, Writing};
 
 /// Whether a message gets the signature of the address it comes from.
@@ -39,7 +39,7 @@ fn choose_account(
                 .find(|a| a.email.eq_ignore_ascii_case(email))
                 .map(|a| a.id)
         })
-        .or(hint)
+        .or_else(|| hint.filter(|id| accounts.iter().any(|account| account.id == *id)))
         .or_else(|| accounts.first().map(|a| a.id))
 }
 
@@ -47,8 +47,16 @@ impl App {
     /// The account a new message comes from. `hint` is the account the
     /// window shows, when it shows one.
     pub fn default_account(&self, hint: Option<AccountId>) -> Option<AccountId> {
-        let preferred = self.settings.borrow().default_account.clone();
-        choose_account(&self.accounts.borrow(), preferred.as_deref(), hint)
+        self.account_for(AccountUse::NewMessages, hint)
+    }
+
+    /// Applies a task default while keeping a live contextual account as fallback.
+    pub fn account_for(&self, task: AccountUse, hint: Option<AccountId>) -> Option<AccountId> {
+        let settings = self.settings.borrow();
+        let accounts = self.accounts();
+        let emails: Vec<_> = accounts.iter().map(|account| account.email.as_str()).collect();
+        let preferred = settings.preferred_live_account(task, &emails);
+        choose_account(&accounts, preferred, hint)
     }
 
     /// A blank message from the account, carrying its identity.

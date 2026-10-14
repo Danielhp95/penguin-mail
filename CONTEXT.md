@@ -4,6 +4,8 @@ Terms the code and its docs use for Gmail mail. The `domain` crate holds the cod
 
 ## Glossary
 
+**Account defaults**: the account choices in Preferences for new messages, replies, forwards, calendar events, assistant actions and startup. Each task keeps its context automatically, follows the general default, or uses a chosen account. The all-tasks switch uses the general default without erasing individual choices. An explicit account in a composer or assistant request takes precedence. `mailrs::settings::AccountDefaults`, `AccountChoice`, `AccountUse`.
+
 **Dock badge**: the unread All Inboxes count on the macOS app icon, updated while the app runs even when its main window is closed. It disappears at zero. `mailrs::app::dock_badge` only draws the number the unread counts hand it.
 
 **Unread counts**: the counts the sidebar, the space badge, the tray and the Dock badge show, made once per burst of changes in one grouped read of local mail and the servers' own counts, and handed to each of them, so the tray says what the sidebar says. The app asks for every account's inbox and All Inboxes; the main window adds the mailboxes its sidebar shows. A server's answer arriving or growing old reads only the answers already kept unless the window is open, so the tray and the Dock add no polling. `mailrs::unread::Unread`. _Avoid_: badge count, tray count.

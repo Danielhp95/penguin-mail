@@ -12,35 +12,36 @@ use crate::app::App;
 use crate::compose::{SendAsAddress, Suffixes};
 use crate::settings::Change;
 
-pub fn groups(app: &Rc<App>, accounts: &[Account], page: &adw::PreferencesPage) {
-    for account in accounts
-        .iter()
-        .filter(|a| matches!(a.provider, Provider::Imap | Provider::Pop3))
-    {
-        // One group per account, so the address is the heading people
-        // scan; a shared "Sender Addresses" heading repeated for each.
-        let group = adw::PreferencesGroup::builder()
-            .title(glib::markup_escape_text(&account.email))
-            .description(gettext("Addresses you send from with this account"))
+pub fn account_row(app: &Rc<App>, account: &Account) -> adw::ExpanderRow {
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
+        .use_markup(false)
+        .title(gettext("Addresses You Send From"))
+        .build());
+    let editable = matches!(account.provider, Provider::Imap | Provider::Pop3);
+    let list = Rc::new(List {
+        app: Rc::downgrade(app),
+        group: row.downgrade(),
+        account: account.email.clone(),
+        editable,
+        rows: RefCell::new(Vec::new()),
+    });
+    list.fill();
+    if editable {
+        let add = gtk::Button::builder()
+            .label(gettext("Add Address"))
+            .valign(gtk::Align::Center)
             .build();
-        let add = gtk::Button::with_label(&gettext("Add Address"));
-        group.set_header_suffix(Some(&add));
-        let list = Rc::new(List {
-            app: Rc::downgrade(app),
-            group: group.downgrade(),
-            account: account.email.clone(),
-            rows: RefCell::new(Vec::new()),
-        });
-        list.fill();
+        row.add_suffix(&add);
         add.connect_clicked(move |_| list.edit(None));
-        page.add(&group);
     }
+    row
 }
 
 struct List {
     app: Weak<App>,
-    group: glib::WeakRef<adw::PreferencesGroup>,
+    group: glib::WeakRef<adw::ExpanderRow>,
     account: String,
+    editable: bool,
     rows: RefCell<Vec<adw::ActionRow>>,
 }
 
@@ -52,7 +53,15 @@ impl List {
         for row in self.rows.take() {
             group.remove(&row);
         }
-        for sender in app.settings().senders(&self.account) {
+        let senders = app.settings().senders(&self.account);
+        group.set_subtitle(
+            &senders
+                .iter()
+                .map(|sender| sender.email.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        for sender in senders {
             let row = adw::ActionRow::builder()
                 .title(&sender.email)
                 .subtitle(if sender.default {
@@ -61,16 +70,18 @@ impl List {
                     sender.name.clone().unwrap_or_default()
                 })
                 .use_markup(false)
-                .activatable(true)
+                .activatable(self.editable)
                 .build();
             let weak = Rc::downgrade(self);
             row.connect_activated(move |_| {
-                if let Some(list) = weak.upgrade() {
+                if let Some(list) = weak.upgrade().filter(|list| list.editable) {
                     list.edit(Some(sender.clone()));
                 }
             });
-            row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-            group.add(&row);
+            if self.editable {
+                row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+            }
+            group.add_row(&row);
             self.rows.borrow_mut().push(row);
         }
     }

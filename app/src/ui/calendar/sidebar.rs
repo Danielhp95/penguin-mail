@@ -1119,8 +1119,8 @@ impl CalendarSidebar {
 
 fn chevron_icon(folded: bool) -> &'static str {
     match folded {
-        true => "pan-end-symbolic",
-        false => "pan-down-symbolic",
+        true => "penguin-mail-chevron-right-symbolic",
+        false => "penguin-mail-chevron-down-symbolic",
     }
 }
 

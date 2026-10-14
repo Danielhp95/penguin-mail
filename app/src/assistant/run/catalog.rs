@@ -170,7 +170,7 @@ fn account(description: &str) -> Value {
 
 fn message_fields() -> Value {
     json!({
-        "account": account("Account to send from. Defaults to the one the reply goes to, else the default account."),
+        "account": account("Account to send from. An explicit account overrides Preferences. When omitted, use the reply, forward or assistant account default for this task. reply_to.account and forward.account identify the source account, not the outgoing account."),
         "to": {"type": "array", "items": {"type": "string"}, "description": "Recipients, as addresses or \"Name <address>\"."},
         "cc": {"type": "array", "items": {"type": "string"}},
         "bcc": {"type": "array", "items": {"type": "string"}, "description": "Blind copies: the other recipients do not see these."},
@@ -1027,7 +1027,7 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
                 json!({
                     "from": {"type": "string", "description": "Local time as YYYY-MM-DDTHH:MM, or a day as YYYY-MM-DD for its start."},
                     "to": {"type": "string", "description": "Local time as YYYY-MM-DDTHH:MM, or a day as YYYY-MM-DD, which counts in full."},
-                    "account": account("The calendar's account. Defaults to the default account.")
+                    "account": account("The calendar's account. Defaults to the assistant account choice in Preferences.")
                 })
             },
             required: &["from", "to"],
@@ -1045,7 +1045,7 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
                     "day_starts": {"type": "string", "description": "HH:MM. Defaults to the working hours set in Preferences."},
                     "day_ends": {"type": "string", "description": "HH:MM. Defaults to the working hours set in Preferences."},
                     "weekends": {"type": "boolean", "description": "Include days outside the working days set in Preferences. Defaults to false."},
-                    "account": account("The calendar's account. Defaults to the default account.")
+                    "account": account("The calendar's account. Defaults to the assistant account choice in Preferences.")
                 })
             },
             required: &["from", "to", "minutes"],
@@ -1072,7 +1072,7 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
                     "attendees": {"type": "array", "items": {"type": "string"}, "description": "Guests' addresses. The calendar's server emails each an invitation."},
                     "location": {"type": "string"},
                     "description": {"type": "string"},
-                    "account": account("The calendar's account. Defaults to the default account.")
+                    "account": account("The outgoing calendar account. When omitted, use the Calendar Events default in Preferences, then the last eligible calendar account or first writable account.")
                 })
             },
             required: &["title", "start", "end"],
@@ -1092,7 +1092,7 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
                     "attendees": {"type": "array", "items": {"type": "string"}},
                     "location": {"type": "string"},
                     "description": {"type": "string"},
-                    "account": account("The calendar's account. Defaults to the default account.")
+                    "account": account("The calendar's account. Defaults to the assistant account choice in Preferences.")
                 })
             },
             required: &["id"],
@@ -1106,7 +1106,7 @@ pub(super) fn catalog<A: Accounts>() -> Vec<MailTool<A>> {
                 json!({
                     "id": {"type": "string"},
                     "title": {"type": "string", "description": "The event's title, for the confirmation."},
-                    "account": account("The calendar's account. Defaults to the default account.")
+                    "account": account("The calendar's account. Defaults to the assistant account choice in Preferences.")
                 })
             },
             required: &["id"],
@@ -1189,8 +1189,14 @@ mod tests {
     #[test]
     fn rules_are_not_said_to_belong_to_gmail_alone() {
         let prompt = crate::assistant::SYSTEM_PROMPT;
-        assert!(!prompt.contains("filters belong to Gmail accounts"), "{prompt}");
-        let rules = specs().into_iter().find(|t| t.name == "list_rules").unwrap();
+        assert!(
+            !prompt.contains("filters belong to Gmail accounts"),
+            "{prompt}"
+        );
+        let rules = specs()
+            .into_iter()
+            .find(|t| t.name == "list_rules")
+            .unwrap();
         assert!(!rules.description.contains("the filters of a Gmail account"));
     }
 

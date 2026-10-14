@@ -1,3 +1,5 @@
+mod storage;
+
 use std::sync::Arc;
 use std::future::Future;
 use std::time::Duration;
@@ -780,7 +782,12 @@ pub(crate) async fn jmap_services<P: PasswordStore + 'static>(
         // go on running here, beside it, and the Rules dialog lists both.
         local_kept,
     };
-    Ok(AccountServices::jmap_from(client, settings, beside))
+    let fallback = storage::fastmail(&saved.session_url, bearer);
+    let mut services = AccountServices::jmap_from(client, settings, beside);
+    if let (crate::services::AnyMail::Jmap(mail), Some(read)) = (&mut services.mail, fallback) {
+        *mail = mail.clone().with_storage_fallback(read);
+    }
+    Ok(services)
 }
 
 /// How a CalDAV, CardDAV or ManageSieve server beside a JMAP session

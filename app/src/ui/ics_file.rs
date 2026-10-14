@@ -187,7 +187,7 @@ fn show_events(
         let note = gtk::Label::builder()
             .label(gettext(
                 "No account here has a calendar Penguin Mail can add to. Add an account with \
-                 a calendar, or turn one on in Preferences, under Contacts & Calendar, then \
+                 a calendar, or turn one on in Preferences, under Calendar, then \
                  open the file again.",
             ))
             .wrap(true)

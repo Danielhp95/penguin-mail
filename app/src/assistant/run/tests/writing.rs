@@ -81,6 +81,46 @@ async fn with_ciphertext() -> Harness {
     h
 }
 
+#[tokio::test]
+async fn a_reply_default_changes_the_outgoing_account_and_keeps_source_headers() {
+    let h = Harness::with_second(mail(), vec![]).await;
+    h.desk.0.borrow_mut().settings.account_defaults.replies =
+        crate::settings::AccountChoice::Account(super::super::fake::YOU.into());
+    h.ok(
+        "draft_email",
+        json!({
+            "to": ["ann@example.com"], "body": "Friday works.",
+            "reply_to": {"account": ME, "thread_id": "t3"},
+        }),
+    )
+    .await;
+    let asked = h.asked();
+    let draft = &asked.composed[0];
+    assert_eq!(draft.from.email, super::super::fake::YOU);
+    assert_ne!(draft.account_id, h.account_id);
+    assert!(draft.thread_id.is_none());
+    assert_eq!(draft.in_reply_to.as_deref(), Some("<m4@example.com>"));
+    assert_eq!(draft.references, ["<m3@example.com>", "<m4@example.com>"]);
+    assert_eq!(draft.subject, "Re: Fern cuttings");
+}
+
+#[tokio::test]
+async fn an_explicit_sending_account_wins_over_the_reply_default() {
+    let h = Harness::with_second(mail(), vec![]).await;
+    h.desk.0.borrow_mut().settings.account_defaults.replies =
+        crate::settings::AccountChoice::Account(super::super::fake::YOU.into());
+    h.ok(
+        "draft_email",
+        json!({
+            "account": ME, "to": ["ann@example.com"], "body": "Friday works.",
+            "reply_to": {"account": ME, "thread_id": "t3"},
+        }),
+    )
+    .await;
+    assert_eq!(h.asked().composed[0].account_id, h.account_id);
+    assert_eq!(h.asked().composed[0].thread_id.as_deref(), Some("t3"));
+}
+
 // ---- Blind copies, files and forwards ------------------------------------
 
 #[tokio::test]
@@ -291,7 +331,10 @@ async fn a_draft_with_a_file_on_this_computer_asks_first() {
             "Put a file from this computer in a draft?\n\nFrom this computer: {shown}"
         )]
     );
-    assert_eq!(&asked.composed[0].attachments[0].data[..], b"Meet at the hill.");
+    assert_eq!(
+        &asked.composed[0].attachments[0].data[..],
+        b"Meet at the hill."
+    );
 }
 
 #[tokio::test]
@@ -671,7 +714,10 @@ async fn an_encrypted_draft_is_changed_and_saved_encrypted_again() {
     assert!(saved.encrypt && saved.sign, "both switches come back on");
     assert_eq!(saved.to, [address("bo@example.com")]);
     assert_eq!(saved.markdown.trim(), "Swap on Sunday?");
-    assert_eq!(&saved.attachments[0].data[..], b"Maidenhair, hart's tongue.");
+    assert_eq!(
+        &saved.attachments[0].data[..],
+        b"Maidenhair, hart's tongue."
+    );
 }
 
 #[tokio::test]

@@ -14,12 +14,16 @@ impl<I: ImapApi, S: Submit> Imap<I, S> {
             return Ok(None);
         }
         let uses = self.api.quota_root("INBOX").await?;
-        Ok(uses
-            .iter()
-            .filter(|u| u.resource == "STORAGE" && u.limit > 0)
-            .min_by_key(|u| u.limit.saturating_sub(u.usage))
-            .and_then(|u| Storage::new(u.usage.saturating_mul(KIB), u.limit.saturating_mul(KIB), None)))
+        Ok(from_quotas(&uses))
     }
+}
+
+/// The tightest byte quota on INBOX, converting IMAP's KiB units to bytes.
+pub(crate) fn from_quotas(uses: &[mailrs_imap::QuotaUse]) -> Option<Storage> {
+    uses.iter()
+        .filter(|u| u.resource == "STORAGE" && u.limit > 0)
+        .min_by_key(|u| u.limit.saturating_sub(u.usage))
+        .and_then(|u| Storage::new(u.usage.saturating_mul(KIB), u.limit.saturating_mul(KIB), None))
 }
 
 #[cfg(test)]

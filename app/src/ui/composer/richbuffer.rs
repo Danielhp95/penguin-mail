@@ -552,7 +552,11 @@ pub fn insert(buffer: &gtk::TextBuffer, body: &RichBody) {
         if index > 0 {
             buffer.insert(&mut at, "\n");
         }
-        let kind = if index == 0 && !empty { here } else { block.kind };
+        let kind = if index == 0 && !empty {
+            here
+        } else {
+            block.kind
+        };
         lines.push((at.line(), kind));
         insert_spans(buffer, &mut at, &block.spans, kind);
     }
@@ -906,6 +910,9 @@ mod tests {
         crate::ui::calendar::popover::checks::run();
         crate::ui::calendar::attachments::checks::run();
         crate::ui::checks::run();
+        crate::ui::disclosure::checks::run();
+        crate::ui::preferences::space::checks::run();
+        crate::ui::preferences::dialog::checks::run();
         crate::ui::copied::checks::run();
         crate::ui::add_account::checks::run();
         // The extraction script needs a real engine to run in, and this
@@ -920,7 +927,7 @@ mod tests {
     /// on somebody's newsletter.
     fn an_unsubscribe_page_reads_back_as_its_fixture() {
         use crate::unsubscribe_page::{
-            Browser, Outcome, PageForm, Pick, PageBrowser, finish, pick, prepare, says_done,
+            Browser, Outcome, PageBrowser, PageForm, Pick, finish, pick, prepare, says_done,
         };
 
         const DIR: &str = concat!(
@@ -1147,7 +1154,14 @@ mod tests {
     fn a_picture_gdk_cannot_read_itself_waits_in_a_placeholder() {
         let (view, buffer, mut anchors) = buffer();
         let mut at = buffer.end_iter();
-        insert_image(&view, &mut at, "odd@mailrs", "odd", b"plain words", &mut anchors);
+        insert_image(
+            &view,
+            &mut at,
+            "odd@mailrs",
+            "odd",
+            b"plain words",
+            &mut anchors,
+        );
         assert_eq!(anchors.len(), 1, "the picture has its place in the text");
         let picture = anchors[0]
             .anchor

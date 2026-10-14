@@ -17,7 +17,9 @@ const MOST_KEPT: usize = 26;
 pub fn widen_value(row: &adw::ComboRow) {
     let shown = gtk::SignalListItemFactory::new();
     shown.connect_setup(|_, item| {
-        let Some(item) = item.downcast_ref::<gtk::ListItem>() else { return };
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
         let label = gtk::Label::builder()
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -25,9 +27,12 @@ pub fn widen_value(row: &adw::ComboRow) {
         item.set_child(Some(&label));
     });
     shown.connect_bind(|_, item| {
-        let Some(item) = item.downcast_ref::<gtk::ListItem>() else { return };
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
         if let Some(label) = item.child().and_downcast::<gtk::Label>() {
             let text = text_of(item);
+            item.set_accessible_label(&text);
             // The row shares its width out by what each side asks for at
             // least, and an ellipsizing label asks for one character, so a
             // long subtitle beside it took the room. Asking for the value's
@@ -41,7 +46,9 @@ pub fn widen_value(row: &adw::ComboRow) {
     let listed = gtk::SignalListItemFactory::new();
     let weak = row.downgrade();
     listed.connect_setup(move |_, item| {
-        let Some(item) = item.downcast_ref::<gtk::ListItem>() else { return };
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
         let label = gtk::Label::builder().xalign(0.0).hexpand(true).build();
         let check = gtk::Image::builder()
             .icon_name("object-select-symbolic")
@@ -63,10 +70,16 @@ pub fn widen_value(row: &adw::ComboRow) {
     });
     let weak = row.downgrade();
     listed.connect_bind(move |_, item| {
-        let Some(item) = item.downcast_ref::<gtk::ListItem>() else { return };
-        let Some(line) = item.child().and_downcast::<gtk::Box>() else { return };
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let Some(line) = item.child().and_downcast::<gtk::Box>() else {
+            return;
+        };
+        let text = text_of(item);
+        item.set_accessible_label(&text);
         if let Some(label) = line.first_child().and_downcast::<gtk::Label>() {
-            label.set_label(&text_of(item));
+            label.set_label(&text);
         }
         if let (Some(check), Some(row)) = (line.last_child(), weak.upgrade()) {
             check.set_opacity(chosen(&row, item));

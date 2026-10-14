@@ -21,14 +21,22 @@ use mailrs_domain::translate::{fill, fill_plural, gettext};
 const REFRESH: Duration = Duration::from_secs(2);
 
 /// The group, with an Add Server button and a row per saved server.
-pub fn group(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
+pub fn group(app: &Rc<App>, dialog: &adw::ToastOverlay) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    let section = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(gettext("MCP Servers"))
-        .description(gettext(
-            "Tools from servers you add. The assistant asks before each call, unless \
+        .build());
+    group.add(&section);
+    section.add_row(
+        &adw::ActionRow::builder()
+            .title(gettext("About MCP Servers"))
+            .subtitle(gettext(
+                "Tools from servers you add. The assistant asks before each call, unless \
              you choose Always Allow. A server gets what the assistant sends it.",
-        ))
-        .build();
+            ))
+            .subtitle_lines(0)
+            .build(),
+    );
     let add = gtk::Button::builder()
         .icon_name("list-add-symbolic")
         .valign(gtk::Align::Center)
@@ -36,19 +44,19 @@ pub fn group(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::Preferences
         .tooltip_text(gettext("Add Server"))
         .build();
     crate::ui::name(&add, &gettext("Add Server"));
-    group.set_header_suffix(Some(&add));
+    section.add_suffix(&add);
 
     let list = Rc::new(List {
         app: Rc::downgrade(app),
-        dialog: dialog.clone(),
-        group: group.clone(),
+        dialog: dialog.downgrade(),
+        group: section.downgrade(),
         rows: RefCell::new(Vec::new()),
     });
     list.fill();
     // Rows follow each server as it starts or fails. The timer holds the
     // list weakly and stops once the page is gone.
     let weak = Rc::downgrade(&list);
-    let alive = group.downgrade();
+    let alive = section.downgrade();
     glib::timeout_add_local(REFRESH, move || match (weak.upgrade(), alive.upgrade()) {
         (Some(list), Some(_)) => {
             list.show_status();
@@ -64,26 +72,32 @@ pub fn group(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::Preferences
 
 struct List {
     app: std::rc::Weak<App>,
-    dialog: adw::PreferencesDialog,
-    group: adw::PreferencesGroup,
+    dialog: glib::WeakRef<adw::ToastOverlay>,
+    group: glib::WeakRef<adw::ExpanderRow>,
     rows: RefCell<Vec<(McpServer, adw::ActionRow)>>,
 }
 
 impl List {
     /// Builds a row per saved server, replacing any rows there were.
     fn fill(self: &Rc<Self>) {
-        let Some(app) = self.app.upgrade() else {
+        let (Some(app), Some(group)) = (self.app.upgrade(), self.group.upgrade()) else {
             return;
         };
         for (_, row) in self.rows.take() {
-            self.group.remove(&row);
+            group.remove(&row);
         }
         let servers = app.settings().mcp_servers;
+        group.set_subtitle(&fill_plural(
+            "{count} server",
+            "{count} servers",
+            servers.len(),
+            &[("count", &servers.len().to_string())],
+        ));
         let rows = servers
             .into_iter()
             .map(|server| {
                 let row = self.row(&server);
-                self.group.add(&row);
+                group.add_row(&row);
                 (server, row)
             })
             .collect();
@@ -149,10 +163,12 @@ impl List {
             if let Some(list) = weak.upgrade() {
                 assistant::save_key(&saved.token_key(), "");
                 list.change(Change::RemoveMcpServer(saved.name.clone()));
-                list.dialog.add_toast(crate::ui::toast(&fill(
-                    &gettext("Removed {server}"),
-                    &[("server", &saved.name)],
-                )));
+                if let Some(dialog) = list.dialog.upgrade() {
+                    dialog.add_toast(crate::ui::toast(&fill(
+                        &gettext("Removed {server}"),
+                        &[("server", &saved.name)],
+                    )));
+                }
                 list.fill();
             }
         });
@@ -190,11 +206,11 @@ impl List {
 
     /// Opens the Add Server dialog, or the Edit one for `saved`.
     fn edit(self: &Rc<Self>, saved: Option<McpServer>) {
-        let Some(app) = self.app.upgrade() else {
+        let (Some(app), Some(dialog)) = (self.app.upgrade(), self.dialog.upgrade()) else {
             return;
         };
         let weak = Rc::downgrade(self);
-        editor(&app, &self.dialog, saved, move |was, server, token| {
+        editor(&app, &dialog, saved, move |was, server, token| {
             let Some(list) = weak.upgrade() else { return };
             let key = server.token_key();
             if let Some(old) = was.as_ref().filter(|old| old.name != server.name) {
@@ -239,7 +255,7 @@ fn status_text(status: &Status) -> String {
 /// server as saved, and the token typed for a URL.
 fn editor(
     app: &Rc<App>,
-    parent: &adw::PreferencesDialog,
+    parent: &adw::ToastOverlay,
     saved: Option<McpServer>,
     on_save: impl Fn(Option<McpServer>, McpServer, Option<String>) + 'static,
 ) {

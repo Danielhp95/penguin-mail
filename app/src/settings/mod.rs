@@ -9,10 +9,12 @@ use mailrs_domain::calendar::week::WeekStart;
 use mailrs_domain::translate::{fill_plural, gettext, pgettext};
 use serde::{Deserialize, Serialize};
 
+mod accounts;
 mod change;
 mod file;
 pub mod mcp;
 
+pub use accounts::{AccountChoice, AccountDefaults, AccountUse, preferred_calendar};
 pub use change::{AiChange, Change, Effect, Effects, Setting};
 pub use file::{Opened, Saver};
 
@@ -32,8 +34,10 @@ pub struct Settings {
     pub notifications: bool,
     /// Show sender and subject in notifications, not just a count.
     pub notification_previews: bool,
-    /// Address new messages come from; the first account when unset.
+    /// The general default account; each task can follow it or keep its context.
     pub default_account: Option<String>,
+    /// Per-task choices, preserving context unless the person overrides it.
+    pub account_defaults: AccountDefaults,
     /// Markdown signature per account address.
     pub signatures: BTreeMap<String, String>,
     /// How long Undo stays available after Send.
@@ -457,6 +461,7 @@ impl Default for Settings {
             notification_previews: true,
             never_translate: Vec::new(),
             default_account: None,
+            account_defaults: AccountDefaults::default(),
             signatures: BTreeMap::new(),
             undo_send: UndoSend::Ten,
             flag_color: mailrs_domain::FlagColor::Red,
@@ -893,14 +898,8 @@ impl Settings {
 
     /// `emails` in the order the user chose; unlisted ones keep theirs, last.
     pub fn ordered<'a>(&self, emails: &[&'a str]) -> Vec<&'a str> {
-        let rank = |email: &str| {
-            self.account_order
-                .iter()
-                .position(|e| e.eq_ignore_ascii_case(email))
-                .unwrap_or(usize::MAX)
-        };
         let mut sorted = emails.to_vec();
-        sorted.sort_by_key(|e| rank(e));
+        sorted.sort_by_key(|e| self.account_rank(e));
         sorted
     }
 
@@ -1267,7 +1266,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.toml");
         std::fs::write(&path, "threading = false\n").unwrap();
-        assert!(Settings::load(&path).event_reminders, "a file from before this change");
+        assert!(
+            Settings::load(&path).event_reminders,
+            "a file from before this change"
+        );
         std::fs::write(&path, "event_reminders = false\n").unwrap();
         assert!(!Settings::load(&path).event_reminders);
     }
@@ -1461,8 +1463,16 @@ mod tests {
     fn a_window_value_picks_its_row_and_all_mail_is_furthest() {
         let choices = window_choices();
         assert_eq!(nearest_window(&choices, 0), 6);
-        assert_eq!(nearest_window(&choices, -1), 6, "any count below one day is all mail");
-        assert_eq!(nearest_window(&choices, 5), 0, "five days is near two weeks, not all mail");
+        assert_eq!(
+            nearest_window(&choices, -1),
+            6,
+            "any count below one day is all mail"
+        );
+        assert_eq!(
+            nearest_window(&choices, 5),
+            0,
+            "five days is near two weeks, not all mail"
+        );
         assert_eq!(nearest_window(&choices, 800), 4);
         assert_eq!(nearest_window(&choices, 100_000), 5);
     }
