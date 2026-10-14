@@ -375,6 +375,12 @@ pub enum CalDavSignInError {
     /// nothing was sent.
     #[error("{}", elsewhere(.name, .address))]
     Elsewhere { name: String, address: String },
+    /// Sign In Again was given a server at another address, or another
+    /// user, than the account's own. Taking them would move its calendar
+    /// copy, its queued changes and its password there, so nothing was
+    /// sent.
+    #[error("{}", moves(.name, .address))]
+    Moves { name: String, address: String },
     /// The address is under a scheme other than HTTPS. Nothing was sent
     /// to it.
     #[error("{}", finding::https_only())]
@@ -408,6 +414,29 @@ fn elsewhere(name: &str, address: &str) -> String {
     )
 }
 
+fn moves(name: &str, address: &str) -> String {
+    fill(
+        &gettext("Sign In Again keeps {name} on the server at {address}. To use another server or user name, add it as a calendar account of its own."),
+        &[("name", name), ("address", address)],
+    )
+}
+
+/// Where calendar account `held` is kept, for a line that names it: the
+/// address of the CalDAV server it keeps, or the host its name carries
+/// when it keeps none.
+fn kept_at(held: &Account, kept: Option<&services::FoundService>) -> String {
+    match kept {
+        Some(kept) => kept.url.clone(),
+        None => held.email.rsplit_once('@').map_or(&*held.email, |(_, host)| host).to_string(),
+    }
+}
+
+/// The CalDAV server calendar account `id` keeps, when it keeps one.
+async fn kept_server(db: &Db, id: AccountId) -> Result<Option<services::FoundService>, CalDavSignInError> {
+    let kept = db.read(move |c| services::load(c, id)).await?;
+    Ok(kept.into_iter().find(|s| s.kind == ServiceKind::CalDav))
+}
+
 /// Adds a calendar account once its server took the login, with the
 /// server's address, the user name and the password. `probe` tries the
 /// login first, so a wrong address or password keeps nothing. The name
@@ -434,13 +463,11 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
         if held.provider != Provider::CalDav {
             return Err(CalDavSignInError::taken(name, Some(&held)));
         }
-        let id = held.id;
-        let kept = db.read(move |c| services::load(c, id)).await?;
-        let address = kept.into_iter().find(|s| s.kind == ServiceKind::CalDav).map(|s| s.url).unwrap_or_default();
-        if !mailrs_dav::same_address(&address, &url) {
-            return Err(CalDavSignInError::Elsewhere { name, address });
+        let kept = kept_server(db, held.id).await?;
+        if !kept.as_ref().is_some_and(|kept| mailrs_dav::same_address(&kept.url, &url)) {
+            return Err(CalDavSignInError::Elsewhere { address: kept_at(&held, kept.as_ref()), name });
         }
-        return caldav_signed_in_again(probe, db, passwords, id, new).await;
+        return caldav_signed_in_again(probe, db, passwords, held.id, new).await;
     }
     let user_name = new.user_name.trim();
     let server = finding::typed(probe, ServiceKind::CalDav, url, user_name, &new.password).await?;
@@ -461,14 +488,19 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
         db.write(move |c| accounts::delete_account(c, id)).await?;
         return Err(err.into());
     }
-    calendar_account(db, id).await
+    account_by_id(db, id).await
 }
 
 /// Signs calendar account `id` in again, as Sign In Again on its heading
 /// asks: tries the login at the address and user `new` gives, which the
-/// page fills in from the account, then keeps them and the password and
-/// ends Needs Sign-In. The account keeps its calendars. The keyring takes
-/// the password first, so the account stays as it was when it refuses.
+/// page fills in from the account, then keeps the password and ends Needs
+/// Sign-In. The account keeps its calendars. The address must be the
+/// server's the account keeps, and the user must give the account's own
+/// name; anything else is refused before the password goes anywhere, so
+/// an editable page cannot move the account. One that keeps no server,
+/// whose row went missing, takes the server typed under its own name.
+/// The keyring takes the password first, so the account stays as it was
+/// when it refuses.
 pub async fn caldav_signed_in_again<S: ServiceProbe, P: PasswordStore + 'static>(
     probe: &S,
     db: &Db,
@@ -478,10 +510,16 @@ pub async fn caldav_signed_in_again<S: ServiceProbe, P: PasswordStore + 'static>
 ) -> Result<Account, CalDavSignInError> {
     let NewCalDav { url, user_name, password } = new;
     let url = finding::https_url(&url).ok_or(CalDavSignInError::NotHttps)?;
-    let held = calendar_account(db, id).await?;
+    let held = account_by_id(db, id).await?;
     // The password would land on a mail account's own in the keyring.
     if held.provider != Provider::CalDav {
         return Err(CalDavSignInError::taken(held.email.clone(), Some(&held)));
+    }
+    let kept = kept_server(db, id).await?;
+    let its_name = calendar_account_name(&url, &user_name).is_some_and(|name| name == held.email.to_lowercase());
+    let its_server = kept.as_ref().is_none_or(|kept| mailrs_dav::same_address(&kept.url, &url));
+    if !its_name || !its_server {
+        return Err(CalDavSignInError::Moves { address: kept_at(&held, kept.as_ref()), name: held.email });
     }
     let server = finding::typed(probe, ServiceKind::CalDav, url, user_name.trim(), &password).await?;
     save_passwords(passwords, id, password, None).await?;
@@ -495,10 +533,13 @@ pub async fn caldav_signed_in_again<S: ServiceProbe, P: PasswordStore + 'static>
         Ok(())
     })
     .await?;
-    calendar_account(db, id).await
+    account_by_id(db, id).await
 }
 
-async fn calendar_account(db: &Db, id: AccountId) -> Result<Account, CalDavSignInError> {
+/// The account with this id, whatever its provider, as the store holds it
+/// now. One that is gone is a store error: a sign-in only asks for an
+/// account it just added or was opened for.
+async fn account_by_id(db: &Db, id: AccountId) -> Result<Account, CalDavSignInError> {
     db.read(move |c| accounts::account(c, id))
         .await?
         .ok_or(CalDavSignInError::Store(StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)))

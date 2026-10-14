@@ -903,7 +903,8 @@ impl Settings {
         sorted
     }
 
-    /// Moves `email` one place up (`-1`) or down (`1`) among `emails`.
+    /// Moves `email` one place up (`-1`) or down (`1`) among `emails`, the
+    /// accounts the list on screen shows. The others keep their places.
     pub fn move_account(&mut self, emails: &[&str], email: &str, step: isize) {
         let mut order: Vec<String> = self.ordered(emails).iter().map(|e| e.to_string()).collect();
         let Some(at) = order.iter().position(|e| e.eq_ignore_ascii_case(email)) else {
@@ -914,7 +915,7 @@ impl Settings {
             return;
         }
         order.swap(at, to as usize);
-        self.account_order = order;
+        self.place_shown(emails, order);
     }
 
     /// Moves smart mailbox `id` one place up or down.

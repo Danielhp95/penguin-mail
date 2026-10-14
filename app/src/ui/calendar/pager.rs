@@ -77,14 +77,15 @@ impl LaidOut {
             return;
         };
         let (waiting, carousel) = (Rc::clone(&self.0), carousel.downgrade());
-        let id = clock.connect_after_paint(move |_| {
-            if !carousel.upgrade().is_some_and(|carousel| carousel.width() > 0) {
-                return;
+        let id = clock.connect_after_paint(move |_| match carousel.upgrade() {
+            // Not laid out yet: the next paint looks again.
+            Some(carousel) if carousel.width() <= 0 => {}
+            Some(_) => {
+                stop(&waiting);
+                send();
             }
-            if let Some((clock, id)) = waiting.borrow_mut().take() {
-                clock.disconnect(id);
-            }
-            send();
+            // A carousel that is gone has no page to go to.
+            None => stop(&waiting),
         });
         *self.0.borrow_mut() = Some((clock, id));
     }
@@ -92,9 +93,21 @@ impl LaidOut {
     /// Ends the wait, as when the carousel leaves the screen before it is
     /// laid out: the next time it is shown waits anew.
     pub(super) fn stop(&self) {
-        if let Some((clock, id)) = self.0.borrow_mut().take() {
-            clock.disconnect(id);
-        }
+        stop(&self.0);
+    }
+}
+
+/// A view dropped while its carousel still waits takes the wait with it,
+/// so nothing is left listening to the frame clock.
+impl Drop for LaidOut {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn stop(waiting: &RefCell<Option<(gdk::FrameClock, glib::SignalHandlerId)>>) {
+    if let Some((clock, id)) = waiting.borrow_mut().take() {
+        clock.disconnect(id);
     }
 }
 

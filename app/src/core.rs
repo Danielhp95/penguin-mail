@@ -864,41 +864,52 @@ impl Core {
         .await
     }
 
-    /// Signs in to a calendar account: tries the login on the CalDAV
-    /// server at `url`, then keeps the account, the server and the
-    /// password, and starts it, so its calendars are read at the next
-    /// tick. Nothing is kept when the login fails. `again` is the account
-    /// Sign In Again was opened for, which keeps its calendars and starts
-    /// over with the new password; without one the account is added.
-    pub async fn sign_in_calendar(
-        &self,
-        url: String,
-        user_name: String,
-        password: String,
-        again: Option<AccountId>,
-    ) -> Result<Account> {
-        if self.demo {
-            bail!(gettext("Demo mode cannot add real accounts."));
-        }
-        let engine = self
-            .engine
-            .current()
-            .ok_or_else(|| anyhow!("sync is not running"))?;
+    /// Adds a calendar account: tries the login on the CalDAV server at
+    /// `url`, then keeps the account, the server and the password, and
+    /// starts it, so its calendars are read at the next tick. Nothing is
+    /// kept when the login fails.
+    pub async fn sign_in_calendar(&self, url: String, user_name: String, password: String) -> Result<Account> {
+        let engine = self.calendar_engine()?;
         let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
         self.call(async move {
             let new = NewCalDav { url, user_name, password };
             // A failure is a `CalDavSignInError`, which the dialog reads
             // back out of the `anyhow::Error` to word what went wrong.
-            let probe = finding::RealProbe;
-            let account = match again {
-                Some(id) => caldav_signed_in_again(&probe, &db, Arc::clone(&passwords), id, new).await?,
-                None => caldav_signed_in(&probe, &db, Arc::clone(&passwords), new, now_millis()).await?,
-            };
-            let services = connect_caldav(&db, passwords, &account).await?;
-            engine.start_account(account.id, services);
+            let account = caldav_signed_in(&finding::RealProbe, &db, Arc::clone(&passwords), new, now_millis()).await?;
+            engine.start_account(account.id, connect_caldav(&db, passwords, &account).await?);
             Ok::<_, anyhow::Error>(account)
         })
         .await
+    }
+
+    /// Signs calendar account `account_id` in again, as its Sign In Again
+    /// asks, and starts it over with the new password. It keeps its
+    /// calendars; another server or user is refused.
+    pub async fn sign_in_calendar_again(
+        &self,
+        account_id: AccountId,
+        url: String,
+        user_name: String,
+        password: String,
+    ) -> Result<Account> {
+        let engine = self.calendar_engine()?;
+        let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
+        self.call(async move {
+            let new = NewCalDav { url, user_name, password };
+            let account = caldav_signed_in_again(&finding::RealProbe, &db, Arc::clone(&passwords), account_id, new).await?;
+            engine.start_account(account.id, connect_caldav(&db, passwords, &account).await?);
+            Ok::<_, anyhow::Error>(account)
+        })
+        .await
+    }
+
+    /// The engine a calendar sign-in starts its account in. The demo adds
+    /// no real account.
+    fn calendar_engine(&self) -> Result<Arc<Engine>> {
+        if self.demo {
+            bail!(gettext("Demo mode cannot add real accounts."));
+        }
+        self.engine.current().ok_or_else(|| anyhow!("sync is not running"))
     }
 
     /// Signs in to a POP3 account: signs in to the POP3 server, which

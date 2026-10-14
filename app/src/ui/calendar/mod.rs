@@ -51,7 +51,7 @@ use mailrs_domain::calendar::series::{self, RepeatScope};
 use mailrs_domain::calendar::{Access, Calendar, Event, Occurrence};
 use mailrs_domain::invitation::Answer;
 use mailrs_domain::translate::{date_locale, gettext, with_reason};
-use mailrs_domain::{Account, AccountId, EpochMillis};
+use mailrs_domain::{Account, AccountId, EpochMillis, Provider};
 use mailrs_sync::Permitted;
 use mailrs_sync::calendar_copy::Listed;
 use mailrs_sync::calendar_copy::event_change::{self, Action, Ask, Edit, EventChange, Facts, Undo};
@@ -1978,7 +1978,7 @@ impl CalendarView {
             anchor,
             o,
             &calendar,
-            crate::offered::organizer_hears(services),
+            crate::offered::organizer_hears(self.provider_of(o.account_id), services),
             move |answer, note| {
                 if let Some(view) = weak.upgrade() {
                     view.answer(occurrence.clone(), answer, note);
@@ -2408,6 +2408,15 @@ impl CalendarView {
             self.new_split.set_menu_model(Some(&menu));
             self.new_types.replace(types);
         }
+    }
+
+    /// Who serves `account_id`, when the calendar knows the account.
+    fn provider_of(&self, account_id: AccountId) -> Option<Provider> {
+        self.accounts
+            .borrow()
+            .iter()
+            .find(|(a, _, _)| a.id == account_id)
+            .map(|(a, _, _)| a.provider)
     }
 
     /// What `account_id`'s provider keeps, or what an account still

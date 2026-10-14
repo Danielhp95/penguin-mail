@@ -817,6 +817,50 @@ async fn a_second_server_on_the_same_host_does_not_take_the_first_ones_place() {
 }
 
 #[tokio::test]
+async fn signing_in_again_never_moves_the_account_to_another_server_or_user() {
+    let (db, _dir) = store().await;
+    let passwords = Arc::new(MemoryPasswords::default());
+    let id = caldav_signed_in(&Cloud::default(), &db, Arc::clone(&passwords), at(CLOUD, "robin"), 7).await.unwrap().id;
+    let kept = db.read(move |c| services::load(c, id)).await.unwrap();
+    // The page greys out the address and the user once it has read them,
+    // and leaves them open when it could not.
+    for (url, user) in [("https://cloud.example.org/radicale/", "robin"), ("https://cloud.example.org:5232/", "robin"), (CLOUD, "dana")] {
+        let cloud = Cloud::default();
+        let new = NewCalDav { password: "other-password".into(), ..at(url, user) };
+        let refused = caldav_signed_in_again(&cloud, &db, Arc::clone(&passwords), id, new).await;
+        assert!(
+            matches!(&refused, Err(CalDavSignInError::Moves { name, address }) if name == ROBIN && address == CLOUD),
+            "{url} as {user}: {:?}",
+            refused.map(|account| account.email)
+        );
+        assert!(cloud.0.lock().unwrap().is_empty(), "{url} as {user}: the password went nowhere");
+    }
+    assert_eq!(db.read(move |c| services::load(c, id)).await.unwrap(), kept, "the account keeps its server");
+    assert_eq!(passwords.load(id).unwrap().as_deref(), Some("app-password"), "and its password");
+
+    let typed_otherwise = at("cloud.example.org/remote.php/dav", "Robin");
+    let again = caldav_signed_in_again(&Cloud::default(), &db, Arc::clone(&passwords), id, typed_otherwise).await.unwrap();
+    assert_eq!(again.id, id, "the same server and user, typed another way, sign it in again");
+}
+
+#[tokio::test]
+async fn a_calendar_account_that_lost_its_server_is_named_by_its_host() {
+    let (db, _dir) = store().await;
+    let id = db.write(|c| accounts::insert_caldav_account(c, ROBIN, 1)).await.unwrap().unwrap();
+    let refused = calendar_sign_in(&db, at(CLOUD, "robin")).await.map(|account| account.email);
+    assert!(
+        matches!(&refused, Err(CalDavSignInError::Elsewhere { address, .. }) if address == "cloud.example.org"),
+        "{refused:?}"
+    );
+    assert!(refused.unwrap_err().to_string().contains("for the server at cloud.example.org."));
+
+    // Its own Sign In Again takes the server typed under its own name.
+    let again = caldav_signed_in_again(&Cloud::default(), &db, Arc::new(MemoryPasswords::default()), id, at(CLOUD, "robin")).await.unwrap();
+    assert_eq!(again.id, id);
+    assert_eq!(db.read(move |c| services::load(c, id)).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn signing_in_again_never_puts_a_calendar_password_on_a_mail_account() {
     let (db, _dir) = store().await;
     let mail = db.write(|c| accounts::insert_imap_account(c, "me@example.org", "example.org", 1)).await.unwrap().unwrap();

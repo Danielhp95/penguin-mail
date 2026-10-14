@@ -118,7 +118,30 @@ impl Settings {
             .unwrap_or(usize::MAX)
     }
 
-    /// Inserts one live account before or after another without changing its identity.
+    /// Writes `moved`, the accounts of `shown` in their new order, into the
+    /// saved order. Each takes the next place one of them held, and an
+    /// account the list does not show, such as a calendar account in the
+    /// mail sidebar or a row this build cannot read, keeps its own.
+    pub(super) fn place_shown(&mut self, shown: &[&str], moved: Vec<String>) {
+        let is_shown = |email: &str| shown.iter().any(|s| s.eq_ignore_ascii_case(email));
+        let mut order = self.account_order.clone();
+        for email in self.ordered(shown) {
+            if !order.iter().any(|saved| saved.eq_ignore_ascii_case(email)) {
+                order.push(email.to_string());
+            }
+        }
+        let mut moved = moved.into_iter();
+        for slot in order.iter_mut().filter(|slot| is_shown(slot)) {
+            if let Some(email) = moved.next() {
+                *slot = email;
+            }
+        }
+        self.account_order = order;
+    }
+
+    /// Inserts one live account before or after another without changing
+    /// its identity. `emails` are the accounts the list on screen shows;
+    /// the others keep their places.
     pub fn reorder_account(&mut self, emails: &[&str], email: &str, target: &str, after: bool) {
         if email.eq_ignore_ascii_case(target) {
             return;
@@ -145,7 +168,7 @@ impl Settings {
             return;
         };
         order.insert(to + usize::from(after), moved);
-        self.account_order = order;
+        self.place_shown(emails, order);
     }
 }
 
@@ -155,7 +178,14 @@ impl Settings {
 pub fn accounts_for(task: Option<AccountUse>, accounts: &[mailrs_domain::Account]) -> Vec<mailrs_domain::Account> {
     match task {
         Some(AccountUse::Calendar) => accounts.to_vec(),
-        _ => mailrs_domain::mail_accounts(accounts),
+        None
+        | Some(
+            AccountUse::NewMessages
+            | AccountUse::Replies
+            | AccountUse::Forwards
+            | AccountUse::Assistant
+            | AccountUse::Startup,
+        ) => mailrs_domain::mail_accounts(accounts),
     }
 }
 
@@ -208,6 +238,23 @@ mod tests {
         for task in AccountUse::ALL.into_iter().filter(|task| *task != AccountUse::Calendar) {
             assert_eq!(ids(Some(task)), [1], "{task:?}");
         }
+    }
+
+    #[test]
+    fn moving_the_accounts_a_list_shows_keeps_the_others_in_place() {
+        let saved = |settings: &Settings| settings.account_order.join(" ");
+        let order = |emails: &[&str]| Settings { account_order: emails.iter().map(|e| e.to_string()).collect(), ..Settings::default() };
+        let mut settings = order(&["a", "cal", "b", "c"]);
+        let shown = ["a", "b", "c"];
+        settings.move_account(&shown, "b", -1);
+        assert_eq!(saved(&settings), "b cal a c", "the calendar account keeps its place");
+        settings.reorder_account(&shown, "c", "b", false);
+        assert_eq!(saved(&settings), "c cal b a");
+
+        // One the saved order never listed joins it at the end.
+        let mut settings = order(&["cal", "a"]);
+        settings.move_account(&["a", "new"], "new", -1);
+        assert_eq!(saved(&settings), "cal new a");
     }
 
     #[test]

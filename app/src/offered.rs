@@ -21,12 +21,18 @@ pub fn withheld_for(services: Option<&AccountServices>) -> Withheld {
     services.map_or(Withheld::NONE, AccountServices::withheld)
 }
 
-/// Whether an answer to an invitation on the account reaches its
-/// organizer. A calendar account's server says whether it sends replies
-/// only once it has been read, so the event popover asks each time it
-/// opens. An account that is not running yet is not said to be mute.
-pub fn organizer_hears(services: Option<&AccountServices>) -> bool {
-    services.is_none_or(AccountServices::tells_organizer)
+/// Whether an answer to an invitation on the account, whose provider is
+/// `provider`, reaches its organizer. A calendar account's server says
+/// whether it sends replies only once it has been read, so the event
+/// popover asks each time it opens; until the account has started, and
+/// until its server has said, nobody is taken to hear. An account with
+/// mail that is not running yet sends the reply once it starts. An
+/// account the window does not know (`None`) is not said to be mute.
+pub fn organizer_hears(provider: Option<Provider>, services: Option<&AccountServices>) -> bool {
+    match services {
+        Some(services) => services.tells_organizer(),
+        None => provider.is_none_or(Provider::serves_mail),
+    }
 }
 
 /// Whether the account can propose another time for a meeting. A
@@ -1052,10 +1058,12 @@ mod tests {
         dav.set_auto_schedule(true);
         let services = AccountServices::calendar_only(std::sync::Arc::clone(&dav));
 
-        assert!(super::organizer_hears(None), "an account that has not started is not said to be mute");
-        assert!(!super::organizer_hears(Some(&services)), "a server that has not said it sends replies is taken to send none");
+        let calendars = Some(Provider::CalDav);
+        assert!(!super::organizer_hears(calendars, None), "a calendar account that has not started is not heard");
+        assert!(super::organizer_hears(Some(Provider::Imap), None), "an account with mail sends the reply once it starts");
+        assert!(!super::organizer_hears(calendars, Some(&services)), "a server that has not said it sends replies is taken to send none");
         services.calendar.as_ref().expect("the calendar").calendars().await.expect("the calendar list");
-        assert!(super::organizer_hears(Some(&services)), "the server has said it sends them");
+        assert!(super::organizer_hears(calendars, Some(&services)), "the server has said it sends them");
     }
 
     #[test]

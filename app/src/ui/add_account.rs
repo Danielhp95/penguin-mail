@@ -3425,8 +3425,10 @@ impl Dialog {
         self.calendar.add.set_label(&gettext("Signing In…"));
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            let again = this.again.as_ref().map(|account| account.id);
-            let signed_in = this.core.sign_in_calendar(server, user, password, again).await;
+            let signed_in = match this.again.as_ref().map(|account| account.id) {
+                Some(id) => this.core.sign_in_calendar_again(id, server, user, password).await,
+                None => this.core.sign_in_calendar(server, user, password).await,
+            };
             this.running.end();
             this.calendar.add.set_label(&label);
             this.update_add_calendar();
