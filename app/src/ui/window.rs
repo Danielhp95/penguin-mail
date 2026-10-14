@@ -2711,10 +2711,7 @@ impl MainWindow {
                     ));
                     // A calendar account has no mail for the list to read
                     // again.
-                    win.refresh_accounts(match account.provider.serves_mail() {
-                        true => Reload::Yes,
-                        false => Reload::No,
-                    });
+                    win.refresh_accounts(if account.provider.serves_mail() { Reload::Yes } else { Reload::No });
                     // A JMAP account may have signed in another way, through
                     // the browser or with an app password for its calendar,
                     // which changes the servers it can reach beside mail.

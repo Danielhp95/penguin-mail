@@ -62,8 +62,7 @@ impl MainWindow {
     /// remembers it, unless the accounts leave it nothing to show
     /// (`offered::may_show`).
     pub(super) fn show_space(self: &Rc<Self>, space: Space) {
-        let only_calendars = crate::offered::only_calendars(&self.accounts());
-        if !crate::offered::may_show(space, self.sidebar.switch.is_visible(), only_calendars) {
+        if !crate::offered::may_show(space, self.sidebar.switch.is_visible(), &self.accounts()) {
             return;
         }
         let name = match space {

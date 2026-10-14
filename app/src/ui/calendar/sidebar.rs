@@ -13,7 +13,7 @@ use gtk::{gdk, gio, glib};
 use mailrs_domain::calendar::Calendar;
 use mailrs_domain::calendar::list;
 use mailrs_domain::translate::{date_locale, fill, fill_plural, gettext};
-use mailrs_domain::{Account, AccountId, AccountState, EpochMillis};
+use mailrs_domain::{Account, AccountId, AccountState, EpochMillis, Provider};
 use mailrs_store::services::Miss;
 use mailrs_sync::{Missing, Offers, Waiting, Withheld};
 
@@ -36,27 +36,6 @@ pub enum CalendarReach {
     /// The provider keeps no calendar Penguin Mail can reach, with the
     /// reason from `offered::reason`.
     NotOffered(String),
-    /// A calendar account whose server stopped taking its password: the
-    /// calendars the copy still holds, a line saying so, and Sign In
-    /// Again. A mail account in that state is asked in the mail window.
-    NeedsSignIn(Vec<Calendar>),
-}
-
-impl CalendarReach {
-    /// The calendars the account lists, whatever it says under them.
-    fn listed(&self) -> &[Calendar] {
-        match self {
-            CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) | CalendarReach::NeedsSignIn(list) => list,
-            CalendarReach::Withheld | CalendarReach::NotOffered(_) => &[],
-        }
-    }
-
-    fn listed_mut(&mut self) -> Option<&mut Vec<Calendar>> {
-        match self {
-            CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) | CalendarReach::NeedsSignIn(list) => Some(list),
-            CalendarReach::Withheld | CalendarReach::NotOffered(_) => None,
-        }
-    }
 }
 
 /// One account's row in the calendar list.
@@ -76,10 +55,25 @@ pub struct SidebarAccount {
     /// holiday calendars (`Offers::subscriptions`). When it does not, Add
     /// Calendar offers only New Calendar and the rows lose Unsubscribe.
     pub subscribes: bool,
+    pub provider: Provider,
+    pub state: AccountState,
+}
+
+impl SidebarAccount {
     /// The account holds calendars and no mail. The mail sidebar has no
     /// heading for it, so its heading here carries Sign In Again and
     /// Remove Account.
-    pub calendar_only: bool,
+    pub fn calendar_only(&self) -> bool {
+        !self.provider.serves_mail()
+    }
+
+    /// A calendar account whose server stopped taking its password: the
+    /// calendars the copy still holds stay listed, with a line saying so
+    /// and Sign In Again under them. A mail account in that state is asked
+    /// in the mail window.
+    fn needs_sign_in(&self) -> bool {
+        self.calendar_only() && self.state == AccountState::NeedsReauth
+    }
 }
 
 /// The sidebar's rows from each account's provider offers, its own
@@ -95,10 +89,7 @@ pub fn sidebar_accounts(
     accounts
         .iter()
         .map(|(account, offers, withheld, calendars)| {
-            let calendar_only = !account.provider.serves_mail();
-            let reach = if calendar_only && account.state == AccountState::NeedsReauth {
-                CalendarReach::NeedsSignIn(calendars.clone())
-            } else if !offers.calendar {
+            let reach = if !offers.calendar {
                 CalendarReach::NotOffered(crate::offered::reason(
                     account,
                     Missing::Calendar,
@@ -118,7 +109,8 @@ pub fn sidebar_accounts(
                 hidden: Vec::new(),
                 changeable: offers.calendar_list,
                 subscribes: offers.subscriptions,
-                calendar_only,
+                provider: account.provider,
+                state: account.state,
             }
         })
         .collect()
@@ -134,7 +126,7 @@ pub fn take_off_the_list(
         let Some(ids) = unlisted.get(&row.id) else {
             continue;
         };
-        if let Some(list) = row.reach.listed_mut() {
+        if let CalendarReach::Calendars(list) | CalendarReach::PrimaryOnly(list) = &mut row.reach {
             let (hidden, kept) = std::mem::take(list)
                 .into_iter()
                 .partition(|calendar| ids.contains(&calendar.id));
@@ -151,7 +143,7 @@ pub fn take_off_the_list(
 /// keeps its heading all the same: Sign In Again and Remove Account are
 /// nowhere else.
 pub fn shows_heading(account: &SidebarAccount) -> bool {
-    account.calendar_only
+    account.calendar_only()
         || !matches!(&account.reach, CalendarReach::Calendars(list) if list.is_empty() && !account.hidden.is_empty())
 }
 
@@ -847,7 +839,9 @@ impl CalendarSidebar {
             if account.id != account_id {
                 continue;
             }
-            if let Some(calendars) = account.reach.listed_mut() {
+            if let CalendarReach::Calendars(calendars) | CalendarReach::PrimaryOnly(calendars) =
+                &mut account.reach
+            {
                 for calendar in calendars.iter_mut().filter(|c| c.id == calendar_id) {
                     calendar.shown = shown;
                 }
@@ -927,12 +921,16 @@ impl CalendarSidebar {
                 .orientation(gtk::Orientation::Vertical)
                 .margin_top(12)
                 .build();
-            for calendar in account.reach.listed() {
-                body.append(&self.calendar_row(account, calendar));
-            }
             match &account.reach {
-                CalendarReach::Calendars(_) => {}
-                CalendarReach::PrimaryOnly(_) => {
+                CalendarReach::Calendars(calendars) => {
+                    for calendar in calendars {
+                        body.append(&self.calendar_row(account, calendar));
+                    }
+                }
+                CalendarReach::PrimaryOnly(calendars) => {
+                    for calendar in calendars {
+                        body.append(&self.calendar_row(account, calendar));
+                    }
                     body.append(&self.grant_row(
                         account.id,
                         &gettext("Grant Access to show shared calendars"),
@@ -952,10 +950,10 @@ impl CalendarSidebar {
                 CalendarReach::NotOffered(reason) => {
                     body.append(&dim_line(reason));
                 }
-                CalendarReach::NeedsSignIn(_) => {
-                    body.append(&dim_line(&gettext("The server refused the password")));
-                    body.append(&sign_in_row(account));
-                }
+            }
+            if account.needs_sign_in() {
+                body.append(&dim_line(&gettext("The server refused the password")));
+                body.append(&sign_in_row(account));
             }
             let folded = self.folded.borrow().contains(&account.address.to_lowercase());
             let revealer = gtk::Revealer::builder()
@@ -965,15 +963,14 @@ impl CalendarSidebar {
                 .transition_duration(150)
                 .build();
             let heading = self.heading(&account.address, folded, &revealer);
-            match account.calendar_only {
-                true => {
-                    let line = gtk::Box::builder().spacing(2).css_classes(["calendar-account"]).build();
-                    heading.set_hexpand(true);
-                    line.append(&heading);
-                    line.append(&account_menu(account));
-                    self.calendar_list.append(&line);
-                }
-                false => self.calendar_list.append(&heading),
+            if account.calendar_only() {
+                let line = gtk::Box::builder().spacing(2).css_classes(["calendar-account"]).build();
+                heading.set_hexpand(true);
+                line.append(&heading);
+                line.append(&account_menu(account));
+                self.calendar_list.append(&line);
+            } else {
+                self.calendar_list.append(&heading);
             }
             self.calendar_list.append(&revealer);
         }
@@ -1521,7 +1518,8 @@ mod tests {
                 hidden: Vec::new(),
                 changeable: true,
                 subscribes: true,
-                calendar_only: false,
+                provider: Provider::Gmail,
+                state: AccountState::Ok,
             }]
         );
     }
@@ -1539,15 +1537,15 @@ mod tests {
             ],
             |_| None,
         );
-        assert_eq!(rows.iter().map(|row| row.calendar_only).collect::<Vec<_>>(), [false, true, true]);
-        assert_eq!(rows[0].reach, CalendarReach::Calendars(vec![calendar("primary")]), "the mail window asks it to sign in");
-        assert_eq!(rows[1].reach, CalendarReach::Calendars(vec![calendar("family")]));
-        assert_eq!(rows[2].reach, CalendarReach::NeedsSignIn(vec![calendar("personal")]));
+        assert_eq!(rows.iter().map(SidebarAccount::calendar_only).collect::<Vec<_>>(), [false, true, true]);
+        assert_eq!(rows.iter().map(SidebarAccount::needs_sign_in).collect::<Vec<_>>(), [false, false, true], "the mail window asks a mail account");
         // What the copy holds stays on the list, to show or hide as before.
+        assert_eq!(rows[2].reach, CalendarReach::Calendars(vec![calendar("personal")]));
         let unlisted = HashMap::from([(5, HashSet::from(["personal".to_string()]))]);
         let hidden = take_off_the_list(rows, &unlisted);
-        assert_eq!(hidden[2].reach, CalendarReach::NeedsSignIn(Vec::new()));
+        assert_eq!(hidden[2].reach, CalendarReach::Calendars(Vec::new()));
         assert_eq!(hidden[2].hidden, vec![calendar("personal")]);
+        assert!(shows_heading(&hidden[2]), "Sign In Again stays reachable");
     }
 
     #[test]

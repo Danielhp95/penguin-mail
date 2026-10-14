@@ -52,10 +52,7 @@ pub struct CalDav<D> {
     /// The addresses the account was handed. Empty for a calendar
     /// account, which learns them from the server instead.
     me: Arc<Vec<String>>,
-    /// The addresses the server's principal goes by, once asked.
-    learned: Arc<Mutex<Option<Arc<Vec<String>>>>>,
-    /// Whether the server mails a guest's answer itself, once it said.
-    schedules: Arc<Mutex<Option<bool>>>,
+    discovered: Arc<Mutex<Discovered>>,
     reads: Arc<Mutex<Reads>>,
     written: Arc<Mutex<VecDeque<(String, String)>>>,
     refused: Arc<Mutex<Option<String>>>,
@@ -71,8 +68,7 @@ impl<D> Clone for CalDav<D> {
             api: Arc::clone(&self.api),
             mail: self.mail.clone(),
             me: Arc::clone(&self.me),
-            learned: Arc::clone(&self.learned),
-            schedules: Arc::clone(&self.schedules),
+            discovered: Arc::clone(&self.discovered),
             reads: Arc::clone(&self.reads),
             written: Arc::clone(&self.written),
             refused: Arc::clone(&self.refused),
@@ -80,6 +76,15 @@ impl<D> Clone for CalDav<D> {
             listed: Arc::clone(&self.listed),
         }
     }
+}
+
+/// What the server has said about the account, each part once asked.
+#[derive(Default)]
+struct Discovered {
+    /// The addresses the server's principal goes by.
+    addresses: Option<Arc<Vec<String>>>,
+    /// Whether the server mails a guest's answer itself.
+    schedules: Option<bool>,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -108,8 +113,7 @@ impl<D: DavApi> CalDav<D> {
             api,
             mail,
             me: Arc::new(me),
-            learned: Arc::default(),
-            schedules: Arc::default(),
+            discovered: Arc::default(),
             reads: Arc::default(),
             written: Arc::default(),
             refused: Arc::default(),
@@ -134,7 +138,7 @@ impl<D: DavApi> CalDav<D> {
     /// that nobody will hear: a note typed for an organizer who never
     /// gets it would look sent.
     pub fn tells_organizer(&self) -> bool {
-        self.mail.serves_mail() || locked(&self.schedules).unwrap_or(false)
+        self.mail.serves_mail() || locked(&self.discovered).schedules.unwrap_or(false)
     }
 
     /// The addresses the account goes by on an event: the ones it was
@@ -143,7 +147,7 @@ impl<D: DavApi> CalDav<D> {
         if !self.me.is_empty() {
             return Ok(Arc::clone(&self.me));
         }
-        if let Some(learned) = locked(&self.learned).clone() {
+        if let Some(learned) = locked(&self.discovered).addresses.clone() {
             return Ok(learned);
         }
         let homes = self.api.homes().await.map_err(|e| self.err(e))?;
@@ -152,7 +156,7 @@ impl<D: DavApi> CalDav<D> {
 
     fn learn(&self, addresses: Vec<String>) -> Arc<Vec<String>> {
         let learned = Arc::new(addresses);
-        *locked(&self.learned) = Some(Arc::clone(&learned));
+        locked(&self.discovered).addresses = Some(Arc::clone(&learned));
         learned
     }
 
@@ -167,7 +171,7 @@ impl<D: DavApi> CalDav<D> {
     async fn server_schedules(&self, calendar: &str) -> Result<bool, BackendError> {
         let at = (!self.mail.serves_mail()).then_some(calendar);
         let schedules = self.api.auto_schedule(at).await.map_err(|e| self.err(e))?;
-        *locked(&self.schedules) = Some(schedules);
+        locked(&self.discovered).schedules = Some(schedules);
         Ok(schedules)
     }
 

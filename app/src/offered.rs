@@ -48,10 +48,10 @@ pub fn only_calendars(accounts: &[Account]) -> bool {
 /// calendar is the one space there is, shown though no switch offers it,
 /// and there is no mail to show. Otherwise the calendar shows only while
 /// the switch does.
-pub fn may_show(space: crate::settings::Space, switch_visible: bool, only_calendars: bool) -> bool {
+pub fn may_show(space: crate::settings::Space, switch_visible: bool, accounts: &[Account]) -> bool {
     match space {
-        crate::settings::Space::Mail => !only_calendars,
-        crate::settings::Space::Calendar => only_calendars || switch_visible,
+        crate::settings::Space::Mail => !only_calendars(accounts),
+        crate::settings::Space::Calendar => only_calendars(accounts) || switch_visible,
     }
 }
 
@@ -1078,12 +1078,13 @@ mod tests {
         assert!(!super::only_calendars(&[calendar_account(), pop3_account()]));
         assert!(!super::only_calendars(&[]), "no account at all is the first-run page's business");
 
-        let (switch_hidden, calendars_alone) = (false, true);
-        assert!(super::may_show(Space::Calendar, switch_hidden, calendars_alone), "it is all there is");
-        assert!(!super::may_show(Space::Mail, switch_hidden, calendars_alone), "a shortcut must not open an empty mail window");
-        assert!(super::may_show(Space::Mail, switch_hidden, false));
-        assert!(!super::may_show(Space::Calendar, switch_hidden, false), "no account offers a calendar");
-        assert!(super::may_show(Space::Calendar, true, false));
+        let switch_hidden = false;
+        let (calendars_alone, with_mail) = ([calendar_account()], [calendar_account(), pop3_account()]);
+        assert!(super::may_show(Space::Calendar, switch_hidden, &calendars_alone), "it is all there is");
+        assert!(!super::may_show(Space::Mail, switch_hidden, &calendars_alone), "a shortcut must not open an empty mail window");
+        assert!(super::may_show(Space::Mail, switch_hidden, &with_mail));
+        assert!(!super::may_show(Space::Calendar, switch_hidden, &with_mail), "no account offers a calendar");
+        assert!(super::may_show(Space::Calendar, true, &with_mail));
     }
 
     #[test]
