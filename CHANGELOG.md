@@ -7,7 +7,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### New
 
-- Add a calendar from a CalDAV server, such as Nextcloud, without a mail account: Add Account, then Add a calendar without mail.
+- Add a calendar from a CalDAV server, such as Nextcloud, without a mail account: Add Account, then Add a calendar without mail. Remove it before going back to Penguin Mail 1.0.8 or older, which cannot open any of your accounts while it is there.
 - Vietnamese translations, chosen in Preferences.
 
 ### Improved

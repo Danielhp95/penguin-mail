@@ -33,6 +33,10 @@ pub fn insert_account(conn: &Connection, email: &str, now: EpochMillis) -> Resul
     )?)
 }
 
+/// Every account the store holds, oldest first. A row this build cannot
+/// read is left out and logged: one a newer build added for a provider
+/// or a state this one does not know. Going back to an older build then
+/// costs that account alone, and the others keep syncing.
 pub fn list_accounts(conn: &Connection) -> Result<Vec<Account>> {
     let mut stmt = conn.prepare(
         "SELECT id, email, state, provider, provider_name FROM accounts ORDER BY id",
@@ -40,11 +44,18 @@ pub fn list_accounts(conn: &Connection) -> Result<Vec<Account>> {
     let rows = stmt.query_map([], |row| {
         Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
     })?;
-    rows.map(|row| {
+    let mut accounts = Vec::new();
+    for row in rows {
         let (id, email, state, provider, provider_name) = row?;
-        to_account(id, email, state, provider, provider_name)
-    })
-    .collect()
+        match to_account(id, email, state, provider, provider_name) {
+            Ok(account) => accounts.push(account),
+            Err(StoreError::Corrupt { column, value }) => {
+                tracing::warn!(account = id, column, value, "left out an account this build cannot read");
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(accounts)
 }
 
 /// The account by id, such as `CalendarCopy` reads to name a Google
@@ -457,6 +468,16 @@ mod tests {
     use crate::open_in_memory;
 
     use super::*;
+
+    #[test]
+    fn an_account_this_build_cannot_read_leaves_the_others_listed() {
+        let conn = open_in_memory().unwrap();
+        let kept = insert_account(&conn, "me@example.com", 0).unwrap();
+        let newer = insert_account(&conn, "you@example.com", 0).unwrap();
+        conn.execute("UPDATE accounts SET provider = 'carrier-pigeon' WHERE id = ?1", params![newer]).unwrap();
+        let listed = list_accounts(&conn).unwrap();
+        assert_eq!(listed.iter().map(|a| a.id).collect::<Vec<_>>(), [kept]);
+    }
 
     #[test]
     fn consent_round_trips() {
