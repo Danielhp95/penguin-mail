@@ -204,6 +204,9 @@ pub struct CalendarView {
     older_spinner: gtk::Spinner,
     older_label: gtk::Label,
     carousel: adw::Carousel,
+    /// The wait for the carousel's width before it goes to its middle
+    /// page, while one runs.
+    laid_out: pager::LaidOut,
     pages: RefCell<Vec<Rc<Page>>>,
     list: Rc<Agenda>,
     results: Rc<Agenda>,
@@ -602,6 +605,7 @@ impl CalendarView {
                 older_spinner,
                 older_label,
                 carousel,
+                laid_out: pager::LaidOut::default(),
                 pages: RefCell::new(Vec::new()),
                 list,
                 results,
@@ -708,12 +712,19 @@ impl CalendarView {
         view.carousel.connect_map(move |carousel| {
             // A mapped carousel is not laid out yet, and the middle page
             // needs a width.
+            let Some(view) = weak.upgrade() else { return };
             let weak = weak.clone();
-            pager::when_laid_out(carousel, move || {
+            view.laid_out.then(carousel, move || {
                 if let Some(view) = weak.upgrade() {
                     view.center();
                 }
             });
+        });
+        let weak = Rc::downgrade(&view);
+        view.carousel.connect_unmap(move |_| {
+            if let Some(view) = weak.upgrade() {
+                view.laid_out.stop();
+            }
         });
         let weak = Rc::downgrade(&view);
         view.carousel.connect_page_changed(move |_, index| {
