@@ -4003,7 +4003,7 @@ msgstr "Abonnement Claude"
 #. The header in both spaces carries a button for this now (R12);
 #. the menu item stays too, so Ctrl+J shows here as well.
 #: app/src/settings/mod.rs:227 app/src/ui/assistant.rs:100
-#: app/src/ui/window.rs:3211
+#: app/src/ui/window.rs:3208
 msgid "Assistant"
 msgstr "Assistant"
 
@@ -4380,7 +4380,7 @@ msgstr "Ouvrir Penguin Mail"
 msgid "New Message"
 msgstr "Nouveau message"
 
-#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3214
+#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3211
 msgid "Check for Mail"
 msgstr "Relever le courrier"
 
@@ -4398,7 +4398,7 @@ msgstr "Nouveautés de la version {version}"
 msgid "Check for Updates"
 msgstr "Rechercher des mises à jour"
 
-#: app/src/tray.rs:254 app/src/ui/window.rs:3227
+#: app/src/tray.rs:254 app/src/ui/window.rs:3224
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "Quitter"
@@ -4420,7 +4420,7 @@ msgstr "Nouveautés"
 msgid "Website"
 msgstr "Site web"
 
-#: app/src/ui/about.rs:179 app/src/ui/window.rs:3226
+#: app/src/ui/about.rs:179 app/src/ui/window.rs:3223
 msgid "Donate"
 msgstr "Faire un don"
 
@@ -4428,7 +4428,7 @@ msgstr "Faire un don"
 msgid "License"
 msgstr "Licence"
 
-#: app/src/ui/about.rs:203 app/src/ui/window.rs:3225
+#: app/src/ui/about.rs:203 app/src/ui/window.rs:3222
 msgid "About Penguin Mail"
 msgstr "À propos de Penguin Mail"
 
@@ -4714,7 +4714,7 @@ msgid "Not Now"
 msgstr "Pas maintenant"
 
 #: app/src/ui/add_account.rs:1317 app/src/ui/calendar/editor.rs:1613
-#: app/src/ui/calendar/sidebar.rs:948 app/src/ui/contacts_prefs.rs:442
+#: app/src/ui/calendar/sidebar.rs:946 app/src/ui/contacts_prefs.rs:442
 #: app/src/ui/invitation.rs:489 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1385
 msgid "Grant Access"
@@ -4819,8 +4819,8 @@ msgstr ""
 "Un serveur CalDAV, comme Nextcloud. S’il utilise la validation en deux "
 "étapes, créez un mot de passe d’application pour Penguin Mail."
 
-#: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1311
-#: app/src/ui/calendar/sidebar.rs:1319
+#: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1308
+#: app/src/ui/calendar/sidebar.rs:1316
 msgid "Add Calendar"
 msgstr "Ajouter un agenda"
 
@@ -4861,7 +4861,7 @@ msgstr "Votre mot de passe n’a pas été envoyé."
 msgid "Looking Up…"
 msgstr "Recherche…"
 
-#: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1169
+#: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1166
 msgid "Sign In Again"
 msgstr "Se reconnecter"
 
@@ -4930,7 +4930,7 @@ msgstr ""
 "Ce serveur ne sait pas distinguer ses messages, Penguin Mail ne peut donc "
 "pas en télécharger en toute sécurité."
 
-#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3294
+#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3291
 msgid "Summarize this conversation"
 msgstr "Résumer cette conversation"
 
@@ -5091,7 +5091,7 @@ msgstr "Modifier {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:135 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:2206 app/src/ui/composer/recipients.rs:318
-#: app/src/ui/sender_prefs.rs:147 app/src/ui/window.rs:2983
+#: app/src/ui/sender_prefs.rs:147 app/src/ui/window.rs:2980
 msgid "Remove"
 msgstr "Supprimer"
 
@@ -5928,7 +5928,7 @@ msgid "Only people who can change this calendar see the details"
 msgstr "Seules les personnes pouvant modifier cet agenda voient les détails"
 
 #: app/src/ui/calendar/editor.rs:1903 app/src/ui/calendar/manage.rs:353
-#: app/src/ui/calendar/sidebar.rs:1354 app/src/ui/sidebar.rs:1591
+#: app/src/ui/calendar/sidebar.rs:1351 app/src/ui/sidebar.rs:1591
 #: app/src/ui/sidebar.rs:1835
 msgid "Color"
 msgstr "Couleur"
@@ -5941,7 +5941,7 @@ msgstr "Couleur de l’agenda"
 msgid "Add Google Meet"
 msgstr "Ajouter Google Meet"
 
-#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2391
+#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2402
 #: app/src/ui/calendar/quick.rs:54
 msgid "Event"
 msgstr "Événement"
@@ -6385,101 +6385,101 @@ msgstr "Ajouter les jours fériés : {region}"
 msgid "Could not add the holidays: {reason}"
 msgstr "Impossible d’ajouter les jours fériés : {reason}"
 
-#: app/src/ui/calendar/mod.rs:322 app/src/ui/calendar/mod.rs:342
+#: app/src/ui/calendar/mod.rs:325 app/src/ui/calendar/mod.rs:345
 msgid "View"
 msgstr "Vue"
 
-#: app/src/ui/calendar/mod.rs:357 app/src/ui/calendar/mod.rs:365
-#: app/src/ui/calendar/mod.rs:2376
+#: app/src/ui/calendar/mod.rs:360 app/src/ui/calendar/mod.rs:368
+#: app/src/ui/calendar/mod.rs:2387
 msgid "New Event (N)"
 msgstr "Nouvel événement (N)"
 
-#: app/src/ui/calendar/mod.rs:362
+#: app/src/ui/calendar/mod.rs:365
 msgid "New Focus Time or Out of Office"
 msgstr "Nouveau temps de concentration ou absence du bureau"
 
-#: app/src/ui/calendar/mod.rs:371 app/src/ui/calendar/mod.rs:373
+#: app/src/ui/calendar/mod.rs:374 app/src/ui/calendar/mod.rs:376
 msgid "Search the Calendar (Ctrl+F)"
 msgstr "Rechercher dans l’agenda (Ctrl+F)"
 
-#: app/src/ui/calendar/mod.rs:376 app/src/ui/calendar/mod.rs:379
+#: app/src/ui/calendar/mod.rs:379 app/src/ui/calendar/mod.rs:382
 msgid "Show Calendars"
 msgstr "Afficher les agendas"
 
-#: app/src/ui/calendar/mod.rs:385 app/src/ui/calendar/mod.rs:389
+#: app/src/ui/calendar/mod.rs:388 app/src/ui/calendar/mod.rs:392
 #: app/src/ui/conversation.rs:523 app/src/ui/conversation.rs:527
 msgid "Assistant (Ctrl+J)"
 msgstr "Assistant (Ctrl+J)"
 
-#: app/src/ui/calendar/mod.rs:422 app/src/ui/calendar/mod.rs:424
+#: app/src/ui/calendar/mod.rs:425 app/src/ui/calendar/mod.rs:427
 msgid "Search the Calendar"
 msgstr "Rechercher dans l’agenda"
 
-#: app/src/ui/calendar/mod.rs:491 app/src/ui/calendar/ports.rs:397
+#: app/src/ui/calendar/mod.rs:494 app/src/ui/calendar/ports.rs:397
 msgid "Loading older events"
 msgstr "Chargement des événements plus anciens"
 
-#: app/src/ui/calendar/mod.rs:912 app/src/ui/window/shortcuts.rs:571
+#: app/src/ui/calendar/mod.rs:923 app/src/ui/window/shortcuts.rs:571
 msgid "Go to date"
 msgstr "Aller à la date"
 
-#: app/src/ui/calendar/mod.rs:1353
+#: app/src/ui/calendar/mod.rs:1364
 msgid "Moved “{title}”"
 msgstr "« {title} » déplacé"
 
-#: app/src/ui/calendar/mod.rs:1354
+#: app/src/ui/calendar/mod.rs:1365
 msgid "Could not move the event: {reason}"
 msgstr "Impossible de déplacer l’événement : {reason}"
 
-#: app/src/ui/calendar/mod.rs:1485
+#: app/src/ui/calendar/mod.rs:1496
 msgid "All-day events"
 msgstr "Événements sur toute la journée"
 
-#: app/src/ui/calendar/mod.rs:1487
+#: app/src/ui/calendar/mod.rs:1498
 msgid "All-day"
 msgstr "Journée"
 
-#: app/src/ui/calendar/mod.rs:1771 app/src/ui/calendar/mod.rs:3014
-#: app/src/ui/calendar/sidebar.rs:346 app/src/ui/calendar/words.rs:373
+#: app/src/ui/calendar/mod.rs:1782 app/src/ui/calendar/mod.rs:3025
+#: app/src/ui/calendar/sidebar.rs:338 app/src/ui/calendar/words.rs:373
 #: app/src/ui/preferences.rs:1180 app/src/ui/preferences.rs:1353
 msgid "%a"
 msgstr "%a"
 
-#: app/src/ui/calendar/mod.rs:2094
+#: app/src/ui/calendar/mod.rs:2105
 msgid "Removed “{title}” from your calendar"
 msgstr "« {title} » retiré de votre agenda"
 
-#: app/src/ui/calendar/mod.rs:2095
+#: app/src/ui/calendar/mod.rs:2106
 msgid "Deleted “{title}”"
 msgstr "« {title} » supprimé"
 
-#: app/src/ui/calendar/mod.rs:2108
+#: app/src/ui/calendar/mod.rs:2119
 msgid "Could not delete the event: {reason}"
 msgstr "Impossible de supprimer l’événement : {reason}"
 
-#: app/src/ui/calendar/mod.rs:2161 app/src/ui/composer/mod.rs:1391
+#: app/src/ui/calendar/mod.rs:2172 app/src/ui/composer/mod.rs:1391
 #: app/src/ui/window.rs:1993 app/src/ui/window/scheduled.rs:98
 #: app/src/ui/window/shortcuts.rs:458
 msgid "Undo"
 msgstr "Annuler"
 
-#: app/src/ui/calendar/mod.rs:2317
+#: app/src/ui/calendar/mod.rs:2328
 msgid "Could not send your answer: {reason}"
 msgstr "Impossible d’envoyer votre réponse : {reason}"
 
-#: app/src/ui/calendar/mod.rs:2380
+#: app/src/ui/calendar/mod.rs:2391
 msgid "None of your calendars take new events"
 msgstr "Aucun de vos agendas n’accepte de nouveaux événements"
 
-#: app/src/ui/calendar/mod.rs:2392 app/src/ui/calendar/quick.rs:55
+#: app/src/ui/calendar/mod.rs:2403 app/src/ui/calendar/quick.rs:55
 msgid "Focus Time"
 msgstr "Temps de concentration"
 
-#: app/src/ui/calendar/mod.rs:2393 app/src/ui/calendar/quick.rs:56
+#: app/src/ui/calendar/mod.rs:2404 app/src/ui/calendar/quick.rs:56
 msgid "Out of Office"
 msgstr "Absent du bureau"
 
-#: app/src/ui/calendar/mod.rs:2753
+#: app/src/ui/calendar/mod.rs:2764
 msgid "Could not save the event: {reason}"
 msgstr "Impossible d’enregistrer l’événement : {reason}"
 
@@ -6605,7 +6605,7 @@ msgstr "Agenda : {name}"
 msgid "%A %-d"
 msgstr "%A %-d"
 
-#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:898
+#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:892
 msgid "%B %Y"
 msgstr "%B %Y"
 
@@ -6739,113 +6739,113 @@ msgstr "Semaine suivante"
 msgid "Previous Week"
 msgstr "Semaine précédente"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:563
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:555
 msgid "Next Month"
 msgstr "Mois suivant"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:562
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:554
 msgid "Previous Month"
 msgstr "Mois précédent"
 
-#: app/src/ui/calendar/sidebar.rs:652
+#: app/src/ui/calendar/sidebar.rs:644
 msgid "Waiting for your answer"
 msgstr "En attente de votre réponse"
 
-#: app/src/ui/calendar/sidebar.rs:804
+#: app/src/ui/calendar/sidebar.rs:796
 msgid "Open mail"
 msgstr "Ouvrir le courrier"
 
-#: app/src/ui/calendar/sidebar.rs:938
+#: app/src/ui/calendar/sidebar.rs:936
 msgid "Grant Access to show shared calendars"
 msgstr "Accorder l’accès pour afficher les agendas partagés"
 
-#: app/src/ui/calendar/sidebar.rs:944
+#: app/src/ui/calendar/sidebar.rs:942
 msgid "Penguin Mail cannot see this account's calendars"
 msgstr "Penguin Mail ne voit pas les agendas de ce compte"
 
-#: app/src/ui/calendar/sidebar.rs:1038
+#: app/src/ui/calendar/sidebar.rs:1035
 msgid "Show or hide this account's calendars"
 msgstr "Afficher ou masquer les agendas de ce compte"
 
-#: app/src/ui/calendar/sidebar.rs:1105
+#: app/src/ui/calendar/sidebar.rs:1102
 msgid "Calendar options"
 msgstr "Options de l’agenda"
 
-#: app/src/ui/calendar/sidebar.rs:1109
+#: app/src/ui/calendar/sidebar.rs:1106
 msgid "Options for {calendar}"
 msgstr "Options de {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1149 app/src/ui/contacts_prefs.rs:449
+#: app/src/ui/calendar/sidebar.rs:1146 app/src/ui/contacts_prefs.rs:449
 msgid "Grant Access for {account}"
 msgstr "Accorder l’accès pour {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1177
+#: app/src/ui/calendar/sidebar.rs:1174
 msgid "Sign in again to {account}"
 msgstr "Se reconnecter à {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1188 app/src/ui/sidebar.rs:1840
+#: app/src/ui/calendar/sidebar.rs:1185 app/src/ui/sidebar.rs:1840
 msgid "Sign In Again…"
 msgstr "Se reconnecter…"
 
-#: app/src/ui/calendar/sidebar.rs:1189 app/src/ui/sidebar.rs:1848
+#: app/src/ui/calendar/sidebar.rs:1186 app/src/ui/sidebar.rs:1848
 msgid "Remove Account…"
 msgstr "Supprimer le compte…"
 
-#: app/src/ui/calendar/sidebar.rs:1203 app/src/ui/sidebar.rs:1855
+#: app/src/ui/calendar/sidebar.rs:1200 app/src/ui/sidebar.rs:1855
 msgid "Account options"
 msgstr "Options du compte"
 
-#: app/src/ui/calendar/sidebar.rs:1207 app/src/ui/sidebar.rs:1860
+#: app/src/ui/calendar/sidebar.rs:1204 app/src/ui/sidebar.rs:1860
 msgid "Options for {account}"
 msgstr "Options de {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1276
+#: app/src/ui/calendar/sidebar.rs:1273
 msgid "{address}. You can only read this calendar"
 msgstr "{address}. Vous ne pouvez que lire cet agenda"
 
-#: app/src/ui/calendar/sidebar.rs:1298
+#: app/src/ui/calendar/sidebar.rs:1295
 msgid "New Calendar…"
 msgstr "Nouvel agenda…"
 
-#: app/src/ui/calendar/sidebar.rs:1299
+#: app/src/ui/calendar/sidebar.rs:1296
 msgid "Subscribe to Calendar…"
 msgstr "S’abonner à un agenda…"
 
-#: app/src/ui/calendar/sidebar.rs:1300
+#: app/src/ui/calendar/sidebar.rs:1297
 msgid "Holiday Calendars…"
 msgstr "Agendas des jours fériés…"
 
-#: app/src/ui/calendar/sidebar.rs:1333
+#: app/src/ui/calendar/sidebar.rs:1330
 msgid "Hide from the List"
 msgstr "Masquer de la liste"
 
-#: app/src/ui/calendar/sidebar.rs:1346
+#: app/src/ui/calendar/sidebar.rs:1343
 msgid "Original Color"
 msgstr "Couleur d’origine"
 
-#: app/src/ui/calendar/sidebar.rs:1358 app/src/ui/sidebar.rs:1580
+#: app/src/ui/calendar/sidebar.rs:1355 app/src/ui/sidebar.rs:1580
 #: app/src/ui/sidebar.rs:1825
 msgid "Rename…"
 msgstr "Renommer…"
 
-#: app/src/ui/calendar/sidebar.rs:1359 app/src/ui/sidebar.rs:1490
+#: app/src/ui/calendar/sidebar.rs:1356 app/src/ui/sidebar.rs:1490
 #: app/src/ui/sidebar.rs:1606
 msgid "Delete…"
 msgstr "Supprimer…"
 
-#: app/src/ui/calendar/sidebar.rs:1360 app/src/ui/conversation.rs:581
+#: app/src/ui/calendar/sidebar.rs:1357 app/src/ui/conversation.rs:581
 msgid "Unsubscribe…"
 msgstr "Se désabonner…"
 
-#: app/src/ui/calendar/sidebar.rs:1384
+#: app/src/ui/calendar/sidebar.rs:1381
 msgid "Show {calendar}"
 msgstr "Afficher {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1400
+#: app/src/ui/calendar/sidebar.rs:1397
 msgid "Hidden Calendars"
 msgstr "Agendas masqués"
 
-#: app/src/ui/calendar/sidebar.rs:1420
+#: app/src/ui/calendar/sidebar.rs:1417
 msgid "{count} hidden calendar"
 msgid_plural "{count} hidden calendars"
 msgstr[0] "{count} agenda masqué"
@@ -7976,7 +7976,7 @@ msgstr ""
 msgid "Allow Hide My Email"
 msgstr "Autoriser Masquer mon adresse"
 
-#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3338
+#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3335
 msgid "Add an account first"
 msgstr "Ajoutez d’abord un compte"
 
@@ -8331,7 +8331,7 @@ msgid "All Files"
 msgstr "Tous les fichiers"
 
 #: app/src/ui/key_import.rs:213 app/src/ui/key_import.rs:217
-#: app/src/ui/window.rs:3815
+#: app/src/ui/window.rs:3812
 msgid "Close"
 msgstr "Fermer"
 
@@ -9053,7 +9053,7 @@ msgstr "Supprimer {account} ?"
 #: app/src/ui/preferences/dialog.rs:27 app/src/ui/preferences/dialog.rs:33
 #: app/src/ui/preferences/dialog.rs:82 app/src/ui/preferences/dialog.rs:83
 #: app/src/ui/preferences/dialog.rs:353 app/src/ui/preferences/dialog.rs:355
-#: app/src/ui/window.rs:3223 app/src/ui/window/shortcuts.rs:606
+#: app/src/ui/window.rs:3220 app/src/ui/window/shortcuts.rs:606
 msgid "Preferences"
 msgstr "Préférences"
 
@@ -9401,7 +9401,7 @@ msgstr "Signature…"
 msgid "Rules…"
 msgstr "Règles…"
 
-#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3217
+#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3214
 msgid "Hide My Email…"
 msgstr "Masquer mon adresse…"
 
@@ -10090,19 +10090,19 @@ msgstr "Ouvrir"
 msgid "Could not save {file}: {reason}"
 msgstr "Impossible d’enregistrer {file} : {reason}"
 
-#: app/src/ui/window.rs:2839
+#: app/src/ui/window.rs:2836
 msgid "Continue in your browser"
 msgstr "Continuez dans votre navigateur"
 
-#: app/src/ui/window.rs:2869
+#: app/src/ui/window.rs:2866
 msgid "This copy of Penguin Mail was built without Google sign-in."
 msgstr "Cette version de Penguin Mail a été compilée sans la connexion Google."
 
-#: app/src/ui/window.rs:2877
+#: app/src/ui/window.rs:2874
 msgid "Get a Release"
 msgstr "Obtenir une version publiée"
 
-#: app/src/ui/window.rs:2969
+#: app/src/ui/window.rs:2966
 msgid ""
 "Could not check for messages the server holds to send later, so {account} "
 "stays: {reason}"
@@ -10110,67 +10110,67 @@ msgstr ""
 "Impossible de vérifier les messages que le serveur garde pour un envoi "
 "ultérieur, donc {account} reste : {reason}"
 
-#: app/src/ui/window.rs:2980
+#: app/src/ui/window.rs:2977
 msgid "Remove {account}?"
 msgstr "Supprimer {account} ?"
 
-#: app/src/ui/window.rs:2999
+#: app/src/ui/window.rs:2996
 msgid "Remove Anyway"
 msgstr "Supprimer quand même"
 
-#: app/src/ui/window.rs:3012
+#: app/src/ui/window.rs:3009
 msgid "Removed {account}"
 msgstr "{account} supprimé"
 
-#: app/src/ui/window.rs:3014
+#: app/src/ui/window.rs:3011
 msgid "Could not remove {account}: {reason}"
 msgstr "Impossible de supprimer {account} : {reason}"
 
-#: app/src/ui/window.rs:3198
+#: app/src/ui/window.rs:3195
 msgid "Refresh"
 msgstr "Actualiser"
 
-#: app/src/ui/window.rs:3202
+#: app/src/ui/window.rs:3199
 msgid "Show Declined Events"
 msgstr "Afficher les événements refusés"
 
-#: app/src/ui/window.rs:3215
+#: app/src/ui/window.rs:3212
 msgid "Add Account…"
 msgstr "Ajouter un compte…"
 
-#: app/src/ui/window.rs:3216
+#: app/src/ui/window.rs:3213
 msgid "New Smart Mailbox…"
 msgstr "Nouvelle boîte intelligente…"
 
-#: app/src/ui/window.rs:3224
+#: app/src/ui/window.rs:3221
 msgid "Keyboard Shortcuts"
 msgstr "Raccourcis clavier"
 
-#: app/src/ui/window.rs:3233 app/src/ui/window.rs:3235
+#: app/src/ui/window.rs:3230 app/src/ui/window.rs:3232
 msgid "Main Menu"
 msgstr "Menu principal"
 
-#: app/src/ui/window.rs:3621
+#: app/src/ui/window.rs:3618
 msgid "Open a message from the person first"
 msgstr "Ouvrez d’abord un message de cette personne"
 
-#: app/src/ui/window.rs:3702
+#: app/src/ui/window.rs:3699
 msgid "Penguin Mail shows the new language after a restart"
 msgstr "Penguin Mail affiche la nouvelle langue après un redémarrage"
 
-#: app/src/ui/window.rs:3704 app/src/update/mod.rs:130
+#: app/src/ui/window.rs:3701 app/src/update/mod.rs:130
 msgid "Restart"
 msgstr "Redémarrer"
 
-#: app/src/ui/window.rs:3764
+#: app/src/ui/window.rs:3761
 msgid "Show Rules"
 msgstr "Afficher les règles"
 
-#: app/src/ui/window.rs:3790
+#: app/src/ui/window.rs:3787
 msgid "Messages That Will Not Download"
 msgstr "Messages qui ne se téléchargent pas"
 
-#: app/src/ui/window.rs:3792
+#: app/src/ui/window.rs:3789
 msgid ""
 "Penguin Mail could not download these from {address}'s server. It tries "
 "again at each check, except for a message too large to download."
@@ -10978,7 +10978,7 @@ msgstr ""
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "Votre modification de « {title} » n’a pas été enregistrée : {reason}"
 
-#: app/src/ui/window/spaces.rs:271
+#: app/src/ui/window/spaces.rs:270
 msgid "Show Event"
 msgstr "Afficher l’événement"
 
@@ -11708,23 +11708,23 @@ msgstr "Le trousseau a refusé : {reason}"
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "Une règle de cet ordinateur a transféré le message joint de {address}."
 
-#: sync/src/services/caldav.rs:463
+#: sync/src/services/caldav.rs:470
 msgid "An event needs an ID to be imported."
 msgstr "Un événement a besoin d’un identifiant pour être importé."
 
-#: sync/src/services/caldav.rs:485
+#: sync/src/services/caldav.rs:492
 msgid "A CalDAV calendar cannot store attached files."
 msgstr "Un agenda CalDAV ne peut pas stocker de fichiers joints."
 
-#: sync/src/services/caldav.rs:489
+#: sync/src/services/caldav.rs:496
 msgid "A CalDAV calendar has no files to share."
 msgstr "Un agenda CalDAV n’a pas de fichiers à partager."
 
-#: sync/src/services/caldav.rs:519
+#: sync/src/services/caldav.rs:526
 msgid "You are not a guest of this event."
 msgstr "Vous n’êtes pas invité à cet événement."
 
-#: sync/src/services/caldav.rs:523
+#: sync/src/services/caldav.rs:530
 msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr ""
 "Penguin Mail ne peut pas modifier la liste des agendas d’un serveur CalDAV."
@@ -12075,7 +12075,9 @@ msgstr "{address} est déjà dans Penguin Mail en tant que compte {provider}."
 msgid ""
 "A calendar account named {name} is already here, for the server at "
 "{address}. Remove it to add this server under that name."
-msgstr "Un compte d’agenda nommé {name} existe déjà, pour le serveur à l’adresse {address}. Supprimez-le pour ajouter ce serveur sous ce nom."
+msgstr ""
+"Un compte d’agenda nommé {name} existe déjà, pour le serveur à l’adresse "
+"{address}. Supprimez-le pour ajouter ce serveur sous ce nom."
 
 #. The JMAP server publishes no sign-in a browser can run.
 #: sync/src/sign_in/browser.rs:98

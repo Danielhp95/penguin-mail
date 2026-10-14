@@ -3738,7 +3738,7 @@ msgstr "Claude 訂閱"
 #. The header in both spaces carries a button for this now (R12);
 #. the menu item stays too, so Ctrl+J shows here as well.
 #: app/src/settings/mod.rs:227 app/src/ui/assistant.rs:100
-#: app/src/ui/window.rs:3211
+#: app/src/ui/window.rs:3208
 msgid "Assistant"
 msgstr "助理"
 
@@ -4092,7 +4092,7 @@ msgstr "開啟 Penguin Mail"
 msgid "New Message"
 msgstr "新增郵件"
 
-#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3214
+#: app/src/tray.rs:238 app/src/ui/sidebar.rs:1818 app/src/ui/window.rs:3211
 msgid "Check for Mail"
 msgstr "檢查郵件"
 
@@ -4110,7 +4110,7 @@ msgstr "{version} 的新功能"
 msgid "Check for Updates"
 msgstr "檢查更新"
 
-#: app/src/tray.rs:254 app/src/ui/window.rs:3227
+#: app/src/tray.rs:254 app/src/ui/window.rs:3224
 #: app/src/ui/window/shortcuts.rs:629
 msgid "Quit"
 msgstr "結束"
@@ -4131,7 +4131,7 @@ msgstr "新功能"
 msgid "Website"
 msgstr "網站"
 
-#: app/src/ui/about.rs:179 app/src/ui/window.rs:3226
+#: app/src/ui/about.rs:179 app/src/ui/window.rs:3223
 msgid "Donate"
 msgstr "捐款"
 
@@ -4139,7 +4139,7 @@ msgstr "捐款"
 msgid "License"
 msgstr "授權條款"
 
-#: app/src/ui/about.rs:203 app/src/ui/window.rs:3225
+#: app/src/ui/about.rs:203 app/src/ui/window.rs:3222
 msgid "About Penguin Mail"
 msgstr "關於 Penguin Mail"
 
@@ -4420,7 +4420,7 @@ msgid "Not Now"
 msgstr "暫時不要"
 
 #: app/src/ui/add_account.rs:1317 app/src/ui/calendar/editor.rs:1613
-#: app/src/ui/calendar/sidebar.rs:948 app/src/ui/contacts_prefs.rs:442
+#: app/src/ui/calendar/sidebar.rs:946 app/src/ui/contacts_prefs.rs:442
 #: app/src/ui/invitation.rs:489 app/src/ui/permission.rs:42
 #: app/src/ui/permission.rs:66 app/src/ui/window.rs:1385
 msgid "Grant Access"
@@ -4523,8 +4523,8 @@ msgstr ""
 "CalDAV 伺服器，例如 Nextcloud。若伺服器使用兩步驟登入，請為 Penguin Mail 建立"
 "應用程式密碼。"
 
-#: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1311
-#: app/src/ui/calendar/sidebar.rs:1319
+#: app/src/ui/add_account.rs:1731 app/src/ui/calendar/sidebar.rs:1308
+#: app/src/ui/calendar/sidebar.rs:1316
 msgid "Add Calendar"
 msgstr "新增行事曆"
 
@@ -4565,7 +4565,7 @@ msgstr "未傳送密碼。"
 msgid "Looking Up…"
 msgstr "正在查詢…"
 
-#: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1169
+#: app/src/ui/add_account.rs:3377 app/src/ui/calendar/sidebar.rs:1166
 msgid "Sign In Again"
 msgstr "重新登入"
 
@@ -4629,7 +4629,7 @@ msgid ""
 "from it safely."
 msgstr "此伺服器無法區分郵件，因此 Penguin Mail 無法安全下載。"
 
-#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3294
+#: app/src/ui/assistant.rs:31 app/src/ui/window.rs:3291
 msgid "Summarize this conversation"
 msgstr "摘要此對話"
 
@@ -4787,7 +4787,7 @@ msgstr "編輯 {server}"
 
 #: app/src/ui/assistant_mcp_prefs.rs:135 app/src/ui/calendar/editor.rs:1646
 #: app/src/ui/composer/mod.rs:2206 app/src/ui/composer/recipients.rs:318
-#: app/src/ui/sender_prefs.rs:147 app/src/ui/window.rs:2983
+#: app/src/ui/sender_prefs.rs:147 app/src/ui/window.rs:2980
 msgid "Remove"
 msgstr "移除"
 
@@ -5592,7 +5592,7 @@ msgid "Only people who can change this calendar see the details"
 msgstr "僅有可變更此行事曆的人能檢視詳細資料"
 
 #: app/src/ui/calendar/editor.rs:1903 app/src/ui/calendar/manage.rs:353
-#: app/src/ui/calendar/sidebar.rs:1354 app/src/ui/sidebar.rs:1591
+#: app/src/ui/calendar/sidebar.rs:1351 app/src/ui/sidebar.rs:1591
 #: app/src/ui/sidebar.rs:1835
 msgid "Color"
 msgstr "顏色"
@@ -5605,7 +5605,7 @@ msgstr "行事曆顏色"
 msgid "Add Google Meet"
 msgstr "新增 Google Meet"
 
-#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2391
+#: app/src/ui/calendar/editor.rs:2002 app/src/ui/calendar/mod.rs:2402
 #: app/src/ui/calendar/quick.rs:54
 msgid "Event"
 msgstr "活動"
@@ -6030,101 +6030,101 @@ msgstr "新增 {region} 的假日"
 msgid "Could not add the holidays: {reason}"
 msgstr "無法新增假日：{reason}"
 
-#: app/src/ui/calendar/mod.rs:322 app/src/ui/calendar/mod.rs:342
+#: app/src/ui/calendar/mod.rs:325 app/src/ui/calendar/mod.rs:345
 msgid "View"
 msgstr "檢視"
 
-#: app/src/ui/calendar/mod.rs:357 app/src/ui/calendar/mod.rs:365
-#: app/src/ui/calendar/mod.rs:2376
+#: app/src/ui/calendar/mod.rs:360 app/src/ui/calendar/mod.rs:368
+#: app/src/ui/calendar/mod.rs:2387
 msgid "New Event (N)"
 msgstr "新增活動（N）"
 
-#: app/src/ui/calendar/mod.rs:362
+#: app/src/ui/calendar/mod.rs:365
 msgid "New Focus Time or Out of Office"
 msgstr "新增專注時間或外出"
 
-#: app/src/ui/calendar/mod.rs:371 app/src/ui/calendar/mod.rs:373
+#: app/src/ui/calendar/mod.rs:374 app/src/ui/calendar/mod.rs:376
 msgid "Search the Calendar (Ctrl+F)"
 msgstr "搜尋行事曆（Ctrl+F）"
 
-#: app/src/ui/calendar/mod.rs:376 app/src/ui/calendar/mod.rs:379
+#: app/src/ui/calendar/mod.rs:379 app/src/ui/calendar/mod.rs:382
 msgid "Show Calendars"
 msgstr "顯示行事曆"
 
-#: app/src/ui/calendar/mod.rs:385 app/src/ui/calendar/mod.rs:389
+#: app/src/ui/calendar/mod.rs:388 app/src/ui/calendar/mod.rs:392
 #: app/src/ui/conversation.rs:523 app/src/ui/conversation.rs:527
 msgid "Assistant (Ctrl+J)"
 msgstr "助理（Ctrl+J）"
 
-#: app/src/ui/calendar/mod.rs:422 app/src/ui/calendar/mod.rs:424
+#: app/src/ui/calendar/mod.rs:425 app/src/ui/calendar/mod.rs:427
 msgid "Search the Calendar"
 msgstr "搜尋行事曆"
 
-#: app/src/ui/calendar/mod.rs:491 app/src/ui/calendar/ports.rs:397
+#: app/src/ui/calendar/mod.rs:494 app/src/ui/calendar/ports.rs:397
 msgid "Loading older events"
 msgstr "正在載入較舊的活動"
 
-#: app/src/ui/calendar/mod.rs:912 app/src/ui/window/shortcuts.rs:571
+#: app/src/ui/calendar/mod.rs:923 app/src/ui/window/shortcuts.rs:571
 msgid "Go to date"
 msgstr "跳至日期"
 
-#: app/src/ui/calendar/mod.rs:1353
+#: app/src/ui/calendar/mod.rs:1364
 msgid "Moved “{title}”"
 msgstr "已移動「{title}」"
 
-#: app/src/ui/calendar/mod.rs:1354
+#: app/src/ui/calendar/mod.rs:1365
 msgid "Could not move the event: {reason}"
 msgstr "無法移動活動：{reason}"
 
-#: app/src/ui/calendar/mod.rs:1485
+#: app/src/ui/calendar/mod.rs:1496
 msgid "All-day events"
 msgstr "全天活動"
 
-#: app/src/ui/calendar/mod.rs:1487
+#: app/src/ui/calendar/mod.rs:1498
 msgid "All-day"
 msgstr "全天"
 
-#: app/src/ui/calendar/mod.rs:1771 app/src/ui/calendar/mod.rs:3014
-#: app/src/ui/calendar/sidebar.rs:346 app/src/ui/calendar/words.rs:373
+#: app/src/ui/calendar/mod.rs:1782 app/src/ui/calendar/mod.rs:3025
+#: app/src/ui/calendar/sidebar.rs:338 app/src/ui/calendar/words.rs:373
 #: app/src/ui/preferences.rs:1180 app/src/ui/preferences.rs:1353
 msgid "%a"
 msgstr "%a"
 
-#: app/src/ui/calendar/mod.rs:2094
+#: app/src/ui/calendar/mod.rs:2105
 msgid "Removed “{title}” from your calendar"
 msgstr "已從行事曆移除「{title}」"
 
-#: app/src/ui/calendar/mod.rs:2095
+#: app/src/ui/calendar/mod.rs:2106
 msgid "Deleted “{title}”"
 msgstr "已刪除「{title}」"
 
-#: app/src/ui/calendar/mod.rs:2108
+#: app/src/ui/calendar/mod.rs:2119
 msgid "Could not delete the event: {reason}"
 msgstr "無法刪除活動：{reason}"
 
-#: app/src/ui/calendar/mod.rs:2161 app/src/ui/composer/mod.rs:1391
+#: app/src/ui/calendar/mod.rs:2172 app/src/ui/composer/mod.rs:1391
 #: app/src/ui/window.rs:1993 app/src/ui/window/scheduled.rs:98
 #: app/src/ui/window/shortcuts.rs:458
 msgid "Undo"
 msgstr "復原"
 
-#: app/src/ui/calendar/mod.rs:2317
+#: app/src/ui/calendar/mod.rs:2328
 msgid "Could not send your answer: {reason}"
 msgstr "無法傳送回覆：{reason}"
 
-#: app/src/ui/calendar/mod.rs:2380
+#: app/src/ui/calendar/mod.rs:2391
 msgid "None of your calendars take new events"
 msgstr "所有行事曆都無法新增活動"
 
-#: app/src/ui/calendar/mod.rs:2392 app/src/ui/calendar/quick.rs:55
+#: app/src/ui/calendar/mod.rs:2403 app/src/ui/calendar/quick.rs:55
 msgid "Focus Time"
 msgstr "專注時間"
 
-#: app/src/ui/calendar/mod.rs:2393 app/src/ui/calendar/quick.rs:56
+#: app/src/ui/calendar/mod.rs:2404 app/src/ui/calendar/quick.rs:56
 msgid "Out of Office"
 msgstr "外出"
 
-#: app/src/ui/calendar/mod.rs:2753
+#: app/src/ui/calendar/mod.rs:2764
 msgid "Could not save the event: {reason}"
 msgstr "無法儲存活動：{reason}"
 
@@ -6248,7 +6248,7 @@ msgstr "行事曆：{name}"
 msgid "%A %-d"
 msgstr "%-d 日（%A）"
 
-#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:898
+#: app/src/ui/calendar/range.rs:111 app/src/ui/calendar/sidebar.rs:892
 msgid "%B %Y"
 msgstr "%Y 年 %B"
 
@@ -6380,113 +6380,113 @@ msgstr "下一週"
 msgid "Previous Week"
 msgstr "前一週"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:563
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:555
 msgid "Next Month"
 msgstr "下一個月"
 
-#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:562
+#: app/src/ui/calendar/shown.rs:114 app/src/ui/calendar/sidebar.rs:554
 msgid "Previous Month"
 msgstr "前一個月"
 
-#: app/src/ui/calendar/sidebar.rs:652
+#: app/src/ui/calendar/sidebar.rs:644
 msgid "Waiting for your answer"
 msgstr "正在等候回覆"
 
-#: app/src/ui/calendar/sidebar.rs:804
+#: app/src/ui/calendar/sidebar.rs:796
 msgid "Open mail"
 msgstr "開啟郵件"
 
-#: app/src/ui/calendar/sidebar.rs:938
+#: app/src/ui/calendar/sidebar.rs:936
 msgid "Grant Access to show shared calendars"
 msgstr "授予存取權以顯示共用行事曆"
 
-#: app/src/ui/calendar/sidebar.rs:944
+#: app/src/ui/calendar/sidebar.rs:942
 msgid "Penguin Mail cannot see this account's calendars"
 msgstr "Penguin Mail 無法檢視此帳號的行事曆"
 
-#: app/src/ui/calendar/sidebar.rs:1038
+#: app/src/ui/calendar/sidebar.rs:1035
 msgid "Show or hide this account's calendars"
 msgstr "顯示或隱藏此帳號的行事曆"
 
-#: app/src/ui/calendar/sidebar.rs:1105
+#: app/src/ui/calendar/sidebar.rs:1102
 msgid "Calendar options"
 msgstr "行事曆選項"
 
-#: app/src/ui/calendar/sidebar.rs:1109
+#: app/src/ui/calendar/sidebar.rs:1106
 msgid "Options for {calendar}"
 msgstr "{calendar} 的選項"
 
-#: app/src/ui/calendar/sidebar.rs:1149 app/src/ui/contacts_prefs.rs:449
+#: app/src/ui/calendar/sidebar.rs:1146 app/src/ui/contacts_prefs.rs:449
 msgid "Grant Access for {account}"
 msgstr "授予 {account} 存取權"
 
-#: app/src/ui/calendar/sidebar.rs:1177
+#: app/src/ui/calendar/sidebar.rs:1174
 msgid "Sign in again to {account}"
 msgstr "重新登入 {account}"
 
-#: app/src/ui/calendar/sidebar.rs:1188 app/src/ui/sidebar.rs:1840
+#: app/src/ui/calendar/sidebar.rs:1185 app/src/ui/sidebar.rs:1840
 msgid "Sign In Again…"
 msgstr "重新登入…"
 
-#: app/src/ui/calendar/sidebar.rs:1189 app/src/ui/sidebar.rs:1848
+#: app/src/ui/calendar/sidebar.rs:1186 app/src/ui/sidebar.rs:1848
 msgid "Remove Account…"
 msgstr "移除帳號…"
 
-#: app/src/ui/calendar/sidebar.rs:1203 app/src/ui/sidebar.rs:1855
+#: app/src/ui/calendar/sidebar.rs:1200 app/src/ui/sidebar.rs:1855
 msgid "Account options"
 msgstr "帳號選項"
 
-#: app/src/ui/calendar/sidebar.rs:1207 app/src/ui/sidebar.rs:1860
+#: app/src/ui/calendar/sidebar.rs:1204 app/src/ui/sidebar.rs:1860
 msgid "Options for {account}"
 msgstr "{account} 的選項"
 
-#: app/src/ui/calendar/sidebar.rs:1276
+#: app/src/ui/calendar/sidebar.rs:1273
 msgid "{address}. You can only read this calendar"
 msgstr "{address}。此為唯讀行事曆"
 
-#: app/src/ui/calendar/sidebar.rs:1298
+#: app/src/ui/calendar/sidebar.rs:1295
 msgid "New Calendar…"
 msgstr "新增行事曆…"
 
-#: app/src/ui/calendar/sidebar.rs:1299
+#: app/src/ui/calendar/sidebar.rs:1296
 msgid "Subscribe to Calendar…"
 msgstr "訂閱行事曆…"
 
-#: app/src/ui/calendar/sidebar.rs:1300
+#: app/src/ui/calendar/sidebar.rs:1297
 msgid "Holiday Calendars…"
 msgstr "假日行事曆…"
 
-#: app/src/ui/calendar/sidebar.rs:1333
+#: app/src/ui/calendar/sidebar.rs:1330
 msgid "Hide from the List"
 msgstr "從清單隱藏"
 
-#: app/src/ui/calendar/sidebar.rs:1346
+#: app/src/ui/calendar/sidebar.rs:1343
 msgid "Original Color"
 msgstr "原始顏色"
 
-#: app/src/ui/calendar/sidebar.rs:1358 app/src/ui/sidebar.rs:1580
+#: app/src/ui/calendar/sidebar.rs:1355 app/src/ui/sidebar.rs:1580
 #: app/src/ui/sidebar.rs:1825
 msgid "Rename…"
 msgstr "重新命名…"
 
-#: app/src/ui/calendar/sidebar.rs:1359 app/src/ui/sidebar.rs:1490
+#: app/src/ui/calendar/sidebar.rs:1356 app/src/ui/sidebar.rs:1490
 #: app/src/ui/sidebar.rs:1606
 msgid "Delete…"
 msgstr "刪除…"
 
-#: app/src/ui/calendar/sidebar.rs:1360 app/src/ui/conversation.rs:581
+#: app/src/ui/calendar/sidebar.rs:1357 app/src/ui/conversation.rs:581
 msgid "Unsubscribe…"
 msgstr "取消訂閱…"
 
-#: app/src/ui/calendar/sidebar.rs:1384
+#: app/src/ui/calendar/sidebar.rs:1381
 msgid "Show {calendar}"
 msgstr "顯示 {calendar}"
 
-#: app/src/ui/calendar/sidebar.rs:1400
+#: app/src/ui/calendar/sidebar.rs:1397
 msgid "Hidden Calendars"
 msgstr "隱藏的行事曆"
 
-#: app/src/ui/calendar/sidebar.rs:1420
+#: app/src/ui/calendar/sidebar.rs:1417
 msgid "{count} hidden calendar"
 msgid_plural "{count} hidden calendars"
 msgstr[0] "{count} 個隱藏的行事曆"
@@ -7585,7 +7585,7 @@ msgstr ""
 msgid "Allow Hide My Email"
 msgstr "允許隱藏電子郵件地址"
 
-#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3338
+#: app/src/ui/hide_my_email.rs:632 app/src/ui/window.rs:3335
 msgid "Add an account first"
 msgstr "請先新增帳號"
 
@@ -7917,7 +7917,7 @@ msgid "All Files"
 msgstr "所有檔案"
 
 #: app/src/ui/key_import.rs:213 app/src/ui/key_import.rs:217
-#: app/src/ui/window.rs:3815
+#: app/src/ui/window.rs:3812
 msgid "Close"
 msgstr "關閉"
 
@@ -8606,7 +8606,7 @@ msgstr "是否移除 {account}？"
 #: app/src/ui/preferences/dialog.rs:27 app/src/ui/preferences/dialog.rs:33
 #: app/src/ui/preferences/dialog.rs:82 app/src/ui/preferences/dialog.rs:83
 #: app/src/ui/preferences/dialog.rs:353 app/src/ui/preferences/dialog.rs:355
-#: app/src/ui/window.rs:3223 app/src/ui/window/shortcuts.rs:606
+#: app/src/ui/window.rs:3220 app/src/ui/window/shortcuts.rs:606
 msgid "Preferences"
 msgstr "偏好設定"
 
@@ -8941,7 +8941,7 @@ msgstr "簽名…"
 msgid "Rules…"
 msgstr "規則…"
 
-#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3217
+#: app/src/ui/sidebar.rs:1729 app/src/ui/window.rs:3214
 msgid "Hide My Email…"
 msgstr "隱藏電子郵件地址…"
 
@@ -9596,85 +9596,85 @@ msgstr "開啟"
 msgid "Could not save {file}: {reason}"
 msgstr "無法儲存 {file}：{reason}"
 
-#: app/src/ui/window.rs:2839
+#: app/src/ui/window.rs:2836
 msgid "Continue in your browser"
 msgstr "請在瀏覽器中繼續"
 
-#: app/src/ui/window.rs:2869
+#: app/src/ui/window.rs:2866
 msgid "This copy of Penguin Mail was built without Google sign-in."
 msgstr "此版本的 Penguin Mail 未包含 Google 登入功能。"
 
-#: app/src/ui/window.rs:2877
+#: app/src/ui/window.rs:2874
 msgid "Get a Release"
 msgstr "取得發行版本"
 
-#: app/src/ui/window.rs:2969
+#: app/src/ui/window.rs:2966
 msgid ""
 "Could not check for messages the server holds to send later, so {account} "
 "stays: {reason}"
 msgstr "無法檢查伺服器保留待稍後寄出的郵件，因此保留 {account}：{reason}"
 
-#: app/src/ui/window.rs:2980
+#: app/src/ui/window.rs:2977
 msgid "Remove {account}?"
 msgstr "是否移除 {account}？"
 
-#: app/src/ui/window.rs:2999
+#: app/src/ui/window.rs:2996
 msgid "Remove Anyway"
 msgstr "仍要移除"
 
-#: app/src/ui/window.rs:3012
+#: app/src/ui/window.rs:3009
 msgid "Removed {account}"
 msgstr "已移除 {account}"
 
-#: app/src/ui/window.rs:3014
+#: app/src/ui/window.rs:3011
 msgid "Could not remove {account}: {reason}"
 msgstr "無法移除 {account}：{reason}"
 
-#: app/src/ui/window.rs:3198
+#: app/src/ui/window.rs:3195
 msgid "Refresh"
 msgstr "重新整理"
 
-#: app/src/ui/window.rs:3202
+#: app/src/ui/window.rs:3199
 msgid "Show Declined Events"
 msgstr "顯示已婉拒的活動"
 
-#: app/src/ui/window.rs:3215
+#: app/src/ui/window.rs:3212
 msgid "Add Account…"
 msgstr "新增帳號…"
 
-#: app/src/ui/window.rs:3216
+#: app/src/ui/window.rs:3213
 msgid "New Smart Mailbox…"
 msgstr "新增智慧信箱…"
 
-#: app/src/ui/window.rs:3224
+#: app/src/ui/window.rs:3221
 msgid "Keyboard Shortcuts"
 msgstr "鍵盤快速鍵"
 
-#: app/src/ui/window.rs:3233 app/src/ui/window.rs:3235
+#: app/src/ui/window.rs:3230 app/src/ui/window.rs:3232
 msgid "Main Menu"
 msgstr "主選單"
 
-#: app/src/ui/window.rs:3621
+#: app/src/ui/window.rs:3618
 msgid "Open a message from the person first"
 msgstr "請先開啟此人的郵件"
 
-#: app/src/ui/window.rs:3702
+#: app/src/ui/window.rs:3699
 msgid "Penguin Mail shows the new language after a restart"
 msgstr "重新啟動後，Penguin Mail 會顯示新的語言"
 
-#: app/src/ui/window.rs:3704 app/src/update/mod.rs:130
+#: app/src/ui/window.rs:3701 app/src/update/mod.rs:130
 msgid "Restart"
 msgstr "重新啟動"
 
-#: app/src/ui/window.rs:3764
+#: app/src/ui/window.rs:3761
 msgid "Show Rules"
 msgstr "顯示規則"
 
-#: app/src/ui/window.rs:3790
+#: app/src/ui/window.rs:3787
 msgid "Messages That Will Not Download"
 msgstr "無法下載的郵件"
 
-#: app/src/ui/window.rs:3792
+#: app/src/ui/window.rs:3789
 msgid ""
 "Penguin Mail could not download these from {address}'s server. It tries "
 "again at each check, except for a message too large to download."
@@ -10423,7 +10423,7 @@ msgstr "「{title}」已在其他地方變更，因此未儲存此次變更"
 msgid "Your change to “{title}” was not saved: {reason}"
 msgstr "未儲存「{title}」的變更：{reason}"
 
-#: app/src/ui/window/spaces.rs:271
+#: app/src/ui/window/spaces.rs:270
 msgid "Show Event"
 msgstr "顯示活動"
 
@@ -11107,23 +11107,23 @@ msgstr "鑰匙圈拒絕操作：{reason}"
 msgid "A rule on this computer forwarded the attached message from {address}."
 msgstr "此電腦上的規則轉寄了 {address} 的郵件，內容如附件。"
 
-#: sync/src/services/caldav.rs:463
+#: sync/src/services/caldav.rs:470
 msgid "An event needs an ID to be imported."
 msgstr "活動需要識別碼才能匯入。"
 
-#: sync/src/services/caldav.rs:485
+#: sync/src/services/caldav.rs:492
 msgid "A CalDAV calendar cannot store attached files."
 msgstr "CalDAV 行事曆無法儲存附加檔案。"
 
-#: sync/src/services/caldav.rs:489
+#: sync/src/services/caldav.rs:496
 msgid "A CalDAV calendar has no files to share."
 msgstr "CalDAV 行事曆沒有可共用的檔案。"
 
-#: sync/src/services/caldav.rs:519
+#: sync/src/services/caldav.rs:526
 msgid "You are not a guest of this event."
 msgstr "並非此活動的參與者。"
 
-#: sync/src/services/caldav.rs:523
+#: sync/src/services/caldav.rs:530
 msgid "Penguin Mail cannot change the calendar list of a CalDAV server."
 msgstr "Penguin Mail 無法變更 CalDAV 伺服器的行事曆清單。"
 
@@ -11439,7 +11439,9 @@ msgstr "{address} 已是 Penguin Mail 中的 {provider} 帳號。"
 msgid ""
 "A calendar account named {name} is already here, for the server at "
 "{address}. Remove it to add this server under that name."
-msgstr "已有名為 {name} 的行事曆帳號，對應位於 {address} 的伺服器。請先移除它，才能以這個名稱新增此伺服器。"
+msgstr ""
+"已有名為 {name} 的行事曆帳號，對應位於 {address} 的伺服器。請先移除它，才能以"
+"這個名稱新增此伺服器。"
 
 #. The JMAP server publishes no sign-in a browser can run.
 #: sync/src/sign_in/browser.rs:98
