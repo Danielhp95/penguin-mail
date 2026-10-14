@@ -864,9 +864,9 @@ enum Mark {
 /// while open.
 fn arrow_icon(open: bool) -> &'static str {
     if open {
-        "pan-down-symbolic"
+        "penguin-mail-chevron-down-symbolic"
     } else {
-        "pan-end-symbolic"
+        "penguin-mail-chevron-right-symbolic"
     }
 }
 

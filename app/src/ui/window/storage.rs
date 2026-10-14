@@ -1,7 +1,7 @@
 //! The band above the message list for an account whose server is
 //! nearly full. It shows in All Inboxes and in that account's own
-//! mailboxes, nowhere else. Review Storage opens Preferences on the Sync
-//! page, where Space on the Server shows every account, and takes the
+//! mailboxes, nowhere else. Review Storage opens Preferences on the Accounts
+//! page, where each account shows its space on the server, and takes the
 //! band down until the account's level changes: one dismissed while
 //! nearly full comes back once the account is full, and the other way
 //! round. That dismissal is kept in the settings, so a restart does not
@@ -26,11 +26,17 @@ pub(super) fn banner_line(address: &str, storage: Storage) -> Option<String> {
         return None;
     }
     Some(if storage.full() {
-        fill(&gettext("{address} is full and may refuse new mail"), &[("address", address)])
+        fill(
+            &gettext("{address} is full and may refuse new mail"),
+            &[("address", address)],
+        )
     } else {
         fill(
             &gettext("{address} is {percent}% full"),
-            &[("address", address), ("percent", &storage.percent().to_string())],
+            &[
+                ("address", address),
+                ("percent", &storage.percent().to_string()),
+            ],
         )
     })
 }
@@ -178,7 +184,10 @@ impl MainWindow {
             }
         }
         for account in lapsed {
-            app.change_settings(Change::StorageDismissed { account, full: None });
+            app.change_settings(Change::StorageDismissed {
+                account,
+                full: None,
+            });
         }
         let ids: HashSet<AccountId> = wanted.iter().map(|(id, _, _, _)| *id).collect();
         {
@@ -205,12 +214,21 @@ impl MainWindow {
                     let Some(window) = weak.upgrade() else {
                         return;
                     };
-                    let full = window.storage_banner_widgets.borrow().get(&id).is_some_and(|band| band.level.full.get());
+                    let full = window
+                        .storage_banner_widgets
+                        .borrow()
+                        .get(&id)
+                        .is_some_and(|band| band.level.full.get());
                     if let Some(app) = window.app.upgrade() {
-                        app.change_settings(Change::StorageDismissed { account: email.clone(), full: Some(full) });
+                        app.change_settings(Change::StorageDismissed {
+                            account: email.clone(),
+                            full: Some(full),
+                        });
                     }
                     window.rebuild_storage_banners();
-                    window.show_preferences_page("sync");
+                    window.show_preferences_focus(Some(crate::ui::preferences::Focus::Storage(
+                        &email,
+                    )));
                 });
                 let weak = Rc::downgrade(self);
                 close.connect_clicked(move |_| {
@@ -269,8 +287,20 @@ mod tests {
     #[test]
     fn the_band_shows_in_all_inboxes_and_the_accounts_own_mailboxes() {
         assert!(shows_in(&Mailbox::Unified(Standard::Inbox), 3));
-        assert!(shows_in(&Mailbox::Standard { account_id: 3, which: Standard::Sent }, 3));
-        assert!(!shows_in(&Mailbox::Standard { account_id: 4, which: Standard::Inbox }, 3));
+        assert!(shows_in(
+            &Mailbox::Standard {
+                account_id: 3,
+                which: Standard::Sent
+            },
+            3
+        ));
+        assert!(!shows_in(
+            &Mailbox::Standard {
+                account_id: 4,
+                which: Standard::Inbox
+            },
+            3
+        ));
     }
 
     #[test]
@@ -278,7 +308,13 @@ mod tests {
         assert!(!shows_in(&Mailbox::Outbox, 3));
         assert!(!shows_in(&Mailbox::Scheduled, 3));
         assert!(!shows_in(&Mailbox::Unified(Standard::Sent), 3));
-        assert!(!shows_in(&Mailbox::Search { query: "kites".into(), account_id: Some(3) }, 3));
+        assert!(!shows_in(
+            &Mailbox::Search {
+                query: "kites".into(),
+                account_id: Some(3)
+            },
+            3
+        ));
     }
 
     fn used(used: u64) -> Storage {
@@ -328,7 +364,13 @@ mod tests {
 
     #[test]
     fn a_banner_dismissed_while_full_comes_back_at_the_next_level() {
-        assert!(!stays_dismissed(true, used(97)), "full to nearly full is a new level");
-        assert!(!stays_dismissed(false, used(50)), "room again ends the dismissal");
+        assert!(
+            !stays_dismissed(true, used(97)),
+            "full to nearly full is a new level"
+        );
+        assert!(
+            !stays_dismissed(false, used(50)),
+            "room again ends the dismissal"
+        );
     }
 }

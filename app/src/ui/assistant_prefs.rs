@@ -16,7 +16,7 @@ use mailrs_domain::translate::{fill, fill_plural, gettext};
 /// Models a picker shows before it grows a search box.
 const SEARCH_FROM: usize = 8;
 
-pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesPage {
+pub fn page(app: &Rc<App>, dialog: &adw::ToastOverlay) -> adw::PreferencesPage {
     let ai = app.settings().ai;
     // Other code opens this page by the name it had when it was called
     // Assistant, so the name stays.
@@ -25,6 +25,29 @@ pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesP
         .name("assistant")
         .icon_name("penguin-mail-sparkle-symbolic")
         .build();
+
+    let safety = adw::PreferencesGroup::builder()
+        .title(gettext("Safety"))
+        .build();
+    let confirm = adw::SwitchRow::builder()
+        .title(gettext("Ask Before Acting"))
+        .subtitle(gettext(
+            "Approve each message the assistant sends and each change to Gmail \
+             settings, such as automatic replies and rules",
+        ))
+        .active(ai.confirm_actions)
+        .build();
+    let weak = Rc::downgrade(app);
+    confirm.add_css_class("preference-explanation");
+    confirm.connect_active_notify(move |row| {
+        let on = row.is_active();
+        if let Some(app) = weak.upgrade() {
+            app.change_settings(Change::Ai(AiChange::ConfirmActions(on)));
+        }
+    });
+    safety.add(&confirm);
+    page.add(&safety);
+    page.add(&always_allowed(app));
 
     let connections = adw::PreferencesGroup::builder()
         .title(gettext("Connections"))
@@ -91,10 +114,13 @@ pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesP
             app.change_settings(Change::Ai(AiChange::BaseUrl(url)));
         }
     });
-    let toasts = dialog.clone();
+    let toasts = dialog.downgrade();
     let save = move |name: &'static str, row: &adw::PasswordEntryRow| {
         let toasts = toasts.clone();
         row.connect_apply(move |row| {
+            let Some(toasts) = toasts.upgrade() else {
+                return;
+            };
             let key = row.text();
             assistant::save_key(name, &key);
             toasts.add_toast(crate::ui::toast(&if key.trim().is_empty() {
@@ -139,40 +165,14 @@ pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesP
     for row in &rows {
         used_for.add(&row.expander);
     }
-    page.add(&used_for);
-    page.add(&language_group(app, dialog, &ai));
 
     let assistant_row = rows
         .into_iter()
         .find(|row| row.feature == Feature::Assistant)
         .expect("Feature::ALL holds the assistant");
     page.add(&detected_group(app, assistant_row, &base_url, &local));
-
-    let safety = adw::PreferencesGroup::builder()
-        .title(gettext("Safety"))
-        .build();
-    let confirm = adw::SwitchRow::builder()
-        .title(gettext("Ask Before Acting"))
-        .subtitle(gettext(
-            "Approve each message the assistant sends and each change to Gmail \
-             settings, such as automatic replies and rules",
-        ))
-        .active(ai.confirm_actions)
-        .build();
-    let weak = Rc::downgrade(app);
-    confirm.connect_active_notify(move |row| {
-        let on = row.is_active();
-        if let Some(app) = weak.upgrade() {
-            app.change_settings(Change::Ai(AiChange::ConfirmActions(on)));
-        }
-    });
-    safety.add(&confirm);
-    page.add(&safety);
-    // What the assistant can reach beyond the mail tools, after the
-    // settings that choose and restrain the model itself.
-    page.add(&crate::ui::assistant_web_prefs::group(app));
-    page.add(&crate::ui::assistant_mcp_prefs::group(app, dialog));
-    page.add(&crate::ui::assistant_skills_prefs::group(app));
+    page.add(&used_for);
+    page.add(&language_group(app, dialog, &ai));
 
     let details = adw::PreferencesGroup::builder()
         .title(gettext("Conversation"))
@@ -185,6 +185,7 @@ pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesP
         .active(app.settings().assistant_details_expanded)
         .build();
     let weak = Rc::downgrade(app);
+    expanded.add_css_class("preference-explanation");
     expanded.connect_active_notify(move |row| {
         if let Some(app) = weak.upgrade() {
             app.change_settings(Change::AssistantDetailsExpanded(row.is_active()));
@@ -192,13 +193,18 @@ pub fn page(app: &Rc<App>, dialog: &adw::PreferencesDialog) -> adw::PreferencesP
     });
     details.add(&expanded);
     page.add(&details);
-    page.add(&always_allowed(app));
+    // What the assistant can reach beyond the mail tools, after the
+    // settings that choose and restrain the model itself.
+    page.add(&crate::ui::assistant_web_prefs::group(app));
+    page.add(&crate::ui::assistant_mcp_prefs::group(app, dialog));
+    page.add(&crate::ui::assistant_skills_prefs::group(app));
+
     page
 }
 
 fn language_group(
     app: &Rc<App>,
-    dialog: &adw::PreferencesDialog,
+    dialog: &adw::ToastOverlay,
     ai: &AiSettings,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
@@ -252,8 +258,9 @@ fn language_group(
     });
     custom.connect_changed(|row| row.remove_css_class("error"));
     let weak = Rc::downgrade(app);
-    let toasts = dialog.clone();
+    let toasts = dialog.downgrade();
     custom.connect_apply(move |row| {
+        let Some(toasts) = toasts.upgrade() else { return };
         let Some(name) = assistant::language::normalize(&row.text()).filter(|name| !name.is_empty()) else {
             row.add_css_class("error");
             toasts.add_toast(crate::ui::toast(&gettext("Enter a language name of up to 80 characters, using letters, spaces, hyphens, apostrophes, or parentheses.")));
@@ -299,12 +306,14 @@ fn always_allowed(app: &Rc<App>) -> adw::PreferencesGroup {
             &mailrs_domain::translate::fill(&gettext("Ask again before {tool}"), &[("tool", tool)]),
         );
         let weak = Rc::downgrade(app);
-        let (row_ref, group_ref) = (row.clone(), group.clone());
+        let (row_ref, group_ref) = (row.downgrade(), group.downgrade());
         remove.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
                 app.change_settings(Change::ForbidTool(key.clone()));
             }
-            group_ref.remove(&row_ref);
+            if let (Some(group), Some(row)) = (group_ref.upgrade(), row_ref.upgrade()) {
+                group.remove(&row);
+            }
         });
         row.add_suffix(&remove);
         group.add(&row);
@@ -314,17 +323,17 @@ fn always_allowed(app: &Rc<App>) -> adw::PreferencesGroup {
 
 /// One connection under Connections, holding the rows that set it up.
 fn connection_row(connection: AiProvider, subtitle: &str) -> adw::ExpanderRow {
-    adw::ExpanderRow::builder()
+    crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(connection.label())
         .subtitle(glib::markup_escape_text(subtitle))
-        .build()
+        .build())
 }
 
 /// The Test row inside a connection. It asks the model the assistant would
 /// use there, or the first feature that runs on it.
 fn test_row(
     app: &Rc<App>,
-    dialog: &adw::PreferencesDialog,
+    dialog: &adw::ToastOverlay,
     connection: AiProvider,
     typed: &Typed,
 ) -> adw::ActionRow {
@@ -336,9 +345,11 @@ fn test_row(
         .title(gettext("Test the Connection"))
         .build();
     row.add_suffix(&test);
-    let (weak, toasts, typed) = (Rc::downgrade(app), dialog.clone(), typed.clone());
+    let (weak, toasts, typed) = (Rc::downgrade(app), dialog.downgrade(), typed.clone());
     test.connect_clicked(move |button| {
-        let Some(app) = weak.upgrade() else { return };
+        let (Some(app), Some(toasts)) = (weak.upgrade(), toasts.upgrade()) else {
+            return;
+        };
         // Test what the dialog shows. Testing the saved address while the
         // person looks at a different one is how a working server gets
         // reported as broken.
@@ -412,11 +423,12 @@ fn feature_row(app: &Rc<App>, ai: &AiSettings, feature: Feature, typed: &Typed) 
     let current = ai.use_for(feature);
     let labels: Vec<String> = choices.iter().map(Use::label).collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-    let expander = adw::ExpanderRow::builder()
+    let expander = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(feature.label())
         .subtitle(feature.description())
         .expanded(true)
-        .build();
+        .build());
+    expander.add_css_class("preference-explanation");
     let connection = adw::ComboRow::builder()
         .title(gettext("Connection"))
         .model(&gtk::StringList::new(&labels))
@@ -590,7 +602,7 @@ fn model_row(app: &Rc<App>, current: &str, picker: Picker, typed: Typed) -> adw:
         }
     });
     let pick = gtk::MenuButton::builder()
-        .icon_name("pan-down-symbolic")
+        .icon_name("penguin-mail-chevron-down-symbolic")
         .tooltip_text(gettext("Models You Can Use"))
         .valign(gtk::Align::Center)
         .css_classes(["flat"])
@@ -864,7 +876,8 @@ fn detected_group(
                     &[("model", &item.models[0]), ("count", &(n - 1).to_string())],
                 ),
             };
-            let row = adw::ActionRow::builder().use_markup(false)
+            let row = adw::ActionRow::builder()
+                .use_markup(false)
                 .title(&item.label)
                 .subtitle(&subtitle)
                 .build();

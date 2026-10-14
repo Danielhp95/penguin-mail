@@ -14,7 +14,7 @@ mod mailboxes;
 mod outgoing;
 mod search;
 mod state;
-mod storage;
+pub(crate) mod storage;
 mod syntax;
 mod window;
 mod writes;

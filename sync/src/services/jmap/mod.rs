@@ -162,7 +162,10 @@ impl Handles {
     }
 }
 
+pub(crate) type StorageFallback = Arc<dyn Fn(String) -> futures::future::BoxFuture<'static, Result<Option<Storage>, crate::BackendError>> + Send + Sync>;
+
 pub struct Jmap<J> {
+    storage_fallback: Option<StorageFallback>,
     api: Arc<J>,
     settings: Arc<JmapSettings>,
     known: Arc<Mutex<Known>>,
@@ -173,6 +176,7 @@ pub struct Jmap<J> {
 impl<J> Clone for Jmap<J> {
     fn clone(&self) -> Self {
         Jmap {
+            storage_fallback: self.storage_fallback.clone(),
             api: Arc::clone(&self.api),
             settings: Arc::clone(&self.settings),
             known: Arc::clone(&self.known),
@@ -184,11 +188,17 @@ impl<J> Clone for Jmap<J> {
 impl<J: JmapApi> Jmap<J> {
     pub fn new(api: Arc<J>, settings: JmapSettings) -> Self {
         Jmap {
+            storage_fallback: None,
             api,
             settings: Arc::new(settings),
             known: Arc::new(Mutex::new(Known::default())),
             handles: Arc::new(Mutex::new(Handles::default())),
         }
+    }
+
+    pub(crate) fn with_storage_fallback(mut self, read: StorageFallback) -> Self {
+        self.storage_fallback = Some(read);
+        self
     }
 
     pub(super) fn api(&self) -> &J {

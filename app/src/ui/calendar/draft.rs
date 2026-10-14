@@ -6,8 +6,8 @@
 
 use std::collections::HashSet;
 
-use chrono::{NaiveDate, NaiveTime, TimeZone};
 use chrono::Duration;
+use chrono::{NaiveDate, NaiveTime, TimeZone};
 use chrono_tz::Tz;
 use mailrs_domain::calendar::repeat::Repeat;
 use mailrs_domain::calendar::{
@@ -30,7 +30,11 @@ pub enum TypeChoice {
 
 /// The order every list of types shows them in: the editor's Type row,
 /// the New Event menu and quick add's switch.
-pub const TYPE_ORDER: [TypeChoice; 3] = [TypeChoice::Event, TypeChoice::Focus, TypeChoice::OutOfOffice];
+pub const TYPE_ORDER: [TypeChoice; 3] = [
+    TypeChoice::Event,
+    TypeChoice::Focus,
+    TypeChoice::OutOfOffice,
+];
 
 /// The types the account's primary calendar takes.
 pub fn account_types(offers: &Offers) -> Vec<TypeChoice> {
@@ -66,15 +70,27 @@ pub fn type_switch(offers: &Offers, calendar: &Calendar) -> Option<Vec<TypeChoic
 /// add keeps the type across a change of calendar only where the new
 /// calendar takes it.
 pub fn kept_type(choice: TypeChoice, types: &[TypeChoice]) -> TypeChoice {
-    if types.contains(&choice) { choice } else { TypeChoice::Event }
+    if types.contains(&choice) {
+        choice
+    } else {
+        TypeChoice::Event
+    }
 }
 
 /// What the New Event menu offers: each type at least one of the
 /// `offered` calendars takes, in the order the menu lists them.
-pub fn menu_types(offered: &[(AccountId, String, Calendar)], offers: impl Fn(AccountId) -> Offers) -> Vec<TypeChoice> {
-    let taken: HashSet<TypeChoice> =
-        offered.iter().flat_map(|(account, _, calendar)| creatable_types(&offers(*account), calendar)).collect();
-    TYPE_ORDER.into_iter().filter(|t| *t == TypeChoice::Event || taken.contains(t)).collect()
+pub fn menu_types(
+    offered: &[(AccountId, String, Calendar)],
+    offers: impl Fn(AccountId) -> Offers,
+) -> Vec<TypeChoice> {
+    let taken: HashSet<TypeChoice> = offered
+        .iter()
+        .flat_map(|(account, _, calendar)| creatable_types(&offers(*account), calendar))
+        .collect();
+    TYPE_ORDER
+        .into_iter()
+        .filter(|t| *t == TypeChoice::Event || taken.contains(t))
+        .collect()
 }
 
 /// The calendar a new entry of type `choice` goes on: `default` when it
@@ -85,7 +101,9 @@ pub fn calendar_for(
     offers: impl Fn(AccountId) -> Offers,
     default: &(AccountId, Calendar),
 ) -> Option<(AccountId, Calendar)> {
-    let takes = |account: AccountId, calendar: &Calendar| creatable_types(&offers(account), calendar).contains(&choice);
+    let takes = |account: AccountId, calendar: &Calendar| {
+        creatable_types(&offers(account), calendar).contains(&choice)
+    };
     if takes(default.0, &default.1) {
         return Some(default.clone());
     }
@@ -155,8 +173,18 @@ pub struct Draft {
 
 impl Draft {
     /// A new event on `calendar`, from `start` to `end`.
-    pub fn new(account_id: AccountId, calendar: &Calendar, start: EpochMillis, end: EpochMillis, view_zone: Tz) -> Draft {
-        let zone = if calendar.zone.parse::<Tz>().is_ok() { calendar.zone.clone() } else { view_zone.name().to_string() };
+    pub fn new(
+        account_id: AccountId,
+        calendar: &Calendar,
+        start: EpochMillis,
+        end: EpochMillis,
+        view_zone: Tz,
+    ) -> Draft {
+        let zone = if calendar.zone.parse::<Tz>().is_ok() {
+            calendar.zone.clone()
+        } else {
+            view_zone.name().to_string()
+        };
         let day = local_day(start, view_zone);
         Draft {
             account_id,
@@ -180,7 +208,11 @@ impl Draft {
             attachments_known: true,
             base: None,
             occurrence: None,
-            opened: Opened { rules: Vec::new(), repeat: Repeat::Never, day },
+            opened: Opened {
+                rules: Vec::new(),
+                repeat: Repeat::Never,
+                day,
+            },
             view_zone,
         }
     }
@@ -214,7 +246,11 @@ impl Draft {
             attachments_known: event.attachments.is_some(),
             base: Some(Event::clone(event)),
             occurrence: Some(occurrence.clone()),
-            opened: Opened { rules: series_rules.to_vec(), repeat, day },
+            opened: Opened {
+                rules: series_rules.to_vec(),
+                repeat,
+                day,
+            },
             view_zone,
         }
     }
@@ -222,7 +258,9 @@ impl Draft {
     /// Whether the person gave the occurrence they opened another time,
     /// which the calendar confirms before writing.
     pub fn moved(&self) -> bool {
-        self.occurrence.as_ref().is_some_and(|o| (o.start, o.end) != (self.start, self.end))
+        self.occurrence
+            .as_ref()
+            .is_some_and(|o| (o.start, o.end) != (self.start, self.end))
     }
 
     /// The draft as the editor opened it, for telling what changed.
@@ -303,9 +341,15 @@ impl Draft {
             self.end = utc_midnight(last) + DAY;
         } else {
             // The dates of an all-day event are UTC dates.
-            let first = chrono::DateTime::from_timestamp_millis(self.start).unwrap_or_default().date_naive();
+            let first = chrono::DateTime::from_timestamp_millis(self.start)
+                .unwrap_or_default()
+                .date_naive();
             let nine = first.and_time(NaiveTime::from_hms_opt(9, 0, 0).expect("09:00 exists"));
-            self.start = self.view_zone.from_local_datetime(&nine).earliest().map_or(self.start, |t| t.timestamp_millis());
+            self.start = self
+                .view_zone
+                .from_local_datetime(&nine)
+                .earliest()
+                .map_or(self.start, |t| t.timestamp_millis());
             self.end = self.start + HOUR;
         }
         self.all_day = on;
@@ -321,8 +365,16 @@ impl Draft {
         for address in crate::compose::parse_recipients(text) {
             if !crate::compose::is_address(&address.email) {
                 refused.push(address.email);
-            } else if !self.guests.iter().any(|g| g.email.eq_ignore_ascii_case(&address.email)) {
-                self.guests.push(Guest { email: address.email, name: address.name, ..Guest::default() });
+            } else if !self
+                .guests
+                .iter()
+                .any(|g| g.email.eq_ignore_ascii_case(&address.email))
+            {
+                self.guests.push(Guest {
+                    email: address.email,
+                    name: address.name,
+                    ..Guest::default()
+                });
             }
         }
         refused
@@ -409,7 +461,11 @@ impl Draft {
                     self.view_zone
                         .from_local_datetime(&at)
                         .earliest()
-                        .or_else(|| self.view_zone.from_local_datetime(&(at + Duration::hours(1))).earliest())
+                        .or_else(|| {
+                            self.view_zone
+                                .from_local_datetime(&(at + Duration::hours(1)))
+                                .earliest()
+                        })
                         .map_or(utc_midnight(day), |t| t.timestamp_millis())
                 };
                 self.start = midnight(first);
@@ -444,7 +500,9 @@ impl Draft {
     /// event's files, the account organizes it, and it is an ordinary
     /// event, not out of office or focus time.
     pub fn can_attach(&self) -> bool {
-        self.attachments_known && !self.base.as_ref().is_some_and(limited) && self.kind == Kind::Event
+        self.attachments_known
+            && !self.base.as_ref().is_some_and(limited)
+            && self.kind == Kind::Event
     }
 
     /// Adds a file to the event.
@@ -496,7 +554,10 @@ impl Draft {
     /// occurrence's times; `series::change` takes only those three fields
     /// from it, and the PATCH carries nothing else.
     pub fn to_event(&self, new_id: &str, meet_request: &str) -> Event {
-        let mut event = self.base.clone().unwrap_or_else(|| Event { id: new_id.to_string(), ..Event::default() });
+        let mut event = self.base.clone().unwrap_or_else(|| Event {
+            id: new_id.to_string(),
+            ..Event::default()
+        });
         if let Some(base) = &self.base
             && limited(base)
         {
@@ -510,20 +571,29 @@ impl Draft {
         event.all_day = self.all_day;
         event.start = self.start;
         event.end = self.end;
-        event.zone = if self.all_day { "UTC".to_string() } else { self.zone.clone() };
+        event.zone = if self.all_day {
+            "UTC".to_string()
+        } else {
+            self.zone.clone()
+        };
         event.place = self.place.trim().to_string();
         event.guests = self.guests.clone();
         event.reminders = self.reminders.clone();
         // Notes nobody touched go back as Google holds them, since turning
         // its HTML into lines and back would drop its formatting.
-        if self.base.as_ref().is_none_or(|base| mailrs_mime::notes::text(&base.description) != self.notes) {
+        if self
+            .base
+            .as_ref()
+            .is_none_or(|base| mailrs_mime::notes::text(&base.description) != self.notes)
+        {
             event.description = mailrs_mime::notes::html(&self.notes);
         }
         event.busy = self.busy;
         event.private = self.private;
         event.color = self.color.clone();
         event.rules = self.rules();
-        event.meet_request = (self.add_meet && event.conference.is_none()).then(|| meet_request.to_string());
+        event.meet_request =
+            (self.add_meet && event.conference.is_none()).then(|| meet_request.to_string());
         event.kind = self.kind.clone();
         event.attachments = self.attachments_known.then(|| self.attachments.clone());
         if event.kind.decline().is_some() {
@@ -549,7 +619,10 @@ impl Draft {
     fn rules(&self) -> Vec<String> {
         let zone: Tz = self.zone.parse().unwrap_or(self.view_zone);
         let day = local_day(self.start, zone);
-        let follows_day = matches!(self.repeat, Repeat::EveryWeek | Repeat::EveryMonth | Repeat::EveryYear);
+        let follows_day = matches!(
+            self.repeat,
+            Repeat::EveryWeek | Repeat::EveryMonth | Repeat::EveryYear
+        );
         if !self.rule_changed() && !(follows_day && day != self.opened.day) {
             return self.opened.rules.clone();
         }
@@ -557,7 +630,13 @@ impl Draft {
             return Vec::new();
         };
         std::iter::once(rule)
-            .chain(self.opened.rules.iter().filter(|l| !mailrs_domain::calendar::is_rule_line(l)).cloned())
+            .chain(
+                self.opened
+                    .rules
+                    .iter()
+                    .filter(|l| !mailrs_domain::calendar::is_rule_line(l))
+                    .cloned(),
+            )
             .collect()
     }
 }
@@ -592,26 +671,37 @@ pub fn local_zone() -> Tz {
 }
 
 fn local_day(at: EpochMillis, zone: Tz) -> NaiveDate {
-    chrono::DateTime::from_timestamp_millis(at).unwrap_or_default().with_timezone(&zone).date_naive()
+    chrono::DateTime::from_timestamp_millis(at)
+        .unwrap_or_default()
+        .with_timezone(&zone)
+        .date_naive()
 }
 
 fn utc_midnight(day: NaiveDate) -> EpochMillis {
-    day.and_hms_opt(0, 0, 0).expect("midnight exists").and_utc().timestamp_millis()
+    day.and_hms_opt(0, 0, 0)
+        .expect("midnight exists")
+        .and_utc()
+        .timestamp_millis()
 }
 
 /// Where a new event goes when nobody said: the primary calendar of the
 /// account last used, else the first primary the person can write to,
 /// else any calendar they can write to.
-pub fn default_calendar(writable: &[(AccountId, String, Calendar)], last: Option<&str>) -> Option<(AccountId, Calendar)> {
-    let primary = |email: Option<&str>| {
-        writable
-            .iter()
-            .find(|(_, address, c)| c.primary && email.is_none_or(|e| e.eq_ignore_ascii_case(address)))
-    };
-    last.and_then(|e| primary(Some(e)))
-        .or_else(|| primary(None))
-        .or_else(|| writable.first())
-        .map(|(account, _, calendar)| (*account, calendar.clone()))
+#[cfg(test)]
+pub fn default_calendar(
+    writable: &[(AccountId, String, Calendar)],
+    last: Option<&str>,
+) -> Option<(AccountId, Calendar)> {
+    crate::settings::preferred_calendar(writable, None, last)
+}
+
+/// An explicit task default can use any writable calendar of that account.
+pub fn preferred_calendar(
+    writable: &[(AccountId, String, Calendar)],
+    preferred: Option<&str>,
+    last: Option<&str>,
+) -> Option<(AccountId, Calendar)> {
+    crate::settings::preferred_calendar(writable, preferred, last)
 }
 
 /// Whether someone else organizes the event and the account is only a
@@ -719,8 +809,14 @@ impl Editing {
     /// neither.
     pub fn popover(self) -> Option<Popover> {
         match self {
-            Editing::Whole => Some(Popover { edit: true, removal: Removal::Event }),
-            Editing::Guest => Some(Popover { edit: true, removal: Removal::OwnCopy }),
+            Editing::Whole => Some(Popover {
+                edit: true,
+                removal: Removal::Event,
+            }),
+            Editing::Guest => Some(Popover {
+                edit: true,
+                removal: Removal::OwnCopy,
+            }),
             Editing::NeedsPermission | Editing::None => None,
         }
     }
@@ -729,7 +825,12 @@ impl Editing {
 /// What the view lets a person do to `event`, from its calendar's
 /// access and what the account's provider offers and its consent
 /// withheld.
-pub fn editing(event: &Event, access: Access, offers_calendar: bool, withheld_calendar: bool) -> Editing {
+pub fn editing(
+    event: &Event,
+    access: Access,
+    offers_calendar: bool,
+    withheld_calendar: bool,
+) -> Editing {
     if !offers_calendar || !access.can_write() || event.kind.made_elsewhere() {
         Editing::None
     } else if withheld_calendar {
@@ -746,7 +847,12 @@ pub fn editing(event: &Event, access: Access, offers_calendar: bool, withheld_ca
 /// by name, so the default and the editor's list stay the same from run
 /// to run whatever order the map they came from held.
 pub fn sort_writable(writable: &mut [(AccountId, String, Calendar)], account_order: &[AccountId]) {
-    let rank = |account: &AccountId| account_order.iter().position(|a| a == account).unwrap_or(usize::MAX);
+    let rank = |account: &AccountId| {
+        account_order
+            .iter()
+            .position(|a| a == account)
+            .unwrap_or(usize::MAX)
+    };
     writable.sort_by(|(a, _, x), (b, _, y)| {
         rank(a)
             .cmp(&rank(b))
@@ -783,14 +889,24 @@ mod tests {
 
     fn at(d: u32, h: u32, m: u32) -> EpochMillis {
         Lisbon
-            .from_local_datetime(&NaiveDate::from_ymd_opt(2026, 9, d).unwrap().and_hms_opt(h, m, 0).unwrap())
+            .from_local_datetime(
+                &NaiveDate::from_ymd_opt(2026, 9, d)
+                    .unwrap()
+                    .and_hms_opt(h, m, 0)
+                    .unwrap(),
+            )
             .single()
             .unwrap()
             .timestamp_millis()
     }
 
     fn utc_midnight(d: u32) -> EpochMillis {
-        NaiveDate::from_ymd_opt(2026, 9, d).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis()
+        NaiveDate::from_ymd_opt(2026, 9, d)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
     }
 
     fn personal() -> Calendar {
@@ -803,7 +919,10 @@ mod tests {
             primary: true,
             shown: true,
             hidden: false,
-            reminders: vec![Reminder { minutes: 10, method: ReminderMethod::Notification }],
+            reminders: vec![Reminder {
+                minutes: 10,
+                method: ReminderMethod::Notification,
+            }],
             all_day_reminders: None,
         }
     }
@@ -823,10 +942,18 @@ mod tests {
             zone: "Europe/Lisbon".into(),
             title: "Review".into(),
             busy: true,
-            rules: vec!["RRULE:FREQ=WEEKLY;BYDAY=WE".into(), "EXDATE;TZID=Europe/Lisbon:20260930T150000".into()],
+            rules: vec![
+                "RRULE:FREQ=WEEKLY;BYDAY=WE".into(),
+                "EXDATE;TZID=Europe/Lisbon:20260930T150000".into(),
+            ],
             ..Event::default()
         };
-        Occurrence { account_id: 1, start: event.start, end: event.end, event: Arc::new(event) }
+        Occurrence {
+            account_id: 1,
+            start: event.start,
+            end: event.end,
+            event: Arc::new(event),
+        }
     }
 
     #[test]
@@ -880,20 +1007,29 @@ mod tests {
     fn an_event_opens_with_its_attachments_and_saves_them_back() {
         let draft = with_attachments(Some(vec![agenda()]));
         assert_eq!(draft.attachments, vec![agenda()]);
-        assert_eq!(draft.to_event("pmnew", "pmmeet").attachments, Some(vec![agenda()]));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").attachments,
+            Some(vec![agenda()])
+        );
     }
 
     #[test]
     fn a_new_event_starts_with_no_attachments_it_can_add_to() {
         let draft = fresh();
         assert!(draft.can_attach());
-        assert_eq!(draft.to_event("pmnew", "pmmeet").attachments, Some(Vec::new()));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").attachments,
+            Some(Vec::new())
+        );
     }
 
     #[test]
     fn an_event_whose_attachments_are_unknown_saves_them_unknown() {
         let draft = with_attachments(None);
-        assert!(!draft.can_attach(), "adding to an unread list would drop the files Google holds");
+        assert!(
+            !draft.can_attach(),
+            "adding to an unread list would drop the files Google holds"
+        );
         assert_eq!(draft.to_event("pmnew", "pmmeet").attachments, None);
     }
 
@@ -908,7 +1044,10 @@ mod tests {
         draft.attach(waiting.clone());
         assert_eq!(draft.attachments, vec![agenda(), waiting.clone()]);
         draft.detach(0);
-        assert_eq!(draft.to_event("pmnew", "pmmeet").attachments, Some(vec![waiting]));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").attachments,
+            Some(vec![waiting])
+        );
     }
 
     #[test]
@@ -916,18 +1055,31 @@ mod tests {
         let mut occurrence = weekly();
         let event = Arc::make_mut(&mut occurrence.event);
         event.attachments = Some(vec![agenda()]);
-        event.guests = vec![Guest { email: "me@example.com".into(), me: true, ..Guest::default() }];
+        event.guests = vec![Guest {
+            email: "me@example.com".into(),
+            me: true,
+            ..Guest::default()
+        }];
         let draft = Draft::open(&occurrence, &occurrence.event.rules, Lisbon);
         assert!(!draft.can_attach());
-        assert_eq!(draft.to_event("pmnew", "pmmeet").attachments, Some(vec![agenda()]));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").attachments,
+            Some(vec![agenda()])
+        );
     }
 
     #[test]
     fn unticking_sharing_keeps_the_file_to_the_organizer() {
-        let ours = mailrs_domain::calendar::Attachment { share: Some(true), ..agenda() };
+        let ours = mailrs_domain::calendar::Attachment {
+            share: Some(true),
+            ..agenda()
+        };
         let mut draft = with_attachments(Some(vec![ours]));
         draft.set_share(0, false);
-        assert_eq!(draft.to_event("pmnew", "pmmeet").attachments.unwrap()[0].share, Some(false));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").attachments.unwrap()[0].share,
+            Some(false)
+        );
     }
 
     #[test]
@@ -940,7 +1092,11 @@ mod tests {
     #[test]
     fn only_guests_other_than_the_account_count_for_sharing() {
         let mut draft = fresh();
-        draft.guests = vec![Guest { email: "me@example.com".into(), me: true, ..Guest::default() }];
+        draft.guests = vec![Guest {
+            email: "me@example.com".into(),
+            me: true,
+            ..Guest::default()
+        }];
         assert!(!draft.has_other_guests());
         draft.add_guests("ana@example.com");
         assert!(draft.has_other_guests());
@@ -962,7 +1118,8 @@ mod tests {
     }
 
     /// Notes as Google's own editor writes them.
-    const GOOGLE_NOTES: &str = r#"Bring the numbers<br><a href="https://example.com/q3">Q3 sheet</a>"#;
+    const GOOGLE_NOTES: &str =
+        r#"Bring the numbers<br><a href="https://example.com/q3">Q3 sheet</a>"#;
 
     fn with_google_notes() -> Draft {
         let mut occurrence = weekly();
@@ -972,7 +1129,10 @@ mod tests {
 
     #[test]
     fn google_s_html_notes_open_as_lines() {
-        assert_eq!(with_google_notes().notes, "Bring the numbers\nQ3 sheet (https://example.com/q3)");
+        assert_eq!(
+            with_google_notes().notes,
+            "Bring the numbers\nQ3 sheet (https://example.com/q3)"
+        );
     }
 
     #[test]
@@ -1160,7 +1320,10 @@ mod tests {
         let mut draft = Draft::open(&weekly(), &weekly().event.rules, Lisbon);
         draft.land(utc_midnight(24), utc_midnight(25), true);
         let event = draft.to_event("new", "meet");
-        assert_eq!((event.all_day, event.start, event.end, event.zone.as_str()), (true, utc_midnight(24), utc_midnight(25), "UTC"));
+        assert_eq!(
+            (event.all_day, event.start, event.end, event.zone.as_str()),
+            (true, utc_midnight(24), utc_midnight(25), "UTC")
+        );
     }
 
     #[test]
@@ -1173,7 +1336,10 @@ mod tests {
         let mut draft = Draft::open(&o, &[], Lisbon);
         draft.land(at(24, 14, 0), at(24, 15, 0), false);
         let event = draft.to_event("new", "meet");
-        assert_eq!((event.all_day, event.start, event.end, event.zone.as_str()), (false, at(24, 14, 0), at(24, 15, 0), "Europe/Lisbon"));
+        assert_eq!(
+            (event.all_day, event.start, event.end, event.zone.as_str()),
+            (false, at(24, 14, 0), at(24, 15, 0), "Europe/Lisbon")
+        );
     }
 
     #[test]
@@ -1186,14 +1352,20 @@ mod tests {
         let mut draft = Draft::open(&o, &[], Lisbon);
         draft.set_all_day(false);
         let event = draft.to_event("new", "meet");
-        assert_eq!((event.start, event.zone.as_str()), (at(24, 9, 0), "Europe/Lisbon"));
+        assert_eq!(
+            (event.start, event.zone.as_str()),
+            (at(24, 9, 0), "Europe/Lisbon")
+        );
     }
 
     #[test]
     fn all_day_covers_the_days_on_screen() {
         let mut draft = Draft::new(1, &personal(), at(23, 23, 0), at(24, 1, 0), Lisbon);
         draft.set_all_day(true);
-        assert_eq!((draft.start, draft.end), (utc_midnight(23), utc_midnight(25)));
+        assert_eq!(
+            (draft.start, draft.end),
+            (utc_midnight(23), utc_midnight(25))
+        );
         draft.set_all_day(false);
         assert_eq!((draft.start, draft.end), (at(23, 9, 0), at(23, 10, 0)));
     }
@@ -1203,7 +1375,14 @@ mod tests {
         let mut draft = fresh();
         draft.title = "Dentist".into();
         let event = draft.to_event("pmnew", "pmmeet");
-        assert_eq!((event.id.as_str(), event.calendar.as_str(), event.zone.as_str()), ("pmnew", "me@example.com", "Europe/Lisbon"));
+        assert_eq!(
+            (
+                event.id.as_str(),
+                event.calendar.as_str(),
+                event.zone.as_str()
+            ),
+            ("pmnew", "me@example.com", "Europe/Lisbon")
+        );
         assert_eq!(event.reminders, None, "None takes the calendar's reminders");
         assert!(event.busy);
         assert!(event.rules.is_empty());
@@ -1216,7 +1395,10 @@ mod tests {
         assert_eq!(draft.repeat, Repeat::EveryWeek);
         draft.title = "Design review".into();
         let event = draft.to_event("pmnew", "pmmeet");
-        assert_eq!((event.id.as_str(), event.etag.as_str(), event.uid.as_str()), ("review", "\"4\"", "review@google.com"));
+        assert_eq!(
+            (event.id.as_str(), event.etag.as_str(), event.uid.as_str()),
+            ("review", "\"4\"", "review@google.com")
+        );
         assert_eq!(event.rules, weekly().event.rules);
         assert!(!draft.rule_changed());
     }
@@ -1227,7 +1409,10 @@ mod tests {
         draft.set_span(at(24, 15, 0), at(24, 16, 0));
         let event = draft.to_event("pmnew", "pmmeet");
         assert_eq!(event.rules[0], "RRULE:FREQ=WEEKLY;BYDAY=TH");
-        assert_eq!(event.rules[1], "EXDATE;TZID=Europe/Lisbon:20260930T150000", "excluded dates stay");
+        assert_eq!(
+            event.rules[1], "EXDATE;TZID=Europe/Lisbon:20260930T150000",
+            "excluded dates stay"
+        );
     }
 
     /// Wednesday 23 September's occurrence of a stand-up that runs Monday
@@ -1241,13 +1426,21 @@ mod tests {
             rules: vec!["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".into()],
             ..Event::clone(&weekly().event)
         };
-        Occurrence { account_id: 1, start: at(23, 9, 30), end: at(23, 9, 45), event: Arc::new(series) }
+        Occurrence {
+            account_id: 1,
+            start: at(23, 9, 30),
+            end: at(23, 9, 45),
+            event: Arc::new(series),
+        }
     }
 
     #[test]
     fn moving_an_occurrence_of_a_weekday_series_keeps_every_weekday_in_the_rule() {
         let o = weekdays();
-        for (start, end) in [(at(23, 10, 30), at(23, 10, 45)), (at(24, 9, 30), at(24, 9, 45))] {
+        for (start, end) in [
+            (at(23, 10, 30), at(23, 10, 45)),
+            (at(24, 9, 30), at(24, 9, 45)),
+        ] {
             let mut draft = Draft::open(&o, &o.event.rules, Lisbon);
             assert_eq!(draft.repeat, Repeat::EveryWeekday);
             draft.set_span(start, end);
@@ -1261,7 +1454,10 @@ mod tests {
         let mut draft = Draft::open(&weekly(), &weekly().event.rules, Lisbon);
         draft.repeat = Repeat::EveryDay;
         assert!(draft.rule_changed());
-        assert_eq!(draft.to_event("pmnew", "pmmeet").rules[0], "RRULE:FREQ=DAILY");
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").rules[0],
+            "RRULE:FREQ=DAILY"
+        );
         draft.repeat = Repeat::Never;
         assert!(draft.to_event("pmnew", "pmmeet").rules.is_empty());
     }
@@ -1271,21 +1467,33 @@ mod tests {
         // BYSETPOS is not a rule the menu or the Custom page can say, so
         // `Repeat::read` keeps it whole as `Kept`.
         let mut event = weekly();
-        Arc::make_mut(&mut event.event).rules = vec!["RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1".into()];
+        Arc::make_mut(&mut event.event).rules =
+            vec!["RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1".into()];
         let mut draft = Draft::open(&event, &event.event.rules, Lisbon);
-        assert_eq!(draft.repeat, Repeat::Kept("RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1".into()));
+        assert_eq!(
+            draft.repeat,
+            Repeat::Kept("RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1".into())
+        );
         draft.set_span(at(24, 15, 0), at(24, 16, 0));
         assert!(!draft.rule_changed());
-        assert_eq!(draft.to_event("pmnew", "pmmeet").rules, event.event.rules, "a kept rule ignores the move");
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").rules,
+            event.event.rules,
+            "a kept rule ignores the move"
+        );
     }
 
     #[test]
     fn meet_is_asked_for_only_when_the_event_has_no_link() {
         let mut draft = fresh();
         draft.add_meet = true;
-        assert_eq!(draft.to_event("pmnew", "pmmeet").meet_request.as_deref(), Some("pmmeet"));
+        assert_eq!(
+            draft.to_event("pmnew", "pmmeet").meet_request.as_deref(),
+            Some("pmmeet")
+        );
         let mut linked = weekly();
-        Arc::make_mut(&mut linked.event).conference = Some("https://meet.google.com/abc-defg-hij".into());
+        Arc::make_mut(&mut linked.event).conference =
+            Some("https://meet.google.com/abc-defg-hij".into());
         let mut draft = Draft::open(&linked, &linked.event.rules, Lisbon);
         draft.add_meet = true;
         assert_eq!(draft.to_event("pmnew", "pmmeet").meet_request, None);
@@ -1293,17 +1501,59 @@ mod tests {
 
     #[test]
     fn the_default_calendar_follows_the_last_account_used() {
-        let work = Calendar { id: "me@work.pt".into(), ..personal() };
-        let team = Calendar { id: "team".into(), primary: false, ..personal() };
+        let work = Calendar {
+            id: "me@work.pt".into(),
+            ..personal()
+        };
+        let team = Calendar {
+            id: "team".into(),
+            primary: false,
+            ..personal()
+        };
         let writable = vec![
             (1, "me@example.com".to_string(), personal()),
             (2, "me@work.pt".to_string(), team.clone()),
             (2, "me@work.pt".to_string(), work.clone()),
         ];
-        assert_eq!(default_calendar(&writable, Some("ME@work.pt")).map(|(a, c)| (a, c.id)), Some((2, "me@work.pt".into())));
-        assert_eq!(default_calendar(&writable, None).map(|(a, c)| (a, c.id)), Some((1, "me@example.com".into())));
-        assert_eq!(default_calendar(&writable[1..2], None).map(|(_, c)| c.id), Some("team".into()));
+        assert_eq!(
+            default_calendar(&writable, Some("ME@work.pt")).map(|(a, c)| (a, c.id)),
+            Some((2, "me@work.pt".into()))
+        );
+        assert_eq!(
+            default_calendar(&writable, None).map(|(a, c)| (a, c.id)),
+            Some((1, "me@example.com".into()))
+        );
+        assert_eq!(
+            default_calendar(&writable[1..2], None).map(|(_, c)| c.id),
+            Some("team".into())
+        );
         assert_eq!(default_calendar(&[], None), None);
+    }
+
+    #[test]
+    fn a_chosen_calendar_account_wins_even_without_a_primary_calendar() {
+        let writable = vec![
+            (1, "personal@x".into(), personal()),
+            (
+                2,
+                "work@x".into(),
+                Calendar {
+                    id: "team".into(),
+                    primary: false,
+                    ..personal()
+                },
+            ),
+        ];
+        assert_eq!(
+            preferred_calendar(&writable, Some("WORK@X"), Some("personal@x"))
+                .map(|(id, c)| (id, c.id)),
+            Some((2, "team".into()))
+        );
+        assert_eq!(
+            preferred_calendar(&writable, Some("removed@x"), Some("personal@x")).map(|(id, _)| id),
+            Some(1)
+        );
+        assert!(preferred_calendar(&[], Some("work@x"), None).is_none());
     }
 
     #[test]
@@ -1311,8 +1561,17 @@ mod tests {
         let mut event = Event::clone(&weekly().event);
         assert!(!limited(&event));
         event.guests = vec![
-            Guest { email: "ana@example.com".into(), organizer: true, answer: Some(Answer::Yes), ..Guest::default() },
-            Guest { email: "me@example.com".into(), me: true, ..Guest::default() },
+            Guest {
+                email: "ana@example.com".into(),
+                organizer: true,
+                answer: Some(Answer::Yes),
+                ..Guest::default()
+            },
+            Guest {
+                email: "me@example.com".into(),
+                me: true,
+                ..Guest::default()
+            },
         ];
         assert!(limited(&event));
     }
@@ -1321,19 +1580,43 @@ mod tests {
     fn a_guest_may_only_change_reminders_colour_and_busy() {
         let mut event = Event::clone(&weekly().event);
         event.guests = vec![
-            Guest { email: "ana@example.com".into(), organizer: true, answer: Some(Answer::Yes), ..Guest::default() },
-            Guest { email: "me@example.com".into(), me: true, ..Guest::default() },
+            Guest {
+                email: "ana@example.com".into(),
+                organizer: true,
+                answer: Some(Answer::Yes),
+                ..Guest::default()
+            },
+            Guest {
+                email: "me@example.com".into(),
+                me: true,
+                ..Guest::default()
+            },
         ];
-        let occurrence = Occurrence { account_id: 1, start: event.start, end: event.end, event: Arc::new(event) };
+        let occurrence = Occurrence {
+            account_id: 1,
+            start: event.start,
+            end: event.end,
+            event: Arc::new(event),
+        };
         let mut draft = Draft::open(&occurrence, &occurrence.event.rules, Lisbon);
         draft.title = "Renamed".into();
         draft.set_span(at(24, 15, 0), at(24, 16, 0));
-        draft.reminders = Some(vec![Reminder { minutes: 5, method: ReminderMethod::Notification }]);
+        draft.reminders = Some(vec![Reminder {
+            minutes: 5,
+            method: ReminderMethod::Notification,
+        }]);
         draft.color = Some("#00ff00".into());
         draft.busy = false;
         let saved = draft.to_event("pmnew", "pmmeet");
-        assert_eq!(saved.title, "Review", "a guest cannot rename someone else's event");
-        assert_eq!((saved.start, saved.end), (occurrence.start, occurrence.end), "a guest cannot move it");
+        assert_eq!(
+            saved.title, "Review",
+            "a guest cannot rename someone else's event"
+        );
+        assert_eq!(
+            (saved.start, saved.end),
+            (occurrence.start, occurrence.end),
+            "a guest cannot move it"
+        );
         assert_eq!(saved.reminders, draft.reminders);
         assert_eq!(saved.color, draft.color);
         assert!(!saved.busy);
@@ -1342,27 +1625,50 @@ mod tests {
     fn invitation() -> Occurrence {
         let mut event = Event::clone(&weekly().event);
         event.guests = vec![
-            Guest { email: "ana@example.com".into(), organizer: true, answer: Some(Answer::Yes), ..Guest::default() },
-            Guest { email: "me@example.com".into(), me: true, ..Guest::default() },
+            Guest {
+                email: "ana@example.com".into(),
+                organizer: true,
+                answer: Some(Answer::Yes),
+                ..Guest::default()
+            },
+            Guest {
+                email: "me@example.com".into(),
+                me: true,
+                ..Guest::default()
+            },
         ];
-        Occurrence { account_id: 1, start: event.start, end: event.end, event: Arc::new(event) }
+        Occurrence {
+            account_id: 1,
+            start: event.start,
+            end: event.end,
+            event: Arc::new(event),
+        }
     }
 
     #[test]
     fn an_owner_on_a_writable_calendar_edits_the_whole_event() {
-        assert_eq!(editing(&weekly().event, Access::Owner, true, false), Editing::Whole);
+        assert_eq!(
+            editing(&weekly().event, Access::Owner, true, false),
+            Editing::Whole
+        );
     }
 
     #[test]
     fn a_guest_on_a_writable_calendar_gets_the_limited_editor() {
-        assert_eq!(editing(&invitation().event, Access::Owner, true, false), Editing::Guest);
+        assert_eq!(
+            editing(&invitation().event, Access::Owner, true, false),
+            Editing::Guest
+        );
     }
 
     #[test]
     fn a_birthday_or_a_working_location_edits_nothing() {
         use mailrs_domain::calendar::{Kind, Workplace};
         for kind in [Kind::Birthday, Kind::WorkingLocation(Workplace::Home)] {
-            let event = Event { kind, ..Event::clone(&weekly().event) };
+            let event = Event {
+                kind,
+                ..Event::clone(&weekly().event)
+            };
             assert_eq!(editing(&event, Access::Owner, true, false), Editing::None);
         }
     }
@@ -1370,59 +1676,108 @@ mod tests {
     #[test]
     fn out_of_office_and_focus_time_edit_as_a_whole_event() {
         use mailrs_domain::calendar::{Decline, Kind};
-        let event = Event { kind: Kind::OutOfOffice(Decline::default()), ..Event::clone(&weekly().event) };
+        let event = Event {
+            kind: Kind::OutOfOffice(Decline::default()),
+            ..Event::clone(&weekly().event)
+        };
         assert_eq!(editing(&event, Access::Owner, true, false), Editing::Whole);
     }
 
     #[test]
     fn only_a_new_event_on_a_primary_calendar_offers_a_type() {
         assert!(fresh().offers_type(true));
-        assert!(!fresh().offers_type(false), "Google keeps out of office and focus time on the primary calendar");
-        assert!(!Draft::open(&weekly(), &weekly().event.rules, Lisbon).offers_type(true), "Google never changes a type");
+        assert!(
+            !fresh().offers_type(false),
+            "Google keeps out of office and focus time on the primary calendar"
+        );
+        assert!(
+            !Draft::open(&weekly(), &weekly().event.rules, Lisbon).offers_type(true),
+            "Google never changes a type"
+        );
     }
 
     fn workspace() -> Offers {
-        Offers { out_of_office: true, focus_time: true, declines: true, ..Offers::EVERYTHING }
+        Offers {
+            out_of_office: true,
+            focus_time: true,
+            declines: true,
+            ..Offers::EVERYTHING
+        }
     }
 
     fn outlook() -> Offers {
-        Offers { out_of_office: true, ..Offers::EVERYTHING }
+        Offers {
+            out_of_office: true,
+            ..Offers::EVERYTHING
+        }
     }
 
     fn team() -> Calendar {
-        Calendar { id: "team".into(), name: "Team".into(), primary: false, ..personal() }
+        Calendar {
+            id: "team".into(),
+            name: "Team".into(),
+            primary: false,
+            ..personal()
+        }
     }
 
     #[test]
     fn a_workspace_primary_calendar_takes_every_type() {
         assert_eq!(
             creatable_types(&workspace(), &personal()),
-            vec![TypeChoice::Event, TypeChoice::Focus, TypeChoice::OutOfOffice]
+            vec![
+                TypeChoice::Event,
+                TypeChoice::Focus,
+                TypeChoice::OutOfOffice
+            ]
         );
     }
 
     #[test]
     fn a_calendar_that_is_not_primary_takes_only_events() {
-        assert_eq!(creatable_types(&workspace(), &team()), vec![TypeChoice::Event]);
+        assert_eq!(
+            creatable_types(&workspace(), &team()),
+            vec![TypeChoice::Event]
+        );
     }
 
     #[test]
     fn an_outlook_calendar_takes_events_and_out_of_office() {
-        assert_eq!(creatable_types(&outlook(), &personal()), vec![TypeChoice::Event, TypeChoice::OutOfOffice]);
+        assert_eq!(
+            creatable_types(&outlook(), &personal()),
+            vec![TypeChoice::Event, TypeChoice::OutOfOffice]
+        );
     }
 
     #[test]
     fn a_provider_that_keeps_no_types_takes_only_events() {
         // Offers::EVERYTHING is a personal Gmail account; CalDAV and POP3
         // keep no types either.
-        assert_eq!(creatable_types(&Offers::EVERYTHING, &personal()), vec![TypeChoice::Event]);
+        assert_eq!(
+            creatable_types(&Offers::EVERYTHING, &personal()),
+            vec![TypeChoice::Event]
+        );
     }
 
     fn offered() -> Vec<(AccountId, String, Calendar)> {
         vec![
             (1, "dana@gmail.com".into(), personal()),
-            (2, "dana@fernwood.example".into(), Calendar { id: "dana@fernwood.example".into(), ..personal() }),
-            (3, "dana@outlook.com".into(), Calendar { id: "outlook".into(), ..personal() }),
+            (
+                2,
+                "dana@fernwood.example".into(),
+                Calendar {
+                    id: "dana@fernwood.example".into(),
+                    ..personal()
+                },
+            ),
+            (
+                3,
+                "dana@outlook.com".into(),
+                Calendar {
+                    id: "outlook".into(),
+                    ..personal()
+                },
+            ),
         ]
     }
 
@@ -1438,27 +1793,44 @@ mod tests {
     fn the_new_event_menu_offers_each_type_some_calendar_takes() {
         assert_eq!(
             menu_types(&offered(), offers_of),
-            vec![TypeChoice::Event, TypeChoice::Focus, TypeChoice::OutOfOffice]
+            vec![
+                TypeChoice::Event,
+                TypeChoice::Focus,
+                TypeChoice::OutOfOffice
+            ]
         );
     }
 
     #[test]
     fn the_new_event_menu_holds_only_event_when_no_calendar_takes_a_type() {
-        assert_eq!(menu_types(&offered()[..1], offers_of), vec![TypeChoice::Event]);
+        assert_eq!(
+            menu_types(&offered()[..1], offers_of),
+            vec![TypeChoice::Event]
+        );
     }
 
     #[test]
     fn a_type_goes_on_the_default_calendar_when_it_takes_it() {
         let default = (3, offered()[2].2.clone());
-        assert_eq!(calendar_for(TypeChoice::OutOfOffice, &offered(), offers_of, &default), Some(default.clone()));
+        assert_eq!(
+            calendar_for(TypeChoice::OutOfOffice, &offered(), offers_of, &default),
+            Some(default.clone())
+        );
     }
 
     #[test]
     fn a_type_the_default_calendar_cannot_take_goes_on_the_first_that_can() {
         let default = (1, personal());
-        let (account, calendar) = calendar_for(TypeChoice::Focus, &offered(), offers_of, &default).unwrap();
-        assert_eq!((account, calendar.id.as_str()), (2, "dana@fernwood.example"));
-        assert_eq!(calendar_for(TypeChoice::Event, &offered(), offers_of, &default), Some(default));
+        let (account, calendar) =
+            calendar_for(TypeChoice::Focus, &offered(), offers_of, &default).unwrap();
+        assert_eq!(
+            (account, calendar.id.as_str()),
+            (2, "dana@fernwood.example")
+        );
+        assert_eq!(
+            calendar_for(TypeChoice::Event, &offered(), offers_of, &default),
+            Some(default)
+        );
     }
 
     #[test]
@@ -1475,7 +1847,10 @@ mod tests {
     fn a_calendar_that_cannot_take_the_picked_type_goes_back_to_event() {
         let types = [TypeChoice::Event, TypeChoice::OutOfOffice];
         assert_eq!(kept_type(TypeChoice::Focus, &types), TypeChoice::Event);
-        assert_eq!(kept_type(TypeChoice::OutOfOffice, &types), TypeChoice::OutOfOffice);
+        assert_eq!(
+            kept_type(TypeChoice::OutOfOffice, &types),
+            TypeChoice::OutOfOffice
+        );
     }
 
     fn day(d: u32) -> NaiveDate {
@@ -1522,17 +1897,27 @@ mod tests {
         use mailrs_domain::calendar::{Decline, Declines};
         let mut draft = fresh();
         draft.new_as(TypeChoice::OutOfOffice, day(23), true);
-        assert_eq!(draft.kind.decline().map(|d| d.meetings), Some(Declines::All));
+        assert_eq!(
+            draft.kind.decline().map(|d| d.meetings),
+            Some(Declines::All)
+        );
         let mut outlook = fresh();
         outlook.new_as(TypeChoice::OutOfOffice, day(23), false);
-        assert_eq!(outlook.kind, Kind::OutOfOffice(Decline::default()), "Outlook keeps no decline choice");
+        assert_eq!(
+            outlook.kind,
+            Kind::OutOfOffice(Decline::default()),
+            "Outlook keeps no decline choice"
+        );
     }
 
     #[test]
     fn an_event_from_the_menu_keeps_its_slot() {
         let mut draft = fresh();
         draft.new_as(TypeChoice::Event, day(23), true);
-        assert_eq!((draft.start, draft.end, draft.title.as_str()), (at(23, 15, 0), at(23, 16, 0), ""));
+        assert_eq!(
+            (draft.start, draft.end, draft.title.as_str()),
+            (at(23, 15, 0), at(23, 16, 0), "")
+        );
     }
 
     #[test]
@@ -1547,7 +1932,10 @@ mod tests {
         assert_eq!(draft.type_choice(), TypeChoice::OutOfOffice);
         assert_eq!(
             draft.kind,
-            Kind::OutOfOffice(Decline { meetings: Declines::All, message: "Declined because I am out of office".into() })
+            Kind::OutOfOffice(Decline {
+                meetings: Declines::All,
+                message: "Declined because I am out of office".into()
+            })
         );
     }
 
@@ -1579,7 +1967,10 @@ mod tests {
         draft.add_meet = true;
         draft.set_type(TypeChoice::OutOfOffice);
         let event = draft.to_event("pm0new", "req1");
-        assert!(matches!(event.kind, mailrs_domain::calendar::Kind::OutOfOffice(_)));
+        assert!(matches!(
+            event.kind,
+            mailrs_domain::calendar::Kind::OutOfOffice(_)
+        ));
         assert!(event.guests.is_empty());
         assert!(event.place.is_empty());
         assert_eq!(event.meet_request, None);
@@ -1600,29 +1991,69 @@ mod tests {
 
     #[test]
     fn a_withheld_calendar_permission_asks_for_it_instead_of_editing() {
-        assert_eq!(editing(&weekly().event, Access::Owner, true, true), Editing::NeedsPermission);
-        assert_eq!(editing(&invitation().event, Access::Owner, true, true), Editing::NeedsPermission);
+        assert_eq!(
+            editing(&weekly().event, Access::Owner, true, true),
+            Editing::NeedsPermission
+        );
+        assert_eq!(
+            editing(&invitation().event, Access::Owner, true, true),
+            Editing::NeedsPermission
+        );
     }
 
     #[test]
     fn a_read_only_calendar_or_an_account_with_no_calendar_edits_nothing() {
-        assert_eq!(editing(&weekly().event, Access::Reader, true, false), Editing::None);
-        assert_eq!(editing(&weekly().event, Access::Owner, false, false), Editing::None);
+        assert_eq!(
+            editing(&weekly().event, Access::Reader, true, false),
+            Editing::None
+        );
+        assert_eq!(
+            editing(&weekly().event, Access::Owner, false, false),
+            Editing::None
+        );
     }
 
     #[test]
     fn writable_calendars_sort_by_account_then_primary_then_name() {
-        let named = |id: &str, name: &str, primary: bool| Calendar { id: id.into(), name: name.into(), primary, ..personal() };
+        let named = |id: &str, name: &str, primary: bool| Calendar {
+            id: id.into(),
+            name: name.into(),
+            primary,
+            ..personal()
+        };
         let mut writable = vec![
-            (2, "me@work.pt".to_string(), named("team", "Design team", false)),
-            (1, "me@example.com".to_string(), named("family", "Family", false)),
-            (2, "me@work.pt".to_string(), named("me@work.pt", "Work", true)),
-            (1, "me@example.com".to_string(), named("birthdays", "Birthdays", false)),
-            (1, "me@example.com".to_string(), named("me@example.com", "Personal", true)),
+            (
+                2,
+                "me@work.pt".to_string(),
+                named("team", "Design team", false),
+            ),
+            (
+                1,
+                "me@example.com".to_string(),
+                named("family", "Family", false),
+            ),
+            (
+                2,
+                "me@work.pt".to_string(),
+                named("me@work.pt", "Work", true),
+            ),
+            (
+                1,
+                "me@example.com".to_string(),
+                named("birthdays", "Birthdays", false),
+            ),
+            (
+                1,
+                "me@example.com".to_string(),
+                named("me@example.com", "Personal", true),
+            ),
         ];
         sort_writable(&mut writable, &[1, 2]);
         let order: Vec<&str> = writable.iter().map(|(_, _, c)| c.name.as_str()).collect();
-        assert_eq!(order, ["Personal", "Birthdays", "Family", "Work", "Design team"]);
+        assert_eq!(
+            order,
+            ["Personal", "Birthdays", "Family", "Work", "Design team"]
+        );
     }
 
     #[test]
@@ -1654,22 +2085,43 @@ mod tests {
     #[test]
     fn a_guest_changes_only_their_reminders_colour_and_busy() {
         let invitation = invitation();
-        let changeable: Vec<Part> =
-            EVERY_PART.into_iter().filter(|p| may_change(Some(&invitation.event), *p)).collect();
+        let changeable: Vec<Part> = EVERY_PART
+            .into_iter()
+            .filter(|p| may_change(Some(&invitation.event), *p))
+            .collect();
         assert_eq!(changeable, [Part::Reminders, Part::Busy, Part::Color]);
     }
 
     #[test]
     fn the_organizer_changes_every_part() {
         let weekly = weekly();
-        assert!(EVERY_PART.into_iter().all(|p| may_change(Some(&weekly.event), p)));
-        assert!(EVERY_PART.into_iter().all(|p| may_change(None, p)), "a new event");
+        assert!(
+            EVERY_PART
+                .into_iter()
+                .all(|p| may_change(Some(&weekly.event), p))
+        );
+        assert!(
+            EVERY_PART.into_iter().all(|p| may_change(None, p)),
+            "a new event"
+        );
     }
 
     #[test]
     fn a_guest_gets_edit_and_remove_in_the_popover() {
-        assert_eq!(Editing::Guest.popover(), Some(Popover { edit: true, removal: Removal::OwnCopy }));
-        assert_eq!(Editing::Whole.popover(), Some(Popover { edit: true, removal: Removal::Event }));
+        assert_eq!(
+            Editing::Guest.popover(),
+            Some(Popover {
+                edit: true,
+                removal: Removal::OwnCopy
+            })
+        );
+        assert_eq!(
+            Editing::Whole.popover(),
+            Some(Popover {
+                edit: true,
+                removal: Removal::Event
+            })
+        );
         assert_eq!(Editing::NeedsPermission.popover(), None);
         assert_eq!(Editing::None.popover(), None);
     }
@@ -1685,8 +2137,15 @@ mod tests {
 
     #[test]
     fn the_calendar_choice_offers_only_the_events_own_account() {
-        let team = Calendar { id: "team".into(), primary: false, ..personal() };
-        let work = Calendar { id: "me@work.pt".into(), ..personal() };
+        let team = Calendar {
+            id: "team".into(),
+            primary: false,
+            ..personal()
+        };
+        let work = Calendar {
+            id: "me@work.pt".into(),
+            ..personal()
+        };
         let writable = vec![
             (1, "me@example.com".to_string(), personal()),
             (1, "me@example.com".to_string(), team),
@@ -1695,14 +2154,24 @@ mod tests {
         let weekly = weekly();
         let draft = Draft::open(&weekly, &weekly.event.rules, Lisbon);
         let none = HashSet::new();
-        let offered: Vec<&str> =
-            calendar_choices(&draft, &writable, &none).iter().map(|(_, _, c)| c.id.as_str()).collect();
+        let offered: Vec<&str> = calendar_choices(&draft, &writable, &none)
+            .iter()
+            .map(|(_, _, c)| c.id.as_str())
+            .collect();
         assert_eq!(offered, ["me@example.com", "team"]);
-        assert_eq!(calendar_choices(&fresh(), &writable, &none).len(), 3, "a new event may go on any account");
+        assert_eq!(
+            calendar_choices(&fresh(), &writable, &none).len(),
+            3,
+            "a new event may go on any account"
+        );
     }
 
     fn two_calendars() -> Vec<(AccountId, String, Calendar)> {
-        let team = Calendar { id: "team".into(), primary: false, ..personal() };
+        let team = Calendar {
+            id: "team".into(),
+            primary: false,
+            ..personal()
+        };
         vec![
             (1, "me@example.com".to_string(), personal()),
             (1, "me@example.com".to_string(), team),
@@ -1713,8 +2182,10 @@ mod tests {
     fn a_hidden_calendar_is_not_offered_for_a_new_event() {
         let hidden = HashSet::from([(1, "team".to_string())]);
         let writable = two_calendars();
-        let offered: Vec<&str> =
-            calendar_choices(&fresh(), &writable, &hidden).iter().map(|(_, _, c)| c.id.as_str()).collect();
+        let offered: Vec<&str> = calendar_choices(&fresh(), &writable, &hidden)
+            .iter()
+            .map(|(_, _, c)| c.id.as_str())
+            .collect();
         assert_eq!(offered, ["me@example.com"]);
     }
 
@@ -1725,8 +2196,10 @@ mod tests {
         draft.calendar = "team".into();
         let hidden = HashSet::from([(1, "team".to_string())]);
         let writable = two_calendars();
-        let offered: Vec<&str> =
-            calendar_choices(&draft, &writable, &hidden).iter().map(|(_, _, c)| c.id.as_str()).collect();
+        let offered: Vec<&str> = calendar_choices(&draft, &writable, &hidden)
+            .iter()
+            .map(|(_, _, c)| c.id.as_str())
+            .collect();
         assert_eq!(offered, ["me@example.com", "team"]);
     }
 
@@ -1734,7 +2207,13 @@ mod tests {
     fn quick_create_and_the_default_leave_out_hidden_calendars() {
         let hidden = HashSet::from([(1, "me@example.com".to_string())]);
         let listed = without_hidden(two_calendars(), &hidden);
-        assert_eq!(listed.iter().map(|(_, _, c)| c.id.as_str()).collect::<Vec<_>>(), ["team"]);
+        assert_eq!(
+            listed
+                .iter()
+                .map(|(_, _, c)| c.id.as_str())
+                .collect::<Vec<_>>(),
+            ["team"]
+        );
     }
 
     #[test]
@@ -1749,7 +2228,10 @@ mod tests {
     #[test]
     fn a_pick_after_unparsed_text_keeps_only_that_text_in_the_field() {
         let mut draft = fresh();
-        let text = crate::ui::autocomplete::picked_text("ann@example.com, typo, Lo", "Love <love@example.com>");
+        let text = crate::ui::autocomplete::picked_text(
+            "ann@example.com, typo, Lo",
+            "Love <love@example.com>",
+        );
         assert_eq!(draft.take_guests(&text), "typo");
         let emails: Vec<&str> = draft.guests.iter().map(|g| g.email.as_str()).collect();
         assert_eq!(emails, ["ann@example.com", "love@example.com"]);

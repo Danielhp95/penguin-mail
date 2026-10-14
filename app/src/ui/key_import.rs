@@ -24,7 +24,7 @@ use crate::app::App;
 pub fn button(
     app: &Rc<App>,
     kind: Kind,
-    over: &adw::PreferencesDialog,
+    over: &adw::ToastOverlay,
     imported: impl Fn() + 'static,
 ) -> gtk::Button {
     // A child label rather than the button's own, so the name set below
@@ -116,7 +116,7 @@ async fn attempt(
     app: Rc<App>,
     kind: Kind,
     file: Rc<Vec<u8>>,
-    over: adw::PreferencesDialog,
+    over: adw::ToastOverlay,
     button: gtk::Button,
     imported: Rc<dyn Fn()>,
 ) {

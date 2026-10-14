@@ -1822,7 +1822,7 @@ impl Editor {
 
     fn more_group(self: &Rc<Self>) -> adw::PreferencesGroup {
         let group = adw::PreferencesGroup::new();
-        let more = adw::ExpanderRow::builder().title(gettext("More")).build();
+        let more = crate::ui::disclosure::row(adw::ExpanderRow::builder().title(gettext("More")).build());
         let all_day = self.draft.borrow().all_day;
 
         let zone_row = adw::ComboRow::builder()

@@ -44,6 +44,39 @@ async fn kite_day(h: &Harness, day: NaiveDate) -> Value {
 }
 
 #[tokio::test]
+async fn a_calendar_task_default_selects_that_accounts_writable_shared_calendar() {
+    let h = Harness::with_second(super::mail(), vec![]).await;
+    let (id, second) = h.second.as_ref().unwrap();
+    second.with(|data| {
+        data.calendars = vec![mailrs_domain::calendar::Calendar {
+            id: "team".into(),
+            name: "Work team".into(),
+            primary: false,
+            access: mailrs_domain::calendar::Access::Owner,
+            zone: "UTC".into(),
+            shown: true,
+            ..mailrs_domain::calendar::Calendar::default()
+        }]
+    });
+    h.copy
+        .refresh(*id, mailrs_sync::now_millis())
+        .await
+        .unwrap();
+    h.desk.0.borrow_mut().settings.account_defaults.calendar =
+        crate::settings::AccountChoice::Account(super::super::fake::YOU.into());
+    let made = h
+        .ok(
+            "create_event",
+            json!({"title": "Team review",
+        "start": at(monday(), "10:00"), "end": at(monday(), "11:00")}),
+        )
+        .await;
+    assert_eq!(made["account"], super::super::fake::YOU);
+    assert_eq!(made["created"]["calendar"], "Work team");
+    assert!(h.asked().questions[0].contains(super::super::fake::YOU));
+}
+
+#[tokio::test]
 async fn an_event_is_asked_about_made_and_listed_in_local_time() {
     let h = harness().await;
     let day = monday();
@@ -107,9 +140,17 @@ async fn an_all_day_event_names_its_last_day() {
         "the tools name the last day, not Google's day after"
     );
     h.copy.send(h.account_id).await.expect("the queue goes out");
-    let after_last = (last + Duration::days(1)).and_hms_opt(0, 0, 0).expect("midnight").and_utc().timestamp_millis();
+    let after_last = (last + Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight")
+        .and_utc()
+        .timestamp_millis();
     assert_eq!(
-        h.gmail.with(|i| i.calendar_events.iter().map(|e| (e.all_day, e.end)).collect::<Vec<_>>()),
+        h.gmail.with(|i| i
+            .calendar_events
+            .iter()
+            .map(|e| (e.all_day, e.end))
+            .collect::<Vec<_>>()),
         [(true, after_last)],
         "the calendar keeps the day after the last"
     );
@@ -251,11 +292,18 @@ async fn the_confirmation_says_who_hears_of_a_change() {
     let h = harness().await;
     let day = monday();
     let made = h
-        .ok("create_event", json!({"title": "Dentist", "start": at(day, "09:00"), "end": at(day, "10:00")}))
+        .ok(
+            "create_event",
+            json!({"title": "Dentist", "start": at(day, "09:00"), "end": at(day, "10:00")}),
+        )
         .await;
     let id = made["created"]["id"].as_str().expect("an id").to_string();
 
-    h.ok("update_event", json!({"id": id, "current_title": "Dentist", "attendees": ["bo@example.com"]})).await;
+    h.ok(
+        "update_event",
+        json!({"id": id, "current_title": "Dentist", "attendees": ["bo@example.com"]}),
+    )
+    .await;
     let invited = h.asked().questions.last().cloned().unwrap_or_default();
     assert!(
         invited.starts_with(&format!(
@@ -266,19 +314,41 @@ async fn the_confirmation_says_who_hears_of_a_change() {
 
     let kite = kite_day(&h, day).await;
     let kite = kite["created"]["id"].as_str().expect("an id").to_string();
-    h.ok("update_event", json!({"id": kite, "current_title": "Kite day", "title": "Kite day"})).await;
+    h.ok(
+        "update_event",
+        json!({"id": kite, "current_title": "Kite day", "title": "Kite day"}),
+    )
+    .await;
     let unchanged = h.asked().questions.last().cloned().unwrap_or_default();
-    assert!(unchanged.starts_with(&format!("Change “Kite day” on the calendar for {ME}?\n\n")), "{unchanged}");
+    assert!(
+        unchanged.starts_with(&format!("Change “Kite day” on the calendar for {ME}?\n\n")),
+        "{unchanged}"
+    );
 
     let solo = h
-        .ok("create_event", json!({"title": "Solo", "start": at(day, "12:00"), "end": at(day, "13:00")}))
+        .ok(
+            "create_event",
+            json!({"title": "Solo", "start": at(day, "12:00"), "end": at(day, "13:00")}),
+        )
         .await;
     let solo = solo["created"]["id"].as_str().expect("an id").to_string();
-    h.ok("delete_event", json!({"id": solo, "title": "Solo"})).await;
+    h.ok("delete_event", json!({"id": solo, "title": "Solo"}))
+        .await;
     assert_eq!(
         h.asked().questions.last().map(String::as_str),
         Some(format!("Delete “Solo” from the calendar for {ME}?").as_str())
     );
+}
+
+#[tokio::test]
+async fn implicit_creation_still_requests_withheld_calendar_permission() {
+    let h = harness().await;
+    h.read_calendars(calendars()).await;
+    h.gmail.withhold(mailrs_gmail::CALENDAR_SCOPE);
+    let day = monday();
+    let answer = h.run("create_event", json!({"title": "Review", "start": at(day, "10:00"), "end": at(day, "11:00")})).await;
+    assert!(answer.unwrap_err().contains("needs permission to use the calendar"));
+    assert_eq!(h.asked().permission_asked, [(h.account_id, Permission::Calendar)]);
 }
 
 #[tokio::test]
@@ -371,8 +441,10 @@ async fn an_invitation_is_answered_after_asking() {
                 ..MessageBody::default()
             },
         );
-        i.messages
-            .insert("m8".into(), mailrs_sync::fake::meta("m8", "t8", NOW, &["INBOX"]));
+        i.messages.insert(
+            "m8".into(),
+            mailrs_sync::fake::meta("m8", "t8", NOW, &["INBOX"]),
+        );
         i.bodies.insert("m8".into(), MessageBody::default());
     });
 
@@ -519,7 +591,9 @@ async fn each_occurrence_of_a_series_is_listed_under_an_id_of_its_own() {
         .await;
     assert_eq!(listed["count"], 5);
     let thursday = start + 3 * 24 * 60 * 60_000;
-    let stamp = chrono::DateTime::from_timestamp_millis(thursday).unwrap().format("%Y%m%dT%H%M%SZ");
+    let stamp = chrono::DateTime::from_timestamp_millis(thursday)
+        .unwrap()
+        .format("%Y%m%dT%H%M%SZ");
     assert_eq!(listed["events"][3]["id"], format!("standup_{stamp}"));
     assert_eq!(listed["events"][3]["repeats"], true);
 }
@@ -553,11 +627,21 @@ async fn a_declined_event_reads_as_free() {
 
 #[test]
 fn a_working_day_that_ends_at_midnight_ends_after_its_last_hour() {
-    let hours = mailrs_domain::calendar::hours::WorkingHours { start_minutes: 19 * 60, end_minutes: 24 * 60, ..Default::default() };
+    let hours = mailrs_domain::calendar::hours::WorkingHours {
+        start_minutes: 19 * 60,
+        end_minutes: 24 * 60,
+        ..Default::default()
+    };
     let end = super::super::calendar::working_day_end(&hours);
-    assert!(end > chrono::NaiveTime::from_hms_opt(23, 0, 0).unwrap(), "{end}");
+    assert!(
+        end > chrono::NaiveTime::from_hms_opt(23, 0, 0).unwrap(),
+        "{end}"
+    );
     let usual = mailrs_domain::calendar::hours::WorkingHours::default();
-    assert_eq!(super::super::calendar::working_day_end(&usual), chrono::NaiveTime::from_hms_opt(18, 0, 0).unwrap());
+    assert_eq!(
+        super::super::calendar::working_day_end(&usual),
+        chrono::NaiveTime::from_hms_opt(18, 0, 0).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -583,14 +667,20 @@ async fn an_events_call_link_reaches_the_model() {
             json!({"from": day.format("%Y-%m-%d").to_string(), "to": day.format("%Y-%m-%d").to_string()}),
         )
         .await;
-    assert_eq!(listed["events"][0]["link"], "https://meet.google.com/abc-defg-hij");
+    assert_eq!(
+        listed["events"][0]["link"],
+        "https://meet.google.com/abc-defg-hij"
+    );
 }
 
 #[tokio::test]
 async fn a_calendar_tool_on_an_account_without_a_calendar_says_why() {
     let h = Harness::with_services(|_, services| services.calendar = None).await;
     let answer = h
-        .run("list_events", json!({"from": "2026-03-10", "to": "2026-03-11"}))
+        .run(
+            "list_events",
+            json!({"from": "2026-03-10", "to": "2026-03-11"}),
+        )
         .await;
     assert_eq!(
         answer,
@@ -669,7 +759,10 @@ async fn an_account_without_the_calendar_list_is_noted_and_asked_about_only_when
     assert_eq!(listed["accounts"][0]["calendars"], json!([]));
     let note = listed["accounts"][0]["note"].as_str().unwrap_or_default();
     assert!(note.contains("calendar permission"), "{note}");
-    assert!(h.asked().permission_asked.is_empty(), "a list of every account asks nobody");
+    assert!(
+        h.asked().permission_asked.is_empty(),
+        "a list of every account asks nobody"
+    );
 
     assert_eq!(
         h.run("list_calendars", json!({"account": ME})).await,
@@ -678,7 +771,10 @@ async fn an_account_without_the_calendar_list_is_noted_and_asked_about_only_when
              The user was asked to grant it; try again once they have."
         ))
     );
-    assert_eq!(h.asked().permission_asked, [(h.account_id, Permission::Calendar)]);
+    assert_eq!(
+        h.asked().permission_asked,
+        [(h.account_id, Permission::Calendar)]
+    );
 }
 
 #[tokio::test]
@@ -689,15 +785,19 @@ async fn an_event_goes_on_the_calendar_named_in_any_case() {
     assert_eq!(made["created"]["calendar"], "Family");
     let question = h.asked().questions[0].clone();
     assert!(
-        question.starts_with(&format!("Add “Piano recital” to the calendar “Family” for {ME}, ")),
+        question.starts_with(&format!(
+            "Add “Piano recital” to the calendar “Family” for {ME}, "
+        )),
         "{question}"
     );
-    let (account, id) = (h.account_id, made["created"]["id"].as_str().expect("an id").to_string());
-    let held = h
-        .db
-        .read(move |c| mailrs_store::calendar::event(c, account, FAMILY, &id))
-        .await
-        .unwrap();
+    let (account, id) = (
+        h.account_id,
+        made["created"]["id"].as_str().expect("an id").to_string(),
+    );
+    let held =
+        h.db.read(move |c| mailrs_store::calendar::event(c, account, FAMILY, &id))
+            .await
+            .unwrap();
     assert!(held.is_some(), "it lands on Family");
     // The queue's own background send can outrun this check (it starts as
     // soon as `create` saves the event, before this test asks for it
@@ -711,13 +811,34 @@ async fn an_account_with_no_calendar_that_takes_events_says_so() {
     let h = harness().await;
     let read_only = calendars()
         .into_iter()
-        .map(|c| Calendar { access: Access::Reader, ..c })
+        .map(|c| Calendar {
+            access: Access::Reader,
+            ..c
+        })
         .collect();
     h.read_calendars(read_only).await;
     assert_eq!(
         h.run("create_event", recital(monday(), "Family")).await,
-        Err(format!("“Family” on {ME} is read-only. No calendar on {ME} takes new events."))
+        Err(format!(
+            "“Family” on {ME} is read-only. No calendar on {ME} takes new events."
+        ))
     );
+}
+
+#[tokio::test]
+async fn implicit_creation_does_not_use_hidden_or_read_only_calendars() {
+    for hidden in [false, true] {
+        let h = harness().await;
+        h.read_calendars(calendars().into_iter().map(|c| Calendar {
+            hidden,
+            access: if hidden { Access::Owner } else { Access::Reader },
+            ..c
+        }).collect()).await;
+        let day = monday();
+        let answer = h.run("create_event", json!({"title": "Review", "start": at(day, "10:00"), "end": at(day, "11:00")})).await;
+        assert!(answer.unwrap_err().contains("no visible writable calendar"));
+        assert!(h.asked().questions.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -726,16 +847,22 @@ async fn a_read_only_or_unknown_calendar_is_an_error_the_model_reads() {
     h.read_calendars(calendars()).await;
     let day = monday();
     assert_eq!(
-        h.run("create_event", recital(day, "Holidays in Portugal")).await,
+        h.run("create_event", recital(day, "Holidays in Portugal"))
+            .await,
         Err(format!(
             "“Holidays in Portugal” on {ME} is read-only. Calendars that take events: Personal, Family."
         ))
     );
     assert_eq!(
         h.run("create_event", recital(day, "Work")).await,
-        Err(format!("{ME} has no calendar called “Work”. Calendars that take events: Personal, Family."))
+        Err(format!(
+            "{ME} has no calendar called “Work”. Calendars that take events: Personal, Family."
+        ))
     );
-    assert!(h.asked().questions.is_empty(), "nothing was put to the user");
+    assert!(
+        h.asked().questions.is_empty(),
+        "nothing was put to the user"
+    );
 }
 
 #[tokio::test]
@@ -747,7 +874,11 @@ async fn naming_a_calendar_reads_the_copy_first() {
     let made = h.ok("create_event", recital(monday(), "Family")).await;
     assert_eq!(made["created"]["calendar"], "Family");
     let account = h.account_id;
-    assert!(h.db.read(move |c| mailrs_store::calendar::synced(c, account)).await.unwrap());
+    assert!(
+        h.db.read(move |c| mailrs_store::calendar::synced(c, account))
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -768,5 +899,8 @@ async fn an_account_with_no_calendar_service_lists_none_and_says_why_whether_or_
         named["accounts"][0]["note"],
         "Gmail has no calendar that other apps can reach."
     );
-    assert!(h.asked().permission_asked.is_empty(), "a permanent gap is not a permission to ask for");
+    assert!(
+        h.asked().permission_asked.is_empty(),
+        "a permanent gap is not a permission to ask for"
+    );
 }

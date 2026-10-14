@@ -10,6 +10,18 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 - Add a calendar from a CalDAV server, such as Nextcloud, without a mail account: Add Account, then Add a calendar without mail.
 - Vietnamese translations, chosen in Preferences.
 
+### Improved
+
+- Nested Preferences sections have inset backgrounds and single separators, and server-space rows update when reports arrive.
+- Preferences groups settings by task, with signatures, sender addresses, contacts and server space under each account, and a page list on narrow windows.
+- Reorder accounts by dragging them in Preferences, and choose one default account for all tasks or separate accounts for new messages, replies, forwards, calendar events, assistant actions and startup. Skills and MCP settings expand when you need them.
+
+### Fixed
+
+- Calendar-file imports point to the Calendar page in Preferences when a calendar needs enabling.
+- Fastmail accounts signed in through the browser report server storage through IMAP when JMAP provides no quota. Gmail signature import appears only for Gmail accounts.
+- JMAP server-space reports recognize Email quotas and use the mail account even when the server lists no quota-primary account. Expansion controls keep their chevrons with custom icon themes.
+
 ## 1.0.8 (2026-10-13)
 
 ### New

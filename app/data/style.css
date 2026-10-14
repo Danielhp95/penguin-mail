@@ -1896,3 +1896,97 @@ row.switch-entry > box.header { min-height: 58px; }
 button.switch-browser { min-height: 44px; padding: 0 16px; font-weight: 700; }
 .switch-browser-line { font-size: 0.89em; }
 .switch-waiting button { min-height: 34px; padding: 0 18px; }
+
+/* Preferences keeps the page names beside the controls on wide windows.
+   Selection follows the desktop accent, while the name stays in ink. */
+.mail-preferences .preferences-sections > row {
+  padding: 8px 12px;
+  min-height: 20px;
+  border-radius: 10px;
+}
+.mail-preferences .preferences-sections > row:selected {
+  background-color: alpha(var(--accent-bg-color), 0.14);
+  color: var(--window-fg-color);
+  font-weight: 700;
+}
+.app-dark .mail-preferences .preferences-sections > row:selected {
+  background-color: alpha(var(--accent-bg-color), 0.24);
+}
+.mail-preferences .preferences-sections > row:selected image {
+  color: var(--accent-color);
+}
+.mail-preferences .sidebar-pane { background: var(--window-bg-color); }
+.mail-preferences list.boxed-list > row,
+.mail-preferences list.nested > row { padding: 0; }
+.mail-preferences row.account-settings > box > revealer > list.nested > row {
+  padding-left: 24px;
+}
+/* libadwaita's checked expander rule also reaches nested arrows. Scope
+   each arrow to its own header so a closed child still points down. */
+row.expander > box > list > row.header image.expander-row-arrow {
+  -gtk-icon-transform: rotate(0.5turn);
+  color: inherit;
+  opacity: var(--dim-opacity);
+}
+row.expander:checked > box > list > row.header image.expander-row-arrow {
+  -gtk-icon-transform: rotate(0turn);
+  color: var(--accent-color);
+  opacity: 1;
+}
+.mail-preferences.preferences-compact row > box.header { min-height: 42px; }
+.mail-preferences.preferences-compact preferencespage > scrolledwindow > viewport > clamp > box {
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.mail-preferences .account-reorder-target.drop-before { box-shadow: inset 0 2px var(--accent-bg-color); }
+.mail-preferences .account-reorder-target.drop-after { box-shadow: inset 0 -2px var(--accent-bg-color); }
+
+/* Each nested list has its own inset and quieter surface. Inner headers
+   stay square so their hover fill cannot imitate the parent card. */
+.mail-preferences row.expander > box > revealer > list.nested {
+  margin: 0 12px 8px 16px;
+  background-color: var(--window-bg-color);
+  border-radius: 0;
+  box-shadow: none;
+}
+.mail-preferences list.nested row.expander > box > revealer > list.nested {
+  background-color: color-mix(in srgb, var(--window-bg-color) 96%, var(--window-fg-color));
+}
+.mail-preferences list.nested list.nested row.expander > box > revealer > list.nested {
+  background-color: color-mix(in srgb, var(--window-bg-color) 92%, var(--window-fg-color));
+}
+.mail-preferences list.nested > row {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: transparent;
+}
+.mail-preferences list.nested > row + row {
+  border-top: 1px solid alpha(var(--window-fg-color), 0.12);
+}
+.mail-preferences list.nested > row.expander > box > list > row.header {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.mail-preferences list.nested > row.expander > box > list {
+  border-radius: 0;
+  box-shadow: none;
+}
+.mail-preferences row.account-settings > box > list > row.header .title {
+  font-weight: 600;
+}
+
+.mail-preferences list.nested > row.expander > box > list,
+.mail-preferences list.nested > row.expander > box > list > row.header {
+  background-color: transparent;
+}
+.mail-preferences list.nested > row:not(.expander):hover,
+.mail-preferences list.nested > row.expander > box > list > row.header:hover {
+  background-color: alpha(var(--window-fg-color), 0.06);
+  border-radius: 0;
+}
+.mail-preferences row.account-settings > box > list > row.header .subtitle {
+  font-weight: 400;
+}

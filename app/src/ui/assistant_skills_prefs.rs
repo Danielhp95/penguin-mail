@@ -10,20 +10,27 @@ use gtk::{gio, glib};
 use crate::app::App;
 use crate::assistant::sources::skills::{self, Skill, sandbox};
 use crate::settings::Change;
-use mailrs_domain::translate::{fill, gettext};
+use mailrs_domain::translate::{fill, fill_plural, gettext};
 
 pub fn group(app: &Rc<App>) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title(gettext("Skills"))
-        .description(gettext(
-            "Instructions the assistant follows for one kind of task, found in Penguin \
+    let group = adw::PreferencesGroup::new();
+    let section = crate::ui::disclosure::row(adw::ExpanderRow::builder().title(gettext("Skills")).build());
+    group.add(&section);
+    section.add_row(
+        &adw::ActionRow::builder()
+            .title(gettext("About Skills"))
+            .subtitle(gettext(
+                "Instructions the assistant follows for one kind of task, found in Penguin \
              Mail's skills folder and in Claude Code's. Each skill is off until you turn it \
              on. Scripts in a skill run in a sandbox that cannot reach your mail, keys or \
              home folder, and the assistant asks before each command.",
-        ))
-        .build();
+            ))
+            .subtitle_lines(0)
+            .build(),
+    );
     if let Some(sandbox) = crate::packaging::BUILT_FOR.sandbox_name() {
-        group.add(&off_row(sandbox));
+        section.set_subtitle(&gettext("Not Available"));
+        section.add_row(&off_row(sandbox));
         return group;
     }
     let open = gtk::Button::builder()
@@ -32,9 +39,15 @@ pub fn group(app: &Rc<App>) -> adw::PreferencesGroup {
         .tooltip_text(gettext("Open Penguin Mail's skills folder"))
         .build();
     open.connect_clicked(open_folder);
-    group.set_header_suffix(Some(&open));
+    section.add_suffix(&open);
 
     let found = skills::discover(&skills::roots());
+    section.set_subtitle(&fill_plural(
+        "{count} skill",
+        "{count} skills",
+        found.len(),
+        &[("count", &found.len().to_string())],
+    ));
     if found.iter().any(|skill| skill.has_scripts)
         && let Err(reason) = sandbox::check()
     {
@@ -43,10 +56,10 @@ pub fn group(app: &Rc<App>) -> adw::PreferencesGroup {
             .subtitle(glib::markup_escape_text(&reason))
             .build();
         row.add_prefix(&gtk::Image::from_icon_name("dialog-warning-symbolic"));
-        group.add(&row);
+        section.add_row(&row);
     }
     if found.is_empty() {
-        group.add(
+        section.add_row(
             &adw::ActionRow::builder()
                 .title(gettext("No Skills Found"))
                 .subtitle(glib::markup_escape_text(&fill(
@@ -57,7 +70,7 @@ pub fn group(app: &Rc<App>) -> adw::PreferencesGroup {
         );
     }
     for skill in found {
-        group.add(&skill_row(app, &skill));
+        section.add_row(&skill_row(app, &skill));
     }
     group
 }
@@ -114,11 +127,11 @@ fn skill_row(app: &Rc<App>, skill: &Skill) -> gtk::Widget {
         return row.upcast();
     }
     // A skill with scripts opens to its second switch.
-    let row = adw::ExpanderRow::builder()
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(title)
         .subtitle(subtitle(skill))
         .subtitle_lines(3)
-        .build();
+        .build());
     let on = gtk::Switch::builder()
         .active(settings.enabled)
         .valign(gtk::Align::Center)

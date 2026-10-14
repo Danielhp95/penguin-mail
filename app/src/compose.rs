@@ -65,7 +65,10 @@ pub struct Identity {
 /// address made for this message when there is one.
 pub fn sender_with_mask(identity: &Identity, masked: Option<&Address>) -> Identity {
     match masked {
-        Some(address) => Identity { address: address.clone(), ..identity.clone() },
+        Some(address) => Identity {
+            address: address.clone(),
+            ..identity.clone()
+        },
         None => identity.clone(),
     }
 }
@@ -105,12 +108,18 @@ pub fn masked_site(to: &[Address]) -> String {
 /// addresses, the sender is none of the addresses the From row lists, and
 /// `masked`, the account's own list, does not say it is someone else's.
 /// `masked` is `None` before the account has listed its masked addresses.
-pub fn kept_mask(identities: &[Identity], chosen: &Identity, from: &Address, masked: Option<bool>) -> Option<Address> {
+pub fn kept_mask(
+    identities: &[Identity],
+    chosen: &Identity,
+    from: &Address,
+    masked: Option<bool>,
+) -> Option<Address> {
     let listed = identities.iter().any(|i| {
         i.address.email.eq_ignore_ascii_case(&from.email)
             || i.suffixes.suffix(&i.address.email, &from.email).is_some()
     });
-    (chosen.masks && is_address(&from.email) && !listed && masked != Some(false)).then(|| from.clone())
+    (chosen.masks && is_address(&from.email) && !listed && masked != Some(false))
+        .then(|| from.clone())
 }
 
 /// Which row the From dropdown starts on. The draft's own address wins,
@@ -164,7 +173,10 @@ mod attachment_bytes {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<FileBytes, D::Error> {
         let text = String::deserialize(input)?;
-        STANDARD.decode(text).map(FileBytes::from).map_err(serde::de::Error::custom)
+        STANDARD
+            .decode(text)
+            .map(FileBytes::from)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -362,7 +374,11 @@ pub fn preview_page(title: &str, body: &str, dark: bool) -> String {
          style-src 'unsafe-inline'; img-src data:; font-src data:\">\
          <title>{}</title><style>body{{margin:24px;{}}}</style></head><body>{}</body></html>",
         richtext::escape(title),
-        if dark { "background:#1e1e1e;filter:invert(0.92) hue-rotate(180deg)" } else { "background:#fff" },
+        if dark {
+            "background:#1e1e1e;filter:invert(0.92) hue-rotate(180deg)"
+        } else {
+            "background:#fff"
+        },
         crate::sanitize::sanitize_html(body, None)
     )
 }
@@ -634,6 +650,16 @@ impl Draft {
             standard: Standard::default(),
             receipt: false,
         }
+    }
+
+    /// Changes the outgoing account without moving the source conversation.
+    pub fn use_account(&mut self, account_id: AccountId, from: Address) {
+        if self.account_id != account_id {
+            self.thread_id = None;
+            self.draft_id = None;
+        }
+        self.account_id = account_id;
+        self.from = from;
     }
 
     /// Why this draft cannot be sent yet, if anything stops it.
@@ -1680,10 +1706,15 @@ mod tests {
         let mut draft = Draft::new(1, addr(Some("Dana"), "dana@fastmail.example"));
         draft.to = parse_recipients("ines@allotment.example");
         draft.subject = "Rota".into();
-        let plain = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
-        assert!(!plain.contains("Disposition-Notification-To"), "off unless asked");
+        let plain =
+            String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        assert!(
+            !plain.contains("Disposition-Notification-To"),
+            "off unless asked"
+        );
         draft.receipt = true;
-        let asked = String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
+        let asked =
+            String::from_utf8(build_mime(&draft, 0, "a@fastmail.example").unwrap()).unwrap();
         assert!(
             asked.contains("Disposition-Notification-To: \"Dana\" <dana@fastmail.example>"),
             "{asked}"
@@ -1798,6 +1829,27 @@ mod tests {
     }
 
     #[test]
+    fn a_reply_from_another_account_keeps_reply_headers_but_not_a_foreign_thread() {
+        let original = message("m2", addr(None, "ann@example.com"), vec![me()], vec![]);
+        let mut draft = respond(ReplyKind::Reply, 1, &[me()], &original, "hello", None, &[]);
+        draft.use_account(2, addr(None, "work@example.com"));
+        assert_eq!(draft.account_id, 2);
+        assert_eq!(draft.from.email, "work@example.com");
+        assert_eq!(draft.in_reply_to.as_deref(), Some("<m2@mail.example.com>"));
+        assert_eq!(draft.references, ["<m2@mail.example.com>"]);
+        assert!(draft.thread_id.is_none());
+        assert_eq!(draft.to, [addr(None, "ann@example.com")]);
+    }
+
+    #[test]
+    fn keeping_the_account_keeps_its_provider_thread() {
+        let original = message("m2", addr(None, "ann@example.com"), vec![me()], vec![]);
+        let mut draft = respond(ReplyKind::Reply, 1, &[me()], &original, "hello", None, &[]);
+        draft.use_account(1, me());
+        assert_eq!(draft.thread_id.as_deref(), Some("t1"));
+    }
+
+    #[test]
     fn replying_to_your_own_message_goes_to_its_recipients() {
         let sent = message("m1", me(), vec![addr(None, "bob@example.com")], vec![]);
         let draft = respond(
@@ -1863,7 +1915,10 @@ mod tests {
 
     #[test]
     fn the_site_is_the_first_recipients_domain() {
-        let to = [addr(None, "hello@Allotment-Supplies.example"), addr(None, "x@other.example")];
+        let to = [
+            addr(None, "hello@Allotment-Supplies.example"),
+            addr(None, "x@other.example"),
+        ];
         assert_eq!(masked_site(&to), "allotment-supplies.example");
     }
 
@@ -1878,7 +1933,10 @@ mod tests {
         fastmail.masks = true;
         let from = addr(Some("Dana"), "tern.quill@fastmail.example");
         let kept = kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, None);
-        assert_eq!(kept.map(|a| a.email), Some("tern.quill@fastmail.example".to_string()));
+        assert_eq!(
+            kept.map(|a| a.email),
+            Some("tern.quill@fastmail.example".to_string())
+        );
     }
 
     #[test]
@@ -1890,21 +1948,30 @@ mod tests {
         // The From row opened on the alias, the address this account last
         // sent from, while the new draft still names the account's own.
         let from = addr(None, "Dana@Fastmail.example");
-        assert_eq!(kept_mask(&[fastmail, alias.clone()], &alias, &from, None), None);
+        assert_eq!(
+            kept_mask(&[fastmail, alias.clone()], &alias, &from, None),
+            None
+        );
     }
 
     #[test]
     fn an_account_without_masks_keeps_no_mask() {
         let plain = identity(1, "dana@example.com", "", true);
         let from = addr(None, "someone.else@example.com");
-        assert_eq!(kept_mask(std::slice::from_ref(&plain), &plain, &from, None), None);
+        assert_eq!(
+            kept_mask(std::slice::from_ref(&plain), &plain, &from, None),
+            None
+        );
     }
 
     #[test]
     fn a_masked_address_becomes_the_sender() {
         let mut identity = identity(1, "me@fastmail.com", "", true);
         identity.masks = true;
-        let masked = Address { name: Some("Me".into()), email: "kite.fern@fastmail.com".into() };
+        let masked = Address {
+            name: Some("Me".into()),
+            email: "kite.fern@fastmail.com".into(),
+        };
         let sending = sender_with_mask(&identity, Some(&masked));
         assert_eq!(sending.address.email, "kite.fern@fastmail.com");
         assert_eq!(sending.account_id, 1);
@@ -1929,7 +1996,10 @@ mod tests {
         let masked = |email: &str| email.eq_ignore_ascii_case("tern.quill@fastmail.example");
         let mine = reply_addresses(&senders, &original, masked);
         let draft = respond(ReplyKind::ReplyAll, 1, &mine, &original, "", None, &[]);
-        assert_eq!(draft.from, addr(Some("Dana"), "Tern.Quill@fastmail.example"));
+        assert_eq!(
+            draft.from,
+            addr(Some("Dana"), "Tern.Quill@fastmail.example")
+        );
         assert_eq!(draft.to, vec![addr(None, "orders@kites.example")]);
         assert_eq!(draft.cc, vec![addr(None, "cy@example.com")]);
     }
@@ -1939,9 +2009,25 @@ mod tests {
         let mut fastmail = identity(1, "dana@fastmail.example", "", true);
         fastmail.masks = true;
         let from = addr(None, "someone.else@example.com");
-        assert_eq!(kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, Some(false)), None);
-        let listed = kept_mask(std::slice::from_ref(&fastmail), &fastmail, &from, Some(true));
-        assert_eq!(listed.map(|a| a.email), Some("someone.else@example.com".to_string()));
+        assert_eq!(
+            kept_mask(
+                std::slice::from_ref(&fastmail),
+                &fastmail,
+                &from,
+                Some(false)
+            ),
+            None
+        );
+        let listed = kept_mask(
+            std::slice::from_ref(&fastmail),
+            &fastmail,
+            &from,
+            Some(true),
+        );
+        assert_eq!(
+            listed.map(|a| a.email),
+            Some("someone.else@example.com".to_string())
+        );
     }
 
     #[test]
@@ -3187,7 +3273,13 @@ mod tests {
         folded.rich = Some(RichBody::from_markdown("Thanks, **Ann**."));
         let (reopened, _) = saved_and_reopened(&folded);
         assert_eq!(reopened.rich, folded.rich);
-        assert!(reopened.quoted.as_deref().unwrap().contains("> Noon works."));
+        assert!(
+            reopened
+                .quoted
+                .as_deref()
+                .unwrap()
+                .contains("> Noon works.")
+        );
     }
 
     #[test]
@@ -3328,7 +3420,9 @@ mod tests {
         let stall = started.elapsed();
         let built = futures::executor::block_on(building).unwrap().unwrap();
         let peak = peak_kib() - before;
-        let Built::Message(raw) = built else { panic!("a plain draft builds whole") };
+        let Built::Message(raw) = built else {
+            panic!("a plain draft builds whole")
+        };
         eprintln!(
             "GTK thread {stall:?}, peak {} MiB over the file held, message {} MiB",
             peak / 1024,

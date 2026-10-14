@@ -98,7 +98,12 @@ fn answer_word(answer: Option<Answer>) -> &'static str {
 /// occurrence `event_json` reads, so both tools share the one formatter.
 fn as_occurrence(account_id: AccountId, event: model::Event) -> model::Occurrence {
     let (start, end) = (event.start, event.end);
-    model::Occurrence { account_id, event: std::sync::Arc::new(event), start, end }
+    model::Occurrence {
+        account_id,
+        event: std::sync::Arc::new(event),
+        start,
+        end,
+    }
 }
 
 /// The UTC date an instant falls on, for an all-day event: a date means
@@ -285,7 +290,10 @@ impl<A: Accounts> Tools<A> {
     /// "calendar" key. Empty before the
     /// local copy has ever read the account's calendar list, which
     /// leaves `event_json` to fall back to the raw id.
-    async fn calendar_names(&self, account_id: AccountId) -> Result<HashMap<String, String>, String> {
+    async fn calendar_names(
+        &self,
+        account_id: AccountId,
+    ) -> Result<HashMap<String, String>, String> {
         let names = self
             .read(move |c| mailrs_store::calendar::calendars(c, account_id))
             .await?;
@@ -431,9 +439,9 @@ impl<A: Accounts> Tools<A> {
         };
         match writable_named(&list, wanted) {
             Ok(found) => Ok(found.clone()),
-            Err(NoPick::ReadOnly(name)) => Err(format!(
-                "“{name}” on {email} is read-only. {takes}"
-            )),
+            Err(NoPick::ReadOnly(name)) => {
+                Err(format!("“{name}” on {email} is read-only. {takes}"))
+            }
             Err(NoPick::Unknown) => Err(format!(
                 "{email} has no calendar called “{wanted}”. {takes}"
             )),
@@ -443,8 +451,111 @@ impl<A: Accounts> Tools<A> {
         }
     }
 
+    /// Uses the same eligible-calendar policy as the event editor for implicit choices.
+    async fn creation_default(
+        &self,
+        input: &Value,
+    ) -> Result<(Account, Option<model::Calendar>), String> {
+        let settings = self.desk.settings();
+        let mut accounts = self.desk.accounts();
+        accounts.sort_by_key(|account| settings.account_rank(&account.email));
+        let preferred = settings.preferred_account(crate::settings::AccountUse::Calendar);
+        let preferred_account = preferred
+            .and_then(|email| {
+                accounts
+                    .iter()
+                    .find(|account| account.email.eq_ignore_ascii_case(email))
+            })
+            .cloned();
+        if text(input, "account").is_some() || text(input, "calendar").is_some() {
+            let account = match text(input, "account") {
+                Some(email) => self.account_named(&email)?,
+                None => preferred_account
+                    .or_else(|| {
+                        settings
+                            .last_calendar_account
+                            .as_deref()
+                            .and_then(|email| {
+                                accounts
+                                    .iter()
+                                    .find(|account| account.email.eq_ignore_ascii_case(email))
+                            })
+                            .cloned()
+                    })
+                    .map(Ok)
+                    .unwrap_or_else(|| self.account_or_default(input))?,
+            };
+            return Ok((account, None));
+        }
+        let eligible: Vec<_> = accounts
+            .iter()
+            .filter(|account| {
+                self.unavailable(account, Missing::Calendar).is_none()
+                    && !self
+                        .modules
+                        .accounts
+                        .services(account.id)
+                        .is_some_and(|services| services.withheld().calendar)
+            })
+            .map(|account| (account.id, account.email.clone()))
+            .collect();
+        let (writable, uncached, cached) = self
+            .read(move |conn| {
+                let mut writable = Vec::new();
+                let mut uncached = Vec::new();
+                let mut cached = false;
+                for (id, email) in eligible {
+                    let calendars = mailrs_store::calendar::calendars(conn, id)?;
+                    if calendars.is_empty() {
+                        uncached.push(id);
+                    } else {
+                        cached = true;
+                    }
+                    for calendar in calendars {
+                        if calendar.access.can_write() && !calendar.hidden {
+                            writable.push((id, email.clone(), calendar));
+                        }
+                    }
+                }
+                Ok((writable, uncached, cached))
+            })
+            .await?;
+        if let Some((id, calendar)) = crate::settings::preferred_calendar(
+            &writable,
+            preferred,
+            settings.last_calendar_account.as_deref(),
+        ) && let Some(account) = accounts.iter().find(|account| account.id == id).cloned()
+        {
+            return Ok((account, (!calendar.primary).then_some(calendar)));
+        }
+        let available = |account: &Account| uncached.contains(&account.id);
+        if uncached.is_empty() && cached {
+            return Err("There is no visible writable calendar. Choose a writable calendar explicitly or show one in Calendar settings.".into());
+        }
+        let fallback = preferred_account
+            .filter(available)
+            .or_else(|| {
+                settings
+                    .last_calendar_account
+                    .as_deref()
+                    .and_then(|email| {
+                        accounts.iter().find(|account| {
+                            account.email.eq_ignore_ascii_case(email) && available(account)
+                        })
+                    })
+                    .cloned()
+            })
+            .or_else(|| accounts.into_iter().find(available));
+        Ok((
+            fallback
+                .map(Ok)
+                .unwrap_or_else(|| self.account_or_default(input))?,
+            None,
+        ))
+    }
+
     pub(super) async fn create_event<'a>(&'a self, input: &'a Value) -> Result<Plan<'a>, String> {
-        let account = self.account_or_default(input)?;
+        let (account, implicit_calendar) = self.creation_default(input).await?;
         if let Some(answer) = self.unavailable(&account, Missing::Calendar) {
             return Ok(Plan::without_asking(async move { Ok(answer) }));
         }
@@ -466,7 +577,7 @@ impl<A: Accounts> Tools<A> {
         }
         let chosen = match text(input, "calendar") {
             Some(wanted) => Some(self.writable_calendar(&account, &wanted).await?),
-            None => None,
+            None => implicit_calendar,
         };
         let edit = EventEdit {
             title: Some(title.clone()),
@@ -490,7 +601,11 @@ impl<A: Accounts> Tools<A> {
             ),
             None => fill(
                 &gettext("Add “{title}” to the calendar for {account}, {when}?"),
-                &[("title", &title), ("account", &account.email), ("when", &when)],
+                &[
+                    ("title", &title),
+                    ("account", &account.email),
+                    ("when", &when),
+                ],
             ),
         };
         if let Some(invited) = edit.guests.as_ref().filter(|g| !g.is_empty()) {
@@ -579,7 +694,8 @@ impl<A: Accounts> Tools<A> {
                 &[("account", &account.email)],
             ),
         };
-        self.say_who_hears(&mut question, &account, &id, Some(&edit)).await;
+        self.say_who_hears(&mut question, &account, &id, Some(&edit))
+            .await;
         let question = format!("{question}\n\n{}", changes.join("\n"));
         Ok(Plan::ask(question, async move {
             let calendar = Arc::clone(&self.modules.calendar);
@@ -627,10 +743,18 @@ impl<A: Accounts> Tools<A> {
     /// or of deleting it, as the calendar's own question rule says. An
     /// event the copy cannot find yet keeps the old promise that its
     /// guests are told, rather than one of silence the write may break.
-    async fn say_who_hears(&self, question: &mut String, account: &Account, id: &str, edit: Option<&EventEdit>) {
+    async fn say_who_hears(
+        &self,
+        question: &mut String,
+        account: &Account,
+        id: &str,
+        edit: Option<&EventEdit>,
+    ) {
         let asked = self.modules.calendar.question(account.id, id, edit).await;
         let line = match asked {
-            Ok(asked) if asked.told => gettext("The new guests get their invitation, and the others get an update."),
+            Ok(asked) if asked.told => {
+                gettext("The new guests get their invitation, and the others get an update.")
+            }
             Ok(asked) if asked.guests_hear() => gettext("Its guests are told."),
             Ok(_) => return,
             Err(_) => gettext("Its guests are told."),
@@ -745,11 +869,15 @@ mod tests {
     #[test]
     fn event_json_reads_the_description_as_text_not_html_tags() {
         let event = model::Event {
-            description: r#"Bring the numbers<br><a href="https://example.com/q3">Q3 sheet</a>"#.into(),
+            description: r#"Bring the numbers<br><a href="https://example.com/q3">Q3 sheet</a>"#
+                .into(),
             ..model::Event::default()
         };
         let occurrence = as_occurrence(1, event);
         let json = event_json(&occurrence, &HashMap::new());
-        assert_eq!(json["description"], "Bring the numbers\nQ3 sheet (https://example.com/q3)");
+        assert_eq!(
+            json["description"],
+            "Bring the numbers\nQ3 sheet (https://example.com/q3)"
+        );
     }
 }

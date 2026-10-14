@@ -32,11 +32,30 @@ your desktop's keyring, never into a file.
 
 The account appears in the sidebar and starts downloading.
 
+### Account order and defaults
+
+In **Preferences > Accounts**, drag an account's handle above or below another
+account. **Move Up** and **Move Down** do the same from the keyboard. This order
+applies to the sidebar and account menus throughout Penguin Mail.
+
+Choose **Default Account** above the account list. Turn on **Use Default Account
+for All Tasks** to use it for new messages, replies, forwards, calendar events,
+assistant actions and startup. Otherwise, expand **Defaults by Task** to choose
+each separately. Turning the switch off restores your individual choices.
+
+The automatic choices keep the account on screen for new messages, the original
+account for replies and forwards, the last calendar account used for events, and
+All Inboxes at startup. Assistant actions follow the new-message choice unless
+you choose another account. An account you explicitly choose in a composer or
+assistant request takes precedence. Saved drafts and existing events keep their
+accounts. If a chosen account is unavailable, the task falls back to its
+automatic choice; calendar events also require a writable calendar.
+
 ### Sender addresses and suffixes
 
-Under **Preferences > Writing**, each IMAP or POP3 account has a group
-headed by its address. Add the addresses you send from through that account
-there. Each uses that account's existing
+Under **Preferences > Accounts**, expand your IMAP or POP3 account and
+open **Addresses You Send From**. Add the addresses you send from through
+that account there. Each uses that account's existing
 SMTP server and credentials. Choose a default address for new messages and
 an optional sender name. Google accounts keep using the addresses verified
 in Gmail.
@@ -95,8 +114,8 @@ Penguin Mail looks for an IMAP account's calendar (CalDAV), contacts
 (CardDAV) and rules server (ManageSieve) when you add the account, with
 the same password. Fastmail, iCloud, Yahoo, Zoho, GMX, WEB.DE, mail.com,
 Yandex, mailbox.org and Posteo are known; for another server it asks the
-domain's DNS and its well-known addresses. **Preferences > Contacts &
-Calendar** lists what it found under **Calendar, Contacts and Rules
+domain's DNS and its well-known addresses. **Preferences > Accounts**
+lists what it found inside each account under **Calendar, Contacts and Rules
 Servers**, with **Find Again**, and **Edit** to type a CalDAV or CardDAV
 address yourself. A server outside your address's domain waits there for
 you to press **Use It** before your password goes to it. Where the server
@@ -415,3 +434,15 @@ of accounts lives in the store.
 `penguin-mail-cli account remove you@gmail.com` deletes an account's local mail and
 its keyring entry. To revoke access on Google's side as well, use
 <https://myaccount.google.com/permissions>.
+
+
+### Space on the server
+
+Expand an account in Preferences to see **Space on the Server**. Reported usage
+shows a bar and the used and total amounts. The row updates if the report arrives
+while Preferences is open. When the server provides no report, the row says so.
+Gmail reports its shared Google storage. IMAP and JMAP accounts report quotas when
+their servers offer them. Fastmail accounts signed in through the browser also
+read their IMAP quota when JMAP does not offer one, using the same OAuth session.
+Outlook connected through Microsoft Graph does not
+currently provide a mailbox quota report in Penguin Mail.

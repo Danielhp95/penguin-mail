@@ -1,6 +1,10 @@
 //! The Preferences dialog. Changes save as they happen; sync options apply
 //! when the dialog closes, so the engine restarts once.
 
+mod accounts;
+pub(crate) mod space;
+pub(crate) mod dialog;
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -24,10 +28,24 @@ use crate::settings::{
 use crate::ui::window::Notice;
 use mailrs_domain::translate::{fill, fill_plural, gettext, with_reason};
 
+#[derive(Clone, Copy)]
+pub(crate) enum Focus<'a> {
+    Signature(&'a str),
+    Storage(&'a str),
+}
+
+impl Focus<'_> {
+    fn account(&self) -> &str {
+        match self {
+            Self::Signature(email) | Self::Storage(email) => email,
+        }
+    }
+}
+
 /// Shows Preferences for `accounts`, each with what its server `offers`
 /// and what its own consent `withheld`. `grant` runs the consent flow
-/// again for one account's Grant Access button. With `signature_of`,
-/// opens on that account's signature.
+/// again for one account's Grant Access button. `focus` opens the account
+/// whose signature or storage the person asked to see.
 pub fn present(
     app: &Rc<App>,
     accounts: &[Account],
@@ -35,52 +53,56 @@ pub fn present(
     withheld: impl Fn(AccountId) -> Withheld,
     grant: impl Fn(AccountId) + Clone + 'static,
     parent: &impl IsA<gtk::Widget>,
-    signature_of: Option<&str>,
-) -> adw::PreferencesDialog {
+    focus: Option<Focus<'_>>,
+) -> Rc<dialog::Dialog> {
     let settings = app.settings();
     let offered: Vec<(Account, Offers)> = accounts
         .iter()
         .map(|account| (account.clone(), offers(account.id)))
         .collect();
-    let dialog = adw::PreferencesDialog::builder()
-        .search_enabled(true)
-        .build();
+    let dialog = dialog::Dialog::new();
     // The phone layout. A dialog applies one breakpoint at a time, so
     // every page puts its narrow setters on this one.
     let narrow = adw::Breakpoint::new(
         adw::BreakpointCondition::parse("max-width: 450sp").expect("valid breakpoint"),
     );
-    dialog.add(&general_page(app, &settings, &missing_lines(&offered, |id, missing| app.core.missed(id, missing))));
-    let writing = writing_page(app, &settings, accounts, signature_of, &dialog);
-    dialog.add(&writing);
-    let contacts = super::contacts_prefs::page(
+    let accounts_page = accounts_page(
         app,
-        &settings,
+        &offered,
+        &withheld,
+        grant.clone(),
+        focus,
+        &dialog.toasts,
+        &narrow,
+    );
+    dialog.add(&accounts_page);
+    dialog.add(&reading_page(app, &settings));
+    dialog.add(&writing_page(app, &settings, accounts, &dialog.toasts));
+    dialog.add(&notifications_page(app, &settings));
+    dialog.add(&super::contacts_prefs::calendar_page(
+        app,
         &offered,
         withheld,
         grant,
         &calendar_rows(app, &settings),
-    );
-    dialog.add(&contacts);
-    // Five tabs share 360 px on a phone, about nine letters each, and
-    // "Contacts & Calendar" ended in "&…". The short name matches the
-    // page's address book icon, and search still finds every row.
-    narrow.add_setter(&contacts, "title", Some(&gettext("Contacts").to_value()));
-    if signature_of.is_some() {
-        dialog.set_visible_page(&writing);
-    }
+    ));
+    dialog.add(&appearance_page(app, &settings));
     let pending = Rc::new(RefCell::new(app.core.sync_config()));
     dialog.add(&sync_page(app, &pending, &narrow));
-    dialog.add(&super::assistant_prefs::page(app, &dialog));
-    dialog.add_breakpoint(narrow);
+    dialog.add(&super::assistant_prefs::page(app, &dialog.toasts));
+    if focus.is_some() {
+        dialog.set_visible_page(&accounts_page);
+    }
+    dialog.adapt(&narrow);
+    dialog.window.add_breakpoint(narrow);
     let weak = Rc::downgrade(app);
-    dialog.connect_closed(move |_| {
+    dialog.window.connect_closed(move |_| {
         let Some(app) = weak.upgrade() else { return };
         if let Err(err) = app.core.update_sync(pending.borrow().clone()) {
             tracing::warn!(error = %err, "could not apply the sync settings");
         }
     });
-    dialog.present(Some(parent));
+    dialog.present(parent);
     dialog
 }
 
@@ -97,20 +119,14 @@ pub fn present_page(
     present(app, accounts, offers, withheld, grant, parent, None).set_visible_page_name(page);
 }
 
-/// The General page. `missing` holds an address and a reason for each
-/// service an account's server lacks, which a group at the end lists.
-fn general_page(
-    app: &Rc<App>,
-    settings: &Settings,
-    missing: &[(String, Vec<String>)],
-) -> adw::PreferencesPage {
+fn reading_page(app: &Rc<App>, settings: &Settings) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
-        .title(gettext("General"))
-        .icon_name("emblem-system-symbolic")
-        .build();
-
-    let reading = adw::PreferencesGroup::builder()
         .title(gettext("Reading"))
+        .name("reading")
+        .icon_name("view-paged-symbolic")
+        .build();
+    let reading = adw::PreferencesGroup::builder()
+        .title(gettext("Inbox"))
         .build();
     reading.add(&switch(
         app,
@@ -153,7 +169,11 @@ fn general_page(
         settings.mark_read,
         Change::MarkRead,
     ));
-    reading.add(&combo(
+    page.add(&reading);
+    let images = adw::PreferencesGroup::builder()
+        .title(gettext("Images and Receipts"))
+        .build();
+    images.add(&combo(
         app,
         &gettext("Remote Images"),
         Some(&gettext(
@@ -162,26 +182,32 @@ fn general_page(
         settings.remote_images,
         Change::RemoteImages,
     ));
-    reading.add(&allowed_image_senders(app));
-    reading.add(&combo(
+    images.add(&allowed_image_senders(app));
+    images.add(&combo(
         app,
         &gettext("Read Receipts"),
-        Some(&gettext("When a sender asks to know you read their message")),
+        Some(&gettext(
+            "When a sender asks to know you read their message",
+        )),
         settings.read_receipts,
         Change::ReadReceipts,
     ));
-    reading.add(&combo(
-        app,
-        &gettext("Text Size"),
-        None,
-        settings.text_size,
-        Change::TextSize,
-    ));
-    page.add(&reading);
-
-    let appearance = adw::PreferencesGroup::builder()
-        .title(gettext("Appearance"))
+    page.add(&images);
+    let translation = adw::PreferencesGroup::builder()
+        .title(gettext("Translation"))
         .build();
+    translation.add(&never_translate_row(app, settings));
+    page.add(&translation);
+    page
+}
+
+fn appearance_page(app: &Rc<App>, settings: &Settings) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder()
+        .title(gettext("Appearance"))
+        .name("appearance")
+        .icon_name("preferences-desktop-display-symbolic")
+        .build();
+    let appearance = adw::PreferencesGroup::new();
     appearance.add(&combo(
         app,
         &gettext("Style"),
@@ -189,10 +215,24 @@ fn general_page(
         settings.color_scheme,
         Change::ColorScheme,
     ));
+    appearance.add(&combo(
+        app,
+        &gettext("Text Size"),
+        None,
+        settings.text_size,
+        Change::TextSize,
+    ));
     appearance.add(&language_row(app, settings));
-    appearance.add(&never_translate_row(app, settings));
     page.add(&appearance);
+    page
+}
 
+fn notifications_page(app: &Rc<App>, settings: &Settings) -> adw::PreferencesPage {
+    let page = adw::PreferencesPage::builder()
+        .title(gettext("Notifications"))
+        .name("notifications")
+        .icon_name("preferences-system-notifications-symbolic")
+        .build();
     let notifications = adw::PreferencesGroup::builder()
         .title(gettext("Notifications"))
         .build();
@@ -225,12 +265,13 @@ fn general_page(
         .bind_property("active", &vips_only, "sensitive")
         .sync_create()
         .build();
-    let actions = adw::ExpanderRow::builder()
+    let actions = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(gettext("Buttons"))
         .subtitle(gettext(
             "What a notification offers besides opening the conversation",
         ))
-        .build();
+        .build());
+    actions.add_css_class("preference-explanation");
     for button in crate::notify::Button::ALL {
         actions.add_row(&switch(
             app,
@@ -249,29 +290,10 @@ fn general_page(
     notifications.add(&previews);
     notifications.add(&actions);
     page.add(&notifications);
-    if !missing.is_empty() {
-        let unavailable = adw::PreferencesGroup::builder()
-            .title(gettext("Not Available"))
-            .build();
-        // One row for each account, its reasons one to a line, so an
-        // account that lacks three things shows its address once.
-        for (address, reasons) in missing {
-            let row = adw::ActionRow::builder().use_markup(false)
-                .title(address)
-                .subtitle(reasons.join("\n"))
-                .build();
-            crate::ui::name(&row, &crate::offered::missing_name(address, reasons));
-            unavailable.add(&row);
-        }
-        page.add(&unavailable);
-    }
     page
 }
 
-/// The calendar's own settings, which open the Calendar section of the
-/// Contacts & Calendar page. Event reminders keep a switch of their own
-/// there, so turning new-mail notifications off on the General page
-/// leaves them alone.
+/// Event reminders stay independent of the new-mail notification switch.
 fn calendar_rows(app: &Rc<App>, settings: &Settings) -> Vec<gtk::Widget> {
     vec![
         switch(
@@ -289,14 +311,247 @@ fn calendar_rows(app: &Rc<App>, settings: &Settings) -> Vec<gtk::Widget> {
     ]
 }
 
+fn accounts_page(
+    app: &Rc<App>,
+    accounts: &[(Account, Offers)],
+    withheld: &impl Fn(AccountId) -> Withheld,
+    grant: impl Fn(AccountId) + Clone + 'static,
+    focus: Option<Focus<'_>>,
+    dialog: &adw::ToastOverlay,
+    narrow: &adw::Breakpoint,
+) -> adw::PreferencesPage {
+    let settings = app.settings();
+    let page = adw::PreferencesPage::builder()
+        .title(gettext("Accounts"))
+        .name("accounts")
+        .icon_name("avatar-default-symbolic")
+        .build();
+    let defaults = accounts::Defaults::new(app);
+    page.add(&defaults.group);
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Accounts"))
+        .description(gettext("Signature, addresses you send from, servers, contacts, and the space the server reports."))
+        .build();
+    if accounts.is_empty() {
+        group.add(
+            &adw::ActionRow::builder()
+                .title(gettext("No Accounts Yet"))
+                .subtitle(gettext(
+                    "Add an account to choose a sender and write signatures.",
+                ))
+                .build(),
+        );
+    }
+    let order = accounts::Order::new(app, &group, defaults);
+    let storage = app.storage();
+    let mut space_rows = Vec::new();
+    let missing = missing_lines(accounts, |id, missing| app.core.missed(id, missing));
+    for (index, (account, offers)) in accounts.iter().enumerate() {
+        let expanded = focus.map_or(index == 0, |focus| {
+            focus.account().eq_ignore_ascii_case(&account.email)
+        });
+        let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
+            .use_markup(false)
+            .title(&account.email)
+            .subtitle(preview(settings.signature(&account.email)))
+            .expanded(expanded)
+            .build());
+        row.add_row(&signature_row(
+            app,
+            &settings,
+            account,
+            matches!(focus, Some(Focus::Signature(_))) && expanded,
+            dialog,
+            &row,
+        ));
+        row.add_row(&super::sender_prefs::account_row(app, account));
+        super::contacts_prefs::account_rows(
+            app,
+            &settings,
+            account,
+            *offers,
+            withheld(account.id),
+            grant.clone(),
+            &row,
+        );
+        let unavailable = if account.provider == mailrs_domain::Provider::Microsoft {
+            gettext("Mailbox storage is not available through this connection.")
+        } else {
+            gettext("The server has not reported its storage usage.")
+        };
+        let (space_row, update) = space::Row::new(&gettext("Space on the Server"), storage.get(&account.id).copied(), &unavailable, narrow);
+        row.add_row(&space_row);
+        space_rows.push((account.id, update));
+        if let Some((_, reasons)) = missing.iter().find(|(email, _)| email == &account.email) {
+            let unavailable = adw::ActionRow::builder()
+                .use_markup(false)
+                .title(gettext("Not Available"))
+                .subtitle(reasons.join("\n"))
+                .build();
+            unavailable
+                .upcast_ref::<gtk::Widget>()
+                .reset_relation(gtk::AccessibleRelation::LabelledBy);
+            super::name(
+                &unavailable,
+                &crate::offered::missing_name(&account.email, reasons),
+            );
+            row.add_row(&unavailable);
+        }
+        row.add_css_class("account-settings");
+        group.add(&row);
+        order.add(&row, &account.email);
+        if expanded && focus.is_some() {
+            let row = row.downgrade();
+            glib::idle_add_local_once(move || {
+                if let Some(row) = row.upgrade() {
+                    row.child_focus(gtk::DirectionType::TabForward);
+                }
+            });
+        }
+    }
+    order.refresh();
+    let (weak_app, weak_group) = (Rc::downgrade(app), group.downgrade());
+    let mut previous = storage;
+    glib::timeout_add_seconds_local(1, move || {
+        let (Some(app), Some(_group)) = (weak_app.upgrade(), weak_group.upgrade()) else {
+            return glib::ControlFlow::Break;
+        };
+        let found = app.storage();
+        if found != previous {
+            for (id, row) in &space_rows { row.update(found.get(id).copied()); }
+            previous = found;
+        }
+        glib::ControlFlow::Continue
+    });
+    page.add(&group);
+    page
+}
+
+fn signature_row(
+    app: &Rc<App>,
+    settings: &Settings,
+    account: &Account,
+    expanded: bool,
+    dialog: &adw::ToastOverlay,
+    account_row: &adw::ExpanderRow,
+) -> adw::ExpanderRow {
+    let text = settings.signature(&account.email).to_string();
+    // The subtitle is the signature's first line, which may hold "&"
+    // or a Markdown link in angle brackets.
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
+        .use_markup(false)
+        .title(gettext("Signature"))
+        .subtitle(preview(&text))
+        .expanded(expanded)
+        .build());
+    let view = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .top_margin(10)
+        .bottom_margin(10)
+        .left_margin(12)
+        .right_margin(12)
+        .accepts_tab(false)
+        .build();
+    let help =
+        gettext("Added below new messages and above quoted text in replies. Markdown works.");
+    dialog::explain(&row, &help);
+    dialog::explain(&view, &help);
+    view.buffer().set_text(&text);
+    super::name(
+        &view,
+        &fill(
+            &gettext("Signature for {account}"),
+            &[("account", &account.email)],
+        ),
+    );
+    let frame = gtk::ScrolledWindow::builder()
+        .child(&view)
+        .min_content_height(96)
+        .max_content_height(220)
+        .propagate_natural_height(true)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .build();
+    row.add_row(&frame);
+    if account.provider == mailrs_domain::Provider::Gmail {
+        let import = gtk::Button::builder()
+            .label(gettext("Import from Gmail"))
+            .halign(gtk::Align::End)
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_end(6)
+            .css_classes(["flat"])
+            .build();
+        row.add_row(&import);
+        let (weak, account_id, target, toasts) = (
+            Rc::downgrade(app),
+            account.id,
+            view.buffer(),
+            dialog.downgrade(),
+        );
+        import.connect_clicked(move |button| {
+            let (Some(app), Some(toasts)) = (weak.upgrade(), toasts.upgrade()) else {
+                return;
+            };
+            if app.core.account(account_id).is_none() {
+                toasts.add_toast(crate::ui::toast(&gettext(
+                    "This account is not syncing yet",
+                )));
+                return;
+            }
+            let settings = app.core.gmail_settings();
+            button.set_sensitive(false);
+            let (button, target, toasts) = (button.clone(), target.clone(), toasts.clone());
+            glib::spawn_future_local(async move {
+                match app
+                    .core
+                    .call(async move { settings.signature(account_id).await })
+                    .await
+                {
+                    Ok(Some(signature)) => {
+                        target.set_text(&signature);
+                        toasts.add_toast(crate::ui::toast(&gettext(
+                            "Imported the signature from Gmail",
+                        )));
+                    }
+                    Ok(None) => toasts.add_toast(crate::ui::toast(&gettext(
+                        "Gmail has no signature for this account",
+                    ))),
+                    Err(err) => {
+                        let said = with_reason(&gettext("Could not import: {reason}"), &err, &[]);
+                        toasts.add_toast(crate::ui::toast(&said));
+                    }
+                }
+                button.set_sensitive(true);
+            });
+        });
+    }
+    let (weak, email, subtitle) = (Rc::downgrade(app), account.email.clone(), row.downgrade());
+    let account_row = account_row.downgrade();
+    view.buffer().connect_changed(move |buffer| {
+        let Some(app) = weak.upgrade() else { return };
+        let text = buffer
+            .text(&buffer.start_iter(), &buffer.end_iter(), false)
+            .to_string();
+        if let Some(subtitle) = subtitle.upgrade() {
+            subtitle.set_subtitle(&preview(&text));
+        }
+        if let Some(account) = account_row.upgrade() {
+            account.set_subtitle(&preview(&text));
+        }
+        let email = email.clone();
+        app.change_settings(Change::Signature { email, text });
+    });
+    row
+}
+
 fn writing_page(
     app: &Rc<App>,
     settings: &Settings,
     accounts: &[Account],
-    signature_of: Option<&str>,
-    dialog: &adw::PreferencesDialog,
+    dialog: &adw::ToastOverlay,
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
+        .name("writing")
         .title(gettext("Writing"))
         .icon_name("document-edit-symbolic")
         .build();
@@ -315,32 +570,6 @@ fn writing_page(
     let sending = adw::PreferencesGroup::builder()
         .title(gettext("New Messages"))
         .build();
-    let emails: Vec<String> = accounts.iter().map(|a| a.email.clone()).collect();
-    let labels: Vec<&str> = emails.iter().map(String::as_str).collect();
-    let current = settings
-        .default_account
-        .as_ref()
-        .and_then(|d| emails.iter().position(|e| e.eq_ignore_ascii_case(d)))
-        .unwrap_or(0);
-    let from = adw::ComboRow::builder()
-        .title(gettext("Send New Messages From"))
-        .subtitle(gettext(
-            "Replies always come from the account that received the message",
-        ))
-        .model(&gtk::StringList::new(&labels))
-        .selected(current as u32)
-        .build();
-    super::combo_value::widen_value(&from);
-    let weak = Rc::downgrade(app);
-    from.connect_selected_notify(move |row| {
-        let (Some(app), Some(email)) =
-            (weak.upgrade(), emails.get(row.selected() as usize).cloned())
-        else {
-            return;
-        };
-        app.change_settings(Change::DefaultAccount(Some(email)));
-    });
-    sending.add(&from);
     sending.add(&combo(
         app,
         &gettext("New Messages Start As"),
@@ -370,113 +599,11 @@ fn writing_page(
     ));
     page.add(&sending);
 
-    super::sender_prefs::groups(app, accounts, &page);
-
-    let signatures = adw::PreferencesGroup::builder()
-        .title(gettext("Signatures"))
-        .description(gettext(
-            "Added below new messages and above quoted text in replies. Markdown works.",
-        ))
-        .build();
-    for account in accounts {
-        let text = settings.signature(&account.email).to_string();
-        // The subtitle is the signature's first line, which may hold "&"
-        // or a Markdown link in angle brackets.
-        let row = adw::ExpanderRow::builder()
-            .use_markup(false)
-            .title(&account.email)
-            .subtitle(preview(&text))
-            .expanded(signature_of.is_some_and(|e| e.eq_ignore_ascii_case(&account.email)))
-            .build();
-        let view = gtk::TextView::builder()
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .top_margin(10)
-            .bottom_margin(10)
-            .left_margin(12)
-            .right_margin(12)
-            .accepts_tab(false)
-            .build();
-        view.buffer().set_text(&text);
-        super::name(
-            &view,
-            &fill(
-                &gettext("Signature for {account}"),
-                &[("account", &account.email)],
-            ),
-        );
-        let frame = gtk::ScrolledWindow::builder()
-            .child(&view)
-            .min_content_height(96)
-            .max_content_height(220)
-            .propagate_natural_height(true)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .build();
-        row.add_row(&frame);
-        let import = gtk::Button::builder()
-            .label(gettext("Import from Gmail"))
-            .halign(gtk::Align::End)
-            .margin_top(6)
-            .margin_bottom(6)
-            .margin_end(6)
-            .css_classes(["flat"])
-            .build();
-        row.add_row(&import);
-        let (weak, account_id, target, toasts) = (
-            Rc::downgrade(app),
-            account.id,
-            view.buffer(),
-            dialog.clone(),
-        );
-        import.connect_clicked(move |button| {
-            let Some(app) = weak.upgrade() else { return };
-            if app.core.account(account_id).is_none() {
-                toasts.add_toast(crate::ui::toast(&gettext("This account is not syncing yet")));
-                return;
-            }
-            let settings = app.core.gmail_settings();
-            button.set_sensitive(false);
-            let (button, target, toasts) = (button.clone(), target.clone(), toasts.clone());
-            glib::spawn_future_local(async move {
-                match app
-                    .core
-                    .call(async move { settings.signature(account_id).await })
-                    .await
-                {
-                    Ok(Some(signature)) => {
-                        target.set_text(&signature);
-                        toasts.add_toast(crate::ui::toast(&gettext(
-                            "Imported the signature from Gmail",
-                        )));
-                    }
-                    Ok(None) => toasts.add_toast(crate::ui::toast(&gettext(
-                        "Gmail has no signature for this account",
-                    ))),
-                    Err(err) => {
-                        let said = with_reason(&gettext("Could not import: {reason}"), &err, &[]);
-                        toasts.add_toast(crate::ui::toast(&said));
-                    }
-                }
-                button.set_sensitive(true);
-            });
-        });
-        let (weak, email, subtitle) = (Rc::downgrade(app), account.email.clone(), row.clone());
-        view.buffer().connect_changed(move |buffer| {
-            let Some(app) = weak.upgrade() else { return };
-            let text = buffer
-                .text(&buffer.start_iter(), &buffer.end_iter(), false)
-                .to_string();
-            subtitle.set_subtitle(&preview(&text));
-            let email = email.clone();
-            app.change_settings(Change::Signature { email, text });
-        });
-        signatures.add(&row);
-    }
-    page.add(&signatures);
-    page.add(&super::templates::group(app));
-    page.add(&spelling_group(app, settings, accounts));
     if let Some(protection) = protection_group(app, settings, accounts, dialog) {
         page.add(&protection);
     }
+    page.add(&spelling_group(app, settings, accounts));
+    page.add(&super::templates::group(app));
     page
 }
 
@@ -493,7 +620,7 @@ fn protection_group(
     app: &Rc<App>,
     settings: &Settings,
     accounts: &[Account],
-    dialog: &adw::PreferencesDialog,
+    dialog: &adw::ToastOverlay,
 ) -> Option<adw::PreferencesGroup> {
     if !app.core.has_gpg() && !app.core.has_gpgsm() {
         return None;
@@ -641,8 +768,7 @@ async fn fill_protection(app: Rc<App>, rows: Rows) {
             )),
         }
     }
-    let named =
-        crate::protection::joined(&programs.iter().map(String::as_str).collect::<Vec<_>>());
+    let named = crate::protection::joined(&programs.iter().map(String::as_str).collect::<Vec<_>>());
     // The verb agrees with the programs: "gpg, which holds" but "gpg and
     // gpgsm, which hold".
     filling.set_description(Some(&fill_plural(
@@ -706,7 +832,10 @@ fn spelling_group(
     let mut choices: Vec<(String, Vec<String>)> = vec![(
         fill(
             &gettext("System: {language}"),
-            &[("language", &names.name(&crate::ui::composer::spell::locale_language()))],
+            &[(
+                "language",
+                &names.name(&crate::ui::composer::spell::locale_language()),
+            )],
         ),
         Vec::new(),
     )];
@@ -730,7 +859,8 @@ fn spelling_group(
             .iter()
             .position(|(_, languages)| *languages == current)
             .unwrap_or(0);
-        let row = adw::ComboRow::builder().use_markup(false)
+        let row = adw::ComboRow::builder()
+            .use_markup(false)
             .title(&account.email)
             .model(&gtk::StringList::new(&labels))
             .selected(selected as u32)
@@ -760,7 +890,7 @@ fn sync_page(
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title(gettext("Sync"))
-        // The storage banner opens this page by name.
+        // Calls that open Sync use this name.
         .name("sync")
         .icon_name("mail-send-receive-symbolic")
         .build();
@@ -785,7 +915,9 @@ fn sync_page(
         .title(gettext("Storage"))
         .build();
     let windows = window_choices();
-    let days = current.window_days.unwrap_or(mailrs_sync::DEFAULT_WINDOW_DAYS);
+    let days = current
+        .window_days
+        .unwrap_or(mailrs_sync::DEFAULT_WINDOW_DAYS);
     let window = sync_combo(
         &windows,
         &gettext("Keep Mail on This Computer For"),
@@ -839,9 +971,6 @@ fn sync_page(
             rows.1.set_subtitle(&cache_note);
         });
     }
-    if let Some(space) = server_space(app, narrow) {
-        page.add(&space);
-    }
 
     let startup = adw::PreferencesGroup::builder()
         .title(gettext("Startup"))
@@ -852,6 +981,7 @@ fn sync_page(
         .build();
     match autostart::path() {
         Some(path) if !app.core.demo => {
+            login.add_css_class("preference-explanation");
             login.set_active(autostart::is_enabled(&path));
             login.connect_active_notify(move |row| {
                 if let Err(err) = autostart::apply(&path, row.is_active()) {
@@ -911,7 +1041,10 @@ fn space_size(bytes: u64) -> String {
 fn amount_line(storage: mailrs_sync::Storage) -> String {
     fill(
         &gettext("{used} of {limit}"),
-        &[("used", &space_size(storage.used)), ("limit", &space_size(storage.limit))],
+        &[
+            ("used", &space_size(storage.used)),
+            ("limit", &space_size(storage.limit)),
+        ],
     )
 }
 
@@ -927,135 +1060,14 @@ fn state_line(storage: mailrs_sync::Storage) -> String {
     }
 }
 
-/// One row per account whose server says how full it is, with a bar in
-/// ink while there is room, the warning colour past the server's mark and
-/// red once full. `None` while no server has said, so the page shows no empty
-/// group. Below 450 sp the bar moves under the amount.
-fn server_space(app: &Rc<App>, narrow: &adw::Breakpoint) -> Option<adw::PreferencesGroup> {
-    let storage = app.storage();
-    let rows: Vec<(String, mailrs_sync::Storage)> = app
-        .accounts()
-        .into_iter()
-        .filter_map(|a| Some((a.email.clone(), *storage.get(&a.id)?)))
-        .collect();
-    if rows.is_empty() {
-        return None;
-    }
-    let group = adw::PreferencesGroup::builder()
-        .title(gettext("Space on the Server"))
-        .description(gettext("How much of its space each server says your mail takes"))
-        .build();
-    narrow.add_setter(&group, "description", Some(&None::<String>.to_value()));
-    for (address, space) in rows {
-        group.add(&server_space_row(&address, space, narrow));
-    }
-    let footer = gtk::Label::builder()
-        .label(gettext("Accounts whose server does not report its space are not listed."))
-        .xalign(0.0)
-        .wrap(true)
-        .css_classes(["server-space-footer"])
-        .build();
-    group.add(&footer);
-    Some(group)
-}
-
-fn server_space_row(
-    address: &str,
-    space: mailrs_sync::Storage,
-    narrow: &adw::Breakpoint,
-) -> adw::PreferencesRow {
-    let tone = if space.full() {
-        Some("full")
-    } else if space.past_warning() {
-        Some("nearly-full")
-    } else {
-        None
-    };
-    let title = gtk::Label::builder()
-        .label(address)
-        .xalign(0.0)
-        .ellipsize(gtk::pango::EllipsizeMode::End)
-        .css_classes(["title"])
-        .build();
-    let state = state_line(space);
-    let subtitle = gtk::Label::builder()
-        .label(state.as_str())
-        .xalign(0.0)
-        .ellipsize(gtk::pango::EllipsizeMode::End)
-        .css_classes(["subtitle"])
-        .build();
-    let words = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(3)
-        .hexpand(true)
-        .valign(gtk::Align::Center)
-        .build();
-    words.append(&title);
-    words.append(&subtitle);
-    let bar = gtk::LevelBar::builder()
-        .min_value(0.0)
-        .max_value(1.0)
-        .value((space.used as f64 / space.limit as f64).min(1.0))
-        .width_request(150)
-        .valign(gtk::Align::Center)
-        .css_classes(["server-space"])
-        .build();
-    // GTK colours a level bar by its own offsets, low as a warning; here
-    // more is worse, so the bar takes its colour from the CSS.
-    for offset in [gtk::LEVEL_BAR_OFFSET_LOW, gtk::LEVEL_BAR_OFFSET_HIGH, gtk::LEVEL_BAR_OFFSET_FULL] {
-        bar.remove_offset_value(Some(offset));
-    }
-    // The second line already says it, so the bar's label repeats it for
-    // a screen reader that reaches the bar alone.
-    bar.update_property(&[gtk::accessible::Property::Label(&format!("{address}: {state}"))]);
-    let end = if space.full() {
-        gtk::Label::builder()
-            .label(gettext("Full"))
-            .valign(gtk::Align::Center)
-            .css_classes(["server-space-chip"])
-            .build()
-    } else {
-        gtk::Label::builder()
-            .label(fill(&gettext("{percent}%"), &[("percent", &space.percent().to_string())]))
-            .width_chars(4)
-            .xalign(1.0)
-            .css_classes(["server-space-percent", "numeric"])
-            .build()
-    };
-    let gauge = gtk::Box::builder().spacing(12).valign(gtk::Align::Center).build();
-    gauge.append(&bar);
-    gauge.append(&end);
-    let content = gtk::Box::builder()
-        .spacing(16)
-        .css_classes(["server-space-row"])
-        .build();
-    content.append(&words);
-    content.append(&gauge);
-    if let Some(tone) = tone {
-        for widget in [subtitle.upcast_ref::<gtk::Widget>(), bar.upcast_ref()] {
-            widget.add_css_class(tone);
-        }
-    }
-    narrow.add_setter(&content, "orientation", Some(&gtk::Orientation::Vertical.to_value()));
-    narrow.add_setter(&content, "spacing", Some(&10.to_value()));
-    narrow.add_setter(&bar, "hexpand", Some(&true.to_value()));
-    narrow.add_setter(&end, "visible", Some(&false.to_value()));
-    adw::PreferencesRow::builder()
-        .title(address)
-        .activatable(false)
-        .focusable(false)
-        .child(&content)
-        .build()
-}
-
 /// The senders whose images load without asking, each with a way off the
 /// list. The rows fill in once the store answers, so opening Preferences
 /// never waits on it.
 fn allowed_image_senders(app: &Rc<App>) -> adw::ExpanderRow {
-    let row = adw::ExpanderRow::builder()
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(gettext("Senders Who May Load Images"))
         .subtitle(gettext("Nobody yet"))
-        .build();
+        .build());
     let (app, shown) = (Rc::clone(app), row.clone());
     glib::spawn_future_local(async move {
         let Ok(list) = app.core.read(mailrs_store::image_senders::list).await else {
@@ -1169,7 +1181,10 @@ fn working_hours_words(hours: &WorkingHours) -> String {
             .collect::<Vec<_>>()
             .join(&gettext(", ")),
     };
-    fill(&gettext("{time}, {days}"), &[("time", &time), ("days", &days)])
+    fill(
+        &gettext("{time}, {days}"),
+        &[("time", &time), ("days", &days)],
+    )
 }
 
 /// A drop-down of the day's 24 whole hours, in the clock
@@ -1180,7 +1195,9 @@ fn hour_dropdown(hours: &[u32], current: u32) -> gtk::DropDown {
     let labels: Vec<String> = hours
         .iter()
         .map(|hour| {
-            crate::clock_format::time_text(chrono::NaiveTime::from_hms_opt(hour % 24, 0, 0).unwrap_or_default())
+            crate::clock_format::time_text(
+                chrono::NaiveTime::from_hms_opt(hour % 24, 0, 0).unwrap_or_default(),
+            )
         })
         .collect();
     let refs: Vec<&str> = labels.iter().map(String::as_str).collect();
@@ -1249,14 +1266,11 @@ fn week_start_row(app: &Rc<App>, week_start: WeekStart) -> adw::ComboRow {
 
 /// The "Working Hours" row: an expander with the current hours and days
 /// in words, and an "Hours" and a "Days" row under it to change them.
-fn working_hours_row(
-    app: &Rc<App>,
-    hours: WorkingHours,
-) -> adw::ExpanderRow {
-    let row = adw::ExpanderRow::builder()
+fn working_hours_row(app: &Rc<App>, hours: WorkingHours) -> adw::ExpanderRow {
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(gettext("Working Hours"))
         .subtitle(working_hours_words(&hours))
-        .build();
+        .build());
 
     let stored = Rc::new(Cell::new(hours));
     let weak_row = row.downgrade();
@@ -1291,9 +1305,16 @@ fn working_hours_row(
         let commit = commit.clone();
         let (end, ends) = (end.downgrade(), ends.clone());
         start.connect_selected_notify(move |drop| {
-            let hours = starting_at(stored.get(), starts.get(drop.selected() as usize).copied().unwrap_or(0));
+            let hours = starting_at(
+                stored.get(),
+                starts.get(drop.selected() as usize).copied().unwrap_or(0),
+            );
             stored.set(hours);
-            if let (Some(end), Some(at)) = (end.upgrade(), ends.iter().position(|h| *h == u32::from(hours.end_minutes / 60))) {
+            if let (Some(end), Some(at)) = (
+                end.upgrade(),
+                ends.iter()
+                    .position(|h| *h == u32::from(hours.end_minutes / 60)),
+            ) {
                 end.set_selected(u32::try_from(at).unwrap_or(0));
             }
             commit();
@@ -1304,7 +1325,10 @@ fn working_hours_row(
         let commit = commit.clone();
         let start = start.downgrade();
         end.connect_selected_notify(move |drop| {
-            let hours = ending_at(stored.get(), ends.get(drop.selected() as usize).copied().unwrap_or(24));
+            let hours = ending_at(
+                stored.get(),
+                ends.get(drop.selected() as usize).copied().unwrap_or(24),
+            );
             stored.set(hours);
             if let Some(start) = start.upgrade() {
                 start.set_selected(u32::from(hours.start_minutes / 60));
@@ -1336,10 +1360,7 @@ fn working_hours_row(
             .active(hours.days[index])
             .valign(gtk::Align::Center)
             .build();
-        crate::ui::name(
-            &button,
-            &weekday_words(day, &gettext("%A")),
-        );
+        crate::ui::name(&button, &weekday_words(day, &gettext("%A")));
         let stored = Rc::clone(&stored);
         let commit = commit.clone();
         button.connect_toggled(move |button| {
@@ -1382,6 +1403,8 @@ fn switch_with(
         .build();
     if let Some(subtitle) = subtitle {
         row.set_subtitle(subtitle);
+        row.add_css_class("preference-explanation");
+        row.set_tooltip_text(Some(subtitle));
     }
     let weak = Rc::downgrade(app);
     row.connect_active_notify(move |row| {
@@ -1395,12 +1418,14 @@ fn switch_with(
 /// The languages whose messages get no offer to translate them, a switch
 /// each, in the order their names sort in.
 fn never_translate_row(app: &Rc<App>, settings: &Settings) -> adw::ExpanderRow {
-    let row = adw::ExpanderRow::builder()
+    let row = crate::ui::disclosure::row(adw::ExpanderRow::builder()
         .title(gettext("Never Translate"))
         .subtitle(gettext(
             "Messages in these languages get no offer to translate them",
         ))
-        .build();
+        .build());
+    row.add_css_class("preference-explanation");
+    row.set_tooltip_text(Some(row.subtitle().as_str()));
     let mut languages: Vec<_> = crate::translation::named_languages().collect();
     languages.sort_by_key(|language| language.name());
     for language in languages {
@@ -1433,6 +1458,7 @@ fn language_row(app: &Rc<App>, settings: &Settings) -> adw::ComboRow {
         .model(&gtk::StringList::new(&labels))
         .selected(language::row_of(&languages, &settings.language))
         .build();
+    row.add_css_class("preference-explanation");
     let weak = Rc::downgrade(app);
     row.connect_selected_notify(move |row| {
         if let Some(app) = weak.upgrade() {
@@ -1459,6 +1485,8 @@ fn combo<T: Choice>(
         .build();
     if let Some(subtitle) = subtitle {
         row.set_subtitle(subtitle);
+        row.add_css_class("preference-explanation");
+        row.set_tooltip_text(Some(subtitle));
     }
     let weak = Rc::downgrade(app);
     row.connect_selected_notify(move |row| {
@@ -1485,6 +1513,8 @@ fn sync_combo<T: Copy + 'static>(
         .build();
     if let Some(subtitle) = subtitle {
         row.set_subtitle(subtitle);
+        row.add_css_class("preference-explanation");
+        row.set_tooltip_text(Some(subtitle));
     }
     let pending = Rc::clone(pending);
     let values: Vec<T> = choices.iter().map(|(value, _)| *value).collect();
@@ -1518,12 +1548,18 @@ mod tests {
 
     #[test]
     fn the_amount_reads_used_of_limit() {
-        assert_eq!(amount_line(space(2_254_857_830, 16_106_127_360)), "2.1 GB of 15 GB");
+        assert_eq!(
+            amount_line(space(2_254_857_830, 16_106_127_360)),
+            "2.1 GB of 15 GB"
+        );
     }
 
     #[test]
     fn the_amount_keeps_a_tenth_above_ten_gigabytes() {
-        assert_eq!(amount_line(space(143 * GIB / 10, 15 * GIB)), "14.3 GB of 15 GB");
+        assert_eq!(
+            amount_line(space(143 * GIB / 10, 15 * GIB)),
+            "14.3 GB of 15 GB"
+        );
     }
 
     #[test]
@@ -1533,17 +1569,26 @@ mod tests {
 
     #[test]
     fn a_row_with_room_says_only_the_amount() {
-        assert_eq!(state_line(space(21 * GIB / 10, 30 * GIB)), "2.1 GB of 30 GB");
+        assert_eq!(
+            state_line(space(21 * GIB / 10, 30 * GIB)),
+            "2.1 GB of 30 GB"
+        );
     }
 
     #[test]
     fn a_row_past_the_warning_says_nearly_full() {
-        assert_eq!(state_line(space(143 * GIB / 10, 15 * GIB)), "14.3 GB of 15 GB · Nearly full");
+        assert_eq!(
+            state_line(space(143 * GIB / 10, 15 * GIB)),
+            "14.3 GB of 15 GB · Nearly full"
+        );
     }
 
     #[test]
     fn a_full_row_says_full() {
-        assert_eq!(state_line(space(5 * GIB, 5 * GIB)), "5.0 GB of 5.0 GB · Full");
+        assert_eq!(
+            state_line(space(5 * GIB, 5 * GIB)),
+            "5.0 GB of 5.0 GB · Full"
+        );
     }
 
     fn nine_to_six() -> WorkingHours {

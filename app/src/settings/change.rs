@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use super::mcp::McpServer;
 
 use super::{
-    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, ReadReceipts, RemoteImages, Settings, TextSize,
-    UndoSend, Use, WebSearch,
+    Choice, ColorScheme, ComposeFormat, Feature, MarkRead, ReadReceipts, RemoteImages, Settings,
+    TextSize, UndoSend, Use, WebSearch,
 };
 
 /// One named change to the preferences.
@@ -49,6 +49,7 @@ pub enum Change {
     UndoSend(UndoSend),
     /// The address new messages come from; `None` means the first account.
     DefaultAccount(Option<String>),
+    AccountDefaults(super::AccountDefaults),
     InboxCategories(bool),
     DefaultCategory(Category),
     SuggestFollowUps(bool),
@@ -128,6 +129,13 @@ pub enum Change {
         emails: Vec<String>,
         email: String,
         step: isize,
+    },
+    /// Inserts an account before or after another in the live account list.
+    ReorderAccount {
+        emails: Vec<String>,
+        email: String,
+        target: String,
+        after: bool,
     },
     /// The name the sidebar shows for an account. Blank goes back to the
     /// address.
@@ -276,6 +284,7 @@ impl Change {
             }
             Change::UndoSend(delay) => settings.undo_send = delay,
             Change::DefaultAccount(email) => settings.default_account = email,
+            Change::AccountDefaults(defaults) => settings.account_defaults = defaults,
             Change::InboxCategories(on) => settings.inbox_categories = on,
             Change::DefaultCategory(category) => settings.default_category = category,
             Change::SuggestFollowUps(on) => settings.suggest_follow_ups = on,
@@ -368,6 +377,15 @@ impl Change {
                 let refs: Vec<&str> = emails.iter().map(String::as_str).collect();
                 settings.move_account(&refs, &email, step);
             }
+            Change::ReorderAccount {
+                emails,
+                email,
+                target,
+                after,
+            } => {
+                let refs: Vec<&str> = emails.iter().map(String::as_str).collect();
+                settings.reorder_account(&refs, &email, &target, after);
+            }
             Change::AccountName { email, name } => {
                 if name.trim().is_empty() {
                     settings.account_names.remove(&email);
@@ -403,7 +421,9 @@ impl Change {
             }
             Change::StorageDismissed { account, full } => match full {
                 Some(full) => {
-                    settings.storage_dismissed.insert(account.to_lowercase(), full);
+                    settings
+                        .storage_dismissed
+                        .insert(account.to_lowercase(), full);
                 }
                 None => {
                     settings.storage_dismissed.remove(&account.to_lowercase());
@@ -587,6 +607,7 @@ settable! {
         account_colors,
         account_names,
         account_order,
+        account_defaults,
         ai,
         // The updater's own record of what it announced.
         announced_update,
@@ -809,6 +830,7 @@ impl Effects {
             notifications,
             notification_previews,
             default_account,
+            account_defaults,
             signatures,
             undo_send,
             flag_color,
@@ -863,6 +885,7 @@ impl Effects {
             notifications,
             notification_previews,
             default_account,
+            account_defaults,
             signatures,
             undo_send,
             flag_color,
@@ -1058,7 +1081,11 @@ mod tests {
     #[test]
     fn read_receipts_are_asked_about_until_turned_off() {
         let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
-        assert_eq!(settings.read_receipts, ReadReceipts::Ask, "an older file asks");
+        assert_eq!(
+            settings.read_receipts,
+            ReadReceipts::Ask,
+            "an older file asks"
+        );
         let effects = Change::ReadReceipts(ReadReceipts::Never).apply(&mut settings);
         assert_eq!(settings.read_receipts, ReadReceipts::Never);
         assert!(effects.is_empty(), "the next message opened reads it");
@@ -1067,12 +1094,26 @@ mod tests {
     #[test]
     fn a_storage_banner_taken_down_stays_down_across_runs() {
         let mut settings: Settings = toml::from_str("threading = true\n").unwrap();
-        assert!(settings.storage_dismissed.is_empty(), "an older file has none");
-        Change::StorageDismissed { account: "Dana@Home.example".into(), full: Some(false) }.apply(&mut settings);
+        assert!(
+            settings.storage_dismissed.is_empty(),
+            "an older file has none"
+        );
+        Change::StorageDismissed {
+            account: "Dana@Home.example".into(),
+            full: Some(false),
+        }
+        .apply(&mut settings);
         let saved = toml::to_string(&settings).unwrap();
         let read: Settings = toml::from_str(&saved).unwrap();
-        assert_eq!(read.storage_dismissed.get("dana@home.example"), Some(&false));
-        Change::StorageDismissed { account: "dana@home.example".into(), full: None }.apply(&mut settings);
+        assert_eq!(
+            read.storage_dismissed.get("dana@home.example"),
+            Some(&false)
+        );
+        Change::StorageDismissed {
+            account: "dana@home.example".into(),
+            full: None,
+        }
+        .apply(&mut settings);
         assert!(settings.storage_dismissed.is_empty());
     }
 
@@ -1091,8 +1132,10 @@ mod tests {
         assert!(effects(Change::TextSize(TextSize::Large)).has(Effect::TextSize));
         assert!(effects(Change::ColorScheme(ColorScheme::Dark)).has(Effect::Theme));
         assert!(
-            effects(Change::WeekStart(mailrs_domain::calendar::week::WeekStart::Monday))
-                .has(Effect::Calendar)
+            effects(Change::WeekStart(
+                mailrs_domain::calendar::week::WeekStart::Monday
+            ))
+            .has(Effect::Calendar)
         );
         let anthropic = Change::Ai(AiChange::Use {
             feature: Feature::Assistant,
@@ -1168,7 +1211,10 @@ mod tests {
     fn the_account_a_new_event_went_on_is_remembered_quietly() {
         let mut settings = Settings::default();
         let effects = Change::LastCalendarAccount("me@work.pt".into()).apply(&mut settings);
-        assert_eq!(settings.last_calendar_account.as_deref(), Some("me@work.pt"));
+        assert_eq!(
+            settings.last_calendar_account.as_deref(),
+            Some("me@work.pt")
+        );
         assert!(effects.is_empty());
     }
 
@@ -1180,7 +1226,10 @@ mod tests {
             folded: true,
         }
         .apply_to(&mut settings);
-        assert_eq!(settings.folded_calendar_accounts, vec!["dana@example.com".to_string()]);
+        assert_eq!(
+            settings.folded_calendar_accounts,
+            vec!["dana@example.com".to_string()]
+        );
         Change::CalendarAccountFolded {
             email: "dana@example.com".into(),
             folded: false,
@@ -1645,9 +1694,14 @@ mod tests {
         let mut settings = Settings::default();
         let effects = Change::EventReminders(false).apply(&mut settings);
         assert!(!settings.event_reminders);
-        assert!(effects.is_empty(), "the scheduler reads the switch on its next check");
+        assert!(
+            effects.is_empty(),
+            "the scheduler reads the switch on its next check"
+        );
         assert_eq!(
-            Setting::named("event_reminders").unwrap().change(&json!(true)),
+            Setting::named("event_reminders")
+                .unwrap()
+                .change(&json!(true)),
             Ok(Change::EventReminders(true))
         );
     }

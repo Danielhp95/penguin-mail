@@ -60,6 +60,22 @@ impl Authenticator for Plain<'_> {
     }
 }
 
+/// SASL OAUTHBEARER (RFC 7628). A rejected exchange ends with one control byte.
+struct Bearer<'a> {
+    login: &'a Login,
+    sent: bool,
+}
+
+impl Authenticator for Bearer<'_> {
+    type Response = String;
+
+    fn process(&mut self, _challenge: &[u8]) -> String {
+        if self.sent { return "\x01".into(); }
+        self.sent = true;
+        self.login.bearer_response()
+    }
+}
+
 impl<S: Stream> Conn<S> {
     /// Signs in on `stream`. `greeted` says the greeting was read already,
     /// as it is when STARTTLS ran before TLS. Reads the capabilities again
@@ -111,7 +127,13 @@ impl<S: Stream> Conn<S> {
             raw_capability(&mut client, &mut before).await?;
         }
         let has = |atom: &str| before.atoms.iter().any(|a| a == atom);
-        let session = if has("AUTH=PLAIN") {
+        let session = if login.oauth {
+            if !has("AUTH=OAUTHBEARER") {
+                return Err(ImapError::Protocol("the server does not offer OAUTHBEARER".into()));
+            }
+            client.authenticate("OAUTHBEARER", Bearer { login, sent: false }).await
+                .map_err(|(err, _)| from_async_imap(err, Doing::Login))?
+        } else if has("AUTH=PLAIN") {
             client
                 .authenticate("PLAIN", Plain(login))
                 .await
@@ -882,6 +904,26 @@ mod tests {
 
     fn ann() -> Login {
         Login::new("ann@example.com", "pässword")
+    }
+
+    #[tokio::test]
+    async fn oauth_never_falls_back_to_sending_the_token_as_a_password() {
+        let log = log();
+        let stream = pipe(GREETING, server(ALL, log.clone(), |_| vec![]));
+        assert!(Conn::login(stream, false, &Login::bearer("ann@example.com", "token")).await.is_err());
+        assert!(seen(&log).is_empty(), "no password command may be sent");
+    }
+
+    #[tokio::test]
+    async fn oauth_quota_connection_authenticates_with_bearer_instead_of_password() {
+        let log = log();
+        let stream = pipe("* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=OAUTHBEARER] ready",
+            server("QUOTA", log.clone(), |command| {
+                if command.starts_with("AUTHENTICATE OAUTHBEARER ") { vec!["{tag} OK signed in".into()] } else { vec![] }
+            }));
+        Conn::login(stream, false, &Login::bearer("ann@example.com", "access-token")).await.unwrap();
+        let commands = seen(&log);
+        assert!(commands[0].starts_with("AUTHENTICATE OAUTHBEARER "), "{commands:?}");
     }
 
     #[tokio::test]

@@ -220,3 +220,5 @@ Nothing known. The last four gaps closed in September 2026: the row
 menus open with Menu or Shift+F10, the formatting bar is one tab stop,
 Insert Image has Ctrl+Shift+P, and the arrow keys reach every recipient
 chip. Write a new gap down here when you find one, with why it was left.
+
+Preferences uses a single page-list Tab stop, with arrow keys to choose a page and Enter to open it. Search also finds controls inside folded account, Skills and MCP sections and expands the path to the selected control. Account drag handles have named Move Up and Move Down alternatives; after a move, focus stays on an available move button for that account.
