@@ -784,7 +784,7 @@ impl<A: Accounts> Tools<A> {
 
     /// The accounts a listing may read, in sidebar order.
     fn scope(&self) -> Scope {
-        Scope::over(self.desk.accounts())
+        Scope::of_mail_accounts(&self.desk.accounts())
     }
 
     /// One page of each mailbox, through `Mailboxes::list`.

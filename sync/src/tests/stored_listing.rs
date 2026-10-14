@@ -47,7 +47,7 @@ async fn an_imap_folder_lists_from_the_store_without_a_server_search() {
 
     let connected = HashMap::from([(h.account_id, Arc::clone(&h.sync))]);
     let lists = Mailboxes::new(Arc::new(Connected(connected)), h.db.clone());
-    let scope = Scope::over([Account {
+    let scope = Scope::of_mail_accounts(&[Account {
         id: h.account_id,
         email: "me@example.com".into(),
         state: AccountState::Ok,

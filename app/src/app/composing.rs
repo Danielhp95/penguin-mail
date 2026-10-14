@@ -33,7 +33,7 @@ fn choose_account(
     preferred: Option<&str>,
     hint: Option<AccountId>,
 ) -> Option<AccountId> {
-    let writers: Vec<&Account> = accounts.iter().filter(|a| a.provider.serves_mail()).collect();
+    let writers = mailrs_domain::mail_accounts(accounts);
     preferred
         .and_then(|email| writers.iter().find(|a| a.email.eq_ignore_ascii_case(email)))
         .or_else(|| hint.and_then(|id| writers.iter().find(|a| a.id == id)))

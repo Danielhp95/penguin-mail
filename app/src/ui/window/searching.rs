@@ -58,7 +58,7 @@ impl ListPane {
 impl Pane for ListPane {
     fn scope(&self) -> Scope {
         self.window()
-            .map_or_else(|| Scope::over(Vec::new()), |win| win.scope())
+            .map_or_else(Scope::default, |win| win.scope())
     }
 
     fn view(&self, mailbox: &Mailbox, category: Category) -> View {

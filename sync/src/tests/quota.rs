@@ -237,13 +237,17 @@ fn lists_over(all: &[Synced], db: &Db) -> Mailboxes<Connected> {
 }
 
 fn scope(all: &[Synced]) -> Scope {
-    Scope::over(all.iter().map(|m| Account {
-        id: m.id,
-        email: format!("user{}@example.com", m.id),
-        state: AccountState::Ok,
-        provider: mailrs_domain::Provider::Gmail,
-        provider_name: None,
-    }))
+    let accounts: Vec<Account> = all
+        .iter()
+        .map(|m| Account {
+            id: m.id,
+            email: format!("user{}@example.com", m.id),
+            state: AccountState::Ok,
+            provider: mailrs_domain::Provider::Gmail,
+            provider_name: None,
+        })
+        .collect();
+    Scope::of_mail_accounts(&accounts)
 }
 
 #[tokio::test]

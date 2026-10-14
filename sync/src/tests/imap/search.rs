@@ -250,7 +250,7 @@ async fn a_typed_search_the_server_cannot_run_lists_from_this_computer_and_says_
     };
 
     let listing = lists
-        .list(&search, &Scope::over(signed_in), &view, Loaded::nothing())
+        .list(&search, &Scope::of_mail_accounts(&signed_in), &view, Loaded::nothing())
         .await
         .unwrap();
 
@@ -272,7 +272,7 @@ async fn listings(h: &crate::tests::ImapHarness) -> (Mailboxes<Connected>, Scope
         )]))),
         h.db.clone(),
     );
-    (lists, Scope::over(signed_in))
+    (lists, Scope::of_mail_accounts(&signed_in))
 }
 
 /// IMAP has no key for "in no Inbox, Sent, Drafts, Junk or Trash", so the

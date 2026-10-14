@@ -37,13 +37,6 @@ pub fn can_propose(services: Option<&AccountServices>) -> bool {
     services.is_none_or(AccountServices::serves_mail)
 }
 
-/// The accounts that have mail, in the order given. A calendar account
-/// has none, so the mail sidebar, the From list and the mail pages of
-/// Preferences are built from these and the calendar from every account.
-pub fn mail_accounts(accounts: &[Account]) -> Vec<Account> {
-    accounts.iter().filter(|account| account.provider.serves_mail()).cloned().collect()
-}
-
 /// Whether the window has accounts and none of them has mail. It then
 /// shows the calendar and offers no switch to a mail space that would be
 /// empty. No account at all is the first-run page instead.
@@ -1074,14 +1067,6 @@ mod tests {
         assert!(super::can_propose(Some(&with_mail)));
         assert!(!super::can_propose(Some(&alone)), "a calendar account has no mail to send it");
         assert!(super::can_propose(None), "an account that has not started is not held back");
-    }
-
-    #[test]
-    fn mail_accounts_leave_out_a_calendar_account() {
-        let all = [calendar_account(), pop3_account()];
-        let mail = super::mail_accounts(&all);
-        assert_eq!(mail.iter().map(|a| a.id).collect::<Vec<_>>(), [pop3_account().id]);
-        assert!(super::mail_accounts(&[calendar_account()]).is_empty());
     }
 
     #[test]

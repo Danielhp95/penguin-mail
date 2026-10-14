@@ -733,10 +733,11 @@ impl App {
         accounts
     }
 
-    /// The accounts with mail, which leaves out a calendar account: what
-    /// the mail window and the mail pages of Preferences list.
+    /// The accounts with mail in sidebar order, which leaves out a
+    /// calendar account: what the mail window and the mail pages of
+    /// Preferences list.
     pub fn mail_accounts(&self) -> Vec<Account> {
-        crate::offered::mail_accounts(&self.accounts.borrow())
+        mailrs_domain::mail_accounts(&self.accounts())
     }
 
     pub fn account(&self, account_id: AccountId) -> Option<Account> {
@@ -806,8 +807,8 @@ impl App {
         let known: Vec<AccountId> = self.accounts.borrow().iter().map(|a| a.id).collect();
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
         // A calendar account has no inbox for the tray and the Dock to count.
-        let with_mail = loaded.iter().filter(|(a, _)| a.provider.serves_mail());
-        self.unread.set_accounts(with_mail.map(|(a, _)| a.id).collect());
+        let with_mail = mailrs_domain::mail_accounts(&self.accounts.borrow());
+        self.unread.set_accounts(with_mail.iter().map(|a| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -839,10 +840,10 @@ impl App {
     /// send-as addresses Preferences keeps when they hold one, so a restart
     /// asks Gmail only for what it has never told this computer.
     fn remember_accounts(self: &Rc<Self>, arrived: &[Account]) {
-        for account in arrived {
-            // The name is the one mail goes out under, and a calendar
-            // account sends none.
-            if !account.provider.serves_mail() || self.names.borrow().contains_key(&account.id) {
+        // The name is the one mail goes out under, and a calendar account
+        // sends none.
+        for account in &mailrs_domain::mail_accounts(arrived) {
+            if self.names.borrow().contains_key(&account.id) {
                 continue;
             }
             if let Some(name) = self.settings_with(|s| s.display_name(&account.email)) {
@@ -1712,15 +1713,12 @@ impl App {
     fn show_unread(&self, counted: &Counted) {
         let total = counted.all_inboxes();
         self.dock_badge.show(total);
-        let accounts: Vec<AccountUnread> = self
-            .accounts
-            .borrow()
-            .iter()
-            .filter(|account| account.provider.serves_mail())
+        let accounts: Vec<AccountUnread> = mailrs_domain::mail_accounts(&self.accounts.borrow())
+            .into_iter()
             .map(|account| AccountUnread {
                 id: account.id,
-                email: account.email.clone(),
                 unread: counted.inbox(account.id),
+                email: account.email,
             })
             .collect();
         // One task hands the counts to the tray, so an older one cannot

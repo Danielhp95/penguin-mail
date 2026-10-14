@@ -25,7 +25,7 @@ fn lists(h: &Harness) -> Mailboxes<Connected> {
 }
 
 fn scope(h: &Harness) -> Scope {
-    Scope::over([Account {
+    Scope::of_mail_accounts(&[Account {
         id: h.account_id,
         email: "me@example.com".into(),
         state: AccountState::Ok,
@@ -1020,7 +1020,7 @@ async fn a_search_leaves_out_an_account_with_no_mail() {
     let calendar_account = Arc::new(crate::AccountSync::new(other, services, h.db.clone(), sender));
     let connected = HashMap::from([(h.account_id, Arc::clone(&h.sync)), (other, calendar_account)]);
     let lists = Mailboxes::new(Arc::new(Connected(connected)), h.db.clone());
-    let scope = Scope::over(h.db.read(mailrs_store::accounts::list_accounts).await.unwrap());
+    let scope = Scope::of_mail_accounts(&h.db.read(mailrs_store::accounts::list_accounts).await.unwrap());
     let search = Mailbox::Search { query: "in:spam".into(), account_id: None };
     let found = lists.list(&search, &scope, &view(), Loaded::nothing()).await.expect("the search runs");
     assert_eq!(ids(&found), ["t5"]);

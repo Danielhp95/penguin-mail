@@ -293,12 +293,7 @@ async fn run_sync(db: &Db, dir: &Path, config: &Config) -> Result<()> {
     };
     // This command syncs mail, so a calendar account, which has none,
     // is left to the app.
-    let all: Vec<Account> = db
-        .read(accounts::list_accounts)
-        .await?
-        .into_iter()
-        .filter(|account| account.provider.serves_mail())
-        .collect();
+    let all = mailrs_domain::mail_accounts(&db.read(accounts::list_accounts).await?);
     if all.is_empty() {
         bail!("no mail accounts; run `penguin-mail-cli account add` first");
     }

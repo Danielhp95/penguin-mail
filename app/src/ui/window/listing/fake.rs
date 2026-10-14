@@ -181,7 +181,7 @@ fn found(query: &str, place: &str) -> Listing {
 
 impl Pane for Fake {
     fn scope(&self) -> Scope {
-        Scope::over(Vec::new())
+        Scope::default()
     }
 
     fn view(&self, _mailbox: &Mailbox, _category: Category) -> View {

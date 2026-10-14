@@ -200,7 +200,7 @@ async fn opening_a_thread_keeps_a_change_history_brought_while_gmail_answered() 
 async fn list_trash(h: &super::Harness) -> Vec<String> {
     let connected = HashMap::from([(h.account_id, Arc::clone(&h.sync))]);
     let lists = Mailboxes::new(Arc::new(super::Connected(connected)), h.db.clone());
-    let scope = Scope::over([Account {
+    let scope = Scope::of_mail_accounts(&[Account {
         id: h.account_id,
         email: "me@example.com".into(),
         state: AccountState::Ok,
