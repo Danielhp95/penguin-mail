@@ -149,6 +149,16 @@ impl Settings {
     }
 }
 
+/// The accounts a picker for `task` offers, in the order given. Only
+/// calendar events can go to a calendar account; every other task, and
+/// the default account over them all (`None`), sends or reads mail.
+pub fn accounts_for(task: Option<AccountUse>, accounts: &[mailrs_domain::Account]) -> Vec<mailrs_domain::Account> {
+    match task {
+        Some(AccountUse::Calendar) => accounts.to_vec(),
+        _ => mailrs_domain::mail_accounts(accounts),
+    }
+}
+
 /// Chooses a visible writable calendar from an ordered list of eligible calendars.
 pub fn preferred_calendar(
     writable: &[(
@@ -181,6 +191,24 @@ pub fn preferred_calendar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_calendar_events_can_go_to_a_calendar_account() {
+        let account = |id, provider| mailrs_domain::Account {
+            id,
+            email: format!("{id}@example.org"),
+            state: mailrs_domain::AccountState::Ok,
+            provider,
+            provider_name: None,
+        };
+        let all = [account(1, mailrs_domain::Provider::Imap), account(2, mailrs_domain::Provider::CalDav)];
+        let ids = |task| accounts_for(task, &all).iter().map(|a| a.id).collect::<Vec<_>>();
+        assert_eq!(ids(Some(AccountUse::Calendar)), [1, 2]);
+        assert_eq!(ids(None), [1], "the default account writes mail");
+        for task in AccountUse::ALL.into_iter().filter(|task| *task != AccountUse::Calendar) {
+            assert_eq!(ids(Some(task)), [1], "{task:?}");
+        }
+    }
 
     #[test]
     fn a_removed_assistant_default_follows_the_new_message_choice() {

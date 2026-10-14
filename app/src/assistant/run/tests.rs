@@ -140,6 +140,41 @@ async fn a_mail_tool_turns_a_calendar_account_away_in_words() {
 }
 
 #[tokio::test]
+async fn nothing_is_written_or_listed_from_a_calendar_account() {
+    let h = with_calendar_account().await;
+    let message = json!({"account": CALENDARS, "to": ["ann@example.com"], "body": "Friday works."});
+    for (tool, input) in [
+        ("draft_email", message.clone()),
+        ("send_email", message),
+        ("list_drafts", json!({"account": CALENDARS})),
+        ("list_newsletters", json!({"account": CALENDARS})),
+    ] {
+        let refused = h.run(tool, input).await.unwrap_err();
+        assert!(refused.contains("holds calendars and no mail"), "{tool}: {refused}");
+    }
+    assert!(h.asked().composed.is_empty(), "no draft was made");
+}
+
+#[tokio::test]
+async fn a_default_set_to_a_calendar_account_writes_from_one_with_mail() {
+    let h = with_calendar_account().await;
+    h.desk.0.borrow_mut().settings.account_defaults.assistant =
+        crate::settings::AccountChoice::Account(CALENDARS.into());
+    h.ok("draft_email", json!({"to": ["ann@example.com"], "body": "Friday works."})).await;
+    assert_eq!(h.asked().composed[0].account_id, h.account_id);
+}
+
+#[tokio::test]
+async fn a_calendar_tool_still_reaches_a_calendar_account() {
+    let h = with_calendar_account().await;
+    // The harness runs no calendar for the account, so the tool may fail
+    // further on. It must not turn the account away for having no mail.
+    if let Err(err) = h.run("list_calendars", json!({"account": CALENDARS})).await {
+        assert!(!err.contains("no mail"), "{err}");
+    }
+}
+
+#[tokio::test]
 async fn get_context_reports_the_screen_the_accounts_and_the_labels() {
     let h = harness().await;
     {

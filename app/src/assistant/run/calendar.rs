@@ -366,7 +366,7 @@ impl<A: Accounts> Tools<A> {
     pub(super) async fn list_calendars(&self, input: &Value) -> ToolResult {
         let named = text(input, "account");
         let accounts = match &named {
-            Some(email) => vec![self.account_named(email)?],
+            Some(email) => vec![self.any_account_named(email)?],
             None => self.desk.accounts(),
         };
         let mut listed = Vec::new();
@@ -469,7 +469,7 @@ impl<A: Accounts> Tools<A> {
             .cloned();
         if text(input, "account").is_some() || text(input, "calendar").is_some() {
             let account = match text(input, "account") {
-                Some(email) => self.account_named(&email)?,
+                Some(email) => self.any_account_named(&email)?,
                 None => preferred_account
                     .or_else(|| {
                         settings

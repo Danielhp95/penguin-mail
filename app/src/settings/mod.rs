@@ -14,7 +14,7 @@ mod change;
 mod file;
 pub mod mcp;
 
-pub use accounts::{AccountChoice, AccountDefaults, AccountUse, preferred_calendar};
+pub use accounts::{AccountChoice, AccountDefaults, AccountUse, accounts_for, preferred_calendar};
 pub use change::{AiChange, Change, Effect, Effects, Setting};
 pub use file::{Opened, Saver};
 

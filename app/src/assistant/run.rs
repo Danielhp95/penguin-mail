@@ -566,7 +566,20 @@ impl<A: Accounts> Tools<A> {
 
     // ---- Lookups ---------------------------------------------------------
 
+    /// The account with mail a tool names. A calendar account has none, so
+    /// a mail tool naming one is told so before it reaches the account,
+    /// and a tool added later gets the same answer without asking.
     fn account_named(&self, email: &str) -> Result<Account, String> {
+        let account = self.any_account_named(email)?;
+        if !account.provider.serves_mail() {
+            return Err(format!("{} holds calendars and no mail.", account.email));
+        }
+        Ok(account)
+    }
+
+    /// The account a calendar or contacts tool names, a calendar account
+    /// among them.
+    fn any_account_named(&self, email: &str) -> Result<Account, String> {
         self.desk
             .accounts()
             .into_iter()
@@ -576,9 +589,6 @@ impl<A: Accounts> Tools<A> {
 
     fn sync_for(&self, email: &str) -> Result<Syncing, String> {
         let account = self.account_named(email)?;
-        if !account.provider.serves_mail() {
-            return Err(format!("{} holds calendars and no mail.", account.email));
-        }
         let sync = self
             .modules
             .accounts
@@ -713,10 +723,11 @@ impl<A: Accounts> Tools<A> {
         }
     }
 
-    /// The account a tool names, or the default one when it names none.
+    /// The account a calendar or contacts tool names, or the default one
+    /// when it names none.
     fn account_or_default(&self, input: &Value) -> Result<Account, String> {
         match text(input, "account") {
-            Some(email) => self.account_named(&email),
+            Some(email) => self.any_account_named(&email),
             None => {
                 let id = self.desk.default_account().ok_or("Add an account first.")?;
                 self.desk

@@ -411,7 +411,7 @@ impl<A: Accounts> Tools<A> {
             Some(email) => self.account_named(&email)?,
             None => {
                 let settings = self.desk.settings();
-                let accounts = self.desk.accounts();
+                let accounts = mailrs_domain::mail_accounts(&self.desk.accounts());
                 let emails: Vec<_> = accounts.iter().map(|account| account.email.as_str()).collect();
                 let preferred = settings.preferred_live_account(task, &emails).and_then(|email| {
                     accounts
@@ -704,7 +704,7 @@ impl<A: Accounts> Tools<A> {
     pub(super) async fn list_drafts(&self, input: &Value) -> ToolResult {
         let accounts = match text(input, "account") {
             Some(email) => vec![self.account_named(&email)?],
-            None => self.desk.accounts(),
+            None => mailrs_domain::mail_accounts(&self.desk.accounts()),
         };
         let mut found: Vec<(String, MessageMeta)> = Vec::new();
         for account in accounts {

@@ -86,7 +86,7 @@ impl<A: Accounts> Tools<A> {
             .unwrap_or_default();
         let accounts = match text(input, "account") {
             Some(email) => vec![self.account_named(&email)?],
-            None => self.desk.accounts(),
+            None => mailrs_domain::mail_accounts(&self.desk.accounts()),
         };
         let mut found: Vec<(Account, Sender)> = Vec::new();
         let mut problem: Option<String> = None;

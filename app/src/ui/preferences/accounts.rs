@@ -34,7 +34,7 @@ impl Defaults {
         let all = adw::SwitchRow::builder()
             .title(gettext("Use Default Account for All Tasks"))
             .active(app.settings().account_defaults.use_for_all)
-            .sensitive(!app.accounts().is_empty())
+            .sensitive(!app.mail_accounts().is_empty())
             .build();
         group.add(&all);
         let tasks = crate::ui::disclosure::row(adw::ExpanderRow::builder()
@@ -131,6 +131,7 @@ impl AccountPicker {
     }
 
     fn refresh(&self, app: &App, accounts: &[Account]) {
+        let accounts = crate::settings::accounts_for(self.task, accounts);
         let settings = app.settings();
         let saved = self.task.map_or_else(
             || {
@@ -150,7 +151,7 @@ impl AccountPicker {
             values.push(AccountChoice::Default);
             labels.push(gettext("Use Default Account"));
         }
-        for account in accounts {
+        for account in &accounts {
             values.push(AccountChoice::Account(account.email.clone()));
             labels.push(account.email.clone());
         }
@@ -322,8 +323,10 @@ impl Order {
         header.add_controller(target);
     }
 
+    /// The accounts the page lists, which leave out a calendar account,
+    /// so a step moves past a row the person can see.
     fn emails(&self, app: &App) -> Vec<String> {
-        app.accounts().into_iter().map(|a| a.email).collect()
+        app.mail_accounts().into_iter().map(|a| a.email).collect()
     }
 
     fn step(&self, email: &str, step: isize) {
