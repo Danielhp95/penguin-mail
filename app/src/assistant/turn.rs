@@ -288,57 +288,51 @@ pub fn tool_label(name: &str) -> String {
     }
 }
 
-/// Longest input summary on a tool row's title line, in characters.
-const SUMMARY_CHARS: usize = 60;
-
-/// Input fields that say most about a call, first in its summary. The rest
-/// follow by name, since a JSON object keeps no order of its own.
-const TELLING: [&str; 12] = [
-    "query",
-    "mailbox",
-    "category",
-    "label",
-    "name",
-    "title",
-    "template",
-    "attachment",
-    "email",
-    "to",
-    "subject",
-    "from",
-];
-
-/// One line saying what a call was asked to do: the input's plain values,
-/// such as "follow_up" or "invoice, 20". Lists count as their first entry,
-/// and nested objects are left for the expanded row.
-pub fn input_summary(input: &Value) -> String {
-    let words: Vec<String> = match input {
-        Value::Object(fields) => {
-            let mut fields: Vec<(&String, &Value)> = fields.iter().collect();
-            fields.sort_by_key(|(key, _)| {
-                TELLING
-                    .iter()
-                    .position(|t| t == key)
-                    .unwrap_or(TELLING.len())
-            });
-            fields.into_iter().filter_map(|(_, v)| plain(v)).collect()
+/// A turn's work in readable names. Identifiers stay inside tool details.
+pub fn work_summary(steps: &[Step]) -> String {
+    let mut activities = Vec::new();
+    for step in steps {
+        if let Step::Tool { name, input, .. } = step {
+            let mut names = Vec::new();
+            for key in [
+                "mailbox", "category", "label", "query", "subject", "title", "name",
+            ] {
+                if let Some(value) = input.get(key).and_then(Value::as_str) {
+                    let value = match value {
+                        "follow_up" => gettext("Follow Up"),
+                        "promotions" => gettext("Promotions"),
+                        "inbox" => gettext("Inbox"),
+                        "sent" => gettext("Sent"),
+                        "drafts" => gettext("Drafts"),
+                        "trash" => gettext("Trash"),
+                        "junk" => gettext("Junk"),
+                        "flagged" => gettext("Flagged"),
+                        "updates" => gettext("Updates"),
+                        "social" => gettext("Social"),
+                        "primary" => gettext("Primary"),
+                        "focused" => gettext("Focused"),
+                        "other" => gettext("Other"),
+                        _ => value.replace('\n', " "),
+                    };
+                    if !value.is_empty() && !names.contains(&value) {
+                        names.push(value);
+                    }
+                }
+            }
+            let activity = if names.is_empty() {
+                tool_label(name)
+            } else {
+                format!("{}: {}", tool_label(name), names.join(", "))
+            };
+            if !activities.contains(&activity) {
+                activities.push(activity);
+            }
         }
-        Value::String(raw) => vec![raw.clone()],
-        _ => Vec::new(),
-    };
-    let line = words.join(", ").replace('\n', " ");
-    match line.char_indices().nth(SUMMARY_CHARS) {
-        Some((end, _)) => format!("{}…", line[..end].trim_end()),
-        None => line,
     }
-}
-
-fn plain(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.trim().to_string()).filter(|t| !t.is_empty()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Bool(_) | Value::Null | Value::Object(_) => None,
-        Value::Array(items) => items.first().and_then(plain),
+    let line = activities.join("; ");
+    match line.char_indices().nth(160) {
+        Some((end, _)) => format!("{}…", &line[..end]),
+        None => line,
     }
 }
 
@@ -520,18 +514,18 @@ mod tests {
     }
 
     #[test]
-    fn a_call_sums_up_in_one_line() {
-        assert_eq!(
-            input_summary(&json!({"mailbox": "inbox", "category": "promotions", "limit": 20})),
-            "inbox, promotions, 20"
-        );
-        assert_eq!(
-            input_summary(&json!({"threads": ["t-1", "t-2"], "archive": true})),
-            "t-1"
-        );
-        assert_eq!(input_summary(&json!({})), "");
-        let long = input_summary(&json!({"query": "word ".repeat(40)}));
-        assert!(long.ends_with('…') && long.chars().count() <= SUMMARY_CHARS + 1);
+    fn work_summary_names_mailboxes_without_exposing_ids() {
+        let steps = vec![Step::Tool {
+            id: "call-secret".into(),
+            name: "list_mail".into(),
+            input: json!({"mailbox": "follow_up", "category": "promotions", "account_id": 42}),
+            state: ToolState::Done,
+            output: String::new(),
+        }];
+        let summary = work_summary(&steps);
+        assert!(summary.contains("Follow Up"), "{summary}");
+        assert!(summary.contains("Promotions"), "{summary}");
+        assert!(!summary.contains("42") && !summary.contains("call-secret"));
     }
 
     #[test]

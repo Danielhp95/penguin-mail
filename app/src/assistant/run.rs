@@ -239,6 +239,7 @@ pub struct Tools<A: Accounts> {
     background: Rc<dyn Background>,
     desk: Rc<dyn Desk>,
     effects: Rc<dyn Effects>,
+    picked_files: Arc<[std::path::PathBuf]>,
 }
 
 fn text(input: &Value, key: &str) -> Option<String> {
@@ -506,7 +507,14 @@ impl<A: Accounts> Tools<A> {
             background,
             desk,
             effects,
+            picked_files: Arc::default(),
         }
+    }
+
+    /// Files selected by the user for this request, independent of model input.
+    pub fn with_picked_files(mut self, files: Arc<[std::path::PathBuf]>) -> Self {
+        self.picked_files = files;
+        self
     }
 
     /// Runs one tool call from the assistant.

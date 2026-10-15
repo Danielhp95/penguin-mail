@@ -1,10 +1,13 @@
 //! The assistant pane on the right of the window: a chat with a model that
 //! can read and organize mail through the window's tools.
 //!
-//! Under each question the pane shows the turn as it arrives: a row for
-//! what the model thought, a row per tool call, and the reply, then a
-//! status line saying what the model is doing now. `assistant::turn`
+//! Under each question the pane groups thoughts and tool calls in one
+//! disclosure, then shows the reply and the current activity. `assistant::turn`
 //! decides what each event changes; this file draws it.
+
+mod controls;
+mod files;
+mod model_catalog;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -13,13 +16,14 @@ use std::time::Instant;
 
 use adw::prelude::*;
 use gtk::{gdk, glib, pango};
-use mailrs_ai::{AgentEvent, Conversation, ProviderConfig};
+use mailrs_ai::AgentEvent;
 
-use crate::assistant::sources::{self, ApprovalRequest, Toolbox, Verdict};
+use crate::assistant::chat::{Chat, Tools};
+use crate::assistant::sources::{ApprovalRequest, Verdict};
 use crate::assistant::turn::{
-    self, Phase, Step, ToolState, Turn, Update, input_summary, thinking_title, tool_label,
+    self, Phase, Step, ToolState, Turn, Update, thinking_title, tool_label,
 };
-use crate::assistant::{self, Host, ToolRequest, to_pango};
+use crate::assistant::{self, ToolRequest, to_pango};
 use crate::core::Core;
 use crate::settings::{AiProvider, Settings};
 use mailrs_domain::translate::gettext;
@@ -46,19 +50,19 @@ const NEAR_END: f64 = 48.0;
 
 type SettingsSource = Box<dyn Fn() -> Settings>;
 
-/// One chat: the model it runs on, what was said, and the tool sources it
-/// started with. The sources stay for the whole chat, because the system
-/// prompt names what they offer and a skill's scratch folder lasts as long
-/// as the chat does.
-struct Chat {
-    config: ProviderConfig,
-    conversation: Arc<tokio::sync::Mutex<Conversation>>,
-    sources: Vec<Arc<dyn sources::Source>>,
-}
-
 pub struct AssistantPane {
     pub page: adw::ToolbarView,
-    title: adw::WindowTitle,
+    pub header: adw::HeaderBar,
+    pub detach: gtk::Button,
+    pub close: gtk::Button,
+    model: gtk::MenuButton,
+    model_name: gtk::Label,
+    known_model: RefCell<Option<(AiProvider, String, String)>>,
+    model_catalog: RefCell<model_catalog::ModelCache>,
+    files: Rc<files::Files>,
+    mcp: Cell<bool>,
+    skills: Cell<bool>,
+    pending: RefCell<Vec<async_channel::Sender<Verdict>>>,
     stack: gtk::Stack,
     transcript: gtk::Box,
     scroller: gtk::ScrolledWindow,
@@ -67,13 +71,10 @@ pub struct AssistantPane {
     input: gtk::TextView,
     send: gtk::Button,
     core: Rc<Core>,
-    requests: async_channel::Sender<ToolRequest>,
-    /// Questions from outside tool sources, answered on this thread.
-    approvals: async_channel::Sender<ApprovalRequest>,
     /// Saves an Always Allow answer, keyed `source/tool`.
     on_allow: Box<dyn Fn(String)>,
     settings: SettingsSource,
-    chat: RefCell<Option<Chat>>,
+    chat: RefCell<Chat>,
     running: Cell<bool>,
     stop: RefCell<Option<async_channel::Sender<()>>>,
     /// The turn in progress.
@@ -95,27 +96,50 @@ impl AssistantPane {
         settings: impl Fn() -> Settings + 'static,
         on_setup: impl Fn() + 'static,
         on_allow: impl Fn(String) + 'static,
+        on_change: impl Fn(crate::settings::Change) + 'static,
     ) -> Rc<AssistantPane> {
         let (approvals, asked) = async_channel::unbounded::<ApprovalRequest>();
-        let title = adw::WindowTitle::new(&gettext("Assistant"), "");
-        let new_chat = gtk::Button::builder()
-            .icon_name("list-add-symbolic")
-            .tooltip_text(gettext("New Chat"))
+        let model = gtk::MenuButton::builder()
+            .css_classes(["flat", "assistant-model"])
+            .tooltip_text(gettext("Choose a Model"))
+            .valign(gtk::Align::Center)
             .build();
-        crate::ui::name(&new_chat, &gettext("New Chat"));
+        crate::ui::name(&model, &gettext("Choose a Model"));
+        let model_name = gtk::Label::builder()
+            .ellipsize(pango::EllipsizeMode::End)
+            .max_width_chars(24)
+            .build();
+        let model_title = gtk::Box::builder().spacing(4).build();
+        model_title.append(&model_name);
+        model_title.append(&gtk::Image::from_icon_name(
+            "penguin-mail-chevron-down-symbolic",
+        ));
+        model.set_child(Some(&model_title));
+        let model_capsule = gtk::Box::builder()
+            .css_classes(["toolbar-capsule"])
+            .valign(gtk::Align::Center)
+            .build();
+        model_capsule.append(&model);
+        let detach = controls::icon_button("window-new-symbolic", &gettext("Detach"));
+        let close = controls::icon_button("window-close-symbolic", &gettext("Close"));
+        close.set_visible(false);
+        let new_chat = controls::icon_button("list-add-symbolic", &gettext("New Chat"));
         let header = adw::HeaderBar::builder()
-            .title_widget(&title)
+            .show_title(false)
             .show_start_title_buttons(false)
+            .show_end_title_buttons(true)
             .build();
         header.pack_start(&new_chat);
+        header.pack_start(&close);
+        header.pack_end(&detach);
 
         let transcript = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(10)
             .margin_top(12)
             .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
+            .margin_start(16)
+            .margin_end(16)
             .build();
         let suggestion_list = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -123,6 +147,7 @@ impl AssistantPane {
             .valign(gtk::Align::End)
             .vexpand(true)
             .build();
+        suggestion_list.add_css_class("assistant-starters");
         let intro = gtk::Label::builder()
             .label(gettext(
                 "Ask about your mail, or tell me what to tidy. I can search, summarize, \
@@ -130,7 +155,7 @@ impl AssistantPane {
             ))
             .wrap(true)
             .xalign(0.0)
-            .css_classes(["dim-label"])
+            .css_classes(["dim-label", "assistant-intro"])
             .margin_bottom(6)
             .build();
         suggestion_list.append(&intro);
@@ -157,15 +182,30 @@ impl AssistantPane {
             .valign(gtk::Align::End)
             .build();
         crate::ui::name(&send, &gettext("Send"));
+        let files = files::Files::new();
+        let attach = gtk::Button::builder()
+            .icon_name("mail-attachment-symbolic")
+            .css_classes(["flat", "circular"])
+            .tooltip_text(gettext("Attach"))
+            .build();
+        crate::ui::name(&attach, &gettext("Attach"));
+        let actions = gtk::Box::builder().spacing(6).build();
+        actions.append(&model_capsule);
+        actions.append(&gtk::Box::builder().hexpand(true).build());
+        actions.append(&attach);
+        actions.append(&send);
         let input_row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
             .spacing(6)
             .margin_top(6)
             .margin_bottom(10)
             .margin_start(10)
             .margin_end(10)
             .build();
+        input_row.add_css_class("assistant-input-card");
+        input_row.append(&files.row);
         input_row.append(&field);
-        input_row.append(&send);
+        input_row.append(&actions);
         let chat = gtk::Box::new(gtk::Orientation::Vertical, 0);
         chat.append(&scroller);
         chat.append(&input_row);
@@ -195,6 +235,8 @@ impl AssistantPane {
         page.add_top_bar(&header);
         page.set_content(Some(&stack));
         page.add_css_class("assistant-pane");
+        page.add_css_class("assistant-docked");
+        page.set_top_bar_style(adw::ToolbarStyle::Flat);
 
         // libadwaita skips the animation to its end when the desktop has
         // animations turned off, so reduced motion jumps with no check here.
@@ -210,7 +252,17 @@ impl AssistantPane {
 
         let pane = Rc::new(AssistantPane {
             page,
-            title,
+            header: header.clone(),
+            detach,
+            close,
+            model,
+            model_name,
+            known_model: RefCell::new(None),
+            model_catalog: RefCell::new(model_catalog::ModelCache::default()),
+            files: Rc::clone(&files),
+            mcp: Cell::new(true),
+            skills: Cell::new(true),
+            pending: RefCell::new(Vec::new()),
             stack,
             transcript,
             scroller,
@@ -218,11 +270,9 @@ impl AssistantPane {
             input,
             send,
             core,
-            requests,
-            approvals,
             on_allow: Box::new(on_allow),
             settings: Box::new(settings),
-            chat: RefCell::new(None),
+            chat: RefCell::new(Chat::new(requests, approvals)),
             running: Cell::new(false),
             stop: RefCell::new(None),
             turn: RefCell::new(None),
@@ -241,7 +291,32 @@ impl AssistantPane {
                 let _ = request.reply.send(verdict).await;
             }
         });
-        for text in suggestions() {
+        let on_setup = Rc::new(on_setup);
+        controls::install(&pane, &header, on_setup.clone(), Rc::new(on_change));
+        let weak = Rc::downgrade(&pane);
+        attach.connect_clicked(move |_| {
+            if let Some(pane) = weak.upgrade()
+                && let Some(window) = pane.page.root().and_downcast::<gtk::Window>()
+            {
+                pane.files.choose(&window);
+            }
+        });
+        let options = suggestions();
+        for (position, index) in [0, 4, 1, 2, 3].into_iter().enumerate() {
+            if position == 0 || position == 2 {
+                let heading = gtk::Label::builder()
+                    .label(if position == 0 {
+                        gettext("This conversation")
+                    } else {
+                        gettext("Your mail")
+                    })
+                    .xalign(0.0)
+                    .margin_top(20)
+                    .css_classes(["caption-heading"])
+                    .build();
+                suggestion_list.append(&heading);
+            }
+            let text = options[index].clone();
             // A suggestion wraps rather than setting the pane's minimum
             // width: the longest one, in Portuguese, is wider than the
             // narrowest window the app allows.
@@ -303,6 +378,9 @@ impl AssistantPane {
         pane.send.connect_clicked(move |_| {
             let Some(pane) = weak.upgrade() else { return };
             if pane.running.get() {
+                for answer in pane.pending.take() {
+                    let _ = answer.try_send(Verdict::Deny);
+                }
                 if let Some(stop) = pane.stop.borrow_mut().take() {
                     let _ = stop.try_send(());
                 }
@@ -327,17 +405,24 @@ impl AssistantPane {
     pub fn refresh(&self) {
         let ai = (self.settings)().ai;
         let model = ai.model_on(ai.provider);
-        let subtitle = match ai.provider {
-            AiProvider::ClaudeCode if model.is_empty() => "Claude".to_string(),
-            AiProvider::ClaudeCode => format!("Claude {model}"),
-            _ => model.to_string(),
-        };
-        self.title.set_subtitle(&subtitle);
+        let subtitle = self
+            .known_model
+            .borrow()
+            .as_ref()
+            .filter(|(provider, id, _)| {
+                *provider == ai.provider && id == model && ai.provider != AiProvider::ClaudeCode
+            })
+            .map(|(_, _, name)| name.clone())
+            .unwrap_or_else(|| controls::model_label(ai.provider, model));
+        self.model_name.set_label(&subtitle);
+        self.model.set_tooltip_text(Some(&subtitle));
+        crate::ui::describe(&self.model, &gettext("Choose a Model"), &subtitle);
+        self.model.set_visible(assistant::offers_summary(&ai));
         self.stack
-            .set_visible_child_name(if ai.provider == AiProvider::Off {
-                "setup"
-            } else {
+            .set_visible_child_name(if assistant::offers_summary(&ai) {
                 "chat"
+            } else {
+                "setup"
             });
     }
 
@@ -353,7 +438,8 @@ impl AssistantPane {
         let text = buffer.text(&start, &end, false);
         if let Some(question) = question_to_send(&text, self.running.get()) {
             buffer.set_text("");
-            self.ask(question);
+            let (text, shown, picked) = self.files.take(&question);
+            self.ask_shown(text, shown, picked);
         }
     }
 
@@ -362,7 +448,12 @@ impl AssistantPane {
         if self.running.get() {
             return;
         }
-        *self.chat.borrow_mut() = None;
+        self.files.clear();
+        self.clear_history();
+    }
+
+    fn clear_history(&self) {
+        self.chat.borrow_mut().clear();
         while let Some(child) = self.transcript.last_child() {
             if child == self.suggestions.clone().upcast::<gtk::Widget>() {
                 break;
@@ -374,64 +465,37 @@ impl AssistantPane {
 
     /// Asks the assistant something, as if typed.
     pub fn ask(self: &Rc<Self>, text: String) {
+        self.ask_shown(text.clone(), text, Arc::default());
+    }
+
+    fn ask_shown(self: &Rc<Self>, text: String, shown: String, picked: Arc<[std::path::PathBuf]>) {
         if self.running.get() {
             return;
         }
-        let config = match assistant::model_for(
-            &(self.settings)().ai,
-            crate::settings::Feature::Assistant,
-        ) {
-            Ok(config) => config,
+        let question = self.chat.borrow_mut().ask(
+            (self.settings)(),
+            Tools {
+                mcp: self.mcp.get(),
+                skills: self.skills.get(),
+            },
+            text,
+            picked,
+        );
+        let question = match question {
+            Ok(question) => question,
             Err(problem) => {
                 self.refresh();
                 return self.note(&problem, true);
-            }
-        };
-        let settings = (self.settings)();
-        let (conversation, chat_sources) = {
-            let mut chat = self.chat.borrow_mut();
-            match chat.as_ref() {
-                Some(current) if current.config == config => {
-                    (Arc::clone(&current.conversation), current.sources.clone())
-                }
-                _ => {
-                    let chat_sources = sources::for_settings(&settings);
-                    let prompt = sources::system_prompt(assistant::SYSTEM_PROMPT, &chat_sources);
-                    let conversation = Arc::new(tokio::sync::Mutex::new(
-                        Conversation::new(config.clone(), prompt).with_thinking(),
-                    ));
-                    *chat = Some(Chat {
-                        config,
-                        conversation: Arc::clone(&conversation),
-                        sources: chat_sources.clone(),
-                    });
-                    (conversation, chat_sources)
-                }
             }
         };
         self.suggestions.set_visible(false);
         self.set_running(true);
         // Asking always goes to the end, wherever the reader had scrolled.
         self.follow.set(true);
-        self.user_bubble(&text);
+        self.user_bubble(&shown);
         self.start_turn();
-        let (events, received) = async_channel::unbounded::<AgentEvent>();
-        let (stop, stopped) = async_channel::bounded::<()>(1);
-        *self.stop.borrow_mut() = Some(stop);
-        let language = assistant::language::selected(&settings.ai.language);
-        let base = format!(
-            "{}\n\n{}",
-            assistant::SYSTEM_PROMPT,
-            assistant::language::instruction(&language)
-        );
-        let prompt = sources::system_prompt(&base, &chat_sources);
-        let web = settings.ai.web_search != crate::settings::WebSearch::Off;
-        let host = Arc::new(Toolbox::new(
-            Host::new(assistant::run::specs(), self.requests.clone()),
-            chat_sources,
-            self.approvals.clone(),
-            settings.assistant_allowed_tools,
-        ));
+        let received = question.events;
+        *self.stop.borrow_mut() = Some(question.stop);
         let this = Rc::clone(self);
         let late = received.clone();
         glib::spawn_future_local(async move {
@@ -441,18 +505,7 @@ impl AssistantPane {
         });
         let this = Rc::clone(self);
         glib::spawn_future_local(async move {
-            let result = this
-                .core
-                .call(async move {
-                    let mut conversation = conversation.lock().await;
-                    conversation.set_system_prompt(prompt);
-                    conversation.set_web(web);
-                    tokio::select! {
-                        reply = conversation.send(text, host, events) => reply.map_err(anyhow::Error::from),
-                        _ = stopped.recv() => Err(anyhow::anyhow!("Stopped.")),
-                    }
-                })
-                .await;
+            let result = this.core.call(question.answer).await;
             // The reply can land before the loop above has drawn every
             // event, and those belong above the end of the turn.
             while let Ok(event) = late.try_recv() {
@@ -469,7 +522,7 @@ impl AssistantPane {
                     this.show_event(AgentEvent::Text(reply.clone()));
                 }
             }
-            this.end_turn();
+            this.end_turn(result.is_err());
             if let Err(err) = result {
                 this.note(&err.to_string(), true);
             }
@@ -481,6 +534,14 @@ impl AssistantPane {
         // The box stays open during a turn, so the next question can be
         // written while the model answers; only sending waits.
         self.running.set(running);
+        self.model.set_sensitive(!running);
+        if running {
+            self.send.remove_css_class("suggested-action");
+            self.send.add_css_class("assistant-stop");
+        } else {
+            self.send.add_css_class("suggested-action");
+            self.send.remove_css_class("assistant-stop");
+        }
         self.send.set_icon_name(if running {
             "media-playback-stop-symbolic"
         } else {
@@ -507,15 +568,28 @@ impl AssistantPane {
             .spacing(6)
             .css_classes(["assistant-turn"])
             .build();
+        let work = Detail::new((self.settings)().assistant_details_expanded);
+        work.title.set_label(&gettext("What it did"));
+        crate::ui::name(&work.expander, &gettext("What it did"));
+        let details = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .margin_start(18)
+            .css_classes(["assistant-work-body"])
+            .build();
+        work.expander.set_child(Some(&details));
+        work.expander.set_visible(false);
+        steps.append(&work.expander);
         let status = Status::new();
         self.transcript.append(&steps);
         self.transcript.append(&status.row);
         let mut view = TurnView {
             turn: Turn::new(Instant::now()),
             steps,
+            work,
+            details,
             rows: Vec::new(),
             status,
-            open: (self.settings)().assistant_details_expanded,
         };
         view.show_phase();
         *self.turn.borrow_mut() = Some(view);
@@ -530,19 +604,49 @@ impl AssistantPane {
     }
 
     /// Settles the turn and takes its status line away.
-    fn end_turn(&self) {
+    fn end_turn(&self, failed: bool) {
+        for answer in self.pending.take() {
+            let _ = answer.try_send(Verdict::Deny);
+        }
         if let Some(mut view) = self.turn.borrow_mut().take() {
             let updates = view.turn.finish(Instant::now());
             view.draw(&updates);
+            view.work
+                .summary
+                .set_label(&turn::work_summary(view.turn.steps()));
+            view.work.set_mark(
+                if failed
+                    || view.turn.steps().iter().any(|s| {
+                        matches!(
+                            s,
+                            Step::Tool {
+                                state: ToolState::Failed,
+                                ..
+                            }
+                        )
+                    })
+                {
+                    Mark::Failed
+                } else {
+                    Mark::Done
+                },
+            );
             self.transcript.remove(&view.status.row);
         }
     }
 
     fn user_bubble(&self, text: &str) {
+        let question = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(8)
+            .margin_bottom(6)
+            .build();
+        question.append(&heading(&gettext("You")));
         let label = bubble_label("assistant-question");
         label.set_text(text);
-        label.set_halign(gtk::Align::End);
-        self.transcript.append(&label);
+        question.append(&label);
+        self.transcript.append(&question);
     }
 
     /// A line from the app itself, such as an error.
@@ -631,7 +735,11 @@ impl AssistantPane {
                 let _ = answer.try_send(value);
             });
         }
+        self.pending.borrow_mut().push(answer.clone());
         let verdict = answered.recv().await.unwrap_or(Verdict::Deny);
+        self.pending
+            .borrow_mut()
+            .retain(|pending| !pending.same_channel(&answer));
         if let Some(view) = self.turn.borrow_mut().as_mut() {
             view.turn.set_awaiting_approval(false);
             view.show_phase();
@@ -705,7 +813,7 @@ impl AssistantPane {
 }
 
 /// How many lines the question box grows to before it scrolls.
-const QUESTION_LINES: i32 = 6;
+const QUESTION_LINES: i32 = 4;
 
 /// Whether a key press in the question box sends it: Enter, alone or with
 /// Control. Shift+Enter starts a new line instead.
@@ -731,10 +839,10 @@ fn question_box() -> (gtk::Overlay, gtk::TextView) {
     let input = gtk::TextView::builder()
         .wrap_mode(gtk::WrapMode::WordChar)
         .accepts_tab(false)
-        .top_margin(7)
-        .bottom_margin(7)
-        .left_margin(14)
-        .right_margin(14)
+        .top_margin(3)
+        .bottom_margin(3)
+        .left_margin(4)
+        .right_margin(4)
         .build();
     crate::ui::name(&input, &gettext("Ask Penguin Mail"));
     input.update_property(&[gtk::accessible::Property::Placeholder(&placeholder)]);
@@ -772,9 +880,9 @@ fn question_box() -> (gtk::Overlay, gtk::TextView) {
         .xalign(0.0)
         .halign(gtk::Align::Start)
         .valign(gtk::Align::Start)
-        .margin_top(7)
-        .margin_start(14)
-        .margin_end(14)
+        .margin_top(3)
+        .margin_start(4)
+        .margin_end(4)
         .ellipsize(pango::EllipsizeMode::End)
         .can_target(false)
         .css_classes(["dim-label"])
@@ -822,11 +930,11 @@ fn bubble_label(class: &str) -> gtk::Label {
 struct TurnView {
     turn: Turn,
     steps: gtk::Box,
+    work: Detail,
+    details: gtk::Box,
     /// One per step, in the same order.
     rows: Vec<StepRow>,
     status: Status,
-    /// Whether new detail rows open as they appear.
-    open: bool,
 }
 
 impl TurnView {
@@ -834,8 +942,13 @@ impl TurnView {
         for update in updates {
             match *update {
                 Update::Added(index) => {
-                    let row = StepRow::new(&self.turn.steps()[index], self.open);
-                    self.steps.append(row.widget());
+                    let row = StepRow::new(&self.turn.steps()[index], false);
+                    if matches!(self.turn.steps()[index], Step::Reply(_)) {
+                        self.steps.append(row.widget());
+                    } else {
+                        self.details.append(row.widget());
+                        self.work.expander.set_visible(true);
+                    }
                     self.rows.push(row);
                 }
                 Update::Changed(index) => {
@@ -848,6 +961,24 @@ impl TurnView {
     }
 
     fn show_phase(&mut self) {
+        self.work
+            .summary
+            .set_label(&turn::work_summary(self.turn.steps()));
+        self.work.set_mark(
+            if self.turn.steps().iter().any(|step| {
+                matches!(
+                    step,
+                    Step::Tool {
+                        state: ToolState::Running,
+                        ..
+                    } | Step::Thinking { took: None, .. }
+                )
+            }) {
+                Mark::Working
+            } else {
+                Mark::Done
+            },
+        );
         self.status.show(&self.turn.phase());
     }
 }
@@ -926,6 +1057,16 @@ impl Detail {
     }
 
     fn set_mark(&self, mark: Mark) {
+        let state = match mark {
+            Mark::Working => gettext("Running"),
+            Mark::Thought | Mark::Done => gettext("Done"),
+            Mark::Failed => gettext("Failed"),
+        };
+        let title = self.title.text();
+        let summary = self.summary.text();
+        let parts = [title.as_str(), summary.as_str(), state.as_str()];
+        let said: Vec<_> = parts.into_iter().filter(|part| !part.is_empty()).collect();
+        crate::ui::name(&self.expander, &said.join(", "));
         while let Some(child) = self.mark.first_child() {
             self.mark.remove(&child);
         }
@@ -962,6 +1103,7 @@ enum StepRow {
     Tool {
         detail: Detail,
         input: gtk::Label,
+        identity: gtk::Label,
         result: gtk::Box,
         output: gtk::Label,
     },
@@ -981,6 +1123,7 @@ impl StepRow {
             Step::Tool { .. } => {
                 let detail = Detail::new(open);
                 let input = detail_text(&["monospace"]);
+                let identity = detail_text(&["monospace", "dim-label"]);
                 let output = detail_text(&["monospace"]);
                 let result = gtk::Box::builder()
                     .orientation(gtk::Orientation::Vertical)
@@ -994,6 +1137,7 @@ impl StepRow {
                     .margin_start(24)
                     .css_classes(["assistant-step-body"])
                     .build();
+                body.append(&identity);
                 body.append(&heading(&gettext("Input")));
                 body.append(&clipped(&input, 160));
                 body.append(&result);
@@ -1001,6 +1145,7 @@ impl StepRow {
                 StepRow::Tool {
                     detail,
                     input,
+                    identity,
                     result,
                     output,
                 }
@@ -1048,10 +1193,12 @@ impl StepRow {
                 StepRow::Tool {
                     detail,
                     input: input_label,
+                    identity,
                     result,
                     output: output_label,
                 },
                 Step::Tool {
+                    id,
                     name,
                     input,
                     state,
@@ -1060,9 +1207,11 @@ impl StepRow {
                 },
             ) => {
                 let label = tool_label(name);
-                let summary = input_summary(input);
+                let summary = turn::work_summary(std::slice::from_ref(step));
+                let summary = summary.strip_prefix(&format!("{label}: ")).unwrap_or("");
+                identity.set_label(&format!("{name}\n{id}"));
                 detail.title.set_label(&label);
-                detail.summary.set_label(&summary);
+                detail.summary.set_label(summary);
                 detail.set_mark(match state {
                     ToolState::Running => Mark::Working,
                     ToolState::Done => Mark::Done,
@@ -1076,7 +1225,7 @@ impl StepRow {
                     ToolState::Done => gettext("Done"),
                     ToolState::Failed => gettext("Failed"),
                 };
-                let name: Vec<&str> = [label.as_str(), summary.as_str(), said.as_str()]
+                let name: Vec<&str> = [label.as_str(), summary, said.as_str()]
                     .into_iter()
                     .filter(|part| !part.is_empty())
                     .collect();
@@ -1210,5 +1359,77 @@ mod tests {
             assert!(!enter_sends(key, none), "{key:?}");
         }
         assert!(!enter_sends(Key::parenleft, ModifierType::SHIFT_MASK));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod checks {
+    use super::*;
+    pub fn run() {
+        let steps = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let work = Detail::new(true);
+        let details = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        work.expander.set_child(Some(&details));
+        steps.append(&work.expander);
+        let mut view = TurnView {
+            turn: Turn::new(Instant::now()),
+            steps,
+            work,
+            details,
+            rows: Vec::new(),
+            status: Status::new(),
+        };
+        for event in [
+            AgentEvent::Thinking("Look at the mailbox".into()),
+            AgentEvent::ToolStarted {
+                id: "call-42".into(),
+                name: "list_mail".into(),
+                input: serde_json::json!({"mailbox": "follow_up"}),
+            },
+            AgentEvent::ToolFinished {
+                id: "call-42".into(),
+                name: "list_mail".into(),
+                ok: true,
+                preview: String::new(),
+                output: "One message".into(),
+            },
+            AgentEvent::Text("One message needs a reply.".into()),
+        ] {
+            let changes = view.turn.apply(event, Instant::now());
+            view.draw(&changes);
+            view.show_phase();
+        }
+        assert_eq!(
+            view.steps.first_child(),
+            Some(view.work.expander.clone().upcast())
+        );
+        assert_eq!(
+            view.details.first_child(),
+            Some(view.rows[0].widget().clone())
+        );
+        assert_eq!(view.steps.last_child(), Some(view.rows[2].widget().clone()));
+        assert!(view.work.expander.is_expanded());
+        assert!(view.work.summary.text().contains("Follow Up"));
+        if let StepRow::Tool {
+            detail, identity, ..
+        } = &view.rows[1]
+        {
+            assert!(!detail.expander.is_expanded());
+            assert!(identity.text().contains("call-42"));
+            assert!(!detail.summary.text().contains("call-42"));
+        } else {
+            panic!("a nested tool row");
+        }
+        let detail = Detail::new(false);
+        detail.title.set_label("What it did");
+        for mark in [Mark::Working, Mark::Done, Mark::Failed] {
+            detail.set_mark(mark);
+            assert!(gtk::test_accessible_has_property(
+                &detail.expander,
+                gtk::AccessibleProperty::Label
+            ));
+        }
+        files::checks::run();
+        assert_eq!(QUESTION_LINES, 4);
     }
 }

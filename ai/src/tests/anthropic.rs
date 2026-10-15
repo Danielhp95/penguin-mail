@@ -825,6 +825,9 @@ async fn changing_the_system_prompt_keeps_the_conversation() {
         .await;
     let mut chat = crate::Conversation {
         inner: crate::providers::State::Anthropic(chat(&server)),
+        thinking: false,
+        format: None,
+        web: false,
     };
     let (events, _) = async_channel::unbounded();
     chat.set_system_prompt("Answer in Russian.".into());

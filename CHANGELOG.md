@@ -11,12 +11,17 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Improved
 
+- Choose the assistant model beside your question, start a chat and manage tools from its header, attach files, and move the chat into its own window. The docked assistant shares the mail list's background, with a divider beside the message pane. Window controls follow the open pane. Turn details fold under one row, replies use restrained headings and more readable spacing, and the input grows to four lines.
 - Nested Preferences sections have inset backgrounds and single separators, and server-space rows update when reports arrive.
 - Preferences groups settings by task, with signatures, sender addresses, contacts and server space under each account, and a page list on narrow windows.
 - Reorder accounts by dragging them in Preferences, and choose one default account for all tasks or separate accounts for new messages, replies, forwards, calendar events, assistant actions and startup. Skills and MCP settings expand when you need them.
 
 ### Fixed
 
+- Server-space reports update as each account answers, keep newer results when reads overlap, and refresh while the mail window is closed.
+- Switching AI providers keeps web search matched to the selected provider.
+- Files picked with the assistant's Attach button work through Flatpak and in hidden folders. Tool and model switches keep the conversation, model menus reuse recent lists without search-data tooltips, and screen readers hear turn status.
+- Complete Preferences and assistant translations in French, German, Spanish, Vietnamese, and Traditional Chinese.
 - Calendar-file imports point to the Calendar page in Preferences when a calendar needs enabling.
 - Fastmail accounts signed in through the browser report server storage through IMAP when JMAP provides no quota. Gmail signature import appears only for Gmail accounts.
 - JMAP server-space reports recognize Email quotas and use the mail account even when the server lists no quota-primary account. Expansion controls keep their chevrons with custom icon themes.

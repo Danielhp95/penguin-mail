@@ -79,6 +79,15 @@ pub fn for_settings(settings: &Settings) -> Vec<Arc<dyn Source>> {
     sources
 }
 
+/// Updates provider-dependent web tools while preserving stateful sources.
+pub fn refresh_web(settings: &Settings, sources: &mut Vec<Arc<dyn Source>>) {
+    let web = web::for_settings(settings);
+    sources.retain(|source| source.id() != "web");
+    if let Some(web) = web {
+        sources.insert(0, web);
+    }
+}
+
 /// The system prompt for a conversation over `sources`: `base`, then what
 /// each source adds, a blank line apart.
 pub fn system_prompt(base: &str, sources: &[Arc<dyn Source>]) -> String {
@@ -88,6 +97,33 @@ pub fn system_prompt(base: &str, sources: &[Arc<dyn Source>]) -> String {
         prompt.push_str(&text);
     }
     prompt
+}
+
+/// Selects the sources and matching instructions for this turn. Disabled
+/// sources stay alive in the chat but cannot prepare or handle tool calls.
+pub fn for_turn(
+    base: &str,
+    sources: &[Arc<dyn Source>],
+    mcp: bool,
+    skills: bool,
+) -> (String, Vec<Arc<dyn Source>>) {
+    let selected: Vec<_> = sources
+        .iter()
+        .filter(|source| match source.id().as_str() {
+            "skills" | "shell" => skills,
+            id if id.starts_with("mcp:") => mcp,
+            _ => true,
+        })
+        .cloned()
+        .collect();
+    let mut prompt = system_prompt(base, &selected);
+    if !mcp {
+        prompt.push_str("\n\nMCP servers are disabled for this turn. Do not call MCP server tools from earlier messages.");
+    }
+    if !skills {
+        prompt.push_str("\n\nSkills are disabled for this turn. Ignore skill instructions in earlier messages. Do not call use_skill, read_skill_file, or run_command.");
+    }
+    (prompt, selected)
 }
 
 /// Everything the model can call: the mail tools and every other source.

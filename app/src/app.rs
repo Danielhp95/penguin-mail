@@ -123,7 +123,7 @@ pub struct App {
     installed_dictionaries: RefCell<Option<Vec<String>>>,
     scheduler_running: Cell<bool>,
     /// How full each account's server said it was, read hourly.
-    storage: RefCell<HashMap<AccountId, mailrs_sync::Storage>>,
+    storage: Rc<storage::ServerSpace<storage::CoreStorage>>,
     /// The timer for the next event reminder check. Each check replaces
     /// it with one set for the next reminder due, at most a minute away.
     reminder_wake: RefCell<Option<glib::SourceId>>,
@@ -156,6 +156,7 @@ impl App {
         };
         let opened = Settings::open(&settings_path);
         let counted_by = Rc::clone(&core);
+        let storage = storage::ServerSpace::new(storage::CoreStorage(Rc::clone(&core)));
         let app = Rc::new(App {
             gio: gio_app.clone(),
             core,
@@ -197,7 +198,7 @@ impl App {
             dictionaries: dictionaries::Shared::default(),
             installed_dictionaries: RefCell::new(None),
             scheduler_running: Cell::new(false),
-            storage: RefCell::new(HashMap::new()),
+            storage,
             reminder_wake: RefCell::new(None),
             reminders_running: Cell::new(false),
             updater: crate::update::Updater::for_this_copy(core_demo).map(Rc::new),
@@ -800,6 +801,7 @@ impl App {
         *self.accounts.borrow_mut() = loaded.iter().map(|(a, _)| a.clone()).collect();
         self.unread
             .set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
+        self.storage.set_accounts(loaded.iter().map(|(a, _)| a.id).collect());
         self.accounts_read.set(true);
         *self.labels.borrow_mut() = loaded.iter().map(|(a, l)| (a.id, l.clone())).collect();
         *self.consent.borrow_mut() = consent;
@@ -1297,6 +1299,7 @@ impl App {
         glib::spawn_future_local(async move {
             while let Ok(event) = this.core.events.recv().await {
                 this.unread.heard(&event);
+                this.storage.heard(&event);
                 this.tell_window(Notice::Engine(&event));
                 if let ChangeEvent::NewMail {
                     account_id,

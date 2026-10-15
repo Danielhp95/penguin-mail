@@ -165,6 +165,10 @@ pub struct MainWindow {
     authorizing: Cell<bool>,
     assistant: Rc<super::assistant::AssistantPane>,
     assistant_split: adw::OverlaySplitView,
+    assistant_window: RefCell<Option<adw::Window>>,
+    /// The group must outlive construction to keep the adjoining toolbars aligned.
+    toolbar_heights: gtk::SizeGroup,
+    assistant_top_bar: Option<gtk::Widget>,
     categories: categories::CategoryBar,
     /// Focused and Other, over one Microsoft account's inbox.
     focus: categories::CategoryBar,
@@ -694,7 +698,16 @@ impl MainWindow {
                         }
                     }
                 },
+                {
+                    let app = Rc::downgrade(app);
+                    move |change| { if let Some(app) = app.upgrade() { app.change_settings(change); } }
+                },
             );
+            let toolbar_heights = gtk::SizeGroup::new(gtk::SizeGroupMode::Vertical);
+            let assistant_top_bar = super::top_bar(&assistant.header);
+            if let Some(bar) = &assistant_top_bar { toolbar_heights.add_widget(bar); }
+            conversation.group_toolbar_height(&toolbar_heights);
+            calendar.group_toolbar_height(&toolbar_heights);
             let assistant_split = adw::OverlaySplitView::builder()
                 .sidebar(&assistant.page)
                 .content(&split)
@@ -871,6 +884,9 @@ impl MainWindow {
                 authorizing: Cell::new(false),
                 assistant,
                 assistant_split,
+                assistant_window: RefCell::new(None),
+                toolbar_heights,
+                assistant_top_bar,
                 categories: categories::CategoryBar::new(
                     app.settings_with(|s| s.default_category),
                     &Category::ALL,
@@ -939,6 +955,23 @@ impl MainWindow {
                     room.rearrange();
                 }
             });
+        let weak = Rc::downgrade(&window);
+        window.assistant.detach.connect_clicked(move |_| {
+            if let Some(win) = weak.upgrade() {
+                if win.assistant_window.borrow().is_some() { win.dock_assistant(true); }
+                else { win.detach_assistant(); }
+            }
+        });
+        let weak = Rc::downgrade(&window);
+        window.assistant.close.connect_clicked(move |_| {
+            if let Some(win) = weak.upgrade() { win.assistant_split.set_show_sidebar(false); }
+        });
+        let weak = Rc::downgrade(&window);
+        window.assistant_split.connect_collapsed_notify(move |split| {
+            if let Some(win) = weak.upgrade() {
+                win.assistant.close.set_visible(split.is_collapsed() && win.assistant_window.borrow().is_none());
+            }
+        });
         // Rows ask for photos as they bind and redraw themselves; an open
         // conversation is drawn again once its senders' photos arrive.
         let photos = app.photos();
@@ -970,7 +1003,7 @@ impl MainWindow {
         glib::spawn_future_local(async move {
             while let Ok(request) = tool_calls.recv().await {
                 let Some(win) = weak.upgrade() else { break };
-                let outcome = win.run_tool(&request.name, request.input).await;
+                let outcome = win.run_tool(&request.name, request.input, request.picked_files).await;
                 let _ = request.reply.send(outcome).await;
             }
         });
@@ -1094,9 +1127,6 @@ impl MainWindow {
                 self.refresh_accounts(Reload::No);
                 if *state == AccountState::Ok {
                     self.account_ready_for_threads(*account_id);
-                    if let Some(app) = self.app.upgrade() {
-                        app.read_storage_of(*account_id);
-                    }
                 }
             }
             ChangeEvent::LabelsChanged { .. } => self.refresh_accounts(Reload::Yes),
@@ -3132,6 +3162,7 @@ impl MainWindow {
             if let (Some(win), Some(app)) =
                 (weak.upgrade(), weak.upgrade().and_then(|w| w.app.upgrade()))
             {
+                win.dock_assistant(false);
                 win.conversation.stop_rendering();
                 win.previews.forget_decrypted();
                 // A held calendar change whose Undo toast is still up
@@ -3226,9 +3257,62 @@ impl MainWindow {
         }
     }
 
+    /// Moves the same pane, keeping its chat and any approval in place.
+    fn detach_assistant(self: &Rc<Self>) {
+        self.assistant_split.set_show_sidebar(false);
+        self.assistant_split.set_sidebar(None::<&gtk::Widget>);
+        if let Some(bar) = &self.assistant_top_bar { self.toolbar_heights.remove_widget(bar); }
+        self.assistant.page.remove_css_class("assistant-docked");
+        self.assistant.page.set_top_bar_style(adw::ToolbarStyle::Flat);
+        let window = adw::Window::builder()
+            .title(gettext("Assistant"))
+            .default_width(440).default_height(700)
+            .content(&self.assistant.page).build();
+        window.set_application(self.window.application().as_ref());
+        track_dark_class(&window);
+        self.assistant.header.set_show_end_title_buttons(true);
+        self.assistant.close.set_visible(false);
+        self.assistant.detach.set_icon_name("view-restore-symbolic");
+        self.assistant.detach.set_tooltip_text(Some(&gettext("Dock")));
+        super::name(&self.assistant.detach, &gettext("Dock"));
+        let weak = Rc::downgrade(self);
+        window.connect_close_request(move |_| {
+            if let Some(win) = weak.upgrade() { win.dock_assistant(false); }
+            glib::Propagation::Stop
+        });
+        *self.assistant_window.borrow_mut() = Some(window.clone());
+        self.sync_assistant_toggle();
+        window.present();
+        self.assistant.focus();
+    }
+
+    fn dock_assistant(&self, show: bool) {
+        let Some(window) = self.assistant_window.borrow_mut().take() else { return };
+        window.set_content(None::<&gtk::Widget>);
+        self.assistant.header.set_show_end_title_buttons(true);
+        self.assistant_split.set_sidebar(Some(&self.assistant.page));
+        if let Some(bar) = &self.assistant_top_bar { self.toolbar_heights.add_widget(bar); }
+        self.assistant.page.add_css_class("assistant-docked");
+        self.assistant.page.set_top_bar_style(adw::ToolbarStyle::Flat);
+        self.assistant.close.set_visible(self.assistant_split.is_collapsed());
+        self.assistant.detach.set_icon_name("window-new-symbolic");
+        self.assistant.detach.set_tooltip_text(Some(&gettext("Detach")));
+        super::name(&self.assistant.detach, &gettext("Detach"));
+        self.assistant_split.set_show_sidebar(show);
+        window.destroy();
+        self.sync_assistant_toggle();
+        if show { self.assistant.focus(); }
+    }
+
     /// Shows the assistant beside the mail and puts the cursor in it, or
     /// hides it again.
     fn toggle_assistant(&self) {
+        let detached = self.assistant_window.borrow().clone();
+        if let Some(window) = detached {
+            window.present();
+            self.assistant.focus();
+            return;
+        }
         let show = !self.assistant_split.shows_sidebar();
         self.assistant_split.set_show_sidebar(show);
         if show {
@@ -3243,7 +3327,9 @@ impl MainWindow {
         if view.detached() {
             return;
         }
-        self.assistant_split.set_show_sidebar(true);
+        let detached = self.assistant_window.borrow().clone();
+        if let Some(window) = detached { window.present(); }
+        else { self.assistant_split.set_show_sidebar(true); }
         self.assistant.ask(gettext("Summarize this conversation"));
     }
 
@@ -3257,7 +3343,10 @@ impl MainWindow {
     /// Shows or hides the assistant toggle in the reading pane's and the
     /// calendar's headers, and keeps it pressed with the panel (R12).
     fn sync_assistant_toggle(&self) {
-        let panel_open = self.assistant_split.shows_sidebar();
+        let panel_open = self.assistant_split.shows_sidebar() || self.assistant_window.borrow().is_some();
+        let docked = self.assistant_split.shows_sidebar() && self.assistant_window.borrow().is_none();
+        self.conversation.set_assistant_docked(docked);
+        self.calendar.set_assistant_docked(docked);
         let state = self.settings_with(|s| crate::assistant::assistant_toggle(&s.ai, panel_open));
         for button in [
             &self.conversation.assistant_toggle,

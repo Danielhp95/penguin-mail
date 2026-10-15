@@ -722,6 +722,8 @@ async fn a_held_copy_from_another_install_shows_in_send_later_and_cancel_send_wo
     let h = holding().await;
     let at = now_millis() + HOUR;
     put(&h, blind(&h, at)).await;
+    // The server starts its rounded relative delay after the local request.
+    let server_at = h.fake.with(|s| s.holds.values().next().unwrap().send_at);
     let other = beside(&h).await;
     other.bootstrap_all().await;
     let mine = queue(&other);
@@ -730,7 +732,7 @@ async fn a_held_copy_from_another_install_shows_in_send_later_and_cancel_send_wo
     assert_eq!(rows.len(), 1, "the server's hold shows in Send Later here");
     let row = &rows[0];
     assert!(server_holds(row), "as one the server sends");
-    assert_eq!(row.send_at / 1000, at / 1000, "at the hour the server keeps");
+    assert_eq!(row.send_at / 1000, server_at / 1000, "at the hour the server keeps");
     assert_eq!((row.subject.as_str(), row.recipients.as_str()), ("Trip", "ada@example.com"));
     let bytes = String::from_utf8_lossy(row.raw.as_deref().unwrap()).into_owned();
     assert!(bytes.contains("Bcc: grace@example.com"), "the Bcc comes back from the envelope: {bytes}");

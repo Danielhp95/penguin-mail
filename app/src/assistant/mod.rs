@@ -1,6 +1,7 @@
 //! The assistant: which model to use, what it may do, and how its tool
 //! calls reach the window. The GTK pane lives in `ui::assistant`.
 
+pub mod chat;
 mod host;
 pub mod language;
 mod markup;

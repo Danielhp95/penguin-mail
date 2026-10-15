@@ -101,11 +101,12 @@ ask otherwise. It encrypts only when it has a key or certificate for
 every recipient, and when one is missing it tells you whose; a Bcc stays
 hidden inside an OpenPGP message.
 
-It attaches a file from a message you have, or a file on this computer
-that you name by its path. Before it reads a file from this computer it
-shows you the whole path and waits for you to allow it. It will not
-attach anything from a hidden folder, such as `~/.ssh` or `~/.gnupg`,
-from the system folders, or from Penguin Mail's own data. It does not
+It attaches a file from a message you have, a file you pick with Attach,
+or a file on this computer that you name by its path. Before it reads a file
+from this computer it shows you the whole path and waits for you to allow it.
+Paths named by the model cannot access hidden folders, system folders, or
+Penguin Mail's own data. Picking a file with Attach allows that specific file
+for the request, including files shared through Flatpak's file chooser. It does not
 forward an encrypted message or its files; forward those yourself from
 the conversation.
 
@@ -166,6 +167,18 @@ the order it happened:
 Each row folds to one line. Click it, or press Space on it, to see the
 thinking, or the tool's input and the result the model read. While the
 model works, a line at the bottom says what it is doing now.
+Screen readers also hear whether the "What it did" row is running, done, or failed.
+
+The Skills and MCP switches in Tools apply to the next question and keep the
+conversation. Instructions and callable tools update together. Turning Skills
+off also prevents its scripts from running; turning it back on keeps its
+scratch files. A turn in progress finishes with the setup it started with.
+Changing the model keeps the conversation, including after a quota error.
+Switching providers carries questions, replies, and past tool results into the
+new connection. It does not repeat past actions. Model and tool changes apply
+to the next question. New Chat starts over when you choose it.
+The model menu keeps the current connection's list for five minutes and
+refreshes it when the connection or its credentials change.
 
 ## Choose the AI language
 
@@ -473,3 +486,23 @@ network.
 The assistant treats mail as data. Its instructions tell it never to follow
 instructions written inside an email, and the approval cards stop a message
 that tries to make it send mail.
+
+## The assistant pane
+
+The question box's model menu lists models from the provider selected in
+Preferences. It marks the current model and lets you search the list. Manage
+in Preferences opens the AI page to change a connection or enter a model by
+hand. Changing the model keeps the conversation and uses your new choice for
+the next question.
+
+New Chat and Tools sit at the start of the header. Tools has MCP Servers and
+Skills switches for this pane. They preserve each server's and skill's switch
+in Preferences. You can change these switches during a turn; the new settings
+apply to the next question. Tool approval and Always Allow follow the same
+rules described above.
+
+Attach adds removable file chips to the question. The assistant receives their paths, not their contents. When it puts a file into a draft or sends it, Penguin Mail shows the existing approval question and the full paths before reading the files. The question box grows to four lines and scrolls after that. Enter sends; Shift+Enter starts a line.
+
+Each question has You above it. What it did folds the turn's thoughts and tool calls into one row; open a tool to read its input, result and identifier. Show Details Expanded in Preferences opens the outer row. The five starting suggestions sit under This conversation and Your mail.
+
+Detach sits before the window controls and moves the same chat into its own window. The main window controls appear above the assistant while it is docked and open, and above the message or calendar when the assistant is closed or detached. Dock returns it to the mail window, preserving your question, file chips and pending approval. Closing the detached window docks the chat and hides it. Ctrl+J in the mail window presents a detached chat. Stop declines a pending approval and stops the turn.

@@ -265,6 +265,18 @@ pub struct CalendarView {
 }
 
 impl CalendarView {
+    /// Keeps adjoining toolbar containers at the same height as their bars change.
+    pub(crate) fn group_toolbar_height(&self, group: &gtk::SizeGroup) {
+        if let Some(bar) = crate::ui::top_bar(&self.header) {
+            group.add_widget(&bar);
+        }
+    }
+
+    /// The assistant takes the main window controls while it occupies the outer edge.
+    pub(crate) fn set_assistant_docked(&self, docked: bool) {
+        self.header.set_show_end_title_buttons(!docked);
+    }
+
     pub fn new(
         core: Rc<Core>,
         settings: impl Fn() -> Settings + 'static,

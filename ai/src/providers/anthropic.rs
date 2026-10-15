@@ -43,10 +43,10 @@ pub(crate) fn default_base() -> String {
 
 pub(crate) struct AnthropicChat {
     base_url: String,
-    api_key: String,
-    model: String,
+    pub(super) api_key: String,
+    pub(super) model: String,
     pub(super) system_prompt: String,
-    history: History,
+    pub(super) history: History,
     client: reqwest::Client,
     /// Ask the model to think, when it can.
     pub(crate) think: bool,

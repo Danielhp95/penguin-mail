@@ -65,6 +65,18 @@ pub use mailrs_sync::Mailbox;
 pub use mailrs_sync::mailbox::Standard;
 use mailrs_sync::mailbox::{folder_icon, folder_name};
 
+/// The toolbar container above `header`, including its search bar and spacing.
+pub(crate) fn top_bar(header: &adw::HeaderBar) -> Option<gtk::Widget> {
+    let mut parent = header.parent();
+    while let Some(widget) = parent {
+        if widget.has_css_class("top-bar") {
+            return Some(widget);
+        }
+        parent = widget.parent();
+    }
+    None
+}
+
 /// The narrowest width a header bar can take, and the part of it the
 /// window's own buttons at its end take. libadwaita moves those buttons
 /// to whichever header sits at the window's right edge, so a pane's need

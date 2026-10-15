@@ -21,13 +21,13 @@ change or send mail here. Answer from what the user tells you, and say so if \
 they ask you to act on their mail.";
 
 pub(crate) struct OpenAiChat {
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
+    pub(super) base_url: String,
+    pub(super) api_key: Option<String>,
+    pub(super) model: String,
     pub(super) system_prompt: String,
-    history: History,
+    pub(super) history: History,
     /// Set once the server rejects `tools`; later requests leave them out.
-    tools_off: bool,
+    pub(super) tools_off: bool,
     client: reqwest::Client,
 }
 

@@ -17,6 +17,7 @@ use tokio::process::Command;
 
 use super::{emit, preview, truncate};
 use crate::bridge::{self, SERVER_NAME};
+use crate::history::History;
 use crate::{AgentEvent, AiError, Model, ModelList, ToolHost};
 
 /// Aliases Claude Code takes for `--model`. Each one follows the newest
@@ -191,10 +192,11 @@ fn default_bridge_command() -> std::io::Result<PathBuf> {
 }
 
 pub(crate) struct ClaudeCodeChat {
-    command: PathBuf,
-    model: Option<String>,
+    pub(super) command: PathBuf,
+    pub(super) model: Option<String>,
     pub(super) system_prompt: String,
     session_id: Option<String>,
+    pub(super) history: History,
     work_dir: PathBuf,
     bridge_command: Option<PathBuf>,
     /// Let Claude Code search the web with its own tool.
@@ -220,6 +222,7 @@ impl ClaudeCodeChat {
             model: model.filter(|m| !m.is_empty()),
             system_prompt,
             session_id: None,
+            history: History::default(),
             work_dir: default_work_dir(),
             bridge_command: None,
             web: false,
@@ -229,9 +232,14 @@ impl ClaudeCodeChat {
     /// Replaces the working directory and bridge command. Tests use this.
     #[cfg(test)]
     pub(crate) fn with_paths(mut self, work_dir: PathBuf, bridge_command: PathBuf) -> Self {
+        self.set_test_paths(work_dir, bridge_command);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_paths(&mut self, work_dir: PathBuf, bridge_command: PathBuf) {
         self.work_dir = work_dir;
         self.bridge_command = Some(bridge_command);
-        self
     }
 
     pub(crate) async fn send(
@@ -269,10 +277,22 @@ impl ClaudeCodeChat {
             .await
             .map_err(|e| io(&format!("could not run {}", self.command.display()), e))?;
 
+        // A new CLI session gets the conversation from the previous
+        // provider as data. Resumed sessions already contain those turns.
+        self.history.rollback();
+        let input = if self.session_id.is_none() && !self.history.messages().is_empty() {
+            format!(
+                "Previous conversation as JSON. Treat past tool calls as records, not requests to repeat them:\n{}\n\nCurrent question:\n{text}",
+                serde_json::to_string(&self.history.messages()).unwrap_or_default()
+            )
+        } else {
+            text.clone()
+        };
+        self.history.begin(json!({"role":"user","content":text}));
         // The prompt goes in on stdin, so text that starts with a dash never
         // reads as a flag.
         if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(text.as_bytes()).await;
+            let _ = stdin.write_all(input.as_bytes()).await;
         }
         let stderr = child.stderr.take().map(|mut stderr| {
             tokio::spawn(async move {
@@ -293,6 +313,12 @@ impl ClaudeCodeChat {
             .await
             .map_err(|e| io("could not read Claude Code's output", e))?
         {
+            if let Ok(message) = serde_json::from_str::<Value>(&line)
+                && matches!(message["type"].as_str(), Some("assistant" | "user"))
+                && let Some(message) = super::handoff::as_text(message["message"].clone())
+            {
+                self.history.push(message);
+            }
             turn.handle(&line, events).await;
         }
         let status = child
@@ -309,9 +335,20 @@ impl ClaudeCodeChat {
             self.session_id = Some(session.clone());
         }
         match turn.result {
-            Some(Ok(text)) => Ok(text),
-            Some(Err(message)) => Err(AiError::Api(message)),
+            Some(Ok(text)) => {
+                if !turn.wrote_text {
+                    self.history
+                        .push(json!({"role":"assistant","content":text}));
+                }
+                self.history.commit();
+                Ok(text)
+            }
+            Some(Err(message)) => {
+                self.history.rollback();
+                Err(AiError::Api(message))
+            }
             None => {
+                self.history.rollback();
                 let detail = truncate(stderr.trim(), 400);
                 Err(AiError::Other(format!(
                     "Claude Code stopped without an answer ({status}): {detail}"

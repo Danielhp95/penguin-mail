@@ -29,8 +29,16 @@ use crate::unsubscribe_page::{Adviser, Browser, PageBrowser, model_adviser};
 
 impl MainWindow {
     /// Runs one tool call from the assistant.
-    pub(super) async fn run_tool(self: &Rc<Self>, name: &str, input: Value) -> ToolOutcome {
-        self.tools().run(name, input).await
+    pub(super) async fn run_tool(
+        self: &Rc<Self>,
+        name: &str,
+        input: Value,
+        picked_files: std::sync::Arc<[PathBuf]>,
+    ) -> ToolOutcome {
+        self.tools()
+            .with_picked_files(picked_files)
+            .run(name, input)
+            .await
     }
 
     /// The tools, with this window behind both ports.
