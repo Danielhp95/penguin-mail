@@ -2729,6 +2729,9 @@ impl MainWindow {
                         account_id,
                         which: crate::ui::Standard::Inbox,
                     };
+                    // The calendar shows when only calendar accounts were
+                    // here before this one.
+                    win.show_space(crate::settings::Space::Mail);
                     win.sidebar.select(&inbox);
                     win.show_mailbox(inbox);
                 }
