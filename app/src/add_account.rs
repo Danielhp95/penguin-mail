@@ -1345,6 +1345,7 @@ pub fn calendar_problem(err: &anyhow::Error) -> String {
         Some(
             said @ (CalDavSignInError::Taken { .. }
             | CalDavSignInError::Elsewhere { .. }
+            | CalDavSignInError::OtherUser { .. }
             | CalDavSignInError::Moves { .. }
             | CalDavSignInError::NotHttps),
         ) => said.to_string(),
@@ -2140,6 +2141,9 @@ mod tests {
         }
         let not_https = calendar_problem(&CalDavSignInError::NotHttps.into());
         assert!(not_https.contains("HTTPS only"), "words the sign-in chose stand: {not_https}");
+        let other_user = CalDavSignInError::OtherUser { name: "robin@cloud.example.org".into(), user: "Robin".into() };
+        let shown = calendar_problem(&other_user.into());
+        assert!(shown.contains("signed in to this server as Robin. Type Robin"), "{shown}");
     }
 
     #[test]

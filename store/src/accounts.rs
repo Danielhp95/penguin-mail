@@ -117,13 +117,14 @@ pub fn insert_imap_account(
     Ok(Some(conn.last_insert_rowid()))
 }
 
-/// Adds a calendar account under `name`, or finds the one already here
-/// under it. `None` when an account of another provider holds the name:
-/// that account stays as it is. The name stands in the column a mail
+/// Adds a calendar account under `name`. `None` when an account holds
+/// the name already, a calendar account too: it stays as it is, and the
+/// caller decides whether it is the login being signed in to. So `Some`
+/// is always a row this call added. The name stands in the column a mail
 /// account keeps its address in, which keeps it unique.
 pub fn insert_caldav_account(conn: &Connection, name: &str, now: EpochMillis) -> Result<Option<AccountId>> {
-    if let Some(existing) = account_by_email(conn, name)? {
-        return Ok((existing.provider == Provider::CalDav).then_some(existing.id));
+    if account_by_email(conn, name)?.is_some() {
+        return Ok(None);
     }
     conn.execute(
         "INSERT INTO accounts (email, added_at, provider) VALUES (?1, ?2, ?3)",

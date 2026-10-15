@@ -180,7 +180,7 @@ fn a_new_account_is_served_by_gmail() {
 }
 
 #[test]
-fn a_calendar_account_is_added_found_again_and_refused_a_taken_name() {
+fn a_calendar_account_is_added_and_refused_a_taken_name() {
     let conn = open_in_memory().unwrap();
     let id = accounts::insert_caldav_account(&conn, "robin@cloud.example.org", 5)
         .unwrap()
@@ -191,9 +191,10 @@ fn a_calendar_account_is_added_found_again_and_refused_a_taken_name() {
     assert_eq!(listed[0].provider_name(), "CalDAV");
     assert_eq!(
         accounts::insert_caldav_account(&conn, "robin@cloud.example.org", 6).unwrap(),
-        Some(id),
-        "signing in again finds the account"
+        None,
+        "adding it again adds nothing, and the sign-in decides what it finds"
     );
+    assert_eq!(accounts::list_accounts(&conn).unwrap()[0].id, id);
     accounts::insert_imap_account(&conn, "me@example.org", "example.org", 1)
         .unwrap()
         .expect("a mail account");
