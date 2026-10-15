@@ -3424,7 +3424,12 @@ impl MainWindow {
             .upgrade()
             .is_some_and(|app| app.new_message(self.account_in_view(), ""));
         if !wrote {
-            self.toast(&gettext("Add an account first"));
+            // Calendar accounts alone have no mail to write from.
+            let lacking = match self.accounts().is_empty() {
+                true => gettext("Add an account first"),
+                false => gettext("Add a mail account first"),
+            };
+            self.toast(&lacking);
         }
     }
 
