@@ -737,9 +737,16 @@ impl<A: Accounts> Tools<A> {
         match text(input, "account") {
             Some(email) => self.any_account_named(&email),
             None => {
-                let id = self.desk.default_account().ok_or("Add an account first.")?;
-                self.desk
-                    .accounts()
+                // The window's default is an account with mail. With
+                // calendar accounts alone there is none, and the first of
+                // them is the one there is to ask.
+                let accounts = self.desk.accounts();
+                let id = self
+                    .desk
+                    .default_account()
+                    .or_else(|| accounts.first().map(|a| a.id))
+                    .ok_or("Add an account first.")?;
+                accounts
                     .into_iter()
                     .find(|a| a.id == id)
                     .ok_or_else(|| "Add an account first.".to_string())

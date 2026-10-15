@@ -165,6 +165,25 @@ async fn a_default_set_to_a_calendar_account_writes_from_one_with_mail() {
 }
 
 #[tokio::test]
+async fn with_calendar_accounts_alone_a_calendar_tool_needs_no_account_named() {
+    let h = harness().await;
+    {
+        let mut desk = h.desk.0.borrow_mut();
+        desk.accounts = vec![mailrs_domain::Account {
+            id: h.account_id,
+            email: CALENDARS.into(),
+            state: mailrs_domain::AccountState::Ok,
+            provider: mailrs_domain::Provider::CalDav,
+            provider_name: None,
+        }];
+        // The window's default is an account with mail, and there is none.
+        desk.default_account = None;
+    }
+    let listed = h.run("list_events", json!({"from": "2026-01-05", "to": "2026-01-05"})).await;
+    assert!(listed.is_ok(), "{listed:?}");
+}
+
+#[tokio::test]
 async fn a_calendar_tool_still_reaches_a_calendar_account() {
     let h = with_calendar_account().await;
     // The harness runs no calendar for the account, so the tool may fail
