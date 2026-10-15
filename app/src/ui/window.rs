@@ -3621,9 +3621,8 @@ impl MainWindow {
         let Some(app) = self.app.upgrade() else {
             return;
         };
-        // Every page of Preferences that lists accounts is about their
-        // mail or their contacts, which a calendar account has neither of.
-        let accounts = app.mail_accounts();
+        // Preferences puts each account on the pages that apply to it.
+        let accounts = app.accounts();
         let weak = Rc::downgrade(self);
         super::preferences::present(
             &app,
@@ -3663,7 +3662,7 @@ impl MainWindow {
         let Some(app) = self.app.upgrade() else {
             return;
         };
-        let accounts = app.mail_accounts();
+        let accounts = app.accounts();
         let weak = Rc::downgrade(self);
         super::preferences::present_page(
             &app,

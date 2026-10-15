@@ -60,6 +60,12 @@ pub fn present(
         .iter()
         .map(|account| (account.clone(), offers(account.id)))
         .collect();
+    // A calendar account belongs on the Calendar page alone: the other
+    // pages that list accounts are about mail and contacts, which it has
+    // neither of.
+    let with_mail: Vec<(Account, Offers)> =
+        offered.iter().filter(|(account, _)| account.provider.serves_mail()).cloned().collect();
+    let mail_accounts = mailrs_domain::mail_accounts(accounts);
     let dialog = dialog::Dialog::new();
     // The phone layout. A dialog applies one breakpoint at a time, so
     // every page puts its narrow setters on this one.
@@ -68,7 +74,7 @@ pub fn present(
     );
     let accounts_page = accounts_page(
         app,
-        &offered,
+        &with_mail,
         &withheld,
         grant.clone(),
         focus,
@@ -77,7 +83,7 @@ pub fn present(
     );
     dialog.add(&accounts_page);
     dialog.add(&reading_page(app, &settings));
-    dialog.add(&writing_page(app, &settings, accounts, &dialog.toasts));
+    dialog.add(&writing_page(app, &settings, &mail_accounts, &dialog.toasts));
     dialog.add(&notifications_page(app, &settings));
     dialog.add(&super::contacts_prefs::calendar_page(
         app,
