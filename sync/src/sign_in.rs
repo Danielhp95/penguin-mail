@@ -484,6 +484,21 @@ fn add_refused(held: &Account, kept: Option<&services::FoundService>, url: &str,
 /// change that comes from elsewhere, such as the account's removal.
 static SIGNING_IN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Writing a secret for an account read from the store takes turns, in
+/// this process, with removing an account and forgetting its secrets.
+/// SQLite gives a removed account's id to the next account added, so a
+/// password written for an account removed meanwhile would land on the
+/// new account's own. A calendar sign-in holds a turn from the last time
+/// it reads the account until the store has its write, and removing an
+/// account holds one from the delete until its secrets are forgotten.
+static SECRETS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// A turn at the account secrets; see [`SECRETS`]. Removing an account
+/// holds it from the delete until its secrets are forgotten.
+pub async fn secrets_turn() -> tokio::sync::MutexGuard<'static, ()> {
+    SECRETS.lock().await
+}
+
 /// Adds a calendar account once its server took the login, with the
 /// server's address, the user name and the password. `probe` tries the
 /// login first, so a wrong address or password keeps nothing. The name
@@ -523,6 +538,9 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
         Found(Account, services::FoundService),
         Refused(CalDavSignInError),
     }
+    // Until the keyring has the password, the account this adds is not
+    // to be removed, and its id not given to another.
+    let turn = SECRETS.lock().await;
     let added = db
         .write(move |c| {
             if let Some(id) = accounts::insert_caldav_account(c, &name, now)? {
@@ -541,13 +559,18 @@ pub async fn caldav_signed_in<S: ServiceProbe, P: PasswordStore + 'static>(
         .await?;
     let id = match added {
         Added::New(id) => id,
-        Added::Found(held, server) => return keep_again(db, passwords, held, server, new.password).await,
+        Added::Found(held, server) => {
+            // `keep_again` takes its own turn, and reads the account again.
+            drop(turn);
+            return keep_again(db, passwords, held, server, new.password).await;
+        }
         Added::Refused(refused) => return Err(refused),
     };
     if let Err(err) = save_passwords(passwords, id, new.password, None).await {
         db.write(move |c| accounts::delete_account(c, id)).await?;
         return Err(err.into());
     }
+    drop(turn);
     account_by_id(db, id).await
 }
 
@@ -586,9 +609,11 @@ pub async fn caldav_signed_in_again<S: ServiceProbe, P: PasswordStore + 'static>
 /// Keeps the password and the server of a login the server just took
 /// again for calendar account `held`, and ends Needs Sign-In. While the
 /// server was asked the account may have gone, its id gone to another
-/// account, or its login changed, so it is read again just before the
-/// keyring takes the password, and again in the write. The keyring goes
-/// first, so the account stays as it was when it refuses.
+/// account, or its login changed, so it is read again before the keyring
+/// takes the password, and again in the write. A turn at the secrets is
+/// held from that read to the write, so the account cannot be removed,
+/// and its id given to another, while the keyring writes. The keyring
+/// goes first, so the account stays as it was when it refuses.
 async fn keep_again<P: PasswordStore + 'static>(
     db: &Db,
     passwords: Arc<P>,
@@ -597,6 +622,7 @@ async fn keep_again<P: PasswordStore + 'static>(
     password: String,
 ) -> Result<Account, CalDavSignInError> {
     let id = held.id;
+    let _turn = SECRETS.lock().await;
     let (before, kept) = (held.clone(), server.clone());
     db.read(move |c| still_its(c, &before, &kept)).await??;
     save_passwords(passwords, id, password, None).await?;

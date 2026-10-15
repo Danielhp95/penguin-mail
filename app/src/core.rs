@@ -1297,6 +1297,10 @@ impl Core {
                 true => None,
                 false => mailrs_sync::jmap_grant(&db, &account).await,
             };
+            // A calendar sign-in writing this account's password finishes
+            // first: once the row goes, the next account added may take
+            // its id, and must not find this one's password under it.
+            let _turn = mailrs_sync::sign_in::secrets_turn().await;
             db.write(move |c| accounts::delete_account(c, id)).await?;
             // Only now that the row is gone: retiring the session stops it
             // saving, and the token it answers is the one to revoke.

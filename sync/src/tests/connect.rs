@@ -1030,6 +1030,82 @@ async fn signing_in_again_stops_when_the_account_goes_while_the_server_is_asked(
     assert!(db.read(move |c| services::load(c, id)).await.unwrap().is_empty(), "and gets no calendar server");
 }
 
+/// A keyring whose save of `paused` waits until the test lets it go, as
+/// one waiting on an unlock prompt would. `entered` hears that it waits.
+struct Paused {
+    kept: MemoryPasswords,
+    paused: &'static str,
+    entered: tokio::sync::Notify,
+    go: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl PasswordStore for Paused {
+    fn load(&self, id: AccountId) -> Result<Option<String>, PasswordError> {
+        self.kept.load(id)
+    }
+    fn save(&self, id: AccountId, password: &str) -> Result<(), PasswordError> {
+        if password == self.paused {
+            self.entered.notify_one();
+            let _ = self.go.lock().unwrap().recv();
+        }
+        self.kept.save(id, password)
+    }
+    fn delete(&self, id: AccountId) -> Result<(), PasswordError> {
+        self.kept.delete(id)
+    }
+    fn load_outgoing(&self, id: AccountId) -> Result<Option<String>, PasswordError> {
+        self.kept.load_outgoing(id)
+    }
+    fn save_outgoing(&self, id: AccountId, password: &str) -> Result<(), PasswordError> {
+        self.kept.save_outgoing(id, password)
+    }
+    fn delete_outgoing(&self, id: AccountId) -> Result<(), PasswordError> {
+        self.kept.delete_outgoing(id)
+    }
+}
+
+#[tokio::test]
+async fn removing_an_account_waits_for_its_password_to_be_written() {
+    let (db, _dir) = store().await;
+    let id = calendar_sign_in(&db, at(CLOUD, "robin")).await.unwrap().id;
+    let (go, wait) = std::sync::mpsc::channel();
+    let keyring = Arc::new(Paused {
+        kept: MemoryPasswords::default(),
+        paused: "app-password",
+        entered: tokio::sync::Notify::new(),
+        go: std::sync::Mutex::new(wait),
+    });
+    let cloud = Cloud::default();
+    let again = caldav_signed_in_again(&cloud, &db, Arc::clone(&keyring), id, at(CLOUD, "robin"));
+    let replaced = async {
+        keyring.entered.notified().await;
+        // While the keyring writes, the app removes the account and a
+        // mail account is added, which SQLite gives the same id.
+        let mut replace = std::pin::pin!(async {
+            let _turn = crate::sign_in::secrets_turn().await;
+            db.write(move |c| {
+                accounts::delete_account(c, id)?;
+                accounts::insert_imap_account(c, "dana@example.org", "example.org", 9).map(drop)
+            })
+            .await
+            .unwrap();
+            keyring.save(id, "dana's password").unwrap();
+            keyring.save_outgoing(id, "dana's outgoing password").unwrap();
+        });
+        let done = tokio::time::timeout(std::time::Duration::from_millis(200), &mut replace).await.is_ok();
+        go.send(()).unwrap();
+        if !done {
+            replace.await;
+        }
+    };
+    let (again, ()) = tokio::join!(again, replaced);
+    let dana = db.read(|c| accounts::account_by_email(c, "dana@example.org")).await.unwrap().unwrap();
+    assert_eq!(dana.id, id, "the mail account has the calendar account's id");
+    assert_eq!(keyring.load(id).unwrap().as_deref(), Some("dana's password"));
+    assert_eq!(keyring.load_outgoing(id).unwrap().as_deref(), Some("dana's outgoing password"));
+    assert!(again.is_ok(), "the account was still there when its password went in");
+}
+
 /// The cloud, answering a login only once the test says so. `asked`
 /// hears that a sign-in is waiting on it.
 #[derive(Default)]

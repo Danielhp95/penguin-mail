@@ -2066,7 +2066,7 @@ msgstr "已等候瀏覽器五分鐘，停止等候。"
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "此帳號沒有保存行事曆或聯絡人伺服器接受的密碼。"
 
-#: app/src/core.rs:1412 app/src/core.rs:1451
+#: app/src/core.rs:1416 app/src/core.rs:1455
 msgid "The demo cannot switch accounts."
 msgstr "示範模式無法切換帳號。"
 
