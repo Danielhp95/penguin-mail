@@ -299,14 +299,19 @@ async fn run_sync(db: &Db, dir: &Path, config: &Config) -> Result<()> {
     }
     let (engine, events) = SyncEngine::new(db.clone(), config.engine_config());
     let connector = connector(db, config);
+    // An account that could not connect said so above and is not syncing.
+    let mut started = 0;
     for account in &all {
         match connect(&connector, account).await {
-            Ok(services) => engine.start_account(account.id, services),
+            Ok(services) => {
+                engine.start_account(account.id, services);
+                started += 1;
+            }
             Err(err) => eprintln!("{err}"),
         }
     }
     let emails: HashMap<AccountId, String> = all.iter().map(|a| (a.id, a.email.clone())).collect();
-    println!("Syncing {} account(s). Press Ctrl-C to stop.", all.len());
+    println!("Syncing {started} account(s). Press Ctrl-C to stop.");
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
