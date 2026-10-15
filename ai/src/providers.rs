@@ -2,6 +2,7 @@
 
 mod anthropic;
 mod claude_code;
+mod handoff;
 mod openai;
 mod think;
 
@@ -54,6 +55,59 @@ impl State {
                 State::ClaudeCode(ClaudeCodeChat::new(command, model, system_prompt))
             }
         }
+    }
+
+    pub(crate) fn set_provider(&mut self, config: ProviderConfig) {
+        match (&mut *self, &config) {
+            (
+                State::OpenAi(chat),
+                ProviderConfig::OpenAiCompatible {
+                    base_url,
+                    api_key,
+                    model,
+                },
+            ) => {
+                let base_url = openai::trim_base(base_url);
+                if chat.base_url != base_url || chat.api_key != *api_key || chat.model != *model {
+                    chat.base_url = base_url;
+                    chat.api_key = api_key.clone();
+                    chat.model = model.clone();
+                    chat.tools_off = false;
+                }
+                return;
+            }
+            (State::Anthropic(chat), ProviderConfig::Anthropic { api_key, model }) => {
+                if chat.model != *model {
+                    chat.history.map_messages(handoff::without_thinking);
+                }
+                chat.api_key = api_key.clone();
+                chat.model = model.clone();
+                return;
+            }
+            (State::ClaudeCode(chat), ProviderConfig::ClaudeCode { command, model }) => {
+                chat.command = command.clone();
+                chat.model = model.clone().filter(|m| !m.is_empty());
+                return;
+            }
+            _ => {}
+        }
+        let (prompt, history) = match self {
+            State::OpenAi(chat) => (&chat.system_prompt, &mut chat.history),
+            State::Anthropic(chat) => (&chat.system_prompt, &mut chat.history),
+            State::ClaudeCode(chat) => (&chat.system_prompt, &mut chat.history),
+        };
+        // A new protocol cannot replay another provider's signed thinking
+        // or tool calls. Carry their results as text, preserving whole turns.
+        history.rollback();
+        history.map_messages(handoff::as_text);
+        let history = std::mem::take(history);
+        let mut next = State::new(config, prompt.clone());
+        match &mut next {
+            State::OpenAi(chat) => chat.history = history,
+            State::Anthropic(chat) => chat.history = history,
+            State::ClaudeCode(chat) => chat.history = history,
+        }
+        *self = next;
     }
 
     pub(crate) fn set_system_prompt(&mut self, prompt: String) {

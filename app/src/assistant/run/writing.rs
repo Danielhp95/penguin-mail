@@ -56,12 +56,14 @@ struct Edits {
 
 /// The file a tool names at `given`, once it is a file a message may
 /// carry: an absolute path, or one under `~/`, to a readable file of at
-/// most 25 MB that [`off_limits`] allows. `home` is the user's home folder
-/// and `private` the folders Penguin Mail keeps its own data in.
+/// most 25 MB that [`off_limits`] allows, or the user picked for this request.
+/// `home` is the user's home folder, and `private` the folders Penguin Mail
+/// keeps its own data in.
 pub(super) fn local_file(
     given: &str,
     home: &Path,
     private: &[PathBuf],
+    picked: &[PathBuf],
 ) -> Result<LocalFile, String> {
     let expanded = match given.strip_prefix("~/") {
         Some(rest) => home.join(rest),
@@ -76,7 +78,7 @@ pub(super) fn local_file(
     // as ~/.ssh.
     let path =
         std::fs::canonicalize(&expanded).map_err(|_| format!("There is no file at {given}."))?;
-    if off_limits(&path, home, private) {
+    if !picked.contains(&path) && off_limits(&path, home, private) {
         return Err(format!(
             "{given} is in a folder that holds keys, passwords or settings, so the assistant will not attach it. The user can attach it in the composer."
         ));
@@ -603,7 +605,12 @@ impl<A: Accounts> Tools<A> {
         for item in items {
             if let Some(path) = text(item, "path") {
                 let private = private.get_or_insert_with(private_dirs);
-                local.push(local_file(&path, &gtk::glib::home_dir(), private)?);
+                local.push(local_file(
+                    &path,
+                    &gtk::glib::home_dir(),
+                    private,
+                    &self.picked_files,
+                )?);
                 continue;
             }
             let email = text(item, "account").unwrap_or_else(|| self.email_of(account_id));

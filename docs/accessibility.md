@@ -222,3 +222,5 @@ Insert Image has Ctrl+Shift+P, and the arrow keys reach every recipient
 chip. Write a new gap down here when you find one, with why it was left.
 
 Preferences uses a single page-list Tab stop, with arrow keys to choose a page and Enter to open it. Search also finds controls inside folded account, Skills and MCP sections and expands the path to the selected control. Account drag handles have named Move Up and Move Down alternatives; after a move, focus stays on an available move button for that account.
+
+The model menu in the assistant's question box and the Tools menu in its header work from the keyboard. File chips have a named Remove button. What it did is one disclosure per turn, with nested thought and tool disclosures whose input and result remain selectable. Detach and Dock move the same widgets and return focus to the question field. Closing a detached assistant preserves the chat in the mail window.

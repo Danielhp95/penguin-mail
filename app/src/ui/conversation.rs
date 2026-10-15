@@ -347,6 +347,18 @@ pub struct ConversationView {
 }
 
 impl ConversationView {
+    /// Keeps adjoining toolbar containers at the same height as their bars change.
+    pub(crate) fn group_toolbar_height(&self, group: &gtk::SizeGroup) {
+        if let Some(bar) = super::top_bar(&self.header) {
+            group.add_widget(&bar);
+        }
+    }
+
+    /// The assistant takes the main window controls while it occupies the outer edge.
+    pub(crate) fn set_assistant_docked(&self, docked: bool) {
+        self.header.set_show_end_title_buttons(!docked);
+    }
+
     pub fn new(on_action: impl Fn(Action) + 'static) -> Rc<ConversationView> {
         let on_action: Rc<dyn Fn(Action)> = Rc::new(on_action);
         // The page asks for its pictures before the view around it exists,
@@ -666,6 +678,7 @@ impl ConversationView {
         menu_popover.set_parent(&webview.widget());
         let find = FindBar::new(&webview);
         let toolbar = adw::ToolbarView::new();
+        toolbar.add_css_class("conversation-toolbar");
         toolbar.add_top_bar(&header);
         toolbar.add_top_bar(&find.widget);
         toolbar.set_content(Some(&stack));

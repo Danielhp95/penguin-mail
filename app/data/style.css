@@ -61,6 +61,7 @@ window.accent-orange { --accent-fill: #c64b00; }
 /* The reading pane's toolbar sits on the view colour, as the pane under
    it does in the mockup, not on the window colour of a header bar. */
 headerbar.conversation-header { background: var(--view-bg-color); box-shadow: none; }
+toolbarview.conversation-toolbar > .top-bar { background: var(--view-bg-color); }
 
 /* The composer's shield, shown while the message goes out signed or
    encrypted. Its icon carries the accent so the state reads at a glance. */
@@ -510,13 +511,40 @@ toolbarview.sidebar-card.undershoot-bottom > .bottom-bar { box-shadow: none; bor
 .undo-pill .undo-left { font-size: 0.85em; font-weight: 600; font-feature-settings: "tnum"; }
 
 /* The assistant pane. */
-.assistant-pane { background: var(--sidebar-bg-color); }
-.assistant-bubble { padding: 8px 12px; border-radius: 14px; }
-.assistant-question {
-  background: alpha(var(--accent-bg-color), 0.18);
-  margin-left: 36px;
+.assistant-pane { background: var(--view-bg-color); }
+.assistant-pane headerbar { background: var(--view-bg-color); box-shadow: none; }
+.assistant-pane.assistant-docked,
+.assistant-pane.assistant-docked > .top-bar,
+.assistant-pane.assistant-docked headerbar { background: var(--window-bg-color); }
+.assistant-pane.assistant-docked:dir(ltr) { border-left: 1px solid var(--sidebar-border-color); }
+.assistant-pane.assistant-docked:dir(rtl) { border-right: 1px solid var(--sidebar-border-color); }
+.assistant-model { border-radius: 999px; background: transparent; }
+.assistant-model > button label { font-size: 0.86em; font-weight: 600; }
+.toolbar-capsule > menubutton.assistant-model > button { padding: 0 10px; min-width: 0; }
+.assistant-model > button:hover { background: alpha(currentColor, 0.12); }
+.assistant-model-popover list,
+.assistant-model-popover row,
+.assistant-model-popover scrolledwindow,
+.assistant-model-popover viewport { background: transparent; box-shadow: none; }
+.assistant-model-popover row { padding: 0; }
+.assistant-model-popover button.model-choice { font-weight: 400; padding: 7px 10px; border-radius: 8px; }
+.assistant-model-popover button.model-current { background: alpha(var(--accent-bg-color), 0.12); font-weight: 600; }
+.assistant-model-popover button.model-choice:hover { background: alpha(currentColor, 0.08); }
+/* Prose follows the desktop font size; headings use a small relative
+   lift in markup instead of Pango's full larger-size step. */
+.assistant-bubble {
+  padding: 0;
+  font-size: 1em;
+  font-weight: 400;
+  line-height: 1.18;
 }
-.assistant-reply { padding-left: 2px; padding-right: 2px; }
+.assistant-intro { font-size: 0.96em; line-height: 1.18; }
+.assistant-starters .caption-heading { font-size: 0.94em; font-weight: 600; }
+.assistant-question {
+  background: transparent;
+}
+.assistant-reply { padding: 8px 0; }
+.assistant-work-body { border-left: 1px solid alpha(currentColor, 0.12); padding-left: 8px; }
 /* A turn's thinking and tool rows: one quiet line each until opened. */
 /* GTK 4 puts a box between the expander and its title, so these match
    any depth. The row reads as a quiet aside to the reply: a size smaller
@@ -544,18 +572,26 @@ toolbarview.sidebar-card.undershoot-bottom > .bottom-bar { box-shadow: none; bor
 .assistant-detail > viewport > label { padding: 6px 8px; }
 .assistant-status { margin-left: 2px; }
 .assistant-note.error { color: var(--error-color); }
-.assistant-suggestion { padding: 6px 10px; border-radius: 10px; }
-.assistant-confirm label { font-weight: 600; }
+.assistant-suggestion { padding: 6px 10px; border-radius: 10px; font-size: 0.96em; font-weight: 400; line-height: 1.12; }
+.assistant-confirm label { font-weight: 400; }
 /* The question box: filled like an entry, with an entry's focus ring, and
    as round as the Send button beside it while it holds one line. */
 .assistant-input {
-  background-color: alpha(currentColor, 0.1);
-  border-radius: 17px;
+  background-color: transparent;
+  border-radius: 0;
 }
-.assistant-input:focus-within {
+.assistant-input-card:focus-within {
   outline: 2px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
   outline-offset: -2px;
 }
+ .assistant-input-card {
+  padding: 6px;
+  border: 1px solid alpha(currentColor, 0.18);
+  border-radius: 12px;
+}
+.assistant-file { background: alpha(currentColor, 0.1); border-radius: 999px; padding-left: 8px; }
+.assistant-file button { min-width: 20px; min-height: 20px; padding: 0; }
+.assistant-file image { -gtk-icon-size: 12px; }
 .assistant-input textview,
 .assistant-input textview > text { background: none; }
 
@@ -1990,3 +2026,5 @@ row.expander:checked > box > list > row.header image.expander-row-arrow {
 .mail-preferences row.account-settings > box > list > row.header .subtitle {
   font-weight: 400;
 }
+
+.assistant-stop { background: transparent; border: 1px solid alpha(currentColor, 0.22); }

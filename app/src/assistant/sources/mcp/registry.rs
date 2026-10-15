@@ -1,10 +1,9 @@
 //! Where MCP servers live while the app runs.
 //!
-//! A turn builds its sources from the settings and throws them away when it
-//! ends, but a server is a process or a session worth keeping between
-//! turns. So the servers belong to one registry for the whole process, the
-//! way the keyring's keys belong to one cache: the pane reaches it through
-//! `sources::for_settings`, the AI page reads each server's status from it,
+//! Each chat keeps its sources across questions, and a server can serve
+//! more than one chat. The servers belong to one registry for the whole
+//! process, the way the keyring's keys belong to one cache. The chat reaches
+//! it through `sources::for_settings`, the AI page reads each server's status from it,
 //! and quitting empties it. Every call that hands it the settings also
 //! stops the servers those settings no longer hold as they were.
 

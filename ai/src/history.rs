@@ -91,6 +91,19 @@ impl History {
         self.open = None;
     }
 
+    /// Rewrites committed messages when a different model needs another
+    /// format. An interrupted turn must not leave unmatched tool calls.
+    pub(crate) fn map_messages(&mut self, map: impl Fn(Value) -> Option<Value>) {
+        self.rollback();
+        for turn in &mut self.turns {
+            *turn = std::mem::take(turn)
+                .into_iter()
+                .filter_map(|entry| map(entry.message).map(Entry::new))
+                .collect();
+        }
+        self.trim();
+    }
+
     /// Every message to send, oldest first.
     pub(crate) fn messages(&self) -> Vec<Value> {
         self.entries().map(|e| e.message.clone()).collect()

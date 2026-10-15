@@ -277,6 +277,9 @@ async fn changing_the_system_prompt_resumes_the_same_session() {
         .with_paths(dir.path().join("work"), dir.path().join("penguin-mail"));
     let mut chat = crate::Conversation {
         inner: crate::providers::State::ClaudeCode(state),
+        thinking: false,
+        format: None,
+        web: false,
     };
     let (events, _) = async_channel::unbounded();
     chat.send(
@@ -299,4 +302,127 @@ async fn changing_the_system_prompt_resumes_the_same_session() {
         Some("Answer in Czech.")
     );
     assert_eq!(flag(&argv(dir.path(), 1), "--resume"), Some("same-chat"));
+}
+
+#[tokio::test]
+async fn changing_the_model_resumes_the_session_and_can_hand_it_to_another_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_script(dir.path());
+    for n in 0..2 {
+        std::fs::write(dir.path().join(format!("out-{n}")), lines(&[
+            json!({"type":"result","is_error":false,"session_id":"kept-session","result":"Invoice 2291."}),
+        ])).unwrap();
+    }
+    let state = ClaudeCodeChat::new(
+        script.clone(),
+        Some("sonnet".into()),
+        "You sort mail.".into(),
+    )
+    .with_paths(dir.path().join("work"), dir.path().join("penguin-mail"));
+    let mut chat = crate::Conversation {
+        inner: crate::providers::State::ClaudeCode(state),
+        thinking: false,
+        format: None,
+        web: false,
+    };
+    let (events, _) = async_channel::unbounded();
+    chat.send(
+        "Find my invoice".into(),
+        Arc::new(crate::NoTools),
+        events.clone(),
+    )
+    .await
+    .unwrap();
+    chat.set_provider(crate::ProviderConfig::ClaudeCode {
+        command: script,
+        model: Some("haiku".into()),
+    });
+    chat.send("Make it shorter".into(), Arc::new(crate::NoTools), events)
+        .await
+        .unwrap();
+    assert_eq!(flag(&argv(dir.path(), 1), "--model"), Some("haiku"));
+    assert_eq!(flag(&argv(dir.path(), 1), "--resume"), Some("kept-session"));
+
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Still 2291.\"}}]}\n\ndata: [DONE]\n\n",
+        ))
+        .mount(&server)
+        .await;
+    chat.set_provider(crate::ProviderConfig::OpenAiCompatible {
+        base_url: server.uri(),
+        api_key: None,
+        model: "local".into(),
+    });
+    let (events, _) = async_channel::unbounded();
+    chat.send("Which invoice?".into(), Arc::new(crate::NoTools), events)
+        .await
+        .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    let request: Value = requests[0].body_json().unwrap();
+    assert_eq!(request["messages"][1]["content"], "Find my invoice");
+    assert_eq!(request["messages"][2]["content"], "Invoice 2291.");
+    assert_eq!(request["messages"][3]["content"], "Make it shorter");
+    assert_eq!(request["messages"][5]["content"], "Which invoice?");
+}
+
+#[tokio::test]
+async fn moving_to_claude_code_passes_the_previous_conversation_once() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Invoice 2291.\"}}]}\n\ndata: [DONE]\n\n",
+        ))
+        .mount(&server)
+        .await;
+    let mut chat = crate::Conversation::new(
+        crate::ProviderConfig::OpenAiCompatible {
+            base_url: server.uri(),
+            api_key: None,
+            model: "local".into(),
+        },
+        "You sort mail.".into(),
+    );
+    let (events, _) = async_channel::unbounded();
+    chat.send(
+        "Find my invoice".into(),
+        Arc::new(crate::NoTools),
+        events.clone(),
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_script(dir.path());
+    for n in 0..2 {
+        std::fs::write(dir.path().join(format!("out-{n}")), lines(&[
+            json!({"type":"result","is_error":false,"session_id":"new-session","result":"Still 2291."}),
+        ])).unwrap();
+    }
+    chat.set_provider(crate::ProviderConfig::ClaudeCode {
+        command: script,
+        model: Some("haiku".into()),
+    });
+    if let crate::providers::State::ClaudeCode(state) = &mut chat.inner {
+        state.set_test_paths(dir.path().join("work"), dir.path().join("penguin-mail"));
+    }
+    chat.send(
+        "Which invoice?".into(),
+        Arc::new(crate::NoTools),
+        events.clone(),
+    )
+    .await
+    .unwrap();
+    let input = std::fs::read_to_string(dir.path().join("stdin-0")).unwrap();
+    assert!(input.contains("Find my invoice") && input.contains("Invoice 2291."));
+    assert!(input.ends_with("Current question:\nWhich invoice?"));
+    assert_eq!(flag(&argv(dir.path(), 0), "--resume"), None);
+    chat.send("Thank you".into(), Arc::new(crate::NoTools), events)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("stdin-1")).unwrap(),
+        "Thank you"
+    );
+    assert_eq!(flag(&argv(dir.path(), 1), "--resume"), Some("new-session"));
 }

@@ -494,3 +494,57 @@ async fn changing_the_system_prompt_keeps_the_conversation() {
     assert_eq!(second["messages"][2]["content"], "A summary.");
     assert_eq!(second["messages"][3]["content"], "Make it shorter");
 }
+
+#[tokio::test]
+async fn changing_models_after_a_quota_error_keeps_the_conversation() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(Sequence::new(vec![
+            stream(&[delta(json!({"content": "Your invoice is 2291."}))]),
+            ResponseTemplate::new(429)
+                .set_body_json(json!({"error":{"message":"Quota exhausted"}})),
+            stream(&[delta(json!({"content": "Invoice 2291."}))]),
+        ]))
+        .expect(3)
+        .mount(&server)
+        .await;
+    let config = |model: &str| ProviderConfig::OpenAiCompatible {
+        base_url: server.uri(),
+        api_key: None,
+        model: model.into(),
+    };
+    let mut chat = crate::Conversation::new(config("first"), "You sort mail.".into());
+    let (events, _) = async_channel::unbounded();
+    chat.send(
+        "Find my invoice".into(),
+        Arc::new(crate::NoTools),
+        events.clone(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        chat.send(
+            "Make it shorter".into(),
+            Arc::new(crate::NoTools),
+            events.clone()
+        )
+        .await
+        .is_err()
+    );
+    chat.set_provider(config("second"));
+    chat.send("Make it shorter".into(), Arc::new(crate::NoTools), events)
+        .await
+        .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    let last: Value = requests[2].body_json().unwrap();
+    assert_eq!(last["model"], "second");
+    assert_eq!(
+        last["messages"],
+        json!([
+            {"role":"system","content":"You sort mail."},
+            {"role":"user","content":"Find my invoice"},
+            {"role":"assistant","content":"Your invoice is 2291."},
+            {"role":"user","content":"Make it shorter"}
+        ])
+    );
+}

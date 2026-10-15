@@ -127,13 +127,31 @@ pub enum AiError {
 /// One chat with the assistant. Keeps whatever history its provider needs.
 pub struct Conversation {
     inner: providers::State,
+    thinking: bool,
+    format: Option<serde_json::Value>,
+    web: bool,
 }
 
 impl Conversation {
     pub fn new(config: ProviderConfig, system_prompt: String) -> Conversation {
         Conversation {
             inner: providers::State::new(config, system_prompt),
+            thinking: false,
+            format: None,
+            web: false,
         }
+    }
+
+    /// Changes the provider or model while retaining the conversation.
+    pub fn set_provider(&mut self, config: ProviderConfig) {
+        self.inner.set_provider(config);
+        if self.thinking {
+            self.inner.ask_for_thinking();
+        }
+        if let Some(schema) = &self.format {
+            self.inner.set_format(schema.clone());
+        }
+        self.inner.set_web(self.web);
     }
 
     /// Changes the instructions for the next turn without discarding chat history.
@@ -145,6 +163,7 @@ impl Conversation {
     /// a request ask. The assistant wants this; a translation does not,
     /// because thinking makes a short job slow and costs tokens.
     pub fn with_thinking(mut self) -> Conversation {
+        self.thinking = true;
         self.inner.ask_for_thinking();
         self
     }
@@ -153,6 +172,7 @@ impl Conversation {
     /// provider and model take one. The prompt must still describe the
     /// shape, since a provider that takes no schema answers from it.
     pub fn with_format(mut self, schema: serde_json::Value) -> Conversation {
+        self.format = Some(schema.clone());
         self.inner.set_format(schema);
         self
     }
@@ -161,6 +181,7 @@ impl Conversation {
     /// through the API or Claude Code, from the next message on. A local
     /// model ignores this: its web tools come from the tool host.
     pub fn set_web(&mut self, on: bool) {
+        self.web = on;
         self.inner.set_web(on);
     }
 

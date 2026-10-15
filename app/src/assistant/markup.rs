@@ -24,10 +24,10 @@ pub fn to_pango(markdown: &str) -> String {
             Event::Start(Tag::Strikethrough) => out.push_str("<s>"),
             Event::End(TagEnd::Strikethrough) => out.push_str("</s>"),
             Event::Start(Tag::Heading { level, .. }) => out.push_str(match level {
-                HeadingLevel::H1 | HeadingLevel::H2 => "<span weight=\"bold\" size=\"larger\">",
-                _ => "<span weight=\"bold\">",
+                HeadingLevel::H1 | HeadingLevel::H2 => "<span weight=\"semibold\" size=\"104%\">",
+                _ => "<span weight=\"semibold\">",
             }),
-            Event::End(TagEnd::Heading(_)) => out.push_str("</span>\n\n"),
+            Event::End(TagEnd::Heading(_)) => out.push_str("</span>\n"),
             Event::Start(Tag::Link { dest_url, .. }) => {
                 out.push_str(&format!("<a href=\"{}\">", escape(&dest_url)))
             }
@@ -81,6 +81,24 @@ pub fn to_pango(markdown: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reply_headings_keep_a_compact_reading_scale() {
+        for marker in ["#", "##", "###", "####", "#####", "######"] {
+            let markup = to_pango(&format!("{marker} Title\n\nBody"));
+            let (attrs, text, _) = gtk::pango::parse_markup(&markup, '\0').unwrap();
+            assert_eq!(text.as_str(), "Title\nBody");
+            for attr in attrs.iterator().attrs() {
+                if let Some(scale) = attr.downcast_ref::<gtk::pango::AttrFloat>() {
+                    assert!(
+                        scale.value() <= 1.08,
+                        "oversized reply heading: {}",
+                        scale.value()
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn markdown_becomes_escaped_pango() {

@@ -906,6 +906,7 @@ mod tests {
         a_picture_gdk_cannot_read_itself_waits_in_a_placeholder();
         super::super::editor::checks::run();
         super::super::spell::checks::run();
+        crate::ui::assistant::checks::run();
         crate::ui::calendar::pager::checks::run();
         crate::ui::calendar::popover::checks::run();
         crate::ui::calendar::attachments::checks::run();

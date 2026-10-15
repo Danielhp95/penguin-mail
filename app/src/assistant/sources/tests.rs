@@ -153,3 +153,146 @@ async fn a_tool_allowed_before_runs_without_asking() {
     );
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn turn_switches_remove_instructions_and_calls_without_replacing_sources() {
+    struct Configured(&'static str, &'static str);
+    impl Source for Configured {
+        fn id(&self) -> String {
+            self.0.into()
+        }
+        fn prompt(&self) -> Option<String> {
+            Some(format!("instructions for {}", self.0))
+        }
+        fn specs(&self) -> Vec<ToolSpec> {
+            vec![ToolSpec {
+                name: self.1.into(),
+                description: String::new(),
+                input_schema: json!({"type": "object"}),
+            }]
+        }
+        fn ask(&self, _: &str, _: &Value) -> Option<String> {
+            None
+        }
+        fn call(&self, _: String, _: Value) -> BoxFuture<ToolOutcome> {
+            Box::pin(async { ToolOutcome::Ok(json!("called")) })
+        }
+    }
+    let all: Vec<Arc<dyn Source>> = vec![
+        Arc::new(Configured("web", "web_search")),
+        Arc::new(Configured("mcp:notes", "notes__search")),
+        Arc::new(Configured("skills", "use_skill")),
+        Arc::new(Configured("shell", "run_command")),
+    ];
+    for (mcp, skills) in [
+        (true, true),
+        (false, true),
+        (true, false),
+        (false, false),
+        (true, true),
+    ] {
+        let (prompt, selected) = super::for_turn("base instructions", &all, mcp, skills);
+        for source in &selected {
+            assert!(
+                all.iter().any(|original| Arc::ptr_eq(source, original)),
+                "source state survives toggles"
+            );
+        }
+        let (requests, _) = async_channel::unbounded();
+        let (approvals, _) = async_channel::unbounded();
+        let toolbox = Toolbox::new(
+            Host::new(Vec::new(), requests),
+            selected,
+            approvals,
+            Vec::<String>::new(),
+        );
+        for (id, tool, enabled) in [
+            ("web", "web_search", true),
+            ("mcp:notes", "notes__search", mcp),
+            ("skills", "use_skill", skills),
+            ("shell", "run_command", skills),
+        ] {
+            assert_eq!(
+                prompt.contains(&format!("instructions for {id}")),
+                enabled,
+                "{id}: mcp={mcp}, skills={skills}"
+            );
+            assert_eq!(
+                toolbox.specs().iter().any(|spec| spec.name == tool),
+                enabled
+            );
+            assert_eq!(
+                matches!(
+                    toolbox.call(tool.into(), json!({})).await,
+                    ToolOutcome::Ok(_)
+                ),
+                enabled,
+                "disabled tools cannot run through old chat history"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn provider_changes_refresh_web_tools_without_replacing_chat_sources() {
+    use crate::settings::{AiProvider, Settings, WebSearch};
+    let mut settings = Settings::default();
+    settings.ai.provider = AiProvider::Anthropic;
+    settings.ai.web_search = WebSearch::Searxng;
+    settings.ai.searxng_url = "https://search.example.test".into();
+    let mcp: Arc<dyn Source> = Arc::new(Fake {
+        id: "mcp:notes",
+        tool: "notes__read",
+        asks: false,
+    });
+    let skills: Arc<dyn Source> = Arc::new(Fake {
+        id: "skills",
+        tool: "use_skill",
+        asks: false,
+    });
+    let shell: Arc<dyn Source> = Arc::new(Fake {
+        id: "shell",
+        tool: "run_command",
+        asks: false,
+    });
+    let mut sources: Vec<_> = super::web::for_settings(&settings)
+        .into_iter()
+        .chain([Arc::clone(&mcp), Arc::clone(&skills), Arc::clone(&shell)])
+        .collect();
+    for provider in [
+        AiProvider::Local,
+        AiProvider::Anthropic,
+        AiProvider::ClaudeCode,
+        AiProvider::Local,
+    ] {
+        settings.ai.provider = provider;
+        super::refresh_web(&settings, &mut sources);
+        let (prompt, selected) = super::for_turn("Mail instructions", &sources, true, true);
+        assert!(prompt.starts_with("Mail instructions"));
+        let (requests, _) = async_channel::unbounded();
+        let (approvals, _) = async_channel::unbounded();
+        let toolbox = Toolbox::new(
+            Host::new(Vec::new(), requests),
+            selected,
+            approvals,
+            Vec::<String>::new(),
+        );
+        let specs = toolbox.specs();
+        assert_eq!(
+            specs.iter().filter(|s| s.name == "web_search").count(),
+            usize::from(provider == AiProvider::Local),
+            "{provider:?}"
+        );
+        assert_eq!(specs.iter().filter(|s| s.name == "fetch_page").count(), 1);
+        for original in [&mcp, &skills, &shell] {
+            assert!(
+                sources.iter().any(|source| Arc::ptr_eq(source, original)),
+                "stateful sources survive a provider change"
+            );
+        }
+    }
+    settings.ai.web_search = WebSearch::Off;
+    super::refresh_web(&settings, &mut sources);
+    assert!(!sources.iter().any(|source| source.id() == "web"));
+    assert_eq!(sources.len(), 3);
+}

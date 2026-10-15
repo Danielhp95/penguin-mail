@@ -375,14 +375,14 @@ fn keys_and_settings_stay_on_this_computer() {
 fn a_path_is_checked_where_it_leads() {
     let (dir, path) = a_file();
     let home = Path::new("/home/nobody-here");
-    assert!(local_file(&path.display().to_string(), home, &[]).is_ok());
+    assert!(local_file(&path.display().to_string(), home, &[], &[]).is_ok());
     assert!(
-        local_file("plan.txt", home, &[]).is_err_and(|e| e.contains("whole path")),
+        local_file("plan.txt", home, &[], &[]).is_err_and(|e| e.contains("whole path")),
         "a relative path could mean anything"
     );
-    assert!(local_file("/tmp/no/such/file", home, &[]).is_err_and(|e| e.contains("no file")));
+    assert!(local_file("/tmp/no/such/file", home, &[], &[]).is_err_and(|e| e.contains("no file")));
     assert!(
-        local_file(&dir.path().display().to_string(), home, &[])
+        local_file(&dir.path().display().to_string(), home, &[], &[])
             .is_err_and(|e| e.contains("not a file"))
     );
     // A link in an open folder that leads somewhere closed is refused for
@@ -390,11 +390,86 @@ fn a_path_is_checked_where_it_leads() {
     let link = dir.path().join("hosts");
     std::os::unix::fs::symlink("/etc/hosts", &link).expect("a link");
     assert!(
-        local_file(&link.display().to_string(), home, &[])
+        local_file(&link.display().to_string(), home, &[], &[])
             .is_err_and(|e| e.contains("keys, passwords or settings"))
     );
     let private = [std::fs::canonicalize(dir.path()).unwrap()];
-    assert!(local_file(&path.display().to_string(), home, &private).is_err());
+    assert!(local_file(&path.display().to_string(), home, &private, &[]).is_err());
+}
+
+#[test]
+fn picked_files_allow_only_the_selected_path_and_still_check_size_and_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let hidden = dir.path().join(".picked");
+    std::fs::create_dir(&hidden).unwrap();
+    let path = hidden.join("lease.pdf");
+    let sibling = hidden.join("other.pdf");
+    std::fs::write(&path, b"lease").unwrap();
+    std::fs::write(&sibling, b"other").unwrap();
+    let home = Path::new("/home/nobody-here");
+    let picked = [std::fs::canonicalize(&path).unwrap()];
+    let check = |path: &Path| local_file(&path.to_string_lossy(), home, &[], &picked);
+    assert!(
+        check(&path).is_ok(),
+        "a picked file may be in a hidden or portal folder"
+    );
+    assert!(
+        check(&sibling).is_err(),
+        "selection grants no directory access"
+    );
+    assert!(local_file(&path.to_string_lossy(), home, &[], &[]).is_err());
+    let link = dir.path().join("picked-link");
+    std::os::unix::fs::symlink(&path, &link).unwrap();
+    assert_eq!(check(&link).unwrap().path, picked[0]);
+    assert!(
+        local_file(
+            &hidden.to_string_lossy(),
+            home,
+            &[],
+            std::slice::from_ref(&hidden)
+        )
+        .is_err()
+    );
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(25 * 1024 * 1024 + 1)
+        .unwrap();
+    assert!(check(&path).is_err_and(|e| e.contains("larger than 25 MB")));
+}
+
+#[tokio::test]
+async fn a_picked_hidden_file_still_asks_before_sending_and_does_not_grant_later_requests() {
+    let mut h = harness().await;
+    let dir = tempfile::tempdir().unwrap();
+    let hidden = dir.path().join(".picked");
+    std::fs::create_dir(&hidden).unwrap();
+    let path = hidden.join("lease.pdf");
+    std::fs::write(&path, b"the selected lease").unwrap();
+    let input = json!({"to": ["ann@example.com"], "subject": "Lease", "body": "Attached.", "attachments": [{"path": path}]});
+    h.tools = h
+        .tools
+        .with_picked_files(vec![std::fs::canonicalize(&path).unwrap()].into());
+    h.effects.asked.borrow_mut().approves = false;
+    assert_eq!(
+        h.run("send_email", input.clone()).await,
+        Err("The user declined.".into())
+    );
+    assert!(h.asked().sent.is_empty());
+    h.effects.asked.borrow_mut().approves = true;
+    h.ok("send_email", input.clone()).await;
+    assert_eq!(
+        &h.asked().sent[0].attachments[0].data[..],
+        b"the selected lease"
+    );
+    assert!(h.asked().questions[0].contains(&path.to_string_lossy().to_string()));
+    h.tools = h.tools.with_picked_files(std::sync::Arc::default());
+    assert!(
+        h.run("send_email", input)
+            .await
+            .is_err_and(|e| e.contains("keys, passwords or settings"))
+    );
 }
 
 // ---- Signing and encrypting ------------------------------------------------
