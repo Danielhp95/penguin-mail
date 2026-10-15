@@ -35,12 +35,16 @@ pub fn organizer_hears(provider: Option<Provider>, services: Option<&AccountServ
     }
 }
 
-/// Whether the account can propose another time for a meeting. A
-/// proposal goes to the organizer as mail, whatever the calendar's
-/// server does, and a calendar account has none to send. An account that
-/// is not running yet is not held back.
-pub fn can_propose(services: Option<&AccountServices>) -> bool {
-    services.is_none_or(AccountServices::serves_mail)
+/// Whether the account served by `provider` can propose another time for
+/// a meeting. A proposal goes to the organizer as mail, whatever the
+/// calendar's server does, and a calendar account has none to send,
+/// running or not. An account with mail that is not running yet is not
+/// held back, nor is one the window does not know.
+pub fn can_propose(provider: Option<Provider>, services: Option<&AccountServices>) -> bool {
+    match services {
+        Some(services) => services.serves_mail(),
+        None => provider.is_none_or(Provider::serves_mail),
+    }
 }
 
 /// Whether the window has accounts and none of them has mail. It then
@@ -1073,9 +1077,12 @@ mod tests {
 
         let with_mail = AccountServices::google(std::sync::Arc::new(FakeGmail::new()));
         let alone = AccountServices::calendar_only(std::sync::Arc::new(FakeDav::new()));
-        assert!(super::can_propose(Some(&with_mail)));
-        assert!(!super::can_propose(Some(&alone)), "a calendar account has no mail to send it");
-        assert!(super::can_propose(None), "an account that has not started is not held back");
+        let calendars = Some(Provider::CalDav);
+        assert!(super::can_propose(Some(Provider::Gmail), Some(&with_mail)));
+        assert!(!super::can_propose(calendars, Some(&alone)), "a calendar account has no mail to send it");
+        assert!(!super::can_propose(calendars, None), "nor one that has not started");
+        assert!(super::can_propose(Some(Provider::Imap), None), "an account with mail that has not started is not held back");
+        assert!(super::can_propose(None, None), "nor one the window does not know");
     }
 
     #[test]

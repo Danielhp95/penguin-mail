@@ -1976,7 +1976,7 @@ impl CalendarView {
         // with no mail to send it.
         let proposable = !o.event.all_day
             && (o.event.organizer.is_some() || o.event.guests.iter().any(|g| g.organizer && !g.me))
-            && crate::offered::can_propose(services);
+            && crate::offered::can_propose(self.provider_of(o.account_id), services);
         let propose_view = Rc::downgrade(self);
         let propose_o = o.clone();
         let on_propose = proposable.then(|| {
