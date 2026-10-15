@@ -221,7 +221,7 @@ msgstr "Tạo mật khẩu trong cài đặt của {provider}."
 msgid "App Password"
 msgstr "Mật khẩu ứng dụng"
 
-#: app/src/add_account.rs:520 app/src/add_account.rs:1605
+#: app/src/add_account.rs:520 app/src/add_account.rs:1608
 msgid "Password"
 msgstr "Mật khẩu"
 
@@ -317,9 +317,9 @@ msgid "{count} conversation"
 msgid_plural "{count} conversations"
 msgstr[0] "{count} cuộc hội thoại"
 
-#: app/src/add_account.rs:787 app/src/add_account.rs:1899
-#: app/src/add_account.rs:1924 app/src/add_account.rs:1948
-#: app/src/add_account.rs:2010
+#: app/src/add_account.rs:787 app/src/add_account.rs:1902
+#: app/src/add_account.rs:1927 app/src/add_account.rs:1951
+#: app/src/add_account.rs:2013
 msgid "Could not sign in"
 msgstr "Không thể đăng nhập"
 
@@ -435,7 +435,7 @@ msgstr ""
 msgid "Connect Your Keyring"
 msgstr "Kết nối kho khóa"
 
-#: app/src/add_account.rs:980 app/src/add_account.rs:1959
+#: app/src/add_account.rs:980 app/src/add_account.rs:1962
 msgid "{provider} refused the password"
 msgstr "{provider} từ chối mật khẩu"
 
@@ -451,7 +451,7 @@ msgstr ""
 "{provider} yêu cầu mật khẩu ứng dụng ở đây, không phải mật khẩu trang web. "
 "Tạo mật khẩu, dán vào bên trên, rồi chọn Đăng nhập."
 
-#: app/src/add_account.rs:995 app/src/add_account.rs:1960
+#: app/src/add_account.rs:995 app/src/add_account.rs:1963
 msgid "Check the password, then choose Sign In."
 msgstr "Kiểm tra mật khẩu, rồi chọn Đăng nhập."
 
@@ -483,15 +483,14 @@ msgstr "Nhập tên máy chủ gửi thư."
 msgid "Could not add the calendar: {reason}"
 msgstr "Không thể thêm lịch: {reason}"
 
-#: app/src/add_account.rs:1340
+#: app/src/add_account.rs:1341
 msgid ""
-"To see this server's calendars there, open Preferences, then Contacts & "
-"Calendar, and type its address for that account."
-msgstr ""
-"Để xem lịch của máy chủ này ở đó, hãy mở Tùy chọn, rồi Danh bạ và lịch, và "
-"nhập địa chỉ máy chủ cho tài khoản đó."
+"To see this server's calendars there, open Preferences, then Accounts, open "
+"that account, and type this server's address under Calendar, Contacts and "
+"Rules Servers."
+msgstr "Để xem lịch của máy chủ này ở đó, hãy mở Tùy chọn, rồi Tài khoản, mở tài khoản đó và nhập địa chỉ của máy chủ này trong Máy chủ lịch, danh bạ và quy tắc."
 
-#: app/src/add_account.rs:1350
+#: app/src/add_account.rs:1353
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
@@ -499,7 +498,7 @@ msgstr ""
 "Máy chủ không nhận tên người dùng và mật khẩu đó. Nếu máy chủ dùng đăng nhập "
 "hai bước, cần có mật khẩu ứng dụng."
 
-#: app/src/add_account.rs:1354
+#: app/src/add_account.rs:1357
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
@@ -508,19 +507,19 @@ msgstr ""
 
 #. A web page at the address, or no CalDAV there, is refused in
 #. the protocol's own words, which are not for the page.
-#: app/src/add_account.rs:1358
+#: app/src/add_account.rs:1361
 msgid "No calendar was found at that address."
 msgstr "Không tìm thấy lịch nào tại địa chỉ đó."
 
-#: app/src/add_account.rs:1378
+#: app/src/add_account.rs:1381
 msgid "Mail is downloading. You can close this window."
 msgstr "Đang tải thư. Bạn có thể đóng cửa sổ này."
 
-#: app/src/add_account.rs:1379 app/src/add_account.rs:1408
+#: app/src/add_account.rs:1382 app/src/add_account.rs:1411
 msgid "Your mail is here."
 msgstr "Thư của bạn đã sẵn sàng."
 
-#: app/src/add_account.rs:1393
+#: app/src/add_account.rs:1396
 msgid ""
 "Your organization did not allow one of the permissions Penguin Mail asked "
 "for, so this feature stays off:"
@@ -531,18 +530,18 @@ msgstr[0] ""
 "Tổ chức của bạn không cho phép {count} quyền mà Penguin Mail yêu cầu nên các "
 "tính năng này vẫn tắt:"
 
-#: app/src/add_account.rs:1400
+#: app/src/add_account.rs:1403
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural ""
 "You left {count} boxes unticked on Google's page, so these features stay off:"
 msgstr[0] ""
 "Bạn chưa chọn {count} ô trên trang của Google nên các tính năng này vẫn tắt:"
 
-#: app/src/add_account.rs:1407
+#: app/src/add_account.rs:1410
 msgid "Mail is downloading."
 msgstr "Đang tải thư."
 
-#: app/src/add_account.rs:1427
+#: app/src/add_account.rs:1430
 msgid ""
 "Newest mail comes first. Older mail keeps coming in the background, even "
 "with the window closed."
@@ -550,11 +549,11 @@ msgstr ""
 "Thư mới nhất được tải trước. Thư cũ tiếp tục được tải trong nền, kể cả khi "
 "đóng cửa sổ."
 
-#: app/src/add_account.rs:1429
+#: app/src/add_account.rs:1432
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr "Penguin Mail tiếp tục kiểm tra thư mới, kể cả khi đóng cửa sổ."
 
-#: app/src/add_account.rs:1439
+#: app/src/add_account.rs:1442
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. Mail stays on the server."
@@ -562,7 +561,7 @@ msgstr ""
 "Penguin Mail tải thư từ máy chủ vào Hộp thư đến và tiếp tục kiểm tra trong "
 "nền, kể cả khi đóng cửa sổ. Thư vẫn được giữ trên máy chủ."
 
-#: app/src/add_account.rs:1442
+#: app/src/add_account.rs:1445
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -571,7 +570,7 @@ msgstr ""
 "Penguin Mail tải thư từ máy chủ vào Hộp thư đến và tiếp tục kiểm tra trong "
 "nền, kể cả khi đóng cửa sổ. Mỗi thư được xóa khỏi máy chủ sau khi tải xuống."
 
-#: app/src/add_account.rs:1445
+#: app/src/add_account.rs:1448
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -585,27 +584,27 @@ msgstr[0] ""
 "nền, kể cả khi đóng cửa sổ. Mỗi thư được xóa khỏi máy chủ {days} ngày sau "
 "khi tải xuống."
 
-#: app/src/add_account.rs:1461
+#: app/src/add_account.rs:1464
 msgid "Penguin Mail needs the password for {address} again."
 msgstr "Penguin Mail cần bạn nhập lại mật khẩu cho {address}."
 
-#: app/src/add_account.rs:1470
+#: app/src/add_account.rs:1473
 msgid "Choose Sign In With Browser to sign in to {address} again."
 msgstr "Chọn Đăng nhập bằng trình duyệt để đăng nhập lại vào {address}."
 
-#: app/src/add_account.rs:1479
+#: app/src/add_account.rs:1482
 msgid "Sign in again through the browser to keep {account} syncing"
 msgstr "Đăng nhập lại qua trình duyệt để tiếp tục đồng bộ {account}"
 
-#: app/src/add_account.rs:1480
+#: app/src/add_account.rs:1483
 msgid "Sign in again to keep {account} syncing"
 msgstr "Đăng nhập lại để tiếp tục đồng bộ {account}"
 
-#: app/src/add_account.rs:1604
+#: app/src/add_account.rs:1607
 msgid "API Token"
 msgstr "Mã thông báo API"
 
-#: app/src/add_account.rs:1620
+#: app/src/add_account.rs:1623
 msgid ""
 "Make an API token in {provider}'s settings with this access: {access}. Paste "
 "it here."
@@ -613,43 +612,43 @@ msgstr ""
 "Tạo mã thông báo API trong cài đặt của {provider} với quyền: {access}. Dán "
 "vào đây."
 
-#: app/src/add_account.rs:1623
+#: app/src/add_account.rs:1626
 msgid "Make an API token in {provider}'s settings and paste it here."
 msgstr "Tạo mã thông báo API trong cài đặt của {provider} và dán vào đây."
 
-#: app/src/add_account.rs:1627
+#: app/src/add_account.rs:1630
 msgid "Tokens need a plan above {plan}."
 msgstr "Mã thông báo cần gói cao hơn {plan}."
 
-#: app/src/add_account.rs:1630 app/src/add_account/post.rs:447
+#: app/src/add_account.rs:1633 app/src/add_account/post.rs:447
 msgid "{provider} signs in with an API token"
 msgstr "{provider} đăng nhập bằng mã thông báo API"
 
-#: app/src/add_account.rs:1636 app/src/add_account/post.rs:455
+#: app/src/add_account.rs:1639 app/src/add_account/post.rs:455
 msgid "How to Make a Token"
 msgstr "Cách tạo mã thông báo"
 
-#: app/src/add_account.rs:1644
+#: app/src/add_account.rs:1647
 msgid "Sign in to {provider}"
 msgstr "Đăng nhập vào {provider}"
 
-#: app/src/add_account.rs:1647
+#: app/src/add_account.rs:1650
 msgid "Sign in to {domain}"
 msgstr "Đăng nhập vào {domain}"
 
-#: app/src/add_account.rs:1654
+#: app/src/add_account.rs:1657
 msgid "The JMAP server you gave."
 msgstr "Máy chủ JMAP bạn cung cấp."
 
-#: app/src/add_account.rs:1658
+#: app/src/add_account.rs:1661
 msgid "Penguin Mail found {provider}'s JMAP server."
 msgstr "Penguin Mail tìm thấy máy chủ JMAP của {provider}."
 
-#: app/src/add_account.rs:1662
+#: app/src/add_account.rs:1665
 msgid "Penguin Mail found a JMAP server for {domain}."
 msgstr "Penguin Mail tìm thấy máy chủ JMAP cho {domain}."
 
-#: app/src/add_account.rs:1680
+#: app/src/add_account.rs:1683
 msgid ""
 "{host} is outside {domain}. Your token goes there only after you check the "
 "box."
@@ -657,7 +656,7 @@ msgstr ""
 "{host} nằm ngoài {domain}. Mã thông báo chỉ được gửi tới đó sau khi bạn chọn "
 "ô xác nhận."
 
-#: app/src/add_account.rs:1681
+#: app/src/add_account.rs:1684
 msgid ""
 "{host} is outside {domain}. Your password goes there only after you check "
 "the box."
@@ -665,130 +664,130 @@ msgstr ""
 "{host} nằm ngoài {domain}. Mật khẩu chỉ được gửi tới đó sau khi bạn chọn ô "
 "xác nhận."
 
-#: app/src/add_account.rs:1683
+#: app/src/add_account.rs:1686
 msgid "Use {host}"
 msgstr "Dùng {host}"
 
-#: app/src/add_account.rs:1692
+#: app/src/add_account.rs:1695
 msgid "Sign in with an app password over IMAP and SMTP"
 msgstr "Đăng nhập bằng mật khẩu ứng dụng qua IMAP và SMTP"
 
-#: app/src/add_account.rs:1694
+#: app/src/add_account.rs:1697
 msgid "Sign in with your password over IMAP and SMTP"
 msgstr "Đăng nhập bằng mật khẩu của bạn qua IMAP và SMTP"
 
-#: app/src/add_account.rs:1717
+#: app/src/add_account.rs:1720
 msgid "Enter the server's address or its JMAP session URL."
 msgstr "Nhập địa chỉ máy chủ hoặc URL phiên JMAP."
 
-#: app/src/add_account.rs:1728
+#: app/src/add_account.rs:1731
 msgid "Penguin Mail reaches JMAP servers over HTTPS only."
 msgstr "Penguin Mail chỉ truy cập máy chủ JMAP qua HTTPS."
 
-#: app/src/add_account.rs:1863
+#: app/src/add_account.rs:1866
 msgid "Sign in on {provider}'s own page instead of making a token."
 msgstr "Đăng nhập trên trang của {provider} thay vì tạo mã thông báo."
 
-#: app/src/add_account.rs:1871
+#: app/src/add_account.rs:1874
 msgid "Masked Email needs an API token."
 msgstr "Email ẩn cần mã thông báo API."
 
-#: app/src/add_account.rs:1887
+#: app/src/add_account.rs:1890
 msgid "Sign in to {provider} if it asks."
 msgstr "Đăng nhập vào {provider} nếu được yêu cầu."
 
-#: app/src/add_account.rs:1888
+#: app/src/add_account.rs:1891
 msgid "Read what Penguin Mail asks for and allow it."
 msgstr "Đọc và cho phép các quyền Penguin Mail yêu cầu."
 
-#: app/src/add_account.rs:1906
+#: app/src/add_account.rs:1909
 msgid "{provider} refused the sign-in"
 msgstr "{provider} từ chối đăng nhập"
 
-#: app/src/add_account.rs:1907
+#: app/src/add_account.rs:1910
 msgid "Choose Sign In With Browser to try again."
 msgstr "Chọn Đăng nhập bằng trình duyệt để thử lại."
 
-#: app/src/add_account.rs:1910
+#: app/src/add_account.rs:1913
 msgid "The sign-in was declined"
 msgstr "Yêu cầu đăng nhập bị từ chối"
 
-#: app/src/add_account.rs:1911
+#: app/src/add_account.rs:1914
 msgid "Choose Sign In With Browser and allow access on {provider}'s page."
 msgstr ""
 "Chọn Đăng nhập bằng trình duyệt và cho phép truy cập trên trang của "
 "{provider}."
 
-#: app/src/add_account.rs:1914 app/src/add_account.rs:2000
+#: app/src/add_account.rs:1917 app/src/add_account.rs:2003
 msgid "{provider} does not answer"
 msgstr "{provider} không phản hồi"
 
-#: app/src/add_account.rs:1915
+#: app/src/add_account.rs:1918
 msgid "Check your connection, then choose Sign In With Browser."
 msgstr "Kiểm tra kết nối, rồi chọn Đăng nhập bằng trình duyệt."
 
-#: app/src/add_account.rs:1918 app/src/add_account.rs:2004
+#: app/src/add_account.rs:1921 app/src/add_account.rs:2007
 msgid "{provider} asked Penguin Mail to wait"
 msgstr "{provider} yêu cầu Penguin Mail chờ"
 
-#: app/src/add_account.rs:1919
+#: app/src/add_account.rs:1922
 msgid "Wait a minute, then choose Sign In With Browser."
 msgstr "Chờ một phút, rồi chọn Đăng nhập bằng trình duyệt."
 
-#: app/src/add_account.rs:1925 app/src/add_account.rs:2016
+#: app/src/add_account.rs:1928 app/src/add_account.rs:2019
 msgid "{provider} gave an answer Penguin Mail cannot use. Try again later."
 msgstr ""
 "{provider} đưa ra phản hồi Penguin Mail không thể sử dụng. Thử lại sau."
 
-#: app/src/add_account.rs:1955
+#: app/src/add_account.rs:1958
 msgid "{provider} refused the token"
 msgstr "{provider} từ chối mã thông báo"
 
-#: app/src/add_account.rs:1956
+#: app/src/add_account.rs:1959
 msgid "Check the token and the access it was made with, then choose Sign In."
 msgstr "Kiểm tra mã thông báo và các quyền của nó, rồi chọn Đăng nhập."
 
-#: app/src/add_account.rs:1965
+#: app/src/add_account.rs:1968
 msgid "The token holds a character that cannot be sent"
 msgstr "Mã thông báo chứa ký tự không thể gửi"
 
-#: app/src/add_account.rs:1966
+#: app/src/add_account.rs:1969
 msgid "The password holds a character that cannot be sent"
 msgstr "Mật khẩu chứa ký tự không thể gửi"
 
-#: app/src/add_account.rs:1968
+#: app/src/add_account.rs:1971
 msgid "Paste it again without the line break, then choose Sign In."
 msgstr "Dán lại và bỏ ký tự xuống dòng, rồi chọn Đăng nhập."
 
-#: app/src/add_account.rs:1971
+#: app/src/add_account.rs:1974
 msgid "No JMAP server at {host}"
 msgstr "Không có máy chủ JMAP tại {host}"
 
-#: app/src/add_account.rs:1973
+#: app/src/add_account.rs:1976
 msgid "Check the session URL in Server Settings, or use IMAP instead."
 msgstr "Kiểm tra URL phiên trong Cài đặt máy chủ, hoặc dùng IMAP."
 
-#: app/src/add_account.rs:1974
+#: app/src/add_account.rs:1977
 msgid "Check the session URL in Server Settings."
 msgstr "Kiểm tra URL phiên trong Cài đặt máy chủ."
 
-#: app/src/add_account.rs:1978
+#: app/src/add_account.rs:1981
 msgid "{provider} offers no mail over JMAP"
 msgstr "{provider} không cung cấp thư qua JMAP"
 
-#: app/src/add_account.rs:1980
+#: app/src/add_account.rs:1983
 msgid "Use IMAP for this account instead."
 msgstr "Dùng IMAP cho tài khoản này."
 
-#: app/src/add_account.rs:1981
+#: app/src/add_account.rs:1984
 msgid "Choose IMAP in Server Settings to add this account."
 msgstr "Chọn IMAP trong Cài đặt máy chủ để thêm tài khoản này."
 
-#: app/src/add_account.rs:1988
+#: app/src/add_account.rs:1991
 msgid "{host} sends the sign-in elsewhere"
 msgstr "{host} chuyển thông tin đăng nhập tới nơi khác"
 
-#: app/src/add_account.rs:1993
+#: app/src/add_account.rs:1996
 msgid ""
 "It tried to pass your sign-in on to {other}, and Penguin Mail refused. If "
 "you trust {other}, enter its session URL in Server Settings."
@@ -796,15 +795,15 @@ msgstr ""
 "Máy chủ đã cố chuyển thông tin đăng nhập tới {other} và Penguin Mail từ "
 "chối. Nếu tin tưởng {other}, hãy nhập URL phiên của nó trong Cài đặt máy chủ."
 
-#: app/src/add_account.rs:2001
+#: app/src/add_account.rs:2004
 msgid "Check your connection, then choose Sign In."
 msgstr "Kiểm tra kết nối, rồi chọn Đăng nhập."
 
-#: app/src/add_account.rs:2005
+#: app/src/add_account.rs:2008
 msgid "Wait a minute, then choose Sign In."
 msgstr "Chờ một phút, rồi chọn Đăng nhập."
 
-#: app/src/add_account.rs:2014
+#: app/src/add_account.rs:2017
 msgid ""
 "{provider} gave an answer Penguin Mail cannot use. Try again later, or use "
 "IMAP instead."
@@ -11644,7 +11643,9 @@ msgstr ""
 msgid ""
 "Sign In Again keeps {name} on the server at {address}. To use another server "
 "or user name, add it as a calendar account of its own."
-msgstr "Đăng nhập lại giữ {name} trên máy chủ tại {address}. Để dùng máy chủ hoặc tên người dùng khác, hãy thêm nó thành một tài khoản lịch riêng."
+msgstr ""
+"Đăng nhập lại giữ {name} trên máy chủ tại {address}. Để dùng máy chủ hoặc "
+"tên người dùng khác, hãy thêm nó thành một tài khoản lịch riêng."
 
 #. The JMAP server publishes no sign-in a browser can run.
 #: sync/src/sign_in/browser.rs:98

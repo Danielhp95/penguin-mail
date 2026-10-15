@@ -235,7 +235,7 @@ msgstr "Créez-en un dans les paramètres de {provider}."
 msgid "App Password"
 msgstr "Mot de passe d’application"
 
-#: app/src/add_account.rs:520 app/src/add_account.rs:1605
+#: app/src/add_account.rs:520 app/src/add_account.rs:1608
 msgid "Password"
 msgstr "Mot de passe"
 
@@ -332,9 +332,9 @@ msgid_plural "{count} conversations"
 msgstr[0] "{count} conversation"
 msgstr[1] "{count} conversations"
 
-#: app/src/add_account.rs:787 app/src/add_account.rs:1899
-#: app/src/add_account.rs:1924 app/src/add_account.rs:1948
-#: app/src/add_account.rs:2010
+#: app/src/add_account.rs:787 app/src/add_account.rs:1902
+#: app/src/add_account.rs:1927 app/src/add_account.rs:1951
+#: app/src/add_account.rs:2013
 msgid "Could not sign in"
 msgstr "Connexion impossible"
 
@@ -460,7 +460,7 @@ msgstr ""
 msgid "Connect Your Keyring"
 msgstr "Connecter votre trousseau"
 
-#: app/src/add_account.rs:980 app/src/add_account.rs:1959
+#: app/src/add_account.rs:980 app/src/add_account.rs:1962
 msgid "{provider} refused the password"
 msgstr "{provider} a refusé le mot de passe"
 
@@ -477,7 +477,7 @@ msgstr ""
 "votre compte en ligne. Créez-en un, collez-le ci-dessus, puis choisissez Se "
 "connecter."
 
-#: app/src/add_account.rs:995 app/src/add_account.rs:1960
+#: app/src/add_account.rs:995 app/src/add_account.rs:1963
 msgid "Check the password, then choose Sign In."
 msgstr "Vérifiez le mot de passe, puis choisissez Se connecter."
 
@@ -509,15 +509,14 @@ msgstr "Saisissez le nom du serveur sortant."
 msgid "Could not add the calendar: {reason}"
 msgstr "Impossible d’ajouter l’agenda : {reason}"
 
-#: app/src/add_account.rs:1340
+#: app/src/add_account.rs:1341
 msgid ""
-"To see this server's calendars there, open Preferences, then Contacts & "
-"Calendar, and type its address for that account."
-msgstr ""
-"Pour y voir les agendas de ce serveur, ouvrez les Préférences, puis Contacts "
-"et agenda, et saisissez son adresse pour ce compte."
+"To see this server's calendars there, open Preferences, then Accounts, open "
+"that account, and type this server's address under Calendar, Contacts and "
+"Rules Servers."
+msgstr "Pour y voir les agendas de ce serveur, ouvrez les Préférences, puis Comptes, ouvrez ce compte et saisissez l’adresse de ce serveur sous Serveurs d’agenda, de contacts et de règles."
 
-#: app/src/add_account.rs:1350
+#: app/src/add_account.rs:1353
 msgid ""
 "The server did not take that user name and password. Where it uses two-step "
 "sign-in, it needs an app password."
@@ -526,7 +525,7 @@ msgstr ""
 "utilise la validation en deux étapes, il demande un mot de passe "
 "d’application."
 
-#: app/src/add_account.rs:1354
+#: app/src/add_account.rs:1357
 msgid ""
 "Penguin Mail could not reach that server. Check the address and your "
 "connection."
@@ -536,20 +535,20 @@ msgstr ""
 
 #. A web page at the address, or no CalDAV there, is refused in
 #. the protocol's own words, which are not for the page.
-#: app/src/add_account.rs:1358
+#: app/src/add_account.rs:1361
 msgid "No calendar was found at that address."
 msgstr "Aucun agenda n’a été trouvé à cette adresse."
 
-#: app/src/add_account.rs:1378
+#: app/src/add_account.rs:1381
 msgid "Mail is downloading. You can close this window."
 msgstr ""
 "Le courrier est en cours de téléchargement. Vous pouvez fermer cette fenêtre."
 
-#: app/src/add_account.rs:1379 app/src/add_account.rs:1408
+#: app/src/add_account.rs:1382 app/src/add_account.rs:1411
 msgid "Your mail is here."
 msgstr "Votre courrier est arrivé."
 
-#: app/src/add_account.rs:1393
+#: app/src/add_account.rs:1396
 msgid ""
 "Your organization did not allow one of the permissions Penguin Mail asked "
 "for, so this feature stays off:"
@@ -563,7 +562,7 @@ msgstr[1] ""
 "Votre organisation n’a pas autorisé {count} des permissions demandées par "
 "Penguin Mail, ces fonctionnalités restent donc désactivées :"
 
-#: app/src/add_account.rs:1400
+#: app/src/add_account.rs:1403
 msgid "You left one box unticked on Google's page, so this feature stays off:"
 msgid_plural ""
 "You left {count} boxes unticked on Google's page, so these features stay off:"
@@ -574,11 +573,11 @@ msgstr[1] ""
 "Vous avez laissé {count} cases décochées sur la page de Google, ces "
 "fonctionnalités restent donc désactivées :"
 
-#: app/src/add_account.rs:1407
+#: app/src/add_account.rs:1410
 msgid "Mail is downloading."
 msgstr "Le courrier est en cours de téléchargement."
 
-#: app/src/add_account.rs:1427
+#: app/src/add_account.rs:1430
 msgid ""
 "Newest mail comes first. Older mail keeps coming in the background, even "
 "with the window closed."
@@ -586,12 +585,12 @@ msgstr ""
 "Le courrier le plus récent arrive en premier. Le courrier plus ancien "
 "continue d’arriver en arrière-plan, même fenêtre fermée."
 
-#: app/src/add_account.rs:1429
+#: app/src/add_account.rs:1432
 msgid "Penguin Mail keeps checking for new mail, even with the window closed."
 msgstr ""
 "Penguin Mail continue de vérifier le nouveau courrier, même fenêtre fermée."
 
-#: app/src/add_account.rs:1439
+#: app/src/add_account.rs:1442
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. Mail stays on the server."
@@ -600,7 +599,7 @@ msgstr ""
 "continue de vérifier en arrière-plan, même fenêtre fermée. Le courrier reste "
 "sur le serveur."
 
-#: app/src/add_account.rs:1442
+#: app/src/add_account.rs:1445
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -610,7 +609,7 @@ msgstr ""
 "continue de vérifier en arrière-plan, même fenêtre fermée. Il supprime "
 "chaque message du serveur après l’avoir téléchargé."
 
-#: app/src/add_account.rs:1445
+#: app/src/add_account.rs:1448
 msgid ""
 "Penguin Mail downloads the server's mail into Inbox and keeps checking in "
 "the background, even with the window closed. It removes each message from "
@@ -628,29 +627,29 @@ msgstr[1] ""
 "continue de vérifier en arrière-plan, même fenêtre fermée. Il supprime "
 "chaque message du serveur {days} jours après l’avoir téléchargé."
 
-#: app/src/add_account.rs:1461
+#: app/src/add_account.rs:1464
 msgid "Penguin Mail needs the password for {address} again."
 msgstr "Penguin Mail a de nouveau besoin du mot de passe de {address}."
 
-#: app/src/add_account.rs:1470
+#: app/src/add_account.rs:1473
 msgid "Choose Sign In With Browser to sign in to {address} again."
 msgstr "Choisissez Se connecter avec le navigateur pour reconnecter {address}."
 
-#: app/src/add_account.rs:1479
+#: app/src/add_account.rs:1482
 msgid "Sign in again through the browser to keep {account} syncing"
 msgstr ""
 "Reconnectez-vous avec le navigateur pour continuer la synchronisation de "
 "{account}"
 
-#: app/src/add_account.rs:1480
+#: app/src/add_account.rs:1483
 msgid "Sign in again to keep {account} syncing"
 msgstr "Reconnectez-vous pour continuer la synchronisation de {account}"
 
-#: app/src/add_account.rs:1604
+#: app/src/add_account.rs:1607
 msgid "API Token"
 msgstr "Jeton d’API"
 
-#: app/src/add_account.rs:1620
+#: app/src/add_account.rs:1623
 msgid ""
 "Make an API token in {provider}'s settings with this access: {access}. Paste "
 "it here."
@@ -658,44 +657,44 @@ msgstr ""
 "Créez un jeton d’API dans les paramètres de {provider} avec cet accès : "
 "{access}. Collez-le ici."
 
-#: app/src/add_account.rs:1623
+#: app/src/add_account.rs:1626
 msgid "Make an API token in {provider}'s settings and paste it here."
 msgstr ""
 "Créez un jeton d’API dans les paramètres de {provider} et collez-le ici."
 
-#: app/src/add_account.rs:1627
+#: app/src/add_account.rs:1630
 msgid "Tokens need a plan above {plan}."
 msgstr "Les jetons demandent une offre supérieure à {plan}."
 
-#: app/src/add_account.rs:1630 app/src/add_account/post.rs:447
+#: app/src/add_account.rs:1633 app/src/add_account/post.rs:447
 msgid "{provider} signs in with an API token"
 msgstr "{provider} se connecte avec un jeton d’API"
 
-#: app/src/add_account.rs:1636 app/src/add_account/post.rs:455
+#: app/src/add_account.rs:1639 app/src/add_account/post.rs:455
 msgid "How to Make a Token"
 msgstr "Comment créer un jeton"
 
-#: app/src/add_account.rs:1644
+#: app/src/add_account.rs:1647
 msgid "Sign in to {provider}"
 msgstr "Se connecter à {provider}"
 
-#: app/src/add_account.rs:1647
+#: app/src/add_account.rs:1650
 msgid "Sign in to {domain}"
 msgstr "Se connecter à {domain}"
 
-#: app/src/add_account.rs:1654
+#: app/src/add_account.rs:1657
 msgid "The JMAP server you gave."
 msgstr "Le serveur JMAP que vous avez indiqué."
 
-#: app/src/add_account.rs:1658
+#: app/src/add_account.rs:1661
 msgid "Penguin Mail found {provider}'s JMAP server."
 msgstr "Penguin Mail a trouvé le serveur JMAP de {provider}."
 
-#: app/src/add_account.rs:1662
+#: app/src/add_account.rs:1665
 msgid "Penguin Mail found a JMAP server for {domain}."
 msgstr "Penguin Mail a trouvé un serveur JMAP pour {domain}."
 
-#: app/src/add_account.rs:1680
+#: app/src/add_account.rs:1683
 msgid ""
 "{host} is outside {domain}. Your token goes there only after you check the "
 "box."
@@ -703,7 +702,7 @@ msgstr ""
 "{host} est en dehors de {domain}. Votre jeton n’y est envoyé qu’après avoir "
 "coché la case."
 
-#: app/src/add_account.rs:1681
+#: app/src/add_account.rs:1684
 msgid ""
 "{host} is outside {domain}. Your password goes there only after you check "
 "the box."
@@ -711,136 +710,136 @@ msgstr ""
 "{host} est en dehors de {domain}. Votre mot de passe n’y est envoyé qu’après "
 "avoir coché la case."
 
-#: app/src/add_account.rs:1683
+#: app/src/add_account.rs:1686
 msgid "Use {host}"
 msgstr "Utiliser {host}"
 
-#: app/src/add_account.rs:1692
+#: app/src/add_account.rs:1695
 msgid "Sign in with an app password over IMAP and SMTP"
 msgstr "Se connecter avec un mot de passe d’application par IMAP et SMTP"
 
-#: app/src/add_account.rs:1694
+#: app/src/add_account.rs:1697
 msgid "Sign in with your password over IMAP and SMTP"
 msgstr "Se connecter avec votre mot de passe par IMAP et SMTP"
 
-#: app/src/add_account.rs:1717
+#: app/src/add_account.rs:1720
 msgid "Enter the server's address or its JMAP session URL."
 msgstr "Saisissez l’adresse du serveur ou son URL de session JMAP."
 
-#: app/src/add_account.rs:1728
+#: app/src/add_account.rs:1731
 msgid "Penguin Mail reaches JMAP servers over HTTPS only."
 msgstr "Penguin Mail n’accède aux serveurs JMAP qu’en HTTPS."
 
-#: app/src/add_account.rs:1863
+#: app/src/add_account.rs:1866
 msgid "Sign in on {provider}'s own page instead of making a token."
 msgstr "Connectez-vous sur la page de {provider} au lieu de créer un jeton."
 
-#: app/src/add_account.rs:1871
+#: app/src/add_account.rs:1874
 msgid "Masked Email needs an API token."
 msgstr "Masked Email nécessite un jeton d’API."
 
-#: app/src/add_account.rs:1887
+#: app/src/add_account.rs:1890
 msgid "Sign in to {provider} if it asks."
 msgstr "Connectez-vous à {provider} s’il le demande."
 
-#: app/src/add_account.rs:1888
+#: app/src/add_account.rs:1891
 msgid "Read what Penguin Mail asks for and allow it."
 msgstr "Lisez ce que demande Penguin Mail et autorisez-le."
 
-#: app/src/add_account.rs:1906
+#: app/src/add_account.rs:1909
 msgid "{provider} refused the sign-in"
 msgstr "{provider} a refusé la connexion"
 
-#: app/src/add_account.rs:1907
+#: app/src/add_account.rs:1910
 msgid "Choose Sign In With Browser to try again."
 msgstr "Choisissez Se connecter avec le navigateur pour réessayer."
 
-#: app/src/add_account.rs:1910
+#: app/src/add_account.rs:1913
 msgid "The sign-in was declined"
 msgstr "La connexion a été refusée"
 
-#: app/src/add_account.rs:1911
+#: app/src/add_account.rs:1914
 msgid "Choose Sign In With Browser and allow access on {provider}'s page."
 msgstr ""
 "Choisissez Se connecter avec le navigateur et autorisez l’accès sur la page "
 "de {provider}."
 
-#: app/src/add_account.rs:1914 app/src/add_account.rs:2000
+#: app/src/add_account.rs:1917 app/src/add_account.rs:2003
 msgid "{provider} does not answer"
 msgstr "{provider} ne répond pas"
 
-#: app/src/add_account.rs:1915
+#: app/src/add_account.rs:1918
 msgid "Check your connection, then choose Sign In With Browser."
 msgstr ""
 "Vérifiez votre connexion, puis choisissez Se connecter avec le navigateur."
 
-#: app/src/add_account.rs:1918 app/src/add_account.rs:2004
+#: app/src/add_account.rs:1921 app/src/add_account.rs:2007
 msgid "{provider} asked Penguin Mail to wait"
 msgstr "{provider} a demandé à Penguin Mail de patienter"
 
-#: app/src/add_account.rs:1919
+#: app/src/add_account.rs:1922
 msgid "Wait a minute, then choose Sign In With Browser."
 msgstr "Patientez une minute, puis choisissez Se connecter avec le navigateur."
 
-#: app/src/add_account.rs:1925 app/src/add_account.rs:2016
+#: app/src/add_account.rs:1928 app/src/add_account.rs:2019
 msgid "{provider} gave an answer Penguin Mail cannot use. Try again later."
 msgstr ""
 "{provider} a donné une réponse que Penguin Mail ne peut pas utiliser. "
 "Réessayez plus tard."
 
-#: app/src/add_account.rs:1955
+#: app/src/add_account.rs:1958
 msgid "{provider} refused the token"
 msgstr "{provider} a refusé le jeton"
 
-#: app/src/add_account.rs:1956
+#: app/src/add_account.rs:1959
 msgid "Check the token and the access it was made with, then choose Sign In."
 msgstr ""
 "Vérifiez le jeton et l’accès avec lequel il a été créé, puis choisissez Se "
 "connecter."
 
-#: app/src/add_account.rs:1965
+#: app/src/add_account.rs:1968
 msgid "The token holds a character that cannot be sent"
 msgstr "Le jeton contient un caractère impossible à envoyer"
 
-#: app/src/add_account.rs:1966
+#: app/src/add_account.rs:1969
 msgid "The password holds a character that cannot be sent"
 msgstr "Le mot de passe contient un caractère impossible à envoyer"
 
-#: app/src/add_account.rs:1968
+#: app/src/add_account.rs:1971
 msgid "Paste it again without the line break, then choose Sign In."
 msgstr ""
 "Collez-le de nouveau sans le saut de ligne, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:1971
+#: app/src/add_account.rs:1974
 msgid "No JMAP server at {host}"
 msgstr "Aucun serveur JMAP à {host}"
 
-#: app/src/add_account.rs:1973
+#: app/src/add_account.rs:1976
 msgid "Check the session URL in Server Settings, or use IMAP instead."
 msgstr ""
 "Vérifiez l’URL de session dans Paramètres du serveur, ou utilisez IMAP."
 
-#: app/src/add_account.rs:1974
+#: app/src/add_account.rs:1977
 msgid "Check the session URL in Server Settings."
 msgstr "Vérifiez l’URL de session dans Paramètres du serveur."
 
-#: app/src/add_account.rs:1978
+#: app/src/add_account.rs:1981
 msgid "{provider} offers no mail over JMAP"
 msgstr "{provider} ne propose pas le courrier par JMAP"
 
-#: app/src/add_account.rs:1980
+#: app/src/add_account.rs:1983
 msgid "Use IMAP for this account instead."
 msgstr "Utilisez IMAP pour ce compte."
 
-#: app/src/add_account.rs:1981
+#: app/src/add_account.rs:1984
 msgid "Choose IMAP in Server Settings to add this account."
 msgstr "Choisissez IMAP dans Paramètres du serveur pour ajouter ce compte."
 
-#: app/src/add_account.rs:1988
+#: app/src/add_account.rs:1991
 msgid "{host} sends the sign-in elsewhere"
 msgstr "{host} renvoie la connexion ailleurs"
 
-#: app/src/add_account.rs:1993
+#: app/src/add_account.rs:1996
 msgid ""
 "It tried to pass your sign-in on to {other}, and Penguin Mail refused. If "
 "you trust {other}, enter its session URL in Server Settings."
@@ -849,15 +848,15 @@ msgstr ""
 "refusé. Si vous faites confiance à {other}, saisissez son URL de session "
 "dans Paramètres du serveur."
 
-#: app/src/add_account.rs:2001
+#: app/src/add_account.rs:2004
 msgid "Check your connection, then choose Sign In."
 msgstr "Vérifiez votre connexion, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:2005
+#: app/src/add_account.rs:2008
 msgid "Wait a minute, then choose Sign In."
 msgstr "Patientez une minute, puis choisissez Se connecter."
 
-#: app/src/add_account.rs:2014
+#: app/src/add_account.rs:2017
 msgid ""
 "{provider} gave an answer Penguin Mail cannot use. Try again later, or use "
 "IMAP instead."
@@ -12083,7 +12082,10 @@ msgstr ""
 msgid ""
 "Sign In Again keeps {name} on the server at {address}. To use another server "
 "or user name, add it as a calendar account of its own."
-msgstr "Se reconnecter garde {name} sur le serveur à l’adresse {address}. Pour utiliser un autre serveur ou un autre nom d’utilisateur, ajoutez-le comme un compte d’agenda à part entière."
+msgstr ""
+"Se reconnecter garde {name} sur le serveur à l’adresse {address}. Pour "
+"utiliser un autre serveur ou un autre nom d’utilisateur, ajoutez-le comme un "
+"compte d’agenda à part entière."
 
 #. The JMAP server publishes no sign-in a browser can run.
 #: sync/src/sign_in/browser.rs:98

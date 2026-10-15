@@ -1337,7 +1337,10 @@ pub fn calendar_problem(err: &anyhow::Error) -> String {
         // server's calendars itself, which is the way on from here.
         Some(taken @ CalDavSignInError::Taken { holder: Provider::Imap | Provider::Pop3, .. }) => format!(
             "{taken} {}",
-            gettext("To see this server's calendars there, open Preferences, then Contacts & Calendar, and type its address for that account.")
+            gettext(
+                "To see this server's calendars there, open Preferences, then Accounts, open that account, \
+                 and type this server's address under Calendar, Contacts and Rules Servers."
+            )
         ),
         Some(
             said @ (CalDavSignInError::Taken { .. }
@@ -2147,6 +2150,9 @@ mod tests {
         let by_mail = calendar_problem(&taken(Provider::Imap));
         assert!(by_mail.contains("robin@example.org") && by_mail.contains("Fastmail"), "{by_mail}");
         assert!(by_mail.contains("Preferences"), "an IMAP account can take the server itself: {by_mail}");
+        // The group the account's servers sit in on the Accounts page,
+        // in contacts_prefs.rs, word for word.
+        assert!(by_mail.contains("under Calendar, Contacts and Rules Servers"), "{by_mail}");
         assert!(calendar_problem(&taken(Provider::Pop3)).contains("Preferences"));
         let by_google = calendar_problem(&taken(Provider::Gmail));
         assert!(by_google.contains("robin@example.org") && !by_google.contains("Preferences"), "{by_google}");
