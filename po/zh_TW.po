@@ -2049,8 +2049,8 @@ msgstr ""
 msgid "Penguin Mail could not update its mail store, and kept the old one."
 msgstr "Penguin Mail 無法更新郵件資料庫，已保留舊資料庫。"
 
-#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:910
-#: app/src/core.rs:922 app/src/core.rs:987 app/src/core.rs:1081
+#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:915
+#: app/src/core.rs:927 app/src/core.rs:992 app/src/core.rs:1086
 msgid "Demo mode cannot add real accounts."
 msgstr "示範模式無法新增真實帳號。"
 
@@ -2062,11 +2062,11 @@ msgstr "已取消。"
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "已等候瀏覽器五分鐘，停止等候。"
 
-#: app/src/core.rs:1231 app/src/core.rs:1254
+#: app/src/core.rs:1236 app/src/core.rs:1259
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr "此帳號沒有保存行事曆或聯絡人伺服器接受的密碼。"
 
-#: app/src/core.rs:1406 app/src/core.rs:1445
+#: app/src/core.rs:1412 app/src/core.rs:1451
 msgid "The demo cannot switch accounts."
 msgstr "示範模式無法切換帳號。"
 
@@ -10886,24 +10886,24 @@ msgid "{accounts} will get a new label."
 msgid_plural "{accounts} will get new labels."
 msgstr[0] "將為 {accounts} 新增標籤。"
 
-#: sync/src/calendar_copy.rs:888
+#: sync/src/calendar_copy.rs:899
 msgid ""
 "this account's calendars moved to another server, which does not have this "
 "event"
 msgstr "此帳號的行事曆已移到另一台伺服器，那裡沒有這個活動"
 
-#: sync/src/calendar_copy.rs:1034 sync/src/calendar_copy.rs:1136
-#: sync/src/calendar_copy.rs:1181
+#: sync/src/calendar_copy.rs:1045 sync/src/calendar_copy.rs:1147
+#: sync/src/calendar_copy.rs:1192
 msgid "deleted elsewhere"
 msgstr "已在其他地方刪除"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:1039
+#: sync/src/calendar_copy.rs:1050
 msgid "the calendar is gone"
 msgstr "行事曆已不存在"
 
-#: sync/src/calendar_copy.rs:1855
+#: sync/src/calendar_copy.rs:1866
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"

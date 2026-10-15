@@ -870,13 +870,16 @@ impl Core {
     /// kept when the login fails.
     pub async fn sign_in_calendar(&self, url: String, user_name: String, password: String) -> Result<Account> {
         let engine = self.calendar_engine()?;
-        let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
+        let (db, passwords, calendar_copy) = (self.db.clone(), Arc::clone(&self.secrets.passwords), self.calendar_copy());
         self.call(async move {
             let new = NewCalDav { url, user_name, password };
             // A failure is a `CalDavSignInError`, which the dialog reads
             // back out of the `anyhow::Error` to word what went wrong.
             let account = caldav_signed_in(&finding::RealProbe, &db, Arc::clone(&passwords), new, now_millis()).await?;
             engine.start_account(account.id, connect_caldav(&db, passwords, &account).await?);
+            // The same login added again signs its account in again, which
+            // the copy reads at once rather than when it is next due.
+            calendar_copy.permission_changed(account.id);
             Ok::<_, anyhow::Error>(account)
         })
         .await
@@ -893,11 +896,13 @@ impl Core {
         password: String,
     ) -> Result<Account> {
         let engine = self.calendar_engine()?;
-        let (db, passwords) = (self.db.clone(), Arc::clone(&self.secrets.passwords));
+        let (db, passwords, calendar_copy) = (self.db.clone(), Arc::clone(&self.secrets.passwords), self.calendar_copy());
         self.call(async move {
             let new = NewCalDav { url, user_name, password };
             let account = caldav_signed_in_again(&finding::RealProbe, &db, Arc::clone(&passwords), account_id, new).await?;
             engine.start_account(account.id, connect_caldav(&db, passwords, &account).await?);
+            // The copy stops waiting out the read the old password failed.
+            calendar_copy.permission_changed(account.id);
             Ok::<_, anyhow::Error>(account)
         })
         .await
@@ -1283,6 +1288,7 @@ impl Core {
         // Nothing is left to reverse the account's actions through, and
         // its mail goes with it.
         self.actions.forget_account(account.id);
+        self.calendar_copy.forget(account.id);
         let (db, secrets, demo) = (self.db.clone(), self.secrets.clone(), self.demo);
         self.call(async move {
             let id = account.id;

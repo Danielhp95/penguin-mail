@@ -2207,8 +2207,8 @@ msgstr ""
 "Penguin Mail n’a pas pu mettre à jour son stockage de courrier et a conservé "
 "l’ancien."
 
-#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:910
-#: app/src/core.rs:922 app/src/core.rs:987 app/src/core.rs:1081
+#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:915
+#: app/src/core.rs:927 app/src/core.rs:992 app/src/core.rs:1086
 msgid "Demo mode cannot add real accounts."
 msgstr "Le mode démo ne peut pas ajouter de vrais comptes."
 
@@ -2220,13 +2220,13 @@ msgstr "Annulé."
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Abandon après cinq minutes d’attente du navigateur."
 
-#: app/src/core.rs:1231 app/src/core.rs:1254
+#: app/src/core.rs:1236 app/src/core.rs:1259
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Ce compte ne conserve aucun mot de passe qu’un serveur de calendrier ou de "
 "contacts accepte."
 
-#: app/src/core.rs:1406 app/src/core.rs:1445
+#: app/src/core.rs:1412 app/src/core.rs:1451
 msgid "The demo cannot switch accounts."
 msgstr "Le mode démo ne peut pas faire basculer de comptes."
 
@@ -11478,7 +11478,7 @@ msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} recevra une nouvelle étiquette."
 msgstr[1] "{accounts} recevront de nouvelles étiquettes."
 
-#: sync/src/calendar_copy.rs:888
+#: sync/src/calendar_copy.rs:899
 msgid ""
 "this account's calendars moved to another server, which does not have this "
 "event"
@@ -11486,18 +11486,18 @@ msgstr ""
 "les agendas de ce compte sont passés sur un autre serveur, qui n’a pas cet "
 "événement"
 
-#: sync/src/calendar_copy.rs:1034 sync/src/calendar_copy.rs:1136
-#: sync/src/calendar_copy.rs:1181
+#: sync/src/calendar_copy.rs:1045 sync/src/calendar_copy.rs:1147
+#: sync/src/calendar_copy.rs:1192
 msgid "deleted elsewhere"
 msgstr "supprimé ailleurs"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:1039
+#: sync/src/calendar_copy.rs:1050
 msgid "the calendar is gone"
 msgstr "l’agenda n’existe plus"
 
-#: sync/src/calendar_copy.rs:1855
+#: sync/src/calendar_copy.rs:1866
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"

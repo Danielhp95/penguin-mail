@@ -2094,8 +2094,8 @@ msgstr ""
 msgid "Penguin Mail could not update its mail store, and kept the old one."
 msgstr "Penguin Mail không thể cập nhật kho thư và đã giữ lại kho cũ."
 
-#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:910
-#: app/src/core.rs:922 app/src/core.rs:987 app/src/core.rs:1081
+#: app/src/core.rs:746 app/src/core.rs:821 app/src/core.rs:915
+#: app/src/core.rs:927 app/src/core.rs:992 app/src/core.rs:1086
 msgid "Demo mode cannot add real accounts."
 msgstr "Chế độ minh họa không thể thêm tài khoản thật."
 
@@ -2107,12 +2107,12 @@ msgstr "Đã hủy."
 msgid "Gave up waiting for the browser after five minutes."
 msgstr "Đã ngừng chờ trình duyệt sau năm phút."
 
-#: app/src/core.rs:1231 app/src/core.rs:1254
+#: app/src/core.rs:1236 app/src/core.rs:1259
 msgid "This account keeps no password a calendar or contacts server takes."
 msgstr ""
 "Tài khoản này không lưu mật khẩu dùng được cho máy chủ lịch hoặc danh bạ."
 
-#: app/src/core.rs:1406 app/src/core.rs:1445
+#: app/src/core.rs:1412 app/src/core.rs:1451
 msgid "The demo cannot switch accounts."
 msgstr "Chế độ minh họa không thể chuyển tài khoản."
 
@@ -11067,25 +11067,25 @@ msgid "{accounts} will get a new label."
 msgid_plural "{accounts} will get new labels."
 msgstr[0] "{accounts} sẽ nhận các nhãn mới."
 
-#: sync/src/calendar_copy.rs:888
+#: sync/src/calendar_copy.rs:899
 msgid ""
 "this account's calendars moved to another server, which does not have this "
 "event"
 msgstr ""
 "lịch của tài khoản này đã chuyển sang máy chủ khác không có sự kiện này"
 
-#: sync/src/calendar_copy.rs:1034 sync/src/calendar_copy.rs:1136
-#: sync/src/calendar_copy.rs:1181
+#: sync/src/calendar_copy.rs:1045 sync/src/calendar_copy.rs:1147
+#: sync/src/calendar_copy.rs:1192
 msgid "deleted elsewhere"
 msgstr "đã xóa ở nơi khác"
 
 #. A new event's id cannot be missing, so it is the
 #. calendar that went: its rows in the queue outlive it.
-#: sync/src/calendar_copy.rs:1039
+#: sync/src/calendar_copy.rs:1050
 msgid "the calendar is gone"
 msgstr "lịch không còn tồn tại"
 
-#: sync/src/calendar_copy.rs:1855
+#: sync/src/calendar_copy.rs:1866
 msgid ""
 "Google Calendar offers out of office and focus time only on some work and "
 "school accounts ({reason})"

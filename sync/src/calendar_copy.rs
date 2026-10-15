@@ -281,6 +281,17 @@ impl<A: Accounts> CalendarCopy<A> {
         self.last_read.lock().expect("copy poisoned").remove(&account_id);
     }
 
+    /// Forgets all this run kept about a removed account: when it was
+    /// listed and read, from which kind of server, and what it was
+    /// refused. SQLite gives a removed account's id to the next account
+    /// added, which would otherwise wait out the old one's times with no
+    /// calendars to show.
+    pub fn forget(&self, account_id: AccountId) {
+        self.permission_changed(account_id);
+        self.listed_from.lock().expect("copy poisoned").remove(&account_id);
+        self.tried.lock().expect("copy poisoned").remove(&account_id);
+    }
+
     /// Whether the account turned out to lack the calendar permission less
     /// than [`LIST_EVERY`] ago, so asking again would only spend a call on
     /// a refusal.

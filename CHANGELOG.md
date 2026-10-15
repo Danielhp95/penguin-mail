@@ -19,6 +19,7 @@ the [releases page](https://github.com/c9dev/penguin-mail/releases).
 
 ### Fixed
 
+- An account removed and added again shows its calendars at once, rather than half an hour later.
 - Server-space reports update as each account answers, keep newer results when reads overlap, and refresh while the mail window is closed.
 - Switching AI providers keeps web search matched to the selected provider.
 - Files picked with the assistant's Attach button work through Flatpak and in hidden folders. Tool and model switches keep the conversation, model menus reuse recent lists without search-data tooltips, and screen readers hear turn status.
