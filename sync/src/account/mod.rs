@@ -247,6 +247,19 @@ impl AccountSync {
         Ok(())
     }
 
+    /// Says the account's state as the store keeps it, and changes
+    /// nothing. An account with no mail runs no loop to say how it is
+    /// doing, and the window reads what a started account offers when it
+    /// hears of it.
+    pub(crate) async fn restate(&self) -> Result<(), SyncError> {
+        let account_id = self.account_id;
+        let kept = self.db.read(move |c| accounts::account(c, account_id)).await?;
+        if let Some(account) = kept {
+            self.emit(ChangeEvent::AccountStateChanged { account_id, state: account.state });
+        }
+        Ok(())
+    }
+
     /// When the engine last pruned this account and checked its inbox.
     pub async fn checked_at(&self) -> Option<EpochMillis> {
         let account_id = self.account_id;

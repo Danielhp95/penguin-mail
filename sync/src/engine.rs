@@ -260,8 +260,11 @@ async fn supervise(
     // An account with no mail has no change feed to follow and nothing to
     // backfill. Its calendar is read on the app's own timer, and the
     // calendar copy, which alone talks to its server, says how it is
-    // doing. Here it waits to be stopped.
+    // doing. Here it says once that it started, then waits to be stopped.
     if !sync.services().serves_mail() {
+        if let Err(err) = sync.restate().await {
+            tracing::warn!(account = sync.account_id(), error = %err, "could not read the account state");
+        }
         return std::future::pending().await;
     }
     let mut crashed = false;

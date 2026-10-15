@@ -239,6 +239,18 @@ async fn an_account_with_no_mail_is_kept_and_the_copy_reads_its_calendar() {
     assert!(!s.engine.is_running(1));
 }
 
+/// The window reads what a started account offers when it hears of it.
+/// An account with no mail runs no loop to say how it is doing, and one
+/// that worked last time has no new state for the copy to report, so it
+/// says once, as it starts, the state it has.
+#[tokio::test]
+async fn a_calendar_account_says_its_state_once_it_starts() {
+    let s = setup().await;
+    s.db.write(|c| accounts::set_state(c, 1, AccountState::Ok)).await.unwrap();
+    s.engine.start_account(1, calendar_only().1);
+    wait_for(&s.events, reached(AccountState::Ok)).await;
+}
+
 #[tokio::test]
 async fn a_calendar_account_whose_login_is_refused_waits_for_the_person_to_sign_in_again() {
     let (s, dav, copy) = calendar_account().await;
