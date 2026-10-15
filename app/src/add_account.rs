@@ -1322,15 +1322,20 @@ pub fn signed_in_again(asked: Option<&Account>, now: &Account) -> bool {
     asked.is_some_and(|asked| asked.id == now.id)
 }
 
-/// What the calendar page says when its sign-in fails. What the sign-in
-/// already put in words, an address that is not HTTPS or a name another
-/// account holds, stands as it is.
-pub fn calendar_problem(err: &anyhow::Error) -> String {
+/// What the calendar page says when its sign-in fails, signing `again`
+/// in again or adding an account. What the sign-in already put in words,
+/// an address that is not HTTPS or a name another account holds, stands
+/// as it is.
+pub fn calendar_problem(err: &anyhow::Error, again: Option<&Account>) -> String {
     use mailrs_sync::sign_in::CalDavSignInError;
     use mailrs_sync::{BackendError, SyncError};
 
     let unknown = |reason: &dyn std::fmt::Display| {
-        mailrs_domain::translate::with_reason(&gettext("Could not add the calendar: {reason}"), &reason, &[])
+        let said = match again {
+            Some(_) => gettext("Could not sign in: {reason}"),
+            None => gettext("Could not add the calendar: {reason}"),
+        };
+        mailrs_domain::translate::with_reason(&said, &reason, &[])
     };
     match err.downcast_ref::<CalDavSignInError>() {
         // An IMAP or POP3 account that holds the name can take the
@@ -2136,13 +2141,13 @@ mod tests {
             (BackendError::Refused("the server named no principal".into()), no_calendar),
         ];
         for (failure, words) in failures {
-            let shown = calendar_problem(&CalDavSignInError::Server(SyncError::Backend(failure)).into());
+            let shown = calendar_problem(&CalDavSignInError::Server(SyncError::Backend(failure)).into(), None);
             assert!(shown.contains(words) && !shown.contains("HTTP "), "{shown}");
         }
-        let not_https = calendar_problem(&CalDavSignInError::NotHttps.into());
+        let not_https = calendar_problem(&CalDavSignInError::NotHttps.into(), None);
         assert!(not_https.contains("HTTPS only"), "words the sign-in chose stand: {not_https}");
         let other_user = CalDavSignInError::OtherUser { name: "robin@cloud.example.org".into(), user: "Robin".into() };
-        let shown = calendar_problem(&other_user.into());
+        let shown = calendar_problem(&other_user.into(), None);
         assert!(shown.contains("signed in to this server as Robin. Type Robin"), "{shown}");
     }
 
@@ -2151,20 +2156,23 @@ mod tests {
         let taken = |holder| -> anyhow::Error {
             CalDavSignInError::Taken { name: "robin@example.org".into(), provider: "Fastmail".into(), holder }.into()
         };
-        let by_mail = calendar_problem(&taken(Provider::Imap));
+        let by_mail = calendar_problem(&taken(Provider::Imap), None);
         assert!(by_mail.contains("robin@example.org") && by_mail.contains("Fastmail"), "{by_mail}");
         assert!(by_mail.contains("Preferences"), "an IMAP account can take the server itself: {by_mail}");
         // The group the account's servers sit in on the Accounts page,
         // in contacts_prefs.rs, word for word.
         assert!(by_mail.contains("under Calendar, Contacts and Rules Servers"), "{by_mail}");
-        assert!(calendar_problem(&taken(Provider::Pop3)).contains("Preferences"));
-        let by_google = calendar_problem(&taken(Provider::Gmail));
+        assert!(calendar_problem(&taken(Provider::Pop3), None).contains("Preferences"));
+        let by_google = calendar_problem(&taken(Provider::Gmail), None);
         assert!(by_google.contains("robin@example.org") && !by_google.contains("Preferences"), "{by_google}");
     }
 
     #[test]
     fn anything_else_keeps_its_reason() {
-        assert!(calendar_problem(&anyhow::anyhow!("the disk is full")).contains("the disk is full"));
+        let full = || anyhow::anyhow!("the disk is full");
+        assert_eq!(calendar_problem(&full(), None), "Could not add the calendar: the disk is full");
+        let again = icloud_account();
+        assert_eq!(calendar_problem(&full(), Some(&again)), "Could not sign in: the disk is full", "Sign In Again adds nothing");
     }
 
     /// Sign In Again opens the calendar page for one account. A sign-in

@@ -2789,6 +2789,13 @@ impl Dialog {
         page.agree.set_visible(proposal.confirm);
     }
 
+    /// One sign-in runs at a time, whichever page started it, and it
+    /// holds Sign In and Add Calendar both, so its end gives both back.
+    fn update_buttons(self: &Rc<Self>) {
+        self.update_sign_in();
+        self.update_add_calendar();
+    }
+
     fn update_sign_in(self: &Rc<Self>) {
         let secret = self.password.password.text();
         let confirmed = self.password.confirmed.is_active();
@@ -2844,7 +2851,7 @@ impl Dialog {
             // whether the run signed in, failed or lost its dialog.
             this.running.end();
             this.password.sign_in.set_label(&gettext("Sign In"));
-            this.update_sign_in();
+            this.update_buttons();
         });
     }
 
@@ -2934,7 +2941,7 @@ impl Dialog {
             this.try_jmap(address, jmap, secret, name, ticket).await;
             this.running.end();
             this.password.sign_in.set_label(&gettext("Sign In"));
-            this.update_sign_in();
+            this.update_buttons();
         });
     }
 
@@ -3431,21 +3438,25 @@ impl Dialog {
             };
             this.running.end();
             this.calendar.add.set_label(&label);
-            this.update_add_calendar();
-            // The dialog closed while the server was asked: the account
-            // is kept, and the window finds it at its next read.
-            if !this.asking.wants(ticket) {
-                return;
-            }
-            match signed_in {
-                Ok(account) if add_account::signed_in_again(this.again.as_ref(), &account) => {
-                    this.finish(Done::SignedInAgain(account))
-                }
-                Ok(_) => this.finish(Done::CalendarAdded),
+            this.update_buttons();
+            let done = match signed_in {
+                Ok(account) if add_account::signed_in_again(this.again.as_ref(), &account) => Done::SignedInAgain(account),
+                Ok(_) => Done::CalendarAdded,
                 Err(err) => {
-                    this.calendar.problem.set_text(&add_account::calendar_problem(&err));
-                    this.calendar.problem.set_visible(true);
+                    if this.asking.wants(ticket) {
+                        this.calendar.problem.set_text(&add_account::calendar_problem(&err, this.again.as_ref()));
+                        this.calendar.problem.set_visible(true);
+                    }
+                    return;
                 }
+            };
+            // The account is kept whether or not the dialog is still open
+            // on this page, so the window hears about it either way: no
+            // other read would bring it, since an account with no mail
+            // sends no word as it starts.
+            match this.asking.wants(ticket) {
+                true => this.finish(done),
+                false => (this.done)(done),
             }
         });
     }
@@ -3772,7 +3783,7 @@ impl Dialog {
                     tracing::info!(kind, "a JMAP browser sign-in ended after its dialog moved on");
                 }
             }
-            this.update_sign_in();
+            this.update_buttons();
         });
     }
 
