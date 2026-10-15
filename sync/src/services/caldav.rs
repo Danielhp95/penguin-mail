@@ -340,10 +340,14 @@ impl<D: DavApi> CalDav<D> {
         let mut who = vec![me.to_string()];
         who.extend(self.me().await?.iter().cloned());
         let schedules = self.server_schedules(calendar).await?;
+        // Without mail the answer is never the client's to send, so the
+        // server is not told to leave it: one that schedules though it
+        // did not say so still carries it.
+        let by_server = schedules || !self.mail.serves_mail();
         let now = crate::now_millis();
         let written = match occurrence {
-            Some(original) => ical::answer_occurrence(&found.body, &who, answer, original, now, schedules),
-            None => ical::answer_scheduled(&found.body, &who, answer, now, schedules),
+            Some(original) => ical::answer_occurrence(&found.body, &who, answer, original, now, by_server),
+            None => ical::answer_scheduled(&found.body, &who, answer, now, by_server),
         };
         let Some(text) = written.map_err(refused)? else {
             return Ok(None);

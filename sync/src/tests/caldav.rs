@@ -458,7 +458,11 @@ async fn an_answer_with_no_mail_reaches_the_organizer_only_through_a_server_that
         assert!(!caldav.tells_organizer(), "not until the server has said that it schedules");
         let event = caldav.answer_event(WORK, "standup", ME, Answer::Yes, None).await.unwrap();
         assert_eq!(event.my_answer, Some(Answer::Yes));
-        assert!(dav.body(&format!("{WORK}standup.ics")).unwrap().contains("PARTSTAT=ACCEPTED"));
+        let body = dav.body(&format!("{WORK}standup.ics")).unwrap();
+        assert!(body.contains("PARTSTAT=ACCEPTED"));
+        // CLIENT would tell a server that schedules after all, though it
+        // did not say so, to leave the reply to mail there is none of.
+        assert!(!body.contains("SCHEDULE-AGENT=CLIENT"), "schedules: {schedules}: {body}");
         assert_eq!(caldav.tells_organizer(), schedules, "only the server can carry the reply");
     }
 }
